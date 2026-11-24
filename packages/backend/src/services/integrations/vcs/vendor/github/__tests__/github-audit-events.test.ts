@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { Option, String as Str } from "effect"
-import { deliveryTimeMs, githubAuditEvent } from "../github-audit-events"
+import {
+	deliveryTimeMs,
+	githubAuditEvent,
+	githubForcedBranch,
+	githubRuleSuiteAuditEvent,
+} from "../github-audit-events"
 
 const RECEIVED_AT = 1_763_000_000_000
 
@@ -136,13 +141,291 @@ describe("githubAuditEvent", () => {
 		expect(deliveryTimeMs(id, sentAt + 10 * 86_400_000)).toBe(sentAt + 10 * 86_400_000)
 	})
 
+	it("records a force push to a branch, keeping the rewritten range but not the commit list", () => {
+		const commits = Array.from({ length: 400 }, (_, i) => ({
+			id: `c${i}`,
+			message: Str.repeat(200)("x"),
+		}))
+		const event = mapped("push", {
+			ref: "refs/heads/main",
+			before: "aaa111",
+			after: "bbb222",
+			forced: true,
+			commits,
+			head_commit: commits[0],
+			repository,
+			sender,
+			installation: { id: 42, account: { login: "acme" } },
+		})
+		expect(event).toMatchObject({
+			account: "acme",
+			actor: { type: "user", id: "1", name: "octocat" },
+			action: "push.forced",
+			category: "resource",
+			target: { type: "branch", name: "acme/api: main" },
+		})
+		expect(event.raw).toMatchObject({ ref: "refs/heads/main", before: "aaa111", after: "bbb222" })
+		expect(event.raw).not.toHaveProperty("commits")
+		expect(mapped("push", { ref: "refs/tags/v1.2.0", forced: true, repository, sender }).target).toEqual({
+			type: "tag",
+			name: "acme/api: v1.2.0",
+		})
+	})
+
+	it("names a force push to the default branch apart from one to any other branch", () => {
+		const repo = { ...repository, name: "api", default_branch: "main" }
+		const push = (ref: string) => mapped("push", { ref, forced: true, repository: repo, sender }).action
+		expect(push("refs/heads/main")).toBe("push.forced.default_branch")
+		expect(push("refs/heads/feature")).toBe("push.forced")
+		// A tag named like the default branch is not the branch.
+		expect(push("refs/tags/main")).toBe("push.forced")
+	})
+
+	it("hands the worker a forced branch to check for pull requests, never the default branch", () => {
+		const repo = { ...repository, name: "api", default_branch: "main" }
+		const forced = (event: string, payload: Record<string, unknown>) =>
+			githubForcedBranch(event, { forced: true, repository: repo, sender, ...payload })
+		expect(forced("push", { ref: "refs/heads/feature/x" })).toEqual(
+			Option.some({
+				repository: { externalRepoId: "7", owner: "acme", name: "api" },
+				branch: "feature/x",
+			}),
+		)
+		expect(Option.isNone(forced("push", { ref: "refs/heads/main" }))).toBe(true)
+		expect(Option.isNone(forced("push", { ref: "refs/tags/v1" }))).toBe(true)
+		expect(Option.isNone(forced("push", { ref: "refs/heads/feature/x", forced: false }))).toBe(true)
+		expect(Option.isNone(forced("create", { ref: "refs/heads/feature/x" }))).toBe(true)
+	})
+
+	it("records branch and tag deletions and creations by their ref type", () => {
+		const deleted = mapped("delete", { ref: "release/1.x", ref_type: "branch", repository, sender })
+		expect(deleted).toMatchObject({
+			action: "delete.branch",
+			category: "resource",
+			target: { type: "branch", name: "acme/api: release/1.x" },
+		})
+		expect(mapped("create", { ref: "v2.0.0", ref_type: "tag", repository, sender })).toMatchObject({
+			action: "create.tag",
+			target: { type: "tag", name: "acme/api: v2.0.0" },
+		})
+	})
+
+	it("keeps a merged pull request and an approval, not the rest of a pull request's life", () => {
+		const pullRequest = { number: 12, title: "Ship it", merged: true }
+		expect(
+			mapped("pull_request", { action: "closed", pull_request: pullRequest, repository, sender }),
+		).toMatchObject({
+			action: "pull_request.merged",
+			target: { type: "pull_request", id: "12", name: "acme/api#12" },
+		})
+		const approved = mapped("pull_request_review", {
+			action: "submitted",
+			review: { state: "approved" },
+			pull_request: pullRequest,
+			repository,
+			sender,
+		})
+		expect(approved).toMatchObject({ action: "pull_request_review.approved", category: "permission" })
+		expect(
+			mapped("pull_request_review", {
+				action: "dismissed",
+				pull_request: pullRequest,
+				repository,
+				sender,
+			}).action,
+		).toBe("pull_request_review.dismissed")
+		const left = (event: string, payload: Record<string, unknown>) =>
+			Option.isNone(map(event, { ...payload, repository, sender }, "d"))
+		expect(
+			left("pull_request", { action: "closed", pull_request: { ...pullRequest, merged: false } }),
+		).toBe(true)
+		expect(left("pull_request", { action: "opened", pull_request: pullRequest })).toBe(true)
+		expect(left("pull_request_review", { action: "submitted", review: { state: "commented" } })).toBe(
+			true,
+		)
+	})
+
+	it("records published and deleted releases, not draft edits", () => {
+		const release = { id: 3, tag_name: "v1.4.0" }
+		expect(mapped("release", { action: "deleted", release, repository, sender })).toMatchObject({
+			action: "release.deleted",
+			target: { type: "release", id: "3", name: "acme/api: v1.4.0" },
+		})
+		expect(Option.isNone(map("release", { action: "created", release, repository, sender }, "d"))).toBe(
+			true,
+		)
+		expect(
+			Option.isNone(
+				map(
+					"release",
+					{ action: "edited", release: { ...release, draft: true }, repository, sender },
+					"d",
+				),
+			),
+		).toBe(true)
+		// Unpublishing turns the release back into a draft, and is kept.
+		expect(
+			mapped("release", {
+				action: "unpublished",
+				release: { ...release, draft: true },
+				repository,
+				sender,
+			}).action,
+		).toBe("release.unpublished")
+	})
+
+	it("records where a repository was forked to", () => {
+		const fork = mapped("fork", { forkee: { id: 80, full_name: "someone/api" }, repository, sender })
+		expect(fork).toMatchObject({
+			action: "fork.created",
+			category: "data_access",
+			target: { type: "repository", id: "80", name: "acme/api to someone/api" },
+		})
+	})
+
+	it("records deployments by environment, a status by its outcome, and environment approvals", () => {
+		const deployment = { id: 5, environment: "production" }
+		expect(mapped("deployment", { action: "created", deployment, repository, sender })).toMatchObject({
+			action: "deployment.created",
+			target: { type: "environment", id: "5", name: "acme/api: production" },
+		})
+		expect(
+			mapped("deployment_status", {
+				action: "created",
+				deployment_status: { state: "failure" },
+				deployment,
+				repository,
+				sender,
+			}).action,
+		).toBe("deployment_status.failure")
+		expect(
+			mapped("deployment_review", {
+				action: "rejected",
+				workflow_run: { name: "deploy" },
+				workflow_job_runs: [{ id: 1, environment: "production" }],
+				repository,
+				sender,
+			}),
+		).toMatchObject({
+			action: "deployment_review.rejected",
+			category: "permission",
+			target: { type: "environment", name: "acme/api: production" },
+		})
+		// A review request, and a deployment still on its way, decide nothing yet.
+		const left = (event: string, payload: Record<string, unknown>) =>
+			Option.isNone(map(event, { ...payload, repository, sender }, "d"))
+		expect(left("deployment_review", { action: "requested", environment: "production" })).toBe(true)
+		expect(
+			left("deployment_status", {
+				action: "created",
+				deployment_status: { state: "in_progress" },
+				deployment,
+			}),
+		).toBe(true)
+	})
+
+	it("never stores the credential a secret scanning alert found", () => {
+		const event = mapped("secret_scanning_alert", {
+			action: "created",
+			alert: { number: 4, secret_type: "aws_access_key_id", secret: "AKIAEXAMPLESECRET" },
+			repository,
+			sender,
+		})
+		expect(event.raw).toMatchObject({ alert: { number: 4, secret_type: "aws_access_key_id" } })
+		expect(JSON.stringify(event.raw)).not.toContain("AKIAEXAMPLESECRET")
+	})
+
+	it("marks a failed deployment as a failure", () => {
+		const status = (state: string) =>
+			mapped("deployment_status", {
+				action: "created",
+				deployment_status: { state },
+				deployment: { id: 5, environment: "production" },
+				repository,
+				sender,
+			}).outcome
+		expect(status("failure")).toBe("failure")
+		expect(status("error")).toBe("failure")
+		expect(status("success")).toBe("success")
+	})
+
+	it("names security alerts by what they found", () => {
+		expect(
+			mapped("secret_scanning_alert", {
+				action: "created",
+				alert: { number: 4, secret_type_display_name: "AWS Access Key ID" },
+				repository,
+				sender,
+			}),
+		).toMatchObject({
+			action: "secret_scanning_alert.created",
+			category: "credential",
+			target: { type: "secret_scanning_alert", id: "4", name: "acme/api: AWS Access Key ID #4" },
+		})
+		expect(
+			mapped("code_scanning_alert", {
+				action: "closed_by_user",
+				alert: { number: 9, rule: { id: "js/sql-injection", description: "SQL injection" } },
+				repository,
+				sender,
+			}).target,
+		).toEqual({ type: "code_scanning_alert", id: "9", name: "acme/api: SQL injection #9" })
+		expect(
+			mapped("dependabot_alert", {
+				action: "dismissed",
+				alert: {
+					number: 2,
+					dependency: { package: { name: "lodash" } },
+					security_advisory: { ghsa_id: "GHSA-xxxx" },
+				},
+				repository,
+				sender,
+			}).target?.name,
+		).toBe("acme/api: lodash GHSA-xxxx #2")
+		expect(
+			mapped("repository_advisory", {
+				action: "published",
+				repository_advisory: { ghsa_id: "GHSA-yyyy", summary: "Token leak" },
+				repository,
+				sender,
+			}).target,
+		).toEqual({ type: "repository_advisory", id: "GHSA-yyyy", name: "acme/api: Token leak" })
+	})
+
 	it("leaves out code and CI events, and a delivery without an id", () => {
 		expect(Option.isNone(map("push", { ref: "refs/heads/main", repository, sender }, "d"))).toBe(true)
+		expect(
+			Option.isNone(map("push", { ref: "refs/heads/main", forced: false, repository, sender }, "d")),
+		).toBe(true)
 		expect(Option.isNone(map("workflow_run", { action: "completed", repository, sender }, "d"))).toBe(
 			true,
 		)
 		expect(
 			Option.isNone(map("organization", { action: "member_added", organization, sender }, undefined)),
 		).toBe(true)
+	})
+})
+
+describe("githubRuleSuiteAuditEvent", () => {
+	const refused = (pushedAt: string, ref: string) =>
+		githubRuleSuiteAuditEvent({
+			account: "acme",
+			repositoryFullName: "acme/api",
+			suite: { id: 5, actorName: "mallory", ref, pushedAt },
+			failedRules: [],
+		})
+
+	it("names the refused ref as a branch or a tag, and is keyed by the suite", () => {
+		const branch = refused("2026-11-24T11:50:00Z", "refs/heads/main")
+		expect(Option.map(branch, (event) => [event.providerEventId, event.target])).toEqual(
+			Option.some(["rule-suite-5", { type: "branch", name: "acme/api: main" }]),
+		)
+		expect(Option.map(refused("2026-11-24T11:50:00Z", "refs/tags/v1"), (event) => event.target)).toEqual(
+			Option.some({ type: "tag", name: "acme/api: v1" }),
+		)
+	})
+
+	it("leaves out a suite whose push time does not read", () => {
+		expect(Option.isNone(refused("yesterday", "refs/heads/main"))).toBe(true)
 	})
 })

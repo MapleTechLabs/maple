@@ -1,5 +1,18 @@
 # @maple-dev/browser
 
+## 0.17.0
+
+### Minor Changes
+
+- 6cfae23: Exception events now carry `maple.exception.debug_ids`: for each script in the error's stack that registered a debug id (through `maple sourcemaps inject`, or Sentry's debug id tooling), its URL and id, so the matching source map is found by id rather than by file path. Absent when no script in the stack has one.
+
+## 0.16.0
+
+### Minor Changes
+
+- acd6846: The SDK now depends on `@opentelemetry/api` alone. The OpenTelemetry JS SDK, the fetch and XHR instrumentations, the OTLP transformer, resources and semantic conventions are replaced by in-house code, cutting about 9 kB gzipped from every page load and 4 kB from the deferred chunk. Behaviour and the wire format are unchanged: the same spans, attributes, scopes and OTLP/JSON bodies, the same `traceparent`, `tracestate` and `baggage` propagation rules, and the SDK still registers itself as the global tracer provider, context manager and propagator, so `context.active()` and `context.with()` from your own `@opentelemetry/api` keep working.
+- a49f40c: New `privacy.persistence: "cookieless"` mode. Like `"memory"`, the SDK stores nothing on the device (no cookies, Web Storage or IndexedDB). Unlike `"memory"`, unique visitors are still counted: the ingest gateway derives a visitor id that changes every UTC day, from a salt it deletes after two days. Unique visitors are counted within a day, not across days, and new vs returning is unavailable. Consent under `requireConsent`, Global Privacy Control, `respectDoNotTrack` with Do Not Track, and `persistVisitorId: false` still turn the visitor id off. If two SDKs on a page set different modes, `"memory"` wins.
+
 ## 0.15.0
 
 ### Minor Changes

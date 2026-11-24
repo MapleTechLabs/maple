@@ -19,6 +19,8 @@ export type SwitchRowOptions<M> = Readonly<{
 	lockReason?: string
 	onToggle?: M
 	className?: string
+	/** `sm` for a switch nested under another row. */
+	size?: "default" | "sm"
 	framed?: boolean
 	icon?: Html
 	/** Controls placed before the switch (a Preview button). */
@@ -59,6 +61,7 @@ export const switchRow = <M>(
 			label: options.label,
 			...(options.description !== undefined && { description: options.description }),
 			...(options.className !== undefined && { className: options.className }),
+			...(options.size !== undefined && { size: options.size }),
 			...(options.icon !== undefined && { icon: options.icon }),
 			...(options.status !== undefined && { status: options.status }),
 			framed: options.framed ?? false,

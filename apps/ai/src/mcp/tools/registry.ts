@@ -20,6 +20,7 @@ import { registerAlertSilenceTools } from "./manage-alert-silence"
 import { registerEscalationChainTools } from "./manage-escalation-chain"
 import { registerOnCallScheduleTools } from "./manage-oncall-schedule"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
+import { registerResolveAlertIncidentTool } from "./resolve-alert-incident"
 import { registerListEscalationChainsTool } from "./list-escalation-chains"
 import { registerListOnCallSchedulesTool } from "./list-oncall-schedules"
 import { registerWhoIsOnCallTool } from "./who-is-on-call"
@@ -87,6 +88,7 @@ import { registerListMapleFeedbackTool } from "./list-maple-feedback"
 import { registerReleaseErrorIssueTool } from "./release-error-issue"
 import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerMergeErrorIssuesTool } from "./merge-error-issues"
+import { registerErrorGroupingTools } from "./error-grouping"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
 import { registerTransitionErrorIssuesTool } from "./transition-error-issues"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
@@ -96,6 +98,7 @@ import { registerListMetricsTool } from "./list-metrics"
 import { registerListServicesTool } from "./list-services"
 import { registerQueryDataTool } from "./query-data"
 import { registerQueryPromqlTool } from "./query-promql"
+import { registerGetMetricExemplarsTool } from "./get-metric-exemplars"
 import { registerRunSqlTool } from "./run-sql"
 import { registerRemoveDashboardWidgetTool } from "./remove-dashboard-widget"
 import { registerReplaceDashboardWidgetsTool } from "./replace-dashboard-widgets"
@@ -119,6 +122,7 @@ import { registerGetAgentSessionTool } from "./get-agent-session"
 import { registerGetAgentSessionTranscriptTool } from "./get-agent-session-transcript"
 import { registerGetAgentToolsOverviewTool } from "./get-agent-tools-overview"
 import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
+import { registerGetEvaluationScoresTool, registerListEvaluationsTool } from "./evaluations"
 import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
@@ -164,12 +168,15 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerGetAgentSessionTranscriptTool,
 	registerGetAgentToolsOverviewTool,
 	registerGetAgentToolErrorTool,
+	registerListEvaluationsTool,
+	registerGetEvaluationScoresTool,
 	registerDiagnoseServiceTool,
 	registerFindSlowTracesTool,
 	registerErrorDetailTool,
 	registerListMetricsTool,
 	registerQueryDataTool,
 	registerQueryPromqlTool,
+	registerGetMetricExemplarsTool,
 	registerRunSqlTool,
 	registerServiceMapTool,
 	registerListAlertRulesTool,
@@ -188,6 +195,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerListAlertSilencesTool,
 	registerAlertSilenceTools,
 	registerAcknowledgeAlertIncidentTool,
+	registerResolveAlertIncidentTool,
 	registerListEscalationChainsTool,
 	registerEscalationChainTools,
 	registerListOnCallSchedulesTool,
@@ -248,6 +256,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerTransitionErrorIssuesTool,
 	registerSetIssueSeverityTool,
 	registerMergeErrorIssuesTool,
+	registerErrorGroupingTools,
 	registerClaimErrorIssueTool,
 	registerReleaseErrorIssueTool,
 	registerCommentOnErrorIssueTool,

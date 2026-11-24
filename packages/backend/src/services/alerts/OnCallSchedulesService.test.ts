@@ -2,6 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	AlertMemberDirectoryNotConfiguredError,
+	AlertMemberDirectoryUnavailableError,
 	AlertValidationError,
 	OnCallOverrideCreateRequest,
 	OnCallScheduleCreateRequest,
@@ -122,6 +123,82 @@ describe("OnCallSchedulesService", () => {
 			assert.strictEqual(back.shift?.userId, ana)
 			assert.deepStrictEqual(back.shift?.source, { kind: "layer", layerIndex: 0 })
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reports the next two weeks' coverage gaps, earliest first", () => {
+		const testDb = createTestDb(createdDbs)
+		// Tuesday 2026-11-10 00:00 UTC.
+		const now = at("2026-11-10T00:00:00Z")
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(now)
+			const schedules = yield* OnCallSchedulesService
+			const covered = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.deepStrictEqual(covered.coverageGaps, [])
+
+			const weekdaysOnly = yield* schedules.create(
+				ORG,
+				ana,
+				ADMIN,
+				new OnCallScheduleCreateRequest({
+					...weekly,
+					name: "Business hours",
+					layers: [
+						{
+							name: "Primary",
+							participants: [ana],
+							rotation: { kind: "weekly", handoffWeekday: "mon", handoffTime: "09:00" },
+							startsAt: at("2026-11-09T08:00:00Z"),
+							restrictions: [
+								{
+									weekdays: ["mon", "tue", "wed", "thu", "fri"],
+									startTime: "09:00",
+									endTime: "17:00",
+								},
+							],
+						},
+					],
+				}),
+			)
+			const listed = yield* schedules.get(ORG, weekdaysOnly.id)
+			assert.isNull(listed.onCallNow)
+			// From now until Tuesday 09:00 Berlin, then every night and the weekends.
+			assert.strictEqual(listed.coverageGaps[0]?.startsAt, "2026-11-10T00:00:00.000Z")
+			assert.strictEqual(listed.coverageGaps[0]?.endsAt, "2026-11-10T08:00:00.000Z")
+			assert.strictEqual(listed.coverageGaps[1]?.startsAt, "2026-11-10T16:00:00.000Z")
+			assert.lengthOf(listed.coverageGaps, 11)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("names participants who left the org and passes their shift on", () => {
+		const testDb = createTestDb(createdDbs)
+		const directory = [
+			{ userId: ana, email: "ana@acme.test", name: "Ana Alves", imageUrl: null },
+			{ userId: ben, email: "ben@acme.test", name: "Ben Brook", imageUrl: null },
+			{ userId: chen, email: "chen@acme.test", name: null, imageUrl: null },
+		]
+		return Effect.gen(function* () {
+			// Ben's week: Monday 2026-11-16 09:00 Berlin onwards.
+			yield* TestClock.setTime(at("2026-11-17T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.deepStrictEqual(schedule.departedUserIds, [])
+			directory.splice(1, 1)
+			const read = yield* schedules.get(ORG, schedule.id)
+			assert.deepStrictEqual(read.departedUserIds, [ben])
+			assert.strictEqual(read.onCallNow?.userId, chen)
+			assert.deepStrictEqual(read.coverageGaps, [])
+		}).pipe(
+			Effect.provide(
+				Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
+					Layer.provide(
+						Layer.merge(
+							testDb.layer,
+							Layer.succeed(OrgMembersService, stubOrgMembersService(directory)),
+						),
+					),
+				),
+			),
+		)
 	})
 
 	it.effect("renders the effective shifts with the override cut into the week", () => {
@@ -353,6 +430,255 @@ describe("OnCallSchedulesService", () => {
 		return Effect.gen(function* () {
 			const names = yield* (yield* OnCallSchedulesService).memberNames(ORG)
 			assert.deepStrictEqual([names.get(ana), names.get(chen)], ["Ana Alves", undefined])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+})
+describe("OnCallSchedulesService calendar feed", () => {
+	const summaries = (calendar: string) =>
+		Arr.filter(Str.split("\r\n")(calendar), (line) => Str.startsWith("SUMMARY:")(line))
+
+	it.effect("serves the schedule's shifts to whoever holds the link, and to nobody else", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.isNull(schedule.calendarFeedCreatedAt)
+
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+			assert.strictEqual((yield* schedules.get(ORG, schedule.id)).calendarFeedCreatedAt, feed.createdAt)
+
+			const calendar = Option.getOrThrow(yield* schedules.calendarFeed(feed.token))
+			// A week back to 60 days on: Ana's week, then Ben's, then Chen, who has no display name.
+			assert.deepStrictEqual(Arr.take(summaries(calendar), 3), [
+				"SUMMARY:On call: Ana Alves (Checkout primary)",
+				"SUMMARY:On call: Ben Brook (Checkout primary)",
+				"SUMMARY:On call (Checkout primary)",
+			])
+
+			// A guess, a truncated link and a link of the wrong shape open nothing.
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(`${feed.token}x`)))
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(Str.slice(0, -1)(feed.token))))
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed("")))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("keeps a shift's real start, end and event id from one fetch to the next", () => {
+		const testDb = createTestDb(createdDbs)
+		const eventsOf = (calendar: string) => {
+			const lines = Str.split("\r\n")(calendar)
+			const valuesOf = (property: string) =>
+				Arr.map(
+					Arr.filter(lines, (line) => Str.startsWith(`${property}:`)(line)),
+					(line) => Str.slice(property.length + 1)(line),
+				)
+			return Arr.zip(valuesOf("UID"), Arr.zip(valuesOf("DTSTART"), valuesOf("DTEND")))
+		}
+		return Effect.gen(function* () {
+			// Mid-week, at no round time: the feed's window starts and ends inside a weekly shift.
+			yield* TestClock.setTime(at("2026-11-25T12:34:56Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+			const first = eventsOf(Option.getOrThrow(yield* schedules.calendarFeed(feed.token)))
+			yield* TestClock.adjust("5 minutes")
+			const second = eventsOf(Option.getOrThrow(yield* schedules.calendarFeed(feed.token)))
+
+			assert.deepStrictEqual(second, first)
+			// Weekly handoff, Monday 09:00 Berlin: every event starts and ends on one, never mid-shift.
+			assert.isAbove(first.length, 8)
+			assert.isTrue(
+				Arr.every(
+					first,
+					([, [start, end]]) => Str.endsWith("T080000Z")(start) && Str.endsWith("T080000Z")(end),
+				),
+			)
+			// No schedule or user id can be read off an event id.
+			assert.isTrue(Arr.every(first, ([uid]) => /^[0-9a-f]{32}@maple\.dev$/.test(uid)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect(
+		"gives a rotation of one person an event per handoff, and a long override its real dates",
+		() => {
+			const testDb = createTestDb(createdDbs)
+			const startsOf = (calendar: string) =>
+				Arr.map(
+					Arr.filter(Str.split("\r\n")(calendar), (line) => Str.startsWith("DTSTART:")(line)),
+					(line) => Str.slice("DTSTART:".length)(line),
+				)
+			const solo = new OnCallScheduleCreateRequest({
+				name: "Solo",
+				timeZone: "UTC",
+				layers: [
+					{
+						name: "Primary",
+						participants: [ana],
+						rotation: { kind: "weekly", handoffWeekday: "mon", handoffTime: "09:00" },
+						startsAt: at("2026-09-07T09:00:00Z"),
+					},
+				],
+			})
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(at("2026-10-01T12:00:00Z"))
+				const schedules = yield* OnCallSchedulesService
+				const schedule = yield* schedules.create(ORG, ana, ADMIN, solo)
+				// Ben covers eighty days from tomorrow: far longer than the feed looks back.
+				yield* schedules.createOverride(
+					ORG,
+					ana,
+					ADMIN,
+					schedule.id,
+					new OnCallOverrideCreateRequest({
+						userId: ben,
+						startsAt: at("2026-10-02T10:00:00Z"),
+						endsAt: at("2026-12-21T10:00:00Z"),
+					}),
+				)
+				const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+				const early = startsOf(Option.getOrThrow(yield* schedules.calendarFeed(feed.token)))
+				// Ana's own weeks are an event each, on the handoff, though nobody else is in the rotation.
+				assert.includeMembers(early, ["20260921T090000Z", "20260928T090000Z", "20261002T100000Z"])
+
+				// Seven weeks on the override began long before the window: it still starts when it did.
+				yield* TestClock.setTime(at("2026-11-20T12:00:00Z"))
+				const late = Option.getOrThrow(yield* schedules.calendarFeed(feed.token))
+				assert.include(startsOf(late), "20261002T100000Z")
+				assert.include(late, "DTEND:20261221T100000Z")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
+	it.effect("fails, and serves no feed without names, when the member directory is down", () => {
+		const testDb = createTestDb(createdDbs)
+		const directory = { isDown: false }
+		const members = stubOrgMembersService([
+			{ userId: ana, email: "ana@acme.test", name: "Ana Alves", imageUrl: null },
+			{ userId: ben, email: "ben@acme.test", name: "Ben Brook", imageUrl: null },
+			{ userId: chen, email: "chen@acme.test", name: null, imageUrl: null },
+		])
+		const layer = Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
+			Layer.provide(
+				Layer.merge(
+					testDb.layer,
+					Layer.succeed(OrgMembersService, {
+						...members,
+						listMembers: (orgId) =>
+							directory.isDown
+								? Effect.fail(
+										new AlertMemberDirectoryUnavailableError({
+											message: "The member directory did not answer",
+											cause: "timeout",
+										}),
+									)
+								: members.listMembers(orgId),
+					}),
+				),
+			),
+		)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+			directory.isDown = true
+			// Past the directory's minute of cache.
+			yield* TestClock.adjust("2 minutes")
+			assert.strictEqual(
+				errorTag(yield* Effect.exit(schedules.calendarFeed(feed.token))),
+				"@maple/http/errors/AlertMemberDirectoryUnavailableError",
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("stores only a hash of the link", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+			const stored = yield* Effect.promise(() =>
+				testDb.pglite.query<{ row: string }>(
+					"select row_to_json(s)::text as row from oncall_schedules s where id = $1",
+					[schedule.id],
+				),
+			)
+			const row = stored.rows[0]?.row ?? ""
+			assert.isAbove(row.length, 0)
+			assert.notInclude(row, feed.token)
+			assert.notInclude(row, Str.replace("mcal_", "")(feed.token))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a new link replaces the old one, and turning the feed off ends both", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const first = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+			// Without asking to replace, a link in use is left alone.
+			assert.strictEqual(
+				errorTag(
+					yield* Effect.exit(
+						schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false }),
+					),
+				),
+				"@maple/http/errors/OnCallCalendarFeedExistsError",
+			)
+			assert.isTrue(Option.isSome(yield* schedules.calendarFeed(first.token)))
+			const second = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: true })
+			assert.notStrictEqual(first.token, second.token)
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(first.token)))
+			assert.isTrue(Option.isSome(yield* schedules.calendarFeed(second.token)))
+
+			yield* schedules.deleteCalendarFeed(ORG, ADMIN, schedule.id)
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(second.token)))
+			assert.isNull((yield* schedules.get(ORG, schedule.id)).calendarFeedCreatedAt)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("only someone who manages alerts in the schedule's own org can make or end a link", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.strictEqual(
+				errorTag(
+					yield* Effect.exit(
+						schedules.createCalendarFeed(ORG, MEMBER, schedule.id, { replace: false }),
+					),
+				),
+				"@maple/http/errors/AlertForbiddenError",
+			)
+			assert.strictEqual(
+				errorTag(
+					yield* Effect.exit(
+						schedules.createCalendarFeed(OTHER_ORG, ADMIN, schedule.id, { replace: false }),
+					),
+				),
+				"@maple/http/errors/OnCallScheduleNotFoundError",
+			)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+			assert.strictEqual(
+				errorTag(yield* Effect.exit(schedules.deleteCalendarFeed(OTHER_ORG, ADMIN, schedule.id))),
+				"@maple/http/errors/OnCallScheduleNotFoundError",
+			)
+			assert.isTrue(Option.isSome(yield* schedules.calendarFeed(feed.token)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a deleted schedule's link opens nothing", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+			yield* schedules.delete(ORG, ADMIN, schedule.id)
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(feed.token)))
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

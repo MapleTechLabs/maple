@@ -68,8 +68,11 @@ export const IssueKind = Schema.Literals(["error", "alert", "integration"]).anno
 })
 export type IssueKind = Schema.Schema.Type<typeof IssueKind>
 
-/** Why an issue owns a fingerprint beyond its own: someone merged it in, or a version bump re-keyed it. */
-export const IssueFingerprintSource = Schema.Literals(["merge", "rekey"]).annotate({
+/**
+ * Why an issue owns a fingerprint beyond its own: someone merged it in, a version bump
+ * re-keyed it, or the tick grouped it with a hash sharing its grouping key.
+ */
+export const IssueFingerprintSource = Schema.Literals(["merge", "rekey", "group"]).annotate({
 	identifier: "@maple/IssueFingerprintSource",
 	title: "Issue Fingerprint Source",
 })

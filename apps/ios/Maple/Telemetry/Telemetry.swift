@@ -209,6 +209,7 @@ enum Screen {
 	static let dashboardDetail = "Dashboard"
 	static let notificationSettings = "Notification Settings"
 	static let organizationPicker = "Organization Picker"
+	static let account = "Account"
 	static let search = "Search"
 }
 
@@ -653,13 +654,14 @@ extension MapleAPIError {
 		case .unexpectedStatus(let status, _): "unexpected_status_\(status)"
 		case .transport: "transport"
 		case .decoding: "decoding"
+		case .unknownRegion: "unknown_region"
 		}
 	}
 
 	var telemetryStatusCode: Int? {
 		switch self {
 		case .api(let status, _), .unexpectedStatus(let status, _): status
-		case .notAuthenticated, .transport, .decoding: nil
+		case .notAuthenticated, .transport, .decoding, .unknownRegion: nil
 		}
 	}
 }

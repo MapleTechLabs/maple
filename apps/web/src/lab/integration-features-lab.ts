@@ -1,3 +1,4 @@
+import { githubAuditCategoryStates } from "@maple/domain/github-audit"
 import {
 	GithubIntegrationStatus,
 	LinearIntegrationStatus,
@@ -88,6 +89,7 @@ const githubStatus = Schema.decodeSync(GithubIntegrationStatus)({
 	repositorySelection: "selected",
 	ciTracesEnabled: true,
 	auditLogEnabled: true,
+	auditCategories: githubAuditCategoryStates({}),
 	repositoryDiscovery: null,
 	repositories: [repo(1, "shop", true), repo(2, "api", false), repo(3, "docs", false)],
 })

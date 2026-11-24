@@ -3,8 +3,10 @@ import * as Policy from "@maple/domain/policy"
 import {
 	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
+	ErrorIssueGroupingResponse,
 	ErrorIssueId,
 	ErrorIssuePullRequestsResponse,
+	ErrorIssueSimilarResponse,
 	ErrorIssueVerificationsResponse,
 	GithubIntegrationStatus,
 	IssueEscalationAttemptsResponse,
@@ -51,6 +53,22 @@ export const Model = Schema.Struct({
 	escalations: keyed(IssueEscalationAttemptsResponse),
 	anomalies: keyed(Schema.Array(V2AnomalyIncident)),
 	githubStatus: keyed(GithubIntegrationStatus),
+	/** The Grouping tab's fingerprints and why each is here, read once the tab opens on a loaded issue. */
+	grouping: keyed(ErrorIssueGroupingResponse),
+	/** Open issues that look like this one, under the fingerprints. */
+	similar: keyed(ErrorIssueSimilarResponse),
+	/** Fingerprints whose skipped frames are shown. */
+	openSkippedFrames: Schema.Array(Schema.String),
+	/** The stack trace's rows flipped from their default (the top app frame open, the rest closed). */
+	stackToggles: Schema.Array(Schema.String),
+	/** The symbolicated stack is swapped for the raw text as the SDK sent it. */
+	isShowingRawStack: Schema.Boolean,
+	/** The fingerprint being split out, while its detach is in flight. */
+	splittingHash: Schema.NullOr(Schema.String),
+	/** The similar issue being merged into this one, while the merge is in flight. */
+	mergingIssueId: Schema.NullOr(ErrorIssueId),
+	/** The last split or merge that failed: the fingerprint or issue it was for, and the server's message. */
+	groupingError: Schema.NullOr(Schema.Struct({ target: Schema.String, message: Schema.String })),
 	/** The issue rail mounted (inline, or in the sheet below `lg`): its attach dialog reads GitHub. */
 	isRightRailMounted: Schema.Boolean,
 	vcsPullRequests: keyed(VcsPullRequestsResponse),

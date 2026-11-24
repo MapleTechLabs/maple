@@ -1,3 +1,4 @@
+import { githubAuditCategoryStates } from "@maple/domain/github-audit"
 import { CloudflareIntegrationStatus, GithubIntegrationStatus } from "@maple/domain/http"
 import { V2PlanetScaleIntegration, V2PlanetScaleOrganizationList } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
@@ -131,6 +132,7 @@ const githubStatus = (syncing: boolean) =>
 		repositorySelection: "all",
 		ciTracesEnabled: true,
 		auditLogEnabled: true,
+		auditCategories: githubAuditCategoryStates({}),
 		repositoryDiscovery: null,
 		repositories: Arr.map(REPOS, (name, index) => ({
 			id: `0199a005-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`,

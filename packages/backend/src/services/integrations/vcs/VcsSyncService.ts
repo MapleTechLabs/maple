@@ -1,6 +1,8 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import {
 	type AuditEventJob,
+	type RuleSuiteScanJob,
+	type VcsRepositoryId,
 	type AuditTrailPersistenceError,
 	type BranchEventJob,
 	type InstallationSyncJob,
@@ -39,6 +41,7 @@ import {
 	Option,
 	Schema,
 	Match,
+	Ref,
 	Array as Arr,
 	String as Str,
 } from "effect"
@@ -56,6 +59,7 @@ import { VcsSyncQueue } from "./VcsSyncQueue"
 import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { AuditEventSink } from "./AuditEventSink"
+import { githubAuditCategoryEnabled, githubAuditCategoryOfAction } from "@maple/domain/github-audit"
 
 // Vendor-agnostic sync orchestrator. Decodes a queue message, resolves the
 // owning installation (→ orgId + provider auth), then dispatches by job kind:
@@ -72,6 +76,28 @@ export const BACKFILL_WINDOW_MS = 90 * 86_400_000
 export const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
+
+/** Repositories one refused-push scan reads before it hands the rest to a follow-up job. */
+const RULE_SUITE_SCAN_BATCH = 50
+/** How far back a repository's first refused-push read looks. */
+const RULE_SUITE_FIRST_READ_MS = 60 * 60 * 1000
+/** How long a force push waits on GitHub for its branch's pull requests before it is kept unattributed. */
+const FORCE_PUSH_LOOKUP_BUDGET = Duration.seconds(20)
+
+/** A repository a refused-push scan reads, and how far it was read. */
+interface RuleSuiteScanTarget {
+	readonly id: VcsRepositoryId
+	readonly externalRepoId: string
+	readonly owner: string
+	readonly name: string
+	readonly ruleSuitesReadUntil: number | null
+}
+
+interface RuleSuiteScanOutcome {
+	readonly status: "read" | "unavailable" | "failed" | "rate_limited"
+	readonly refused: number
+	readonly retryAfterSeconds?: number
+}
 
 /** An audit event for an installation not stored yet waits this many times, this long each. */
 const AUDIT_INSTALLATION_WAITS = 5
@@ -1110,21 +1136,255 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				)
 			})
 
-			// Not behind `ensureProcessable`: an installation that was just suspended or removed is
-			// itself the event, and audit events need no synced data. A failed write fails the job,
-			// so the queue retries it; a retried event writes the same row.
-			const handleAuditEvent = Effect.fn("VcsSyncService.handleAuditEvent")(function* (
+			// A force push to a branch whose pull request someone else opened becomes
+			// `push.forced.non_author`, naming it. A pull request merged or closed since the push still
+			// counts. A failed or slow lookup keeps `push.forced`, which every force push detection matches.
+			const attributeForcePush = Effect.fn("VcsSyncService.attributeForcePush")(function* (
+				provider: VcsProviderClient,
 				installation: VcsInstallation,
 				job: AuditEventJob,
 			) {
-				// An org that turned the audit log off for GitHub drops the event here.
-				const forwards = auditSink !== undefined && installation.auditLogEnabled
+				const pusher =
+					job.event.actor.name === undefined ? undefined : Str.toLowerCase(job.event.actor.name)
+				if (job.forcedBranch === undefined || pusher === undefined) return job.event
+				const { repository, branch } = job.forcedBranch
+				const pulls = yield* provider
+					.fetchPullRequests(installation, repository, {
+						limit: 10,
+						head: `${repository.owner}:${branch}`,
+						state: "all",
+					})
+					.pipe(
+						Effect.timeout(FORCE_PUSH_LOOKUP_BUDGET),
+						Effect.tapError((error) =>
+							Effect.logWarning(
+								"[VCS] Force push left unattributed: pull request lookup failed",
+							).pipe(Effect.annotateLogs({ "vcs.error": error._tag })),
+						),
+						Effect.option,
+					)
+				const foreign = Option.flatMap(pulls, (found) =>
+					Arr.findFirst(
+						found,
+						(pr) =>
+							pr.authorLogin !== null &&
+							Str.toLowerCase(pr.authorLogin) !== pusher &&
+							// Open at the push: still open, or merged since. A closed one has no reliable close time.
+							(pr.state === "open" ||
+								(pr.mergedAtMs !== null && pr.mergedAtMs >= job.event.occurredAtMs)),
+					),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"vcs.audit.pull_lookup": Option.isSome(pulls) ? "ok" : "failed",
+					"vcs.audit.non_author": Option.isSome(foreign),
+				})
+				return Option.match(foreign, {
+					onNone: () => job.event,
+					onSome: (pr) => ({
+						...job.event,
+						action: "push.forced.non_author",
+						target: {
+							type: "pull_request",
+							id: String(pr.number),
+							name: `${repository.owner}/${repository.name}#${pr.number}`,
+						},
+					}),
+				})
+			})
+
+			// Not behind `ensureProcessable`: an installation that was just suspended or removed is
+			// itself the event, and audit events need no synced data. A failed write fails the job,
+			// so the queue retries it; a retry writes the same event id.
+			const handleAuditEvent = Effect.fn("VcsSyncService.handleAuditEvent")(function* (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: AuditEventJob,
+			) {
+				// An org that turned the audit log, or this event's category, off for GitHub drops it here.
+				const category =
+					job.provider === "github" ? githubAuditCategoryOfAction(job.event.action) : Option.none()
+				const collected =
+					installation.auditLogEnabled &&
+					Option.match(category, {
+						onNone: () => true,
+						onSome: (id) => githubAuditCategoryEnabled(installation.auditCategories, id),
+					})
 				yield* Effect.annotateCurrentSpan({
 					"maple.audit.action": job.event.action,
-					"maple.audit.forwarded": forwards,
+					"maple.audit.category": Option.getOrElse(category, () => "none"),
+					"maple.audit.forwarded": auditSink !== undefined && collected,
 				})
-				if (auditSink !== undefined && installation.auditLogEnabled)
-					yield* auditSink.onAuditEvent(installation.orgId, job.event)
+				if (auditSink !== undefined && collected) {
+					const event = yield* attributeForcePush(provider, installation, job)
+					yield* auditSink.onAuditEvent(installation.orgId, event)
+				}
+			})
+
+			// One repository's refusals since its cursor, written oldest first; the cursor moves past
+			// what was written, so a failed write leaves the rest for the next scan.
+			const scanRefusedPushes = Effect.fn("VcsSyncService.scanRefusedPushes")(function* (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				target: RuleSuiteScanTarget,
+				now: number,
+			) {
+				if (auditSink === undefined)
+					return { status: "read", refused: 0 } satisfies RuleSuiteScanOutcome
+				const read = yield* provider
+					.fetchRefusedPushes(
+						installation,
+						{
+							externalRepoId: target.externalRepoId,
+							owner: target.owner,
+							name: target.name,
+							fullName: `${target.owner}/${target.name}`,
+						},
+						{ sinceMs: target.ruleSuitesReadUntil ?? now - RULE_SUITE_FIRST_READ_MS, nowMs: now },
+					)
+					.pipe(
+						Effect.map((found) => ({ _tag: "Read" as const, ...found })),
+						Effect.catchTags({
+							"@maple/http/errors/VcsRateLimitedError": (error) =>
+								Effect.succeed({
+									_tag: "RateLimited" as const,
+									retryAfterSeconds: error.retryAfterSeconds,
+								}),
+							"@maple/http/errors/VcsRepoUnavailableError": () =>
+								Effect.succeed({ _tag: "Unavailable" as const }),
+							"@maple/http/errors/VcsRepositoryBlockedError": () =>
+								Effect.succeed({ _tag: "Unavailable" as const }),
+							// A 403 is a repository the token cannot see rulesets on; anything else is a failure.
+							"@maple/http/errors/VcsProviderError": (error) =>
+								error.status === 403
+									? Effect.succeed({ _tag: "Unavailable" as const })
+									: Effect.logWarning("[VCS] Refused pushes could not be read").pipe(
+											Effect.annotateLogs({
+												"vcs.repository.id": target.id,
+												"vcs.error": error.message,
+											}),
+											Effect.as({ _tag: "Failed" as const }),
+										),
+						}),
+					)
+				if (read._tag === "RateLimited")
+					return {
+						status: "rate_limited",
+						refused: 0,
+						retryAfterSeconds: read.retryAfterSeconds,
+					} satisfies RuleSuiteScanOutcome
+				if (read._tag === "Unavailable")
+					return { status: "unavailable", refused: 0 } satisfies RuleSuiteScanOutcome
+				if (read._tag === "Failed")
+					return { status: "failed", refused: 0 } satisfies RuleSuiteScanOutcome
+				if (read.truncated)
+					yield* Effect.logWarning(
+						"[VCS] More refused pushes than one read takes; the oldest were skipped",
+					).pipe(Effect.annotateLogs({ "vcs.repository.id": target.id }))
+				// Events go out oldest first, so after a failed write the cursor stops before the first one left.
+				const written = yield* Ref.make<{ readonly at: number | undefined; readonly count: number }>({
+					at: undefined,
+					count: 0,
+				})
+				const failed = yield* Effect.forEach(
+					read.events,
+					(event) =>
+						auditSink.onAuditEvent(installation.orgId, event).pipe(
+							Effect.andThen(
+								Ref.update(written, (sofar) => ({
+									at: event.occurredAtMs,
+									count: sofar.count + 1,
+								})),
+							),
+						),
+					{ discard: true },
+				).pipe(
+					Effect.as(false),
+					Effect.catchTag("@maple/http/errors/AuditTrailPersistenceError", () =>
+						Effect.succeed(true),
+					),
+				)
+				const done = yield* Ref.get(written)
+				// Just before the first refusal not written: one in the same second as the last written
+				// one is read again rather than skipped, and the written one collapses on its id.
+				const readUntil = failed
+					? Option.match(Arr.get(read.events, done.count), {
+							onNone: () => done.at,
+							onSome: (unwritten) => unwritten.occurredAtMs - 1,
+						})
+					: read.newestMs
+				if (readUntil !== undefined) yield* repo.advanceRuleSuitesReadUntil(target.id, readUntil)
+				if (failed)
+					yield* Effect.logError("[VCS] Refused pushes could not be written to the audit log").pipe(
+						Effect.annotateLogs({ "vcs.repository.id": target.id }),
+					)
+				return {
+					status: failed ? "failed" : "read",
+					refused: done.count,
+				} satisfies RuleSuiteScanOutcome
+			})
+
+			// The pushes each installation's rulesets refused, a batch of repositories at a time. An
+			// installation that never granted Administration: read is skipped whole; a rate limit
+			// retries the same batch once GitHub allows it, and the cursors keep what was read.
+			const handleRuleSuiteScan = Effect.fn("VcsSyncService.handleRuleSuiteScan")(function* (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: RuleSuiteScanJob,
+			) {
+				if (!(yield* ensureProcessable(installation, job.kind))) return
+				const collected =
+					auditSink !== undefined &&
+					installation.auditLogEnabled &&
+					githubAuditCategoryEnabled(installation.auditCategories, "refusedPushes")
+				yield* Effect.annotateCurrentSpan({ "vcs.rule_suites.collected": collected })
+				if (!collected) return
+				const permitted = yield* provider.canReadRuleSuites(installation).pipe(
+					Effect.catchTags({
+						"@maple/http/errors/VcsRepositoryBlockedError": () => Effect.succeed(false),
+						"@maple/http/errors/VcsRepoUnavailableError": () => Effect.succeed(false),
+					}),
+				)
+				yield* Effect.annotateCurrentSpan({ "vcs.rule_suites.permitted": permitted })
+				if (!permitted) return
+				const targets = yield* repo.listRuleSuiteScanTargets(
+					installation.id,
+					job.afterRepositoryId,
+					RULE_SUITE_SCAN_BATCH,
+				)
+				const now = yield* Clock.currentTimeMillis
+				const outcomes = yield* Effect.forEach(
+					targets,
+					(target) => scanRefusedPushes(provider, installation, target, now),
+					{ concurrency: 4 },
+				)
+				const count = (status: RuleSuiteScanOutcome["status"]) =>
+					Arr.filter(outcomes, (outcome) => outcome.status === status).length
+				const retryAfter = Arr.reduce(outcomes, 0, (max, outcome) =>
+					Math.max(max, outcome.retryAfterSeconds ?? 0),
+				)
+				const rateLimited = count("rate_limited") > 0
+				const last = Arr.last(targets)
+				const more = targets.length === RULE_SUITE_SCAN_BATCH && Option.isSome(last)
+				yield* Effect.annotateCurrentSpan({
+					"vcs.rule_suites.repositories": targets.length,
+					"vcs.rule_suites.unavailable": count("unavailable"),
+					"vcs.rule_suites.failed": count("failed"),
+					"vcs.rule_suites.rate_limited": rateLimited,
+					"vcs.rule_suites.refused": Arr.reduce(
+						outcomes,
+						0,
+						(sum, outcome) => sum + outcome.refused,
+					),
+					"vcs.rule_suites.continued": more || rateLimited,
+				})
+				if (rateLimited) yield* queue.send(job, { delaySeconds: Math.max(retryAfter, 60) })
+				else if (more)
+					yield* queue.send({
+						kind: "rule-suite-scan",
+						provider: job.provider,
+						externalInstallationId: job.externalInstallationId,
+						afterRepositoryId: last.value.id,
+					})
 			})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
@@ -1246,7 +1506,12 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					Match.discriminator("kind")("workflow-job", (job) =>
 						handleWorkflowJob(provider, installation, job),
 					),
-					Match.discriminator("kind")("audit-event", (job) => handleAuditEvent(installation, job)),
+					Match.discriminator("kind")("rule-suite-scan", (job) =>
+						handleRuleSuiteScan(provider, installation, job),
+					),
+					Match.discriminator("kind")("audit-event", (job) =>
+						handleAuditEvent(provider, installation, job),
+					),
 					Match.exhaustive,
 				)
 

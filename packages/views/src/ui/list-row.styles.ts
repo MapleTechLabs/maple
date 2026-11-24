@@ -1,4 +1,4 @@
-import { cva } from "class-variance-authority"
+import { variants } from "@maple/ui/lib/variants"
 import { cn } from "@maple/ui/lib/utils"
 import { ROW_FOCUSED_CLASS } from "./row-focus"
 
@@ -12,7 +12,7 @@ export function rowSelectedClass(selected: boolean | undefined): string {
 	return cn(ROW_LANE, selected ? "bg-surface-strong before:bg-primary" : "before:bg-transparent")
 }
 
-export const listRowVariants = cva(
+export const listRowVariants = variants(
 	`${ROW_FOCUSED_CLASS} flex w-full min-w-0 items-center gap-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset`,
 	{
 		defaultVariants: { density: "default", divided: false },

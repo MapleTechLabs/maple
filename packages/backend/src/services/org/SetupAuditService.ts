@@ -17,7 +17,7 @@ import {
 	ScrapeTargets,
 	VcsRepositories,
 } from "@maple/db/tables"
-import { clickHouseSchemaVersion } from "@maple/domain/clickhouse"
+import { loadClickHouseSchema } from "./OrgClickHouseSettingsService"
 import type { OrgId } from "@maple/primitives"
 import {
 	classifyLogCorrelation,
@@ -385,7 +385,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 								syncStatus: clickhouseRow.syncStatus,
 								lastSyncError: clickhouseRow.lastSyncError,
 								schemaVersion: clickhouseRow.schemaVersion,
-								expectedSchemaVersion: clickHouseSchemaVersion,
+								// Only an org with its own ClickHouse has a row, so only it loads the schema module.
+								expectedSchemaVersion: (yield* loadClickHouseSchema).clickHouseSchemaVersion,
 							}
 						: null,
 				integrations: Arr.map(rows.connections, (connection) => ({
@@ -951,7 +952,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			recorded: ConfigAuditInputs["telemetry"],
 		) {
 			if (recorded === "present") return recorded
-			const report = yield* signals.read(tenant)
+			const report = yield* signals.read(tenant, { excludeTestTrace: true })
 			const firstData = firstDataSeen(report)
 			const probe: ConfigAuditInputs["telemetry"] = report.warehouseAvailable
 				? firstData !== undefined

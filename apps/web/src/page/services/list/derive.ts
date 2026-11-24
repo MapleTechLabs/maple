@@ -6,11 +6,17 @@ import {
 	type LatencyBaselineSignal,
 	type ServiceHealth,
 } from "../../kit/service-health-rollup"
-import { Array as Arr, String as Str, Order } from "effect"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { Array as Arr, String as Str, Option, Order, Record as Rec, Schema } from "effect"
+import { AsyncData } from "foldkit"
+import type { IconName } from "@maple/views/ui/icon"
+import { VcsProviderId } from "@maple/domain/vcs"
+import { PROVIDERS } from "../../kit/providers"
 import type { ServicesSearch } from "../../../route/search"
 import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"
 import { isResolvableSha } from "../../kit/commit-card"
-import type { ServiceRow } from "./model"
+import { VCS_COMMIT_DETAILS_MAX_SHAS } from "@maple/domain/http"
+import type { CommitSummary, Model, ServiceRow } from "./model"
 
 // Pure derivations of the services table and its health summary.
 
@@ -202,25 +208,91 @@ export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefin
 	return { sha: latest.commitSha, firstSeen: latest.firstSeen, rollout, errorsSince }
 }
 
-/** `commitsQueryKey`: the deduped, sorted resolvable shas of the rows on screen; "" means no request. */
-export const commitsKey = (services: ReadonlyArray<ServiceRow>): string =>
-	Arr.join(
-		Arr.sort(
-			Arr.filter(
-				[
-					...new Set(
-						Arr.flatMap(services, (service) => {
-							const sha = deployInfo(service.commits)?.sha
-							return sha === undefined ? [] : [sha]
-						}),
-					),
-				],
-				isResolvableSha,
-			),
-			Order.String,
-		),
-		",",
+/**
+ * `commitsQueryKey`: one lookup for the deploy cells and the release facet, in priority order: the
+ * deploy shas of the rows on screen (sorted, so a row reorder keeps the key), then `otherShas` as
+ * given. Deduped, resolvable only, capped at the endpoint's batch size. The order is kept because
+ * the server only probes the provider for the first few unstored shas. "" means no request.
+ */
+export const commitsKey = (
+	services: ReadonlyArray<ServiceRow>,
+	otherShas: ReadonlyArray<string> = [],
+): string => {
+	const deployShas = Arr.flatMap(services, (service) => {
+		const sha = deployInfo(service.commits)?.sha
+		return sha === undefined ? [] : [sha]
+	})
+	const wanted = Arr.filter(
+		[...new Set([...Arr.sort(deployShas, Order.String), ...otherShas])],
+		isResolvableSha,
 	)
+	return Arr.join(wanted.slice(0, VCS_COMMIT_DETAILS_MAX_SHAS), ",")
+}
+
+const isVcsProvider = Schema.is(VcsProviderId)
+
+/**
+ * A release row's mark: its repository provider's logo once matched, else a plain commit (a sha in
+ * no connected repository, or a version that is not a sha).
+ */
+export const releaseIcon = (value: string, summaries: Readonly<Record<string, CommitSummary>>): IconName => {
+	const provider = summaries[value]?.provider
+	return isVcsProvider(provider) ? PROVIDERS[provider].icon : "CodeCommitIcon"
+}
+
+/**
+ * A release row's hover text: `sha · subject (GitHub)` once matched; a full sha the settled lookup
+ * did not find says so, so it doesn't read as still loading.
+ */
+export const releaseDescription = (
+	value: string,
+	summaries: Readonly<Record<string, CommitSummary>>,
+	isLookupSettled: boolean,
+): string => {
+	const summary = summaries[value]
+	if (summary !== undefined) {
+		const provider = isVcsProvider(summary.provider) ? PROVIDERS[summary.provider].name : summary.provider
+		return `${Str.slice(0, 7)(value)} · ${summary.subject} (${provider})`
+	}
+	return isLookupSettled && isResolvableSha(value)
+		? `${value} · not found in a connected repository`
+		: value
+}
+
+/** The resolved commits by sha; empty until the lookup lands, and when it fails. */
+export const commitSummariesOf = (
+	model: Pick<Model, "commitSummaries">,
+): Readonly<Record<string, CommitSummary>> =>
+	Option.getOrElse(AsyncData.getData(model.commitSummaries.data), () => ({}))
+
+/**
+ * `releaseLabeler`: a release's label is its commit subject once resolved (with the short sha when
+ * another resolved commit shares the subject), else the short sha, else the raw value.
+ */
+export const releaseLabeler = (summaries: Readonly<Record<string, CommitSummary>>) => {
+	const subjects = Arr.map(Rec.values(summaries), (summary) => summary.subject)
+	const repeated = new Set(Arr.filter(subjects, (subject, index) => subjects.indexOf(subject) !== index))
+	return (value: string): string => {
+		const subject = summaries[value]?.subject ?? ""
+		const short = Str.slice(0, 7)(value)
+		if (subject !== "") return repeated.has(subject) ? `${subject} · ${short}` : subject
+		return isResolvableSha(value) ? short : value
+	}
+}
+
+/** The release facet's order: resolved commits newest first, then the rest by span count as the query sent them. */
+export const releaseOptions = <O extends Readonly<{ name: string }>>(
+	options: ReadonlyArray<O>,
+	summaries: Readonly<Record<string, CommitSummary>>,
+): ReadonlyArray<O> => {
+	const committedAt = (option: O) => summaries[option.name]?.committedAt
+	const known = Arr.filter(options, (option) => committedAt(option) !== undefined)
+	const unknown = Arr.filter(options, (option) => committedAt(option) === undefined)
+	return [
+		...Arr.sort(known, Order.flip(Order.mapInput(Order.Number, (option: O) => committedAt(option) ?? 0))),
+		...unknown,
+	]
+}
 
 const MIN_BASELINE_SPANS = 100
 
@@ -248,4 +320,43 @@ export const baselineDelta = (
 					? "text-severity-warn"
 					: "text-muted-foreground",
 	}
+}
+
+/**
+ * Each point's count per second over the part of its bucket the window covers, so the bucket the
+ * window ends inside reads at its real rate rather than spread over a full bucket.
+ */
+export const perSecondRates = (
+	points: ReadonlyArray<Readonly<{ bucket: string; throughput: number }>>,
+	window: Readonly<{ startMs: number; endMs: number; bucketSeconds: number }>,
+): ReadonlyArray<number> =>
+	Arr.map(points, (point) => {
+		const bucketStart = toEpochMs(point.bucket)
+		const coveredSeconds =
+			(Math.min(bucketStart + window.bucketSeconds * 1000, window.endMs) -
+				Math.max(bucketStart, window.startMs)) /
+			1000
+		return coveredSeconds > 0 ? point.throughput / coveredSeconds : 0
+	})
+
+/** The services listed once: their sparkline series (one per service) is that row's own data. */
+export const singleRowServices = (rows: ReadonlyArray<ServiceRow>): ReadonlySet<string> => {
+	const counts = Arr.reduce(rows, new Map<string, number>(), (acc, row) =>
+		acc.set(row.serviceName, (acc.get(row.serviceName) ?? 0) + 1),
+	)
+	const single = Arr.filter(Arr.fromIterable(counts), ([, count]) => count === 1)
+	return new Set(Arr.map(single, ([name]) => name))
+}
+
+/**
+ * Which cell values a hovered sparkline point may replace. The series is per service and unweighted:
+ * it stands in for a row only when the service has no other row, and its error rate only when the
+ * row is unsampled (sampled rows show a weight-corrected rate the series cannot match).
+ */
+export const sparklineHoverScope = (
+	service: ServiceRow,
+	singleRows: ReadonlySet<string>,
+): Readonly<{ throughput: boolean; errorRate: boolean }> => {
+	const isOwnSeries = singleRows.has(service.serviceName)
+	return { throughput: isOwnSeries, errorRate: isOwnSeries && !service.hasSampling }
 }

@@ -20,6 +20,7 @@ import {
 	SchemaApplyWorkflow,
 	SelfHostedLoginRateLimit,
 	ShareLinkRateLimit,
+	sourceMapBucketLayer,
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 } from "@maple/backend/platform/bindings"
@@ -44,6 +45,7 @@ export const offlinePortsWith = (env: Record<string, unknown>) =>
 		Layer.succeed(DataSourceDevelopmentCallLimit, limiter),
 		Layer.succeed(DataSourceSqlQueryLimit, limiter),
 		Layer.succeed(ReplayBlobBucket, { getBytes: rejectIO }),
+		sourceMapBucketLayer({ getBytes: rejectIO, put: rejectIO, delete: rejectIO, list: rejectIO }),
 		StatusPageStore.inMemory,
 		Layer.succeed(MapleDbConnection, Option.none()),
 		Layer.succeed(EmailSender, Option.none()),

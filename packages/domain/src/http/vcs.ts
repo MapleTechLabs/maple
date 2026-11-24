@@ -2,6 +2,7 @@ import { Effect, Schema, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/primitives"
 import { PullRequestLinkState } from "./fix-verification"
 import { AuditTrailEventSchema } from "../audit-trail"
+import { GithubAuditCategoryOverrides } from "../github-audit"
 
 import {
 	GitCommitSha,
@@ -73,6 +74,8 @@ export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallat
 	ciTracesEnabled: Schema.Boolean,
 	/** Whether the installation's audit events go to the Security audit log. On unless the org turned it off. */
 	auditLogEnabled: Schema.Boolean.pipe(Schema.withConstructorDefault(Effect.succeed(true))),
+	/** The audit categories the org changed from their default (`@maple/domain/github-audit`). */
+	auditCategories: GithubAuditCategoryOverrides.pipe(Schema.withConstructorDefault(Effect.succeed({}))),
 	repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery).pipe(
 		Schema.withConstructorDefault(Effect.succeed(null)),
 	),
@@ -770,14 +773,32 @@ export const AuditEventJob = Schema.Struct({
 	provider: VcsProviderId,
 	externalInstallationId: Schema.String,
 	event: AuditTrailEventSchema,
+	/**
+	 * A force push to a branch other than the default: the worker checks whether one of the
+	 * branch's open pull requests belongs to someone other than the pusher.
+	 */
+	forcedBranch: Schema.optionalKey(Schema.Struct({ repository: VcsRepositoryRef, branch: Schema.String })),
 	/** How many times the job waited for its installation to be stored (a connect still finishing). */
 	installationWaits: Schema.optionalKey(Schema.Number),
 	deliveryId: Schema.optionalKey(Schema.String),
 })
 export type AuditEventJob = Schema.Schema.Type<typeof AuditEventJob>
 
+/**
+ * Read the pushes an installation's rulesets refused since each repository's last read, for the
+ * audit log. A scan stops after a bounded number of repositories and continues after the last one.
+ */
+export const RuleSuiteScanJob = Schema.Struct({
+	kind: Schema.Literal("rule-suite-scan"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	afterRepositoryId: Schema.optionalKey(VcsRepositoryId),
+})
+export type RuleSuiteScanJob = Schema.Schema.Type<typeof RuleSuiteScanJob>
+
 export const VcsSyncJob = Schema.Union([
 	AuditEventJob,
+	RuleSuiteScanJob,
 	InstallationSyncJob,
 	SyncCommitsJob,
 	PushJob,

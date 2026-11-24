@@ -4,7 +4,7 @@
 // which backend answered. Where the tool reports less than local mode, the
 // missing field is left empty rather than invented.
 
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TraceId } from "@maple/domain"
 import type { TracesMetric } from "@maple/domain/query-engine"
 import type {
@@ -15,10 +15,12 @@ import type {
 	MineLogPatternsOutput,
 	CompareLogPatternsOutput,
 	SearchLogsOutput,
+	MetricExemplarsResult,
 	SearchTracesOutput,
 	ServiceHealthOutput,
 	SpanResult,
 } from "@maple/query-engine/observability"
+import { encodeJson } from "@maple/local-server/json"
 import type { CompareRow, ErrorRow } from "../lib/views"
 import type { MapleMcpClient, McpToolOutput } from "./mcp-client"
 import type { Range } from "./time"
@@ -426,3 +428,71 @@ export const queryPromql = (
 		step: p.step,
 		instant: p.instant ? true : undefined,
 	})
+
+/** The tool refuses a metric name it cannot find, so a remote answer is always `found`. */
+export const metricExemplars = (
+	mcp: MapleMcpClient,
+	p: {
+		name: string
+		range: Range
+		bucketSeconds: number
+		service?: string
+		environment?: string
+		perBucket?: number
+		limit?: number
+	},
+) =>
+	Effect.map(
+		mcp.call("get_metric_exemplars", {
+			metric_name: p.name,
+			...window(p.range),
+			service: p.service,
+			environment: p.environment,
+			bucket_seconds: p.bucketSeconds,
+			per_bucket: p.perBucket,
+			limit: p.limit,
+		}),
+		(out): MetricExemplarsResult => ({
+			_tag: "found",
+			metricType: out.metricType,
+			exemplars: out.exemplars,
+		}),
+	)
+
+/** A `key=value` property filter as the tools' `{key, value}` entry; a bare key matches any value. */
+const propertyFilter = (raw: string) =>
+	Option.match(Str.indexOf("=")(raw), {
+		onNone: () => ({ key: raw, mode: "exists" }),
+		onSome: (at) => ({ key: Str.slice(0, at)(raw), value: Str.slice(at + 1)(raw) }),
+	})
+
+export const listUsers = (
+	mcp: MapleMcpClient,
+	p: {
+		range: Range
+		search?: string
+		errorsOnly: boolean
+		groups: ReadonlyArray<string>
+		properties: ReadonlyArray<string>
+		limit: number
+		cursor?: string
+	},
+) =>
+	mcp.call("list_users", {
+		...window(p.range),
+		search: p.search,
+		has_errors: p.errorsOnly ? true : undefined,
+		groups: p.groups.length === 0 ? undefined : p.groups,
+		user_property_filters:
+			p.properties.length === 0 ? undefined : encodeJson(Arr.map(p.properties, propertyFilter)),
+		limit: p.limit,
+		cursor: p.cursor,
+	})
+
+export const inspectUser = (mcp: MapleMcpClient, p: { userId: string; range: Range }) =>
+	mcp.call("inspect_user", { user_id: p.userId, ...window(p.range) })
+
+export const listProductEvents = (
+	mcp: MapleMcpClient,
+	p: { range: Range; kind?: string; search?: string; limit: number },
+) => mcp.call("list_product_events", { ...window(p.range), kind: p.kind, search: p.search, limit: p.limit })

@@ -199,7 +199,7 @@ describe("v2 status pages", () => {
 					slug: "acme-edge",
 				})
 				const pageId = Schema.decodeSync(StatusPagePublicId)(created.body.id)
-				const address = statusPageAddress(ORG, "acme-edge")
+				const address = await Effect.runPromise(statusPageAddress(ORG, "acme-edge"))
 				await Effect.runPromise(
 					Effect.all([
 						memory.api.putRoutes(pageId, { address, hostnames: [] }),

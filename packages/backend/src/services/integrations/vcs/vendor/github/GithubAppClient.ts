@@ -343,6 +343,34 @@ const GithubApiPullRequestSchema = Schema.Struct({
 export type GithubApiPullRequest = Schema.Schema.Type<typeof GithubApiPullRequestSchema>
 const GithubApiPullRequestList = Schema.Array(GithubApiPullRequestSchema)
 
+/** A push or merge a repository's rulesets evaluated (`GET /repos/{o}/{r}/rulesets/rule-suites`). */
+const GithubApiRuleSuiteSchema = Schema.Struct({
+	id: Schema.Number,
+	actor_id: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	actor_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	before_sha: Schema.optionalKey(Schema.String),
+	after_sha: Schema.optionalKey(Schema.String),
+	ref: Schema.String,
+	pushed_at: Schema.String,
+	result: Schema.String,
+})
+export type GithubApiRuleSuite = Schema.Schema.Type<typeof GithubApiRuleSuiteSchema>
+const GithubApiRuleSuiteList = Schema.Array(GithubApiRuleSuiteSchema)
+
+/** Which rules of one rule suite passed or failed. */
+const GithubApiRuleSuiteDetailSchema = Schema.Struct({
+	rule_evaluations: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				rule_type: Schema.String,
+				result: Schema.String,
+				enforcement: Schema.optionalKey(Schema.String),
+			}),
+		),
+	),
+})
+export type GithubApiRuleSuiteDetail = Schema.Schema.Type<typeof GithubApiRuleSuiteDetailSchema>
+
 // One file of a pull request's diff. `patch` is absent for binary files and for
 // files GitHub judges too large to inline; the caller reads those another way.
 const GithubApiPullRequestFileSchema = Schema.Struct({
@@ -640,6 +668,8 @@ const decodeCommitList = Schema.decodeUnknownEffect(GithubApiCommitList)
 const decodeCommit = Schema.decodeUnknownEffect(GithubApiCommitSchema)
 const decodeBranchList = Schema.decodeUnknownEffect(GithubApiBranchList)
 const decodePullRequestList = Schema.decodeUnknownEffect(GithubApiPullRequestList)
+const decodeRuleSuiteList = Schema.decodeUnknownEffect(GithubApiRuleSuiteList)
+const decodeRuleSuiteDetail = Schema.decodeUnknownEffect(GithubApiRuleSuiteDetailSchema)
 const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
 const decodePullRequestFiles = Schema.decodeUnknownEffect(GithubApiPullRequestFileList)
 const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
@@ -1008,17 +1038,20 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					permissions === undefined ||
 					permissions[permission] === "read" ||
 					permissions[permission] === "write"
-			const grantsActions = grants("actions")
-			const canReadActions = Effect.fnUntraced(function* (externalInstallationId: string) {
-				const token = yield* installationToken(externalInstallationId)
-				const now = yield* Clock.currentTimeMillis
-				if (grantsActions(token) || now - token.mintedAtMs < PERMISSION_DENIAL_RECHECK_MS) {
-					return grantsActions(token)
-				}
-				yield* installationTokens.remove(externalInstallationId)
-				const refreshed = yield* installationToken(externalInstallationId)
-				return grantsActions(refreshed)
-			})
+			const canRead = (granted: (token: InstallationToken) => boolean) =>
+				Effect.fnUntraced(function* (externalInstallationId: string) {
+					const token = yield* installationToken(externalInstallationId)
+					const now = yield* Clock.currentTimeMillis
+					if (granted(token) || now - token.mintedAtMs < PERMISSION_DENIAL_RECHECK_MS) {
+						return granted(token)
+					}
+					yield* installationTokens.remove(externalInstallationId)
+					const refreshed = yield* installationToken(externalInstallationId)
+					return granted(refreshed)
+				})
+			const canReadActions = canRead(grants("actions"))
+			// Rule insights need repository `administration: read`.
+			const canReadAdministration = canRead(grants("administration"))
 
 			const authedGet = (
 				_config: ResolvedAppConfig,
@@ -1355,11 +1388,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				repo: string,
 				limit: number,
 				head?: string,
+				state?: "open" | "all",
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
 				const params = new URLSearchParams({
-					...(head === undefined ? { state: "all" } : { state: "open", head }),
+					...(head === undefined ? { state: "all" } : { state: state ?? "open", head }),
 					sort: "updated",
 					direction: "desc",
 					per_page: String(Math.min(limit, PER_PAGE)),
@@ -1375,6 +1409,59 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return yield* decodePullRequestList(json).pipe(
 					Effect.mapError(
 						(cause) => new GithubAppError({ message: "Unexpected pull requests payload", cause }),
+					),
+				)
+			})
+
+			// One page of the rule suites a repository's rulesets failed, newest first. Needs the
+			// repository's Administration: read; `timePeriod` is GitHub's own window (hour, day, week).
+			const listFailedRuleSuites = Effect.fn("GithubAppClient.listFailedRuleSuites")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				timePeriod: "hour" | "day" | "week",
+				page: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const params = new URLSearchParams({
+					rule_suite_result: "fail",
+					time_period: timePeriod,
+					per_page: String(PER_PAGE),
+					page: String(page),
+				})
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/rulesets/rule-suites?${params.toString()}`,
+				)
+				if (!isOk(response)) return yield* failure(response, "List rule suites", "repository")
+				const json = yield* parseJson(response, "List rule suites")
+				return yield* decodeRuleSuiteList(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected rule suites payload", cause }),
+					),
+				)
+			})
+
+			const getRuleSuite = Effect.fn("GithubAppClient.getRuleSuite")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				ruleSuiteId: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/rulesets/rule-suites/${ruleSuiteId}`,
+				)
+				if (!isOk(response)) return yield* failure(response, "Get rule suite", "repository")
+				const json = yield* parseJson(response, "Get rule suite")
+				return yield* decodeRuleSuiteDetail(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected rule suite payload", cause }),
 					),
 				)
 			})
@@ -2570,6 +2657,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							token,
 							`${url}?per_page=${PER_PAGE}&page=${page}`,
 						)
+						// A re-run or deleted job's check run is gone: it has no annotations, not a failure.
+						if (isGoneStatus(statusOf(response))) return [[], Option.none<number>()] as const
 						if (!isOk(response))
 							return yield* failure(response, "List check run annotations", "repository")
 						const checkRunAnnotationsJson = yield* parseJson(
@@ -2818,6 +2907,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			return {
 				mintInstallationToken,
+				canReadAdministration,
 				checkAccountAdmin,
 				listInstallationRepositories,
 				listBranches,
@@ -2826,6 +2916,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getRepositorySizeKib,
 				listPullRequests,
 				getPullRequest,
+				listFailedRuleSuites,
+				getRuleSuite,
 				listPullRequestFiles,
 				getPullRequestContext,
 				listReviewThreads,

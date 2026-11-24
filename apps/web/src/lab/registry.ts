@@ -78,10 +78,26 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ingest-rules",
+		title: "Ingest rules",
+		description:
+			"The ingestion tab's rule list with each rule's last 24 hours and suggested rules, a saved rule's Impact panel (drop, sampling, redact, idle) and a new rule's 24 hour estimate (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/audit-log",
 		title: "Audit log",
 		description:
 			"The settings audit log over fixtures: changes, data access, filters, an expanded entry, an unknown lookup, empty, failing and loading (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/grouping-rules",
+		title: "Error grouping rules",
+		description:
+			"Settings > Automation's error grouping rules editor: merge and frame rules, none yet, loading, a failed read, a refused save with a problem under each rule it names, and a member who cannot edit (`?state=populated|empty|loading|error|invalid|member`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -126,6 +142,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/incident-actions",
+		title: "Incident actions",
+		description:
+			"The incident page open, acknowledged, asking before a resolve by hand, resolved and locked for an analyst, and a rule's History tab with time to acknowledge (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/slos",
 		title: "SLOs",
 		description:
@@ -138,6 +162,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Escalation chains",
 		description:
 			"The Routing tab's escalation chains empty and populated, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/ingest-rule",
+		title: "Ingest rule editor",
+		description:
+			"The ingest rule editor building a parse rule over fixture logs: JSON with severity, grok on access logs, and several steps (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -477,6 +509,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/agent-evals",
+		title: "Agent evals",
+		description:
+			"The `/agent-sessions/evals` tab, the faithfulness evaluator's page (regressing, with eval errors) and a session's Scores group over a fixture week (?view=list|empty|detail|failing|session).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/mcp",
 		title: "MCP hub",
 		description:
@@ -540,6 +580,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/metric-exemplars",
+		title: "Metric exemplars",
+		description:
+			"The metric page for a latency histogram over one hour with a slow dependency at 0:38: exemplar dots on the p95 line, the Exemplars table, ?display=distribution for the bucket heatmap (click a cell to narrow the table); ?state=empty has no exemplars, ?state=failed fails both reads.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/service-map-runtimes",
 		title: "Service map runtimes",
 		description:
@@ -591,7 +639,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/product-analytics",
 		title: "Product analytics",
 		description:
-			"The Events, Funnels and Paths tabs over fixture events: populated, empty, loading, a new funnel's suggestions, a failed funnel, bars and drop-off views, and a paths anchor. Pick one with ?state=.",
+			"The Events, Funnels and Paths tabs over fixture events: populated, empty, loading, a new funnel's suggestions, a failed funnel, a breakdown by a user property, bars and drop-off views, and a paths anchor. Pick one with ?state=.",
 		kind: "lab",
 		session: "none",
 	},
@@ -607,7 +655,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/error-issue",
 		title: "Error issue",
 		description:
-			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. As a member or an analyst, who reads it and gets no triage control (?role=member|analyst&tab=overview|occurrences|activity).",
+			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. The Grouping tab shows every fingerprint rule and source, a pinned fingerprint, a long frame list and similar issues (?grouping=populated|long|empty|loading|error). The stack trace in each source map state (?stack=raw|resolved|partial|missing_map). As a member or an analyst, who reads it and gets no triage control (?role=member|analyst&tab=overview|occurrences|activity|grouping).",
 		kind: "lab",
 		session: "none",
 	},

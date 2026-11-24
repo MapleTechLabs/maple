@@ -5,6 +5,7 @@ import {
 	isDatasourceDefinition,
 } from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
+import { PERSON_PROPERTY_VALUE_SQL } from "@maple/domain/tinybird/product-event-attributes"
 import { Array as Arr, Option, Order, Record as Rec, String as Str } from "effect"
 
 // Live introspection of the `defineDatasource` exports in
@@ -48,6 +49,12 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	trace_index: [
 		"Where each trace's spans live in `traces`: one row per (TraceId, ServiceName, 5-minute `Bucket`), with `MinTimestamp`/`MaxTimestamp` of the spans in that bucket. No span data; use it to locate traces, then read `traces`.",
 		"A trace's time range: `SELECT min(MinTimestamp), max(MaxTimestamp) FROM trace_index WHERE OrgId = … AND TraceId = … GROUP BY TraceId`.",
+	],
+	ai_evaluations: [
+		"LLM evaluation scores, one row per score: the OTel `gen_ai.evaluation.result` event from log records and span events. `TraceId`/`SpanId` are the span the score GRADES; join to `ai_trace_index` on them for the model and agent. For the session, use the score's `SessionId` when `Scope` is 'session'; otherwise resolve `max(SessionId) GROUP BY TraceId` over `ai_trace_index`, because the graded span's row can have an empty `SessionId`.",
+		"`Name` is the evaluator (`gen_ai.evaluation.name`). `ScoreValue` is only meaningful where `HasScore = 1`; `Verdict` is 'pass'/'fail' read from `ScoreLabel`, '' when the label says neither. Pass rate = `countIf(Verdict = 'pass') / countIf(Verdict != '')`.",
+		"`Scope` is 'span', 'trace' or 'session' (session scores carry `SessionId`); `Source` is who wrote it ('otel' unless the emitter set `maple_ai.evaluation.source`); `ErrorType` non-empty means the evaluation itself failed, not the graded call.",
+		"Sorting key: `(OrgId, Name, Timestamp)` with a bloom index on `TraceId`; 90-day TTL, longer than `traces`, so an old score's trace may be gone.",
 	],
 	ai_crawler_requests: [
 		"Server spans whose user agent names an AI crawler (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-SearchBot, Claude-User, PerplexityBot, Meta-ExternalAgent, Bytespider, CCBot, Amazonbot, ...), with `Crawler` (display name), `Host`, `Path` (no query string) and `HttpStatus` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['user_agent.original']`, which times out past about two days.",
@@ -139,6 +146,12 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	metrics_gauge: ["Point-in-time numeric values. Aggregate with avg/min/max/last over time buckets."],
 	product_events: [
 		"Event properties live in `Attributes` (Map(String, String)), read with `Attributes['plan']`. There is no `Properties` column.",
+		"Keys starting `$set.`, `$set_once.`, `$unset.` (and `$group_` of each) are person and group property writes, not event properties: read the result from `person_properties`.",
+	],
+	person_properties: [
+		"User (`Kind = 'user'`, `Id` = UserId) and group (`Kind = 'group'`, `Id` = GroupId) properties, from `identify()` traits and property writes on events and spans. One logical row per (`Kind`, `Id`, `Key`) spread over unmerged parts: always GROUP BY `Kind, Id, Key`.",
+		`A key's current value: \`${Str.replace(/\s+/g, " ")(PERSON_PROPERTY_VALUE_SQL)}\`; NULL means unset. \`SetValue\` / \`OnceValue\` are aggregate states: never \`SELECT *\`.`,
+		"Join it to `product_events` on `UserId = Id` (or `GroupId = Id` for groups), pinning `Kind` and `Key` first: sorting key `(OrgId, Kind, Key, Id)`. Values are current, not as of the event.",
 	],
 	metrics_histogram: [
 		"Pre-aggregated histograms (bucket counts + sum + count). Reconstruct percentiles with `quantilesExact`/`quantileBFloat16` if needed.",
@@ -238,6 +251,10 @@ const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
 	["exceptions", ["error_events"]],
 	["sessions", ["session_replays"]],
 	["events", ["product_events"]],
+	["persons", ["person_properties"]],
+	["person", ["person_properties"]],
+	["people", ["person_properties"]],
+	["groups", ["person_properties"]],
 ])
 
 /** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */

@@ -12,6 +12,7 @@ import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
+import * as GroupingRules from "./grouping-rules"
 
 export const ConfidenceChoice = Schema.Literals(["any", "low", "medium", "high"])
 export type ConfidenceChoice = typeof ConfidenceChoice.Type
@@ -57,6 +58,8 @@ export const Model = Schema.Struct({
 	),
 	isEvaluating: Schema.Boolean,
 	attempts: AttemptsData.schema,
+	/** The org's error grouping rules editor. */
+	groupingRules: GroupingRules.Model,
 })
 export type Model = typeof Model.Type
 
@@ -83,5 +86,6 @@ export const Message = defineMessageUnion({
 	ChangedConfidence: { value: Schema.String },
 	ClickedEvaluate: {},
 	CompletedEvaluate: { revision: Schema.Number, ...done(EscalationPolicyEvaluationDocument) },
+	GotGroupingRulesMessage: { message: GroupingRules.Message },
 })
 export type Message = typeof Message.Type

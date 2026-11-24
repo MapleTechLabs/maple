@@ -1,11 +1,13 @@
 import {
 	GithubInstallationSelection,
 	GithubSelectInstallationRequest,
+	GithubSetAuditCategoriesRequest,
 	GithubSetAuditLogRequest,
 	GithubSetCiTracesRequest,
 	GithubSetTrackedBranchRequest,
 	VcsRepositoryId,
 } from "@maple/domain/http"
+import { GithubAuditCategoryId } from "@maple/domain/github-audit"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
@@ -29,6 +31,13 @@ export const GithubCardModel = Schema.Struct({
 	auditLog: Schema.NullOr(Schema.Boolean),
 	auditLogServer: Schema.NullOr(Schema.Boolean),
 	isSavingAuditLog: Schema.Boolean,
+	/**
+	 * The audit categories switched here, until a status read with no save in flight replaces them:
+	 * each one's optimistic value and whether its write is in flight.
+	 */
+	auditCategories: Schema.Array(
+		Schema.Struct({ id: GithubAuditCategoryId, enabled: Schema.Boolean, isSaving: Schema.Boolean }),
+	),
 	/** Re-read every 3 s for 10 s after a branch change queues a backfill. */
 	isForcePolling: Schema.Boolean,
 	forcePollVersion: Schema.Number,
@@ -60,6 +69,7 @@ export const initGithubCard = (): GithubCardModel => ({
 	auditLog: null,
 	auditLogServer: null,
 	isSavingAuditLog: false,
+	auditCategories: [],
 	isForcePolling: false,
 	forcePollVersion: 0,
 	repoToDelete: null,
@@ -135,6 +145,24 @@ export const SetAuditLog = Command.define("SetGithubAuditLog", {
 			Effect.match({
 				onFailure: (error) => Message.CompletedAuditLog({ enabled, failure: failureOf(error) }),
 				onSuccess: () => Message.CompletedAuditLog({ enabled, failure: null }),
+			}),
+		),
+})
+
+export const SetAuditCategory = Command.define("SetGithubAuditCategory", {
+	args: { id: GithubAuditCategoryId, enabled: Schema.Boolean },
+	messages: [Message.CompletedAuditCategory],
+	execute: ({ id, enabled }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.integrations.githubSetAuditCategories({
+				payload: new GithubSetAuditCategoriesRequest({ categories: { [id]: enabled } }),
+			})
+		}).pipe(
+			Effect.match({
+				onFailure: (error) =>
+					Message.CompletedAuditCategory({ id, enabled, failure: failureOf(error) }),
+				onSuccess: () => Message.CompletedAuditCategory({ id, enabled, failure: null }),
 			}),
 		),
 })

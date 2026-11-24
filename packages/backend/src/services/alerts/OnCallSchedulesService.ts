@@ -5,8 +5,11 @@ import {
 	IsoDateTimeString,
 	MAX_ONCALL_FUTURE_OVERRIDES,
 	MAX_ONCALL_OVERRIDE_MS,
+	MAX_ONCALL_REPORTED_GAPS,
 	MAX_ONCALL_SCHEDULES_PER_ORG,
+	ONCALL_GAP_LOOKAHEAD_MS,
 	OnCallAtResponse,
+	OnCallGap,
 	OnCallNow,
 	OnCallOverrideDocument,
 	OnCallOverrideId as OnCallOverrideIdSchema,
@@ -14,13 +17,14 @@ import {
 	OnCallOverridesListResponse,
 	OnCallScheduleDocument,
 	OnCallScheduleId as OnCallScheduleIdSchema,
+	OnCallCalendarFeedExistsError,
 	OnCallScheduleInUseError,
 	OnCallScheduleNotFoundError,
 	OnCallSchedulesListResponse,
 	OnCallShiftDocument,
 	OnCallShiftsResponse,
 	type AlertMemberDirectoryNotConfiguredError,
-	type AlertMemberDirectoryUnavailableError,
+	AlertMemberDirectoryUnavailableError,
 	type EscalationChainId,
 	type OnCallLayers,
 	type OnCallOverride,
@@ -36,6 +40,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	EscalationChains,
+	AlertEscalationRuns,
 	OnCallOverrides,
 	OnCallSchedules,
 	type OnCallOverrideRow,
@@ -45,11 +50,27 @@ import type { MapleDb } from "@maple/db/client"
 import {
 	MAX_ONCALL_RENDER_RANGE_MS,
 	ONCALL_LOOKAROUND_MS,
+	absentParticipants,
 	onCallAt as resolveOnCallAt,
 	renderOnCall,
+	uncoveredIntervals,
+	type OnCallOptions,
 	type OnCallShift,
 } from "@maple/alerting-core"
-import { Array as Arr, Context, DateTime, Effect, Layer, Schema } from "effect"
+import {
+	Array as Arr,
+	Cache,
+	Context,
+	DateTime,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	String as Str,
+} from "effect"
+import { createHash, randomBytes } from "node:crypto"
+import { renderOnCallCalendar } from "@maple/alerting-core/oncall-ics"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -123,9 +144,72 @@ export interface OnCallSchedulesServiceApi {
 	) => Effect.Effect<OnCallShiftsResponse, ScheduleReadError | AlertValidationError>
 	/** Display names by user id; empty when the member directory cannot be read. */
 	readonly memberNames: (orgId: OrgId) => Effect.Effect<ReadonlyMap<string, string>>
+	/**
+	 * Turns the calendar feed on. The token is returned once and never stored. A feed that already
+	 * has a link keeps it unless `replace` is set: replacing ends the link calendars subscribe to.
+	 */
+	readonly createCalendarFeed: (
+		orgId: OrgId,
+		permissions: Policy.Grants,
+		scheduleId: OnCallScheduleId,
+		options: { readonly replace: boolean },
+	) => Effect.Effect<
+		{ readonly token: string; readonly createdAt: string },
+		AlertForbiddenError | ScheduleReadError | OnCallCalendarFeedExistsError
+	>
+	readonly deleteCalendarFeed: (
+		orgId: OrgId,
+		permissions: Policy.Grants,
+		scheduleId: OnCallScheduleId,
+	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError>
+	/** The feed a token opens, as an iCalendar body; none when no schedule holds the token. */
+	readonly calendarFeed: (
+		token: string,
+	) => Effect.Effect<Option.Option<string>, AlertPersistenceError | AlertMemberDirectoryUnavailableError>
 }
 
 const validationError = (message: string) => new AlertValidationError({ message, details: [message] })
+
+/** The org's members as one directory read gave them; `ids` null when it could not say who is in. */
+interface MemberDirectory {
+	readonly ids: MemberIds
+	readonly names: ReadonlyMap<string, string>
+	/** The directory is configured but did not answer, as opposed to a deployment without one. */
+	readonly isUnavailable: boolean
+}
+const NO_DIRECTORY = { ids: null, names: new Map<string, string>() } as const
+
+const scheduleNotFound = (scheduleId: OnCallScheduleId) =>
+	new OnCallScheduleNotFoundError({ message: "On-call schedule not found", scheduleId })
+
+const DAY_MS = 24 * 60 * 60_000
+/** What a calendar feed shows: a week back, so a past shift does not vanish, and two months on. */
+export const ONCALL_CALENDAR_PAST_MS = 7 * DAY_MS
+export const ONCALL_CALENDAR_AHEAD_MS = 60 * DAY_MS
+/**
+ * Shifts are rendered this far past each end of the feed's window, so one that straddles an end
+ * keeps its real start and end (and so its event id) instead of the window's. It is the longest a
+ * rotation shift can be; an override can be longer, and the range grows to hold the ones shown.
+ */
+const ONCALL_CALENDAR_MARGIN_MS = 14 * DAY_MS
+
+/** A shift's event id: stable across fetches, and no schedule or user id can be read off it. */
+const calendarShiftUid = (scheduleId: string, shift: { readonly userId: string; readonly startMs: number }) =>
+	Str.slice(
+		0,
+		32,
+	)(createHash("sha256").update(`${scheduleId}\n${shift.startMs}\n${shift.userId}`, "utf8").digest("hex"))
+
+export const CALENDAR_FEED_TOKEN_PREFIX = "mcal_"
+/** 32 random bytes: the link is the only credential, so it must not be guessable. */
+const newCalendarFeedToken = (): string =>
+	`${CALENDAR_FEED_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`
+/** Only the hash is stored, so a database read does not hand out working links. */
+const calendarFeedTokenHash = (token: string): string =>
+	createHash("sha256").update(token, "utf8").digest("hex")
+/** A cheap shape check before any database read. */
+const isCalendarFeedToken = (token: string): boolean =>
+	Str.startsWith(CALENDAR_FEED_TOKEN_PREFIX)(token) && token.length <= 128
 
 const decodeScheduleIdSync = Schema.decodeUnknownSync(OnCallScheduleIdSchema)
 const decodeOverrideIdSync = Schema.decodeUnknownSync(OnCallOverrideIdSchema)
@@ -192,13 +276,30 @@ const toOverrideDocument = (row: OnCallOverrideRow) =>
 		createdAt: iso(row.createdAt),
 	})
 
+/** The org's member ids; null when the directory is not configured or could not be read. */
+type MemberIds = ReadonlySet<string> | null
+
+/** Everyone counts as present without a directory: nobody is skipped on a guess. */
+const presenceOf = (members: MemberIds): OnCallOptions =>
+	members === null ? {} : { isPresent: (userId) => members.has(userId) }
+
 const toDocument = (
 	row: OnCallScheduleRow,
 	overrides: ReadonlyArray<OnCallOverrideRow>,
 	nowMs: number,
 	chainIds: ReadonlyArray<EscalationChainId>,
+	members: MemberIds,
 ) => {
-	const now = resolveOnCallAt(configOf(row), Arr.map(overrides, toOverride), nowMs)
+	const config = configOf(row)
+	const shiftOverrides = Arr.map(overrides, toOverride)
+	const presence = presenceOf(members)
+	const now = resolveOnCallAt(config, shiftOverrides, nowMs, presence)
+	const horizonMs = nowMs + ONCALL_GAP_LOOKAHEAD_MS
+	const gaps = uncoveredIntervals(
+		renderOnCall(config, shiftOverrides, nowMs, horizonMs, presence).final,
+		nowMs,
+		horizonMs,
+	)
 	return new OnCallScheduleDocument({
 		id: row.id,
 		name: row.name,
@@ -209,6 +310,12 @@ const toDocument = (
 			now === null
 				? null
 				: new OnCallNow({ userId: now.userId, startsAt: iso(now.startMs), endsAt: iso(now.endMs) }),
+		calendarFeedCreatedAt: row.calendarFeedCreatedAt === null ? null : iso(row.calendarFeedCreatedAt),
+		coverageGaps: Arr.map(
+			Arr.take(gaps, MAX_ONCALL_REPORTED_GAPS),
+			(gap) => new OnCallGap({ startsAt: iso(gap.startMs), endsAt: iso(gap.endMs) }),
+		),
+		departedUserIds: members === null ? [] : absentParticipants(config, (userId) => members.has(userId)),
 		chainIds,
 		createdAt: iso(row.createdAt),
 		updatedAt: iso(row.updatedAt),
@@ -255,6 +362,37 @@ export class OnCallSchedulesService extends Context.Service<
 
 		const annotate = (scheduleId: OnCallScheduleId) =>
 			Effect.annotateCurrentSpan("maple.oncall.schedule_id", scheduleId)
+
+		// Every schedule read asks who is still a member; a minute of staleness spares the directory.
+		// An empty list is a directory that could not answer, not an org everyone left.
+		const directoryByOrg = yield* Cache.make({
+			capacity: 512,
+			timeToLive: Duration.minutes(1),
+			lookup: (orgId: OrgId) =>
+				orgMembers.listMembers(orgId).pipe(
+					Effect.map((members): MemberDirectory => ({
+						ids:
+							members.length === 0
+								? null
+								: new Set(Arr.map(members, (member) => member.userId)),
+						// Names only: an email is never a display name.
+						names: new Map(
+							Arr.flatMap(members, (m) =>
+								m.name === null ? [] : [[m.userId, m.name] as const],
+							),
+						),
+						isUnavailable: false,
+					})),
+					Effect.catchTags({
+						"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () =>
+							Effect.succeed<MemberDirectory>({ ...NO_DIRECTORY, isUnavailable: false }),
+						"@maple/http/errors/AlertMemberDirectoryUnavailableError": () =>
+							Effect.succeed<MemberDirectory>({ ...NO_DIRECTORY, isUnavailable: true }),
+					}),
+				),
+		})
+		const directoryOf = (orgId: OrgId) => Cache.get(directoryByOrg, orgId)
+		const memberIdsOf = (orgId: OrgId) => Effect.map(directoryOf(orgId), (directory) => directory.ids)
 
 		const findRow = (db: MapleDb, orgId: OrgId, scheduleId: OnCallScheduleId) =>
 			db
@@ -305,6 +443,7 @@ export class OnCallSchedulesService extends Context.Service<
 
 		const list = Effect.fn("OnCallSchedulesService.list")(function* (orgId: OrgId) {
 			const nowMs = yield* runtime.now
+			const members = yield* memberIdsOf(orgId)
 			const [from, to] = nowWindow(nowMs)
 			const [rows, nearby, active, chains] = yield* dbExecute((db) =>
 				Effect.all(
@@ -339,12 +478,19 @@ export class OnCallSchedulesService extends Context.Service<
 						Arr.filter(overrides, (o) => o.scheduleId === row.id),
 						nowMs,
 						chains.get(row.id) ?? [],
+						members,
 					),
 				),
 			})
 		})
 
-		const loadDocument = (db: MapleDb, orgId: OrgId, scheduleId: OnCallScheduleId, nowMs: number) => {
+		const loadDocument = (
+			db: MapleDb,
+			orgId: OrgId,
+			scheduleId: OnCallScheduleId,
+			nowMs: number,
+			members: MemberIds,
+		) => {
 			const [from, to] = nowWindow(nowMs)
 			return Effect.all([
 				findRow(db, orgId, scheduleId),
@@ -352,7 +498,7 @@ export class OnCallSchedulesService extends Context.Service<
 				chainIdsBySchedule(db, orgId),
 			]).pipe(
 				Effect.map(([row, overrides, chains]) =>
-					toDocument(row, overrides, nowMs, chains.get(row.id) ?? []),
+					toDocument(row, overrides, nowMs, chains.get(row.id) ?? [], members),
 				),
 			)
 		}
@@ -363,7 +509,8 @@ export class OnCallSchedulesService extends Context.Service<
 		) {
 			yield* annotate(scheduleId)
 			const nowMs = yield* runtime.now
-			return yield* dbExecute((db) => loadDocument(db, orgId, scheduleId, nowMs))
+			const members = yield* memberIdsOf(orgId)
+			return yield* dbExecute((db) => loadDocument(db, orgId, scheduleId, nowMs, members))
 		})
 
 		const create = Effect.fn("OnCallSchedulesService.create")(function* (
@@ -415,7 +562,8 @@ export class OnCallSchedulesService extends Context.Service<
 			if (row === undefined) {
 				return yield* new AlertPersistenceError({ message: "On-call schedule was not created" })
 			}
-			return toDocument(row, [], nowMs, [])
+			// Every participant was just checked against the directory, so none has left.
+			return toDocument(row, [], nowMs, [], null)
 		})
 
 		const update = Effect.fn("OnCallSchedulesService.update")(function* (
@@ -427,8 +575,14 @@ export class OnCallSchedulesService extends Context.Service<
 		) {
 			yield* annotate(scheduleId)
 			yield* requireManage(permissions)
-			if (request.layers !== undefined) yield* requireMembers(orgId, participantsOf(request.layers))
+			if (request.layers !== undefined) {
+				yield* requireMembers(orgId, participantsOf(request.layers))
+				// The check above read the directory fresh; the answer must not come from an older read
+				// that predates someone it just accepted.
+				yield* Cache.invalidate(directoryByOrg, orgId)
+			}
 			const nowMs = yield* runtime.now
+			const members = yield* memberIdsOf(orgId)
 			return yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
@@ -451,7 +605,7 @@ export class OnCallSchedulesService extends Context.Service<
 								})
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(scheduleId)]),
 						)
-						return yield* loadDocument(db, orgId, scheduleId, nowMs)
+						return yield* loadDocument(db, orgId, scheduleId, nowMs, members)
 					}),
 				),
 			)
@@ -490,6 +644,49 @@ export class OnCallSchedulesService extends Context.Service<
 								scheduleId,
 								chainIds: Arr.map(chains, (chain) => chain.id),
 								chainNames: Arr.map(chains, (chain) => chain.name),
+							})
+						}
+						// A running escalation pages from its own snapshot, so a chain edited since can still
+						// name the schedule until the run ends.
+						const naming = yield* db.run(
+							PG.from(AlertEscalationRuns)
+								.select(
+									"chainId",
+									"chainName",
+									"stepsJson",
+									"stepIndex",
+									"passIndex",
+									"repeatCount",
+								)
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.status.in_("active", "acknowledged"),
+									PG.sql.cond`${$.stepsJson} @> ${encodeJson([
+										{ targets: [{ type: "schedule", scheduleId }] },
+									])}::jsonb`,
+								]),
+						)
+						// Only a step the run can still reach counts: its current one, a later one, or any
+						// of them while a repeat is left.
+						const runs = Arr.filter(naming, (run) =>
+							Arr.some(
+								run.stepsJson,
+								(step, index) =>
+									(index >= run.stepIndex || run.passIndex < run.repeatCount) &&
+									Arr.some(
+										step.targets,
+										(target) =>
+											target.type === "schedule" && target.scheduleId === scheduleId,
+									),
+							),
+						)
+						if (runs.length > 0) {
+							const names = Arr.dedupe(Arr.map(runs, (run) => run.chainName))
+							return yield* new OnCallScheduleInUseError({
+								message: `On-call schedule is still paged by an escalation on an open incident: ${Arr.join(names, ", ")}`,
+								scheduleId,
+								chainIds: Arr.dedupe(Arr.map(runs, (run) => run.chainId)),
+								chainNames: names,
 							})
 						}
 						// Overrides go with it through the foreign key's cascade.
@@ -628,7 +825,13 @@ export class OnCallSchedulesService extends Context.Service<
 					overlappingOverrides(db, orgId, from, to, scheduleId),
 				]),
 			)
-			const shift = resolveOnCallAt(configOf(row), Arr.map(overrides, toOverride), atMs)
+			const members = yield* memberIdsOf(orgId)
+			const shift = resolveOnCallAt(
+				configOf(row),
+				Arr.map(overrides, toOverride),
+				atMs,
+				presenceOf(members),
+			)
 			return new OnCallAtResponse({
 				at: iso(atMs),
 				shift: shift === null ? null : toShiftDocument(shift),
@@ -650,13 +853,160 @@ export class OnCallSchedulesService extends Context.Service<
 					overlappingOverrides(db, orgId, fromMs, endMs, scheduleId),
 				]),
 			)
-			const render = renderOnCall(configOf(row), Arr.map(overrides, toOverride), fromMs, endMs)
+			const members = yield* memberIdsOf(orgId)
+			const render = renderOnCall(
+				configOf(row),
+				Arr.map(overrides, toOverride),
+				fromMs,
+				endMs,
+				presenceOf(members),
+			)
 			return new OnCallShiftsResponse({
 				from: iso(fromMs),
 				to: iso(endMs),
 				layers: Arr.map(render.layers, (layer) => Arr.map(layer, toShiftDocument)),
 				final: Arr.map(render.final, toShiftDocument),
 			})
+		})
+
+		/** Turns the feed on, or with `replace` swaps its link: the old one stops working at once. */
+		const createCalendarFeed = Effect.fn("OnCallSchedulesService.createCalendarFeed")(function* (
+			orgId: OrgId,
+			permissions: Policy.Grants,
+			scheduleId: OnCallScheduleId,
+			options: { readonly replace: boolean },
+		) {
+			yield* annotate(scheduleId)
+			yield* Effect.annotateCurrentSpan("maple.oncall.calendar_feed_replace", options.replace)
+			yield* requireManage(permissions)
+			const nowMs = yield* runtime.now
+			const token = newCalendarFeedToken()
+			const updated = yield* dbExecute((db) =>
+				db.run(
+					PG.update(OnCallSchedules)
+						.set({
+							calendarFeedTokenHash: calendarFeedTokenHash(token),
+							calendarFeedCreatedAt: nowMs,
+						})
+						// Decided in the write itself, so two people creating at once cannot both win.
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.id.eq(scheduleId),
+							...(options.replace ? [] : [$.calendarFeedTokenHash.isNull()]),
+						])
+						.returning("id"),
+				),
+			)
+			if (updated.length === 0) {
+				if (options.replace) return yield* scheduleNotFound(scheduleId)
+				// Nothing changed: the schedule is gone, or its feed already has a link.
+				const existing = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OnCallSchedules)
+							.select("id")
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(scheduleId)])
+							.limit(1),
+					),
+				)
+				if (existing.length === 0) return yield* scheduleNotFound(scheduleId)
+				return yield* new OnCallCalendarFeedExistsError({
+					message: "The calendar feed already has a link. Replace it to make a new one.",
+					scheduleId,
+				})
+			}
+			return { token, createdAt: iso(nowMs) }
+		})
+
+		const deleteCalendarFeed = Effect.fn("OnCallSchedulesService.deleteCalendarFeed")(function* (
+			orgId: OrgId,
+			permissions: Policy.Grants,
+			scheduleId: OnCallScheduleId,
+		) {
+			yield* annotate(scheduleId)
+			yield* requireManage(permissions)
+			const updated = yield* dbExecute((db) =>
+				db.run(
+					PG.update(OnCallSchedules)
+						.set({ calendarFeedTokenHash: null, calendarFeedCreatedAt: null })
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(scheduleId)])
+						.returning("id"),
+				),
+			)
+			if (updated.length === 0) return yield* scheduleNotFound(scheduleId)
+		})
+
+		/**
+		 * The feed a token opens, as an iCalendar body; none for a token no schedule holds. The token
+		 * is the only credential: the request carries no org, so the row names it.
+		 */
+		const calendarFeed = Effect.fn("OnCallSchedulesService.calendarFeed")(function* (token: string) {
+			if (!isCalendarFeedToken(token)) return Option.none<string>()
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OnCallSchedules)
+						.select()
+						.where(($) => [$.calendarFeedTokenHash.eq(calendarFeedTokenHash(token))])
+						.limit(1)
+						.crossTenant(),
+				),
+			)
+			const schedule = rows[0]
+			if (schedule === undefined) return Option.none<string>()
+			yield* Effect.annotateCurrentSpan({ orgId: schedule.orgId })
+			yield* annotate(schedule.id)
+			// A directory that is down gives no names and no say on who left: the caller is told to
+			// come back, so a calendar app keeps its last good copy instead of a feed of nobody.
+			const directory = yield* directoryOf(schedule.orgId)
+			if (directory.isUnavailable) {
+				return yield* new AlertMemberDirectoryUnavailableError({
+					message: "The member directory did not answer",
+					cause: "member directory unavailable",
+				})
+			}
+			const nowMs = yield* runtime.now
+			// Whole UTC days, so the window's own ends move once a day and not on every fetch.
+			const fromMs = Math.floor((nowMs - ONCALL_CALENDAR_PAST_MS) / DAY_MS) * DAY_MS
+			const toMs = Math.ceil((nowMs + ONCALL_CALENDAR_AHEAD_MS) / DAY_MS) * DAY_MS
+			// Every override that could decide who holds a moment of an override the window shows.
+			const overrides = yield* dbExecute((db) =>
+				overlappingOverrides(
+					db,
+					schedule.orgId,
+					fromMs - MAX_ONCALL_OVERRIDE_MS,
+					toMs + MAX_ONCALL_OVERRIDE_MS,
+					schedule.id,
+				),
+			)
+			const shown = Arr.filter(overrides, (row) => row.endsAt > fromMs && row.startsAt < toMs)
+			const renderFromMs = Math.max(
+				fromMs - MAX_ONCALL_OVERRIDE_MS,
+				Math.min(fromMs - ONCALL_CALENDAR_MARGIN_MS, ...Arr.map(shown, (row) => row.startsAt)),
+			)
+			const renderToMs = Math.min(
+				toMs + MAX_ONCALL_OVERRIDE_MS,
+				Math.max(toMs + ONCALL_CALENDAR_MARGIN_MS, ...Arr.map(shown, (row) => row.endsAt)),
+			)
+			const render = renderOnCall(
+				configOf(schedule),
+				Arr.map(overrides, toOverride),
+				renderFromMs,
+				renderToMs,
+				{ ...presenceOf(directory.ids), rangeLimitMs: renderToMs - renderFromMs },
+			)
+			return Option.some(
+				renderOnCallCalendar({
+					scheduleName: schedule.name,
+					// One event per handoff, never merged: a rotation of one person is still a
+					// shift a week, each with a start that no later fetch moves.
+					shifts: Arr.filter(
+						render.effective,
+						(shift) => shift.endMs > fromMs && shift.startMs < toMs,
+					),
+					nameOf: (userId) => directory.names.get(userId) ?? null,
+					uidOf: (shift) => calendarShiftUid(schedule.id, shift),
+					nowMs,
+				}),
+			)
 		})
 
 		const memberNames = Effect.fn("OnCallSchedulesService.memberNames")(function* (orgId: OrgId) {
@@ -669,6 +1019,9 @@ export class OnCallSchedulesService extends Context.Service<
 
 		return {
 			memberNames,
+			createCalendarFeed,
+			deleteCalendarFeed,
+			calendarFeed,
 			list,
 			get,
 			create,

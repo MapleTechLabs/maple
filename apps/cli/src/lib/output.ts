@@ -95,6 +95,8 @@ export const formatDuration = (ms: number): string => {
 export const formatDecimal = (n: number): string => {
 	if (Number.isInteger(n)) return integerFormat.format(n)
 	const abs = Math.abs(n)
+	// Four decimals would round these to 0; a nonzero value must not read as zero.
+	if (abs < 0.00005) return n.toExponential(2)
 	const digits = abs >= 100 ? 1 : abs >= 1 ? 2 : 4
 	return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(n)
 }
@@ -181,8 +183,13 @@ export interface Column<R> {
 	readonly maxWidth?: number
 }
 
+/** One line with no control characters: telemetry values must not move the cursor or restyle the terminal. */
+const printable = (s: string): string =>
+	// oxlint-disable-next-line no-control-regex -- matching control characters is the point
+	Str.replace(/[\u0000-\u001f\u007f-\u009f]/g, "")(Str.replace(/\s*\n\s*/g, " ")(s))
+
 const truncate = (s: string, max: number | undefined): string => {
-	const flat = Str.replace(/\s*\n\s*/g, " ")(s)
+	const flat = printable(s)
 	return max !== undefined && flat.length > max ? `${Str.slice(0, Math.max(1, max - 1))(flat)}…` : flat
 }
 
@@ -204,7 +211,7 @@ export const renderTable = <R>(columns: ReadonlyArray<Column<R>>, rows: Readonly
 export const renderFields = (fields: ReadonlyArray<readonly [string, string]>): string => {
 	const width = Math.max(0, ...Arr.map(fields, ([k]) => k.length))
 	return Arr.join(
-		Arr.map(fields, ([k, v]) => `${dim(Str.padEnd(width)(k))}  ${v}`),
+		Arr.map(fields, ([k, v]) => `${dim(Str.padEnd(width)(printable(k)))}  ${printable(v)}`),
 		"\n",
 	)
 }

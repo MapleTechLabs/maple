@@ -1,3 +1,4 @@
+import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import type { Effect, Option, Stream } from "effect"
 import type {
 	BranchUpsertInput,
@@ -189,14 +190,37 @@ export interface VcsProviderClient {
 	 * The repository's most recently updated pull requests, newest first,
 	 * normalized. Bounded to `limit` and deliberately NOT paginated: this feeds a
 	 * picker, and the PR that fixes a live issue is recent by construction.
-	 * With `head` (`owner:branch`), only the open pull requests from that branch.
+	 * With `head` (`owner:branch`), only the pull requests from that branch: the open ones, or
+	 * every state with `state: "all"`.
 	 */
 	readonly fetchPullRequests: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		opts: { readonly limit: number; readonly head?: string },
+		opts: { readonly limit: number; readonly head?: string; readonly state?: "open" | "all" },
 	) => Effect.Effect<
 		ReadonlyArray<PullRequestSummary>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Pushes the repository's rulesets refused after `sinceMs`, as audit events, oldest first.
+	 * Reads at most a few pages, newest first: `truncated` says older refusals were left unread.
+	 * `newestMs` is the newest refusal read, the cursor's next value.
+	 */
+	readonly fetchRefusedPushes: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef & { readonly fullName: string },
+		opts: { readonly sinceMs: number; readonly nowMs: number },
+	) => Effect.Effect<
+		{
+			readonly events: ReadonlyArray<AuditTrailEvent>
+			readonly newestMs: number | undefined
+			readonly truncated: boolean
+		},
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError
@@ -600,6 +624,14 @@ export interface VcsProviderClient {
 		jobId: string,
 	) => Stream.Stream<
 		string,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/** Whether the installation has granted the provider access to rulesets' rule insights. */
+	readonly canReadRuleSuites: (
+		installation: VcsInstallation,
+	) => Effect.Effect<
+		boolean,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 

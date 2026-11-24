@@ -23,7 +23,7 @@ import { Decision, DecisionModel, LanguageModel, Prompt, Tool, Toolkit } from "e
 import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import { PR_REVIEW_MODELS } from "@maple/domain/http"
+import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { FindingEmbedder } from "@maple/backend/services/pr-review/FindingEmbedder"
 import {
 	DEFAULT_DECISION_MODEL,
@@ -35,6 +35,7 @@ import {
 	loadLlmSettings,
 	resolveDecisionModel,
 	resolveReviewModel,
+	reviewReasoningEffort,
 	resolveSecurityAuditModel,
 	securityAuditModelId,
 	resolveSecurityAuditDiscoveryFallback,
@@ -323,6 +324,58 @@ describe("prompt cache prefix under the run-status line", () => {
 			}),
 	)
 
+	it.live.each(["openai/gpt-6.1-sol", "anthropic/claude-sonnet-5.5"])(
+		"%s: a run's first call reads the instructions another run stored",
+		(model) =>
+			Effect.gen(function* () {
+				const send = (prompt: Prompt.RawInput) =>
+					captureRequest(
+						{ ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: model },
+						tags,
+						resolveReviewModel,
+						false,
+						prompt,
+					)
+				const other: Prompt.RawInput = [
+					...Arr.take(REVIEW_TASK, 1),
+					{ role: "user", content: "Review pull request #8." },
+					runStatus(1),
+				]
+				const [first, second] = yield* Effect.all([send(FIRST_CALL), send(other)])
+				const firstBreakpoint = (body: Record<string, unknown>) => {
+					const messages = wireMessages(body)
+					return Option.map(
+						Arr.findFirstIndex(messages, (message) => message.breakpoint),
+						(index) => readable(Arr.take(messages, index + 1)),
+					)
+				}
+
+				expect(Option.getOrThrow(firstBreakpoint(first.body))).toEqual([
+					{ role: "system", text: "You review one pull request." },
+				])
+				expect(firstBreakpoint(second.body)).toEqual(firstBreakpoint(first.body))
+			}),
+	)
+
+	it.live("an attended call keeps the rolling breakpoint and marks the instructions too", () =>
+		Effect.gen(function* () {
+			// Attended chat has no run-status line, so the root breakpoint stays on the last block.
+			const captured = yield* captureRequest(
+				{ ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: "openai/gpt-6.1-sol" },
+				tags,
+				resolveReviewModel,
+				false,
+				REVIEW_TASK,
+			)
+
+			expect(captured.body.cache_control).toEqual({ type: "ephemeral" })
+			expect(Arr.map(wireMessages(captured.body), (message) => message.breakpoint)).toEqual([
+				true,
+				false,
+			])
+		}),
+	)
+
 	it.live("leaves a model that caches any repeated prefix with the messages it was given", () =>
 		Effect.gen(function* () {
 			const [first, second] = yield* consecutiveCalls(DEFAULT_REVIEW_MODEL)
@@ -390,6 +443,29 @@ describe("reasoning effort", () => {
 			expect(captured.body).toMatchObject({ reasoning: { effort: "high" } })
 		}),
 	)
+
+	it.live("sends each review model its own effort on the review pass, and none for a reply", () =>
+		Effect.gen(function* () {
+			const reviewPass = (chosen: Option.Option<PrReviewModel>) =>
+				captureRequest(openRouterEnv, tags, (env, callTags) =>
+					resolveReviewModel(env, callTags, chosen, true),
+				)
+			// The flash default needs the thinking; a frontier pick is slow and costly at high.
+			const flash = yield* reviewPass(Option.none())
+			expect(flash.body).toMatchObject({ reasoning: { effort: "high" } })
+			const sol = yield* reviewPass(Option.some("openai/gpt-6.2-sol"))
+			expect(sol.body).toMatchObject({ reasoning: { effort: "medium" } })
+			const sonnet = yield* reviewPass(Option.some("anthropic/claude-sonnet-5.5"))
+			expect(sonnet.body).toMatchObject({ reasoning: { effort: "medium" } })
+
+			const reply = yield* captureRequest(openRouterEnv, tags, resolveReviewModel)
+			expect(reply.body).not.toHaveProperty("reasoning")
+		}),
+	)
+
+	it("reasons at medium on a deployment override outside the pickable list", () => {
+		expect(reviewReasoningEffort("vendor/unlisted-model")).toBe("medium")
+	})
 
 	it.live("keeps reasoning off the Workers AI path", () =>
 		Effect.gen(function* () {

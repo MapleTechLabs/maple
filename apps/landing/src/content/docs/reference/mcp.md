@@ -64,6 +64,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `compare_periods`            | read   | Error rate, throughput and P95 across two periods, overall and per service, with regressions flagged  |
 | `explore_attributes`         | read   | Attribute keys and their values for filtering; `source=services` lists environments and commit SHAs   |
 | `list_metrics`               | read   | Custom metrics with type, unit, monotonicity and data volume                                          |
+| `get_metric_exemplars`       | read   | The traces behind a metric's highest values (exemplars), to jump from a spike to `inspect_trace`      |
 | `describe_warehouse_tables`  | read   | Tables and columns available to raw SQL, with sorting keys and notes on units and casing              |
 | `service_deployments`        | read   | Versions (commit SHAs) each service ran, with traffic, error rate and P95 per version                 |
 | `route_usage`                | read   | HTTP endpoints per service with request count, error rate, P95 and first and last seen, up to 90 days |
@@ -99,6 +100,9 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `transition_error_issue`           | write  | Move an issue to another workflow state                                                             |
 | `transition_error_issues`          | write  | Move up to 200 issues to one workflow state, with a note on each                                    |
 | `merge_error_issues`               | write  | Fold up to 50 duplicate issues into one; each merged issue is archived pointing at the kept one     |
+| `explain_error_grouping`           | read   | Why an issue's fingerprints are one issue: the rule, message and frames behind each                 |
+| `list_similar_error_issues`        | read   | Open issues of the same service and type with a similar message: merge candidates                   |
+| `detach_error_fingerprint`         | write  | Split a fingerprint the grouping key joined back out; it opens its own issue next time              |
 | `set_issue_severity`               | write  | Set or clear an issue's triage severity                                                             |
 | `comment_on_error_issue`           | write  | Add a comment or agent note to an issue's timeline                                                  |
 | `propose_fix`                      | write  | Record a proposed fix and move the issue to `in_review`                                             |
@@ -117,6 +121,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `manage_alert_destination`   | write  | Run a destination's test, rename, turn off or delete it, or add an email destination                                                         |
 | `list_alert_incidents`       | read   | Triggered alert incidents, open and resolved, with the last observed value                                                                   |
 | `acknowledge_alert_incident` | write  | Acknowledge an open incident, which pauses its reminders, or clear the acknowledgement                                                       |
+| `resolve_alert_incident`     | write  | Resolve an open incident by hand; its rule opens nothing for that group until it has been healthy once                                       |
 | `get_incident_timeline`      | read   | Trigger, notification and resolution times for one rule's incidents, or all rules'                                                           |
 | `list_alert_checks`          | read   | A rule's recent evaluations with observed value, threshold and sample count                                                                  |
 | `preview_alert_rule`         | read   | Replay a saved or draft rule over past data: each window's verdict and skip reason                                                           |

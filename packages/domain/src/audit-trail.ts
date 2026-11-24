@@ -31,7 +31,8 @@ export const AuditTrailOutcome = Schema.Literals(["success", "failure", "denied"
 export type AuditTrailOutcome = typeof AuditTrailOutcome.Type
 
 /**
- * What an audit log detection counts. `action` matches exactly. No actor or origin filter on
+ * What an audit log detection counts. `action` matches the action and its sub-actions
+ * (`push.forced` counts `push.forced.default_branch`). No actor or origin filter on
  * purpose: rule rows sync to every member's browser, so nothing in a rule may name a person.
  */
 export const AuditDetectionFilters = Schema.Struct({

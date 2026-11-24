@@ -146,6 +146,7 @@ const layer = (seen: Seen) =>
 								acknowledgedByUserId: null,
 								acknowledgedByName: null,
 								acknowledgedVia: null,
+								firstAcknowledgedAt: null,
 							},
 						],
 					}),

@@ -7,6 +7,7 @@ import {
 	isStatusPageTombstone,
 	StatusPageKeys,
 	statusPageAddress,
+	statusPageOrgKey,
 	utcDay,
 } from "@maple/domain/status-page"
 import { StatusPageId } from "@maple/primitives"
@@ -34,7 +35,8 @@ import {
 } from "./status-page-test-support"
 
 /** The edge key a page of the test org gets for a slug. */
-const route = (slug: string) => statusPageAddress(ORG, slug)
+const ORG_ADDRESS_KEY = await Effect.runPromise(statusPageOrgKey(ORG))
+const route = (slug: string) => `${ORG_ADDRESS_KEY}/${slug}`
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -559,7 +561,7 @@ describe("StatusPagePublisher.sweep edge cleanups", () => {
 				const { kv } = yield* store.contents
 				assert.strictEqual(kv.get(StatusPageKeys.slug(route("status"))), mine)
 				assert.strictEqual(
-					kv.get(StatusPageKeys.slug(statusPageAddress(OTHER_ORG, "status"))),
+					kv.get(StatusPageKeys.slug(yield* statusPageAddress(OTHER_ORG, "status"))),
 					theirs,
 				)
 			}),

@@ -66,6 +66,7 @@ const TARGETS: ReadonlyArray<Target> = [
 	raw("error_events"),
 	raw("error_events_by_time"),
 	raw("ai_trace_index"),
+	raw("ai_evaluations"),
 	raw("ai_crawler_requests"),
 	raw("scanner_requests"),
 	raw("ci_runs"),

@@ -1,4 +1,5 @@
 import { buildSessionSummary, buildSessionTurns, resolveWindow } from "@maple/agent-sessions"
+import { AI_EVALUATION_SESSION_MAX_TRACES, type AiSessionSpan } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -19,6 +20,7 @@ import {
 	DetectModels,
 	FetchFirstPage,
 	FetchMorePage,
+	FetchScores,
 	FetchTotals,
 	MIN_PAGE_SIZE,
 	PAGE_SIZE,
@@ -122,6 +124,38 @@ const nextPage = (model: Model): Commands => {
 	return appCursor === null ? [] : fetch("app", appCursor)
 }
 
+const TRACE_ID = /^[0-9a-f]{32}$/
+/** Judges often score after the run ends, so the scores read looks an hour past the last span. */
+const SCORES_TAIL_MS = 60 * 60 * 1000
+
+/** The scores read over the session's loaded traces (at most the read's cap), keyed by them. */
+const scoresStep = (
+	context: PageContext,
+	model: Model,
+	spans: ReadonlyArray<AiSessionSpan>,
+	startMs: number,
+	endMs: number,
+) => {
+	const traceIds = Arr.take(
+		Arr.filter(Arr.dedupe(Arr.map(spans, (span) => span.traceId)), (traceId) => TRACE_ID.test(traceId)),
+		AI_EVALUATION_SESSION_MAX_TRACES,
+	)
+	if (traceIds.length === 0 || !Number.isFinite(startMs) || !Number.isFinite(endMs)) return Option.none()
+	const window = {
+		startTime: formatWarehouseDateTime(startMs),
+		endTime: formatWarehouseDateTime(endMs + SCORES_TAIL_MS),
+	}
+	const key = requestKey(context.orgId, "getAiSessionEvaluations", {
+		sessionId: model.sessionId,
+		...window,
+		traceIds,
+	})
+	return Option.map(Keyed.request(model.scores, key, "Load"), (scores) => ({
+		scores,
+		command: FetchScores({ key, sessionId: model.sessionId, window, traceIds }),
+	}))
+}
+
 /**
  * What follows the spans in hand: the totals read (only for a session larger than a page), model
  * detection for the views that draw model marks, and the link's bounds stamped into the URL.
@@ -169,12 +203,22 @@ const follow =
 		const canStamp = model.search.t === undefined && (progress === undefined || totals !== undefined)
 		const startMs = totals?.startTime === undefined ? summary.startMs : toEpochMs(totals.startTime)
 		const endMs = totals?.endTime === undefined ? summary.endMs : toEpochMs(totals.endTime)
+		const isDrained = first.nextCursor === null || model.more.status !== "loading"
+		const scores =
+			context.hasLlmEvals === true && isDrained
+				? scoresStep(context, model, spans, startMs, endMs)
+				: Option.none()
 		return {
-			model: { ...withTotals, detections },
+			model: {
+				...withTotals,
+				detections,
+				...Option.match(scores, { onNone: () => ({}), onSome: (step) => ({ scores: step.scores }) }),
+			},
 			commands: [
 				...(result.commands ?? []),
 				...Option.match(totalsStep, { onNone: () => [], onSome: ({ command }) => [command] }),
 				...Option.match(detectKey, { onNone: () => [], onSome: (key) => [DetectModels({ key })] }),
+				...Option.match(scores, { onNone: () => [], onSome: ({ command }) => [command] }),
 			],
 			outMessage: canStamp
 				? PageOutMessage.RequestedNavigation({
@@ -222,6 +266,7 @@ export const init = (
 		firstPage: Keyed.idle(),
 		more: nothingLoaded(""),
 		totals: Keyed.idle(),
+		scores: Keyed.idle(),
 		detections: {},
 		tabs: Tabs.init({ idBase: TABS_ID_BASE, values: SESSION_VIEWS, selected: view }),
 		displayPopover: Popover.init("agent-session-display", { align: "end" }),
@@ -404,11 +449,16 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			const accepted = acceptMore(model, more)
 			return accepted === model ? { model } : drain(follow(context)({ model: accepted }))
 		},
+		CompletedFetchScores: ({ key, result }) => ({
+			model: { ...model, scores: Keyed.accept(model.scores, key, result) },
+		}),
 		CompletedFetchTotals: ({ key, result }) =>
 			follow(context)({ model: { ...model, totals: Keyed.accept(model.totals, key, result) } }),
 		CompletedDetectModels: ({ key, models }) => ({
 			model: { ...model, detections: { ...model.detections, [key]: models } },
 		}),
+		// The scores read again: an idle slot lets `follow` request it as on first load.
+		ClickedRetryScores: () => follow(context)({ model: { ...model, scores: Keyed.idle() } }),
 		ClickedRetryLoad: () =>
 			model.more.status === "failed"
 				? drain({ model: { ...model, more: { ...model.more, status: "loading" } } })

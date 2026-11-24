@@ -27,7 +27,7 @@ import {
 	AlertRuleStates,
 	EscalationChains,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, HashSet, Layer, Option, Result, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, HashSet, Layer, Option, Result, Schema } from "effect"
 import type { MapleDb } from "@maple/db/client"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -45,6 +45,11 @@ import {
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
 import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
+import {
+	DELETED_RULE_RESOLVE_INSERT_CHUNK,
+	deletedRuleResolveRows,
+	relinkedToAlertsList,
+} from "./delivery/deleted-rule-resolve"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 import {
 	DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE,
@@ -139,15 +144,67 @@ const findDefaultAnomalyRule = (db: MapleDb, orgId: OrgId) =>
 /**
  * Deletes a rule with its deliveries, incidents, states and claim. Run it inside a
  * transaction; the uptime monitor delete reuses it for the monitor's backing rule.
+ * Destinations an open incident paged are left one queued `resolve`, so no page outlives the rule.
  */
 export const deleteRuleRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId) =>
 	Effect.gen(function* () {
+		const nowMs = yield* Clock.currentTimeMillis
+		// Pages that never left go first. One the dispatcher claims meanwhile survives this delete
+		// as in flight, so the read below answers it with an all-clear.
 		yield* db.run(
-			PG.deleteFrom(AlertDeliveryEvents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+			PG.deleteFrom(AlertDeliveryEvents).where(($) => [
+				$.orgId.eq(orgId),
+				$.ruleId.eq(ruleId),
+				$.eventType.neq("resolve"),
+				$.status.in_("queued", "silenced"),
+			]),
+		)
+		const resolves = yield* deletedRuleResolveRows(db, orgId, ruleId, nowMs)
+		// An all-clear still on its way out stays: the page it closes is already with the pager.
+		yield* db.run(
+			PG.deleteFrom(AlertDeliveryEvents).where(($) => [
+				$.orgId.eq(orgId),
+				$.ruleId.eq(ruleId),
+				PG.or($.eventType.neq("resolve"), $.status.in_("success", "failed", "silenced")),
+			]),
+		)
+		// A kept all-clear was written for an incident and a rule that now go: its links move to
+		// the alerts list, as the rebuilt ones' do. One on its way out is rewritten too, for the
+		// worker that takes it over if its claim runs out.
+		const kept = yield* db.run(
+			PG.from(AlertDeliveryEvents)
+				.select("id", "payloadJson")
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.ruleId.eq(ruleId),
+					$.eventType.eq("resolve"),
+					$.status.in_("queued", "processing"),
+				]),
+		)
+		yield* Effect.forEach(
+			kept,
+			(row) =>
+				Option.match(relinkedToAlertsList(row.payloadJson), {
+					onNone: () => Effect.void,
+					onSome: (payloadJson) =>
+						db
+							.run(
+								PG.update(AlertDeliveryEvents)
+									.set({ payloadJson })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
+							)
+							.pipe(Effect.asVoid),
+				}),
+			{ discard: true },
 		)
 		yield* db.run(PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
 		yield* db.run(PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
 		yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
+		yield* Effect.forEach(
+			Arr.chunksOf(resolves, DELETED_RULE_RESOLVE_INSERT_CHUNK),
+			(chunk) => db.run(PG.insertInto(AlertDeliveryEvents).values(chunk)),
+			{ discard: true },
+		)
 		return yield* db.run(
 			PG.deleteFrom(AlertRules)
 				.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])

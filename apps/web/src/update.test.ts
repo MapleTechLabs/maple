@@ -244,7 +244,7 @@ describe("re-render on change only", () => {
 				aiAutoTriage: false,
 				cloudSecurity: false,
 				dataSources: false,
-				productAnalytics: false,
+				llmEvals: false,
 				profiling: false,
 				securityAudit: false,
 			},

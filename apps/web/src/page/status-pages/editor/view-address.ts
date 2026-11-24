@@ -1,4 +1,5 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -25,7 +26,10 @@ export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
 				"Internal: only members can read it, in Maple",
 			]),
 		])
-	const url = pageUrlOf(model, page)
+	const pageUrl = pageUrlOf(model, page)
+	// A blank line of the same height until the org key lands, so the header does not shift.
+	if (Option.isNone(pageUrl)) return typography(h, { size: "xs", tone: "muted" }, ["\u00a0"])
+	const url = pageUrl.value
 	if (url === null) return typography(h, { size: "xs", tone: "muted" }, [NO_DOMAIN_NOTE])
 	// A draft is never published, so its address does not resolve yet: text, not a link.
 	if (page.draft) return typography(h, { size: "xs", tone: "muted", mono: true }, [url])
@@ -47,13 +51,15 @@ export const addressBlock = (h: H, model: Model, page: V2StatusPage): Html => {
 			]),
 			openPreviewButton(h, page.id),
 		])
-	const url = pageUrlOf(model, page)
+	const pageUrl = pageUrlOf(model, page)
+	const url = Option.getOrNull(pageUrl)
 	if (url === null)
 		return vstack(h, { gap: "1.5" }, [
 			typography(h, { size: "xs", tone: "muted" }, ["Public address"]),
 			h.p(
 				[h.Class("rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground")],
-				[NO_DOMAIN_NOTE],
+				// Blank, not the no-domain note, while the org key is still being derived.
+				[Option.isNone(pageUrl) ? "\u00a0" : NO_DOMAIN_NOTE],
 			),
 		])
 	return h.div(
@@ -72,7 +78,7 @@ export const addressBlock = (h: H, model: Model, page: V2StatusPage): Html => {
 					}),
 				],
 			),
-			openPublicPageButton(h, publicPageLink(page, url)),
+			openPublicPageButton(h, publicPageLink(page, pageUrl)),
 		],
 	)
 }

@@ -1,5 +1,20 @@
 # @maple-dev/alchemy
 
+## 0.8.0
+
+### Minor Changes
+
+- 6cfae23: Automatic source map uploads. `@maple-dev/alchemy/vite` exports `mapleSourceMaps()`, a Vite plugin that turns on hidden source maps, gives each built JS file a debug id and moves the maps out of the deployed output into `.maple/sourcemaps/<outDir>` with a manifest. The new `Maple.SourceMaps` resource uploads them through `POST /v2/source_maps` after the build, again only when the maps changed; deleting it keeps the uploaded maps, which earlier releases still need. `matchBy: "release"` uploads without debug ids, for telemetry that reports none. `MapleApiContract` gains `upload` for raw request bodies.
+
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [a49f40c]
+- Updated dependencies [0aec646]
+- Updated dependencies [7601363]
+    - @maple-dev/effect-sdk@0.16.0
+
 ## 0.7.0
 
 ### Minor Changes

@@ -4,15 +4,18 @@ import { Option, Result, Schema } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { DEFAULT_RANGE_DAYS, FocusGap } from "../shared/coverage-preview"
-import { scheduleIdFromUrl } from "../shared/oncall-schedules"
+import { CALENDAR_FEED_EXISTS_CODE, scheduleIdFromUrl } from "../shared/oncall-schedules"
 import { localInputMs, localInputOf } from "../schedule-form/form"
 import {
+	CreateCalendarFeed,
 	CreateOverride,
+	DeleteCalendarFeed,
 	DeleteOverride,
 	FetchOverrides,
 	FetchSchedule,
@@ -33,6 +36,7 @@ type ScheduleRoute = Extract<AppRoute, { readonly _tag: "AlertsSchedule" }>
 
 export const OVERRIDE_DIALOG_ID = "schedule-override"
 export const DELETE_OVERRIDE_DIALOG_ID = "schedule-delete-override"
+export const CALENDAR_FEED_DIALOG_ID = "schedule-calendar-feed"
 
 /** The calendar steps a week of the schedule zone's days at a time. */
 export const CALENDAR_DAYS = 7
@@ -95,6 +99,12 @@ export const init = (route: ScheduleRoute, context: PageContext): Return => {
 		deletingOverrideId: null,
 		confirmDeleteOverrideId: null,
 		deleteOverrideDialog: Dialog.init(DELETE_OVERRIDE_DIALOG_ID, "alert-dialog"),
+		calendarFeed: null,
+		calendarFeedChange: null,
+		calendarCopy: CopyButton.init(),
+		isChangingCalendarFeed: false,
+		calendarFeedAction: null,
+		calendarFeedDialog: Dialog.init(CALENDAR_FEED_DIALOG_ID, "alert-dialog"),
 	}
 	const common = [
 		ReadScheduleClock(),
@@ -315,6 +325,62 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 	),
 })
 
+/**
+ * What this page did to the feed, against a later read of the schedule. A link someone else made
+ * since (a time that is neither ours nor the one we ended) wins: ours is dead, or our "off" is no
+ * longer true. A read that still shows the link we ended left before our change landed. So did one
+ * that says off, until a read has shown our link: after that, off means someone turned it off.
+ */
+const reconcileCalendarFeed = (
+	local: Model["calendarFeed"],
+	schedule: V2OnCallSchedule,
+): Model["calendarFeed"] => {
+	if (local === null) return null
+	const read = schedule.calendar_feed_created_at
+	if (read === local.createdAt) return read === null ? local : { ...local, isConfirmed: true }
+	if (read === null) return local.isConfirmed ? null : local
+	return read === local.ended ? local : null
+}
+
+/** When the feed's current link was made, as this page knows it: its own change over the read. */
+const calendarFeedSince = (model: Model): string | null =>
+	model.calendarFeed !== null
+		? model.calendarFeed.createdAt
+		: Option.match(scheduleOf(model), {
+				onNone: () => null,
+				onSome: (schedule) => schedule.calendar_feed_created_at,
+			})
+
+const updateCalendarDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: {
+		...model,
+		calendarFeedDialog: step.model,
+		calendarFeedAction: step.outMessage?._tag === "Closed" ? null : model.calendarFeedAction,
+	},
+	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotCalendarFeedDialogMessage({ message }),
+	),
+})
+
+/**
+ * Sends the change the feed section or its dialog asked for, once. A plain create never replaces:
+ * the server refuses it when someone else made a link since this page read the schedule.
+ */
+const changeCalendarFeed = (model: Model, action: "create" | "replace" | "off"): Return =>
+	model.isChangingCalendarFeed || model.scheduleId === null
+		? { model }
+		: {
+				model: { ...model, isChangingCalendarFeed: true, calendarFeedChange: action },
+				commands: [
+					action === "off"
+						? DeleteCalendarFeed({ scheduleId: model.scheduleId })
+						: CreateCalendarFeed({
+								scheduleId: model.scheduleId,
+								replace: action === "replace",
+							}),
+				],
+			}
+
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
@@ -326,7 +392,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ReadClock: ({ nowMs }) => clockRead(model, context, nowMs),
 		CompletedFetchSchedule: ({ key, readAtMs, result }) =>
 			requestShifts(
-				{ ...model, schedule: Keyed.accept(model.schedule, key, result, readAtMs) },
+				{
+					...model,
+					schedule: Keyed.accept(model.schedule, key, result, readAtMs),
+					// Only a read this page is waiting for says anything about the feed.
+					calendarFeed:
+						model.schedule.key !== key
+							? model.calendarFeed
+							: Result.match(result, {
+									onFailure: () => model.calendarFeed,
+									onSuccess: (schedule) =>
+										reconcileCalendarFeed(model.calendarFeed, schedule),
+								}),
+				},
 				context,
 				"Load",
 			),
@@ -424,6 +502,99 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.deletingOverrideId !== null
 				? { model }
 				: updateDeleteDialog(model, Dialog.update(model.deleteOverrideDialog, child)),
+		ClickedCreateCalendarFeed: () => changeCalendarFeed(model, "create"),
+		ClickedReplaceCalendarFeed: () =>
+			updateCalendarDialog(
+				{ ...model, calendarFeedAction: "replace" },
+				Dialog.open(model.calendarFeedDialog),
+			),
+		ClickedTurnOffCalendarFeed: () =>
+			updateCalendarDialog(
+				{ ...model, calendarFeedAction: "off" },
+				Dialog.open(model.calendarFeedDialog),
+			),
+		// Escape and Cancel are ignored while the change runs.
+		GotCalendarFeedDialogMessage: ({ message: child }) =>
+			model.isChangingCalendarFeed
+				? { model }
+				: updateCalendarDialog(model, Dialog.update(model.calendarFeedDialog, child)),
+		ClickedConfirmCalendarFeed: () =>
+			model.calendarFeedAction === null
+				? { model }
+				: changeCalendarFeed(model, model.calendarFeedAction),
+		CompletedCreateCalendarFeed: ({ result }) => {
+			const settled = { ...model, isChangingCalendarFeed: false, calendarFeedChange: null }
+			return Result.match(result, {
+				onSuccess: (feed): Return => {
+					const closed = updateCalendarDialog(
+						{
+							...settled,
+							calendarFeed: {
+								url: feed.url,
+								createdAt: feed.created_at,
+								ended: calendarFeedSince(model),
+								isConfirmed: false,
+							},
+							calendarCopy: CopyButton.init(),
+						},
+						Dialog.close(settled.calendarFeedDialog),
+					)
+					return { ...closed, outMessage: toast("success", "Calendar link created") }
+				},
+				onFailure: (failure): Return => {
+					if (failure.code !== CALENDAR_FEED_EXISTS_CODE) {
+						return {
+							model: settled,
+							outMessage: toast("error", "Couldn't create the calendar link", failure.message),
+						}
+					}
+					// Someone else made a link since this page read the schedule: show theirs, and
+					// leave replacing it (which ends it) to a deliberate click.
+					const refreshed = refreshSchedule({ ...settled, calendarFeed: null }, context)
+					return {
+						...refreshed,
+						outMessage: toast(
+							"error",
+							"This schedule already has a calendar link",
+							"Someone made one since you opened this page. Replace it only if you need a new link: that ends theirs.",
+						),
+					}
+				},
+			})
+		},
+		CompletedDeleteCalendarFeed: ({ result }) => {
+			const settled = { ...model, isChangingCalendarFeed: false, calendarFeedChange: null }
+			return Result.match(result, {
+				onSuccess: (): Return => {
+					const closed = updateCalendarDialog(
+						{
+							...settled,
+							calendarFeed: {
+								url: null,
+								createdAt: null,
+								ended: calendarFeedSince(model),
+								isConfirmed: false,
+							},
+						},
+						Dialog.close(settled.calendarFeedDialog),
+					)
+					return { ...closed, outMessage: toast("success", "Calendar link turned off") }
+				},
+				onFailure: (failure): Return => ({
+					model: settled,
+					outMessage: toast("error", "Couldn't turn off the calendar link", failure.message),
+				}),
+			})
+		},
+		GotCalendarCopyMessage: ({ message: child }) => {
+			const step = CopyButton.update(model.calendarCopy, child)
+			return {
+				model: { ...model, calendarCopy: step.model },
+				commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotCalendarCopyMessage({ message: inner }),
+				),
+			}
+		},
 		CompletedDeleteOverride: ({ result }) => {
 			const settled = { ...model, deletingOverrideId: null }
 			const closed = updateDeleteDialog(settled, Dialog.close(settled.deleteOverrideDialog))

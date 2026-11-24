@@ -16,6 +16,8 @@ export interface OrgMember {
 	readonly name: string | null
 	/** Provider-hosted avatar; Clerk serves one for every user, initials included. */
 	readonly imageUrl: string | null
+	/** The directory's role key (`org:admin`); absent from a directory that names none. */
+	readonly role?: string
 }
 
 /** One membership's role and timestamps. */
@@ -133,6 +135,7 @@ const make = Effect.gen(function* () {
 					email,
 					name: memberName(member),
 					imageUrl: member.public_user_data?.image_url ?? null,
+					role: member.role,
 				},
 			]
 		})

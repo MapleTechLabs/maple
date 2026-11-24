@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest"
 import * as Policy from "@maple/domain/policy"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Context, Effect, Layer, Schema } from "effect"
 import {
 	AlertValidationError,
 	OnCallAtResponse,
@@ -55,6 +55,9 @@ const scheduleDoc = (overrides: Partial<typeof OnCallScheduleDocument.Encoded> =
 			startsAt: "2026-11-09T08:00:00.000Z",
 			endsAt: "2026-11-16T08:00:00.000Z",
 		},
+		coverageGaps: [],
+		departedUserIds: [],
+		calendarFeedCreatedAt: null,
 		chainIds: [],
 		createdAt: NOW,
 		updatedAt: NOW,
@@ -68,6 +71,8 @@ const notFound = (id: string) =>
 	})
 
 interface Seen {
+	/** Replaces fields of the one schedule the listing returns. */
+	schedule?: Partial<typeof OnCallScheduleDocument.Encoded>
 	created?: OnCallScheduleCreateRequest
 	updated?: OnCallScheduleUpdateRequest
 	overrideCreated?: OnCallOverrideCreateRequest
@@ -123,7 +128,8 @@ const layer = (seen: Seen) =>
 						["user_ben", "Ben Brook"],
 					]),
 				),
-			list: () => Effect.succeed(new OnCallSchedulesListResponse({ schedules: [scheduleDoc()] })),
+			list: () =>
+				Effect.succeed(new OnCallSchedulesListResponse({ schedules: [scheduleDoc(seen.schedule)] })),
 			get: (_org, id) =>
 				id === SCHEDULE_ID ? Effect.succeed(scheduleDoc()) : Effect.fail(notFound(id)),
 			create: (_org, _user, _roles, request) => {
@@ -230,6 +236,25 @@ const invalidParameter = (result: Awaited<ReturnType<typeof run>>) =>
 const text = (result: McpToolResult) => result.content[0]?.text ?? ""
 
 describe("on-call schedule tools", () => {
+	it("list_oncall_schedules says a gap list cut at its cap may be longer", async () => {
+		const gap = (day: number) => ({
+			startsAt: `2026-11-${String(day).padStart(2, "0")}T16:00:00.000Z`,
+			endsAt: `2026-11-${String(day).padStart(2, "0")}T18:00:00.000Z`,
+		})
+		const capped = await ok(
+			"list_oncall_schedules",
+			{},
+			{ schedule: { coverageGaps: Arr.map(Arr.range(1, 20), gap) } },
+		)
+		expect(text(capped)).toContain("20 or more gaps with nobody on call")
+		const few = await ok(
+			"list_oncall_schedules",
+			{},
+			{ schedule: { coverageGaps: Arr.map(Arr.range(1, 3), gap) } },
+		)
+		expect(text(few)).toContain("3 gaps with nobody on call")
+	})
+
 	it("list_oncall_schedules names people by display name and falls back to the user id", async () => {
 		const result = await ok("list_oncall_schedules", {})
 		const output = Schema.decodeUnknownSync(ListOnCallSchedulesOutput)(result.structuredContent)

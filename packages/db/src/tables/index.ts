@@ -33,6 +33,8 @@ import {
 	Actors,
 	ErrorIssues,
 	ErrorFingerprintCandidates,
+	ErrorGroupingKeys,
+	ErrorGroupingConfigs,
 	ErrorIssueFingerprints,
 	ErrorIssueEvents,
 	ErrorIssueStates,
@@ -77,7 +79,6 @@ import {
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
 import { CostConnections } from "./cost-connections"
-import { MorphSpendReadings } from "./morph-spend-readings"
 import { CookielessSalts, CookielessVisits } from "./cookieless-visitors"
 import { FeatureRequests } from "./feature-requests"
 import { DevicePolicyFindings, DeviceVulnerabilityFindings } from "./device-findings"
@@ -91,6 +92,7 @@ import { SavedViews } from "./saved-views"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
 import { SearchConsoleSites } from "./search-console-sites"
 import { ServiceMapWorldEntities } from "./service-map-world"
+import { SourceMapFiles } from "./source-maps"
 import {
 	SecurityAuditEvents,
 	SecurityAuditFindings,
@@ -158,7 +160,6 @@ export * from "./escalation-chains"
 export * from "./oncall-schedules"
 export * from "./aws-connections"
 export * from "./cost-sources"
-export * from "./morph-spend-readings"
 export * from "./cookieless-visitors"
 export * from "./gcp-connectors"
 export * from "./gcp-cost-exports"
@@ -194,6 +195,7 @@ export * from "./scrape-targets"
 export * from "./search-console-sites"
 export * from "./security-audit"
 export * from "./service-map-world"
+export * from "./source-maps"
 export * from "./sources"
 export * from "./status-pages"
 export * from "./supabase"
@@ -239,6 +241,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	Actors,
 	ErrorIssues,
 	ErrorFingerprintCandidates,
+	ErrorGroupingKeys,
+	ErrorGroupingConfigs,
 	ErrorIssueFingerprints,
 	ErrorIssueEvents,
 	ErrorIssueStates,
@@ -283,7 +287,6 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OrgIngestSamplingPolicies,
 	OpenRouterCostConnections,
 	CostConnections,
-	MorphSpendReadings,
 	CookielessSalts,
 	CookielessVisits,
 	FeatureRequests,
@@ -312,6 +315,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	ServiceMapWorldEntities,
 	ScrapeTargetChecks,
 	SearchConsoleSites,
+	SourceMapFiles,
 	SecurityAuditTargets,
 	SecurityAuditRuns,
 	SecurityAuditUnits,

@@ -166,6 +166,8 @@ export const AlertIncidentEventType = Schema.Literals([
 	"unacknowledged",
 	"ack_cleared",
 	"paged",
+	"on_call_gap",
+	"resolved",
 ]).annotate({
 	identifier: "@maple/AlertIncidentEventType",
 	title: "Alert Incident Event Type",
@@ -1066,6 +1068,8 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	/** Display name of whoever acknowledged, as the source reported it. */
 	acknowledgedByName: Schema.NullOr(Schema.String),
 	acknowledgedVia: Schema.NullOr(AlertIncidentAckSource),
+	/** When the incident was first acknowledged; kept after it is unacknowledged or resolves. */
+	firstAcknowledgedAt: Schema.NullOr(IsoDateTimeString),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
 	/** Anomaly rules only: the anomaly incident this alert incident pages on. */
 	anomalyIncidentId: Schema.optionalKey(Schema.NullOr(AnomalyIncidentId)),
@@ -1084,7 +1088,7 @@ export const AlertIncidentPage = Schema.Struct({
 	userId: UserId,
 	/** The member's display name, or null when the directory could not name them. */
 	name: Schema.NullOr(Schema.String),
-	/** `email`, or the chat connector of the direct message (`slack`, `discord`). */
+	/** `email`, `push` (their phones), or the chat connector of the direct message (`slack`, `discord`). */
 	channel: Schema.String,
 	status: AlertIncidentPageStatus,
 	/** Why it was not sent, for a `failed` or `skipped` page. */
@@ -1104,6 +1108,8 @@ export class AlertIncidentEventDocument extends Schema.Class<AlertIncidentEventD
 	source: Schema.NullOr(AlertIncidentAckSource),
 	/** Set on a `paged` event. */
 	page: Schema.optionalKey(AlertIncidentPage),
+	/** Set on an `on_call_gap` event: the schedules that had nobody on call. */
+	detail: Schema.optionalKey(Schema.String),
 	createdAt: IsoDateTimeString,
 }) {}
 

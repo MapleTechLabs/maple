@@ -130,6 +130,8 @@ export const AppRoute = defineRouteUnion({
 	InfraVercelProject: { projectId: Schema.String, search: Search.InfraVercelProjectSearch },
 	InfraSupabaseProject: { projectRef: Schema.String, search: Search.InfraSupabaseProjectSearch },
 	AgentSessionTools: { search: Search.AgentSessionToolsSearch },
+	AgentSessionEvals: { search: Search.AgentSessionEvalsSearch },
+	AgentSessionEvaluator: { name: Schema.String, search: Search.AgentSessionEvaluatorSearch },
 	McpServers: { search: Search.McpServersSearch },
 	ErrorIssues: { search: Search.ErrorIssuesSearch },
 	InfraCloudflare: { search: Search.InfraCloudflareSearch },

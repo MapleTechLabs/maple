@@ -6,4 +6,11 @@ export type { FlushableTelemetry, MapleFlushableConfig } from "./flushable.js"
 export type { FinishedSpan, MapleSpanOptions } from "../shared/span-options.js"
 export { derivePlatformAttributes, getAutoPlatformAttributes, type PlatformInputs } from "./platform.js"
 export * as MapleEvents from "./events.js"
-export type { MapleEventsApi, MapleEventsConfig, MapleEventsHandle, TrackOptions } from "./events.js"
+export type {
+	GroupIdentifyOptions,
+	IdentifyOptions,
+	MapleEventsApi,
+	MapleEventsConfig,
+	MapleEventsHandle,
+	TrackOptions,
+} from "./events.js"

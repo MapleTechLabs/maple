@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "dataUsages": [
+    {
+      "category": "NAME",
+      "purposes": [
+        "APP_FUNCTIONALITY"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
+      "category": "EMAIL_ADDRESS",
+      "purposes": [
+        "APP_FUNCTIONALITY"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
+      "category": "USER_ID",
+      "purposes": [
+        "APP_FUNCTIONALITY"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
+      "category": "DEVICE_ID",
+      "purposes": [
+        "APP_FUNCTIONALITY"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
+      "category": "PRODUCT_INTERACTION",
+      "purposes": [
+        "ANALYTICS"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
+      "category": "CRASH_DATA",
+      "purposes": [
+        "APP_FUNCTIONALITY",
+        "ANALYTICS"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
+      "category": "PERFORMANCE_DATA",
+      "purposes": [
+        "APP_FUNCTIONALITY",
+        "ANALYTICS"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
+      "category": "OTHER_DIAGNOSTIC_DATA",
+      "purposes": [
+        "APP_FUNCTIONALITY",
+        "ANALYTICS"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    }
+  ]
+}

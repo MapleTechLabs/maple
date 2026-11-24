@@ -46,6 +46,9 @@ final class SessionController {
 	private(set) var organizationError: String?
 
 	let api: any MapleAPI
+	/// Which region each organization lives in, filled from the memberships below.
+	/// `api` reads it on every request to pick the organization's API host.
+	let regions: OrganizationRegions
 	/// Which load is running for each screen, across model instances.
 	///
 	/// It lives here rather than on a model because that is the whole point: the
@@ -58,15 +61,17 @@ final class SessionController {
 	/// state must be ignored.
 	private let isFixture: Bool
 
-	init(api: any MapleAPI, tokens: ClerkTokenProvider) {
+	init(api: any MapleAPI, tokens: ClerkTokenProvider, regions: OrganizationRegions) {
 		self.api = api
 		self.tokens = tokens
+		self.regions = regions
 		self.isFixture = false
 	}
 
 	private init(fixtureAPI: any MapleAPI, tokens: ClerkTokenProvider) {
 		self.api = fixtureAPI
 		self.tokens = tokens
+		self.regions = OrganizationRegions()
 		self.isFixture = true
 		self.phase = .ready(organizationId: FixtureSession.organizationId)
 	}
@@ -119,7 +124,13 @@ final class SessionController {
 	/// has ever been fetched for it, and the index keeps the timestamp it
 	/// already had.
 	var widgetOrganizations: [WidgetOrganization] {
-		memberships.map { WidgetOrganization(id: $0.organization.id, name: $0.organization.name) }
+		memberships.map {
+			WidgetOrganization(
+				id: $0.organization.id,
+				name: $0.organization.name,
+				region: $0.organization.mapleRegion.rawValue
+			)
+		}
 	}
 
 	/// Re-runs the widget publish when the active organization *or* the set the
@@ -139,6 +150,16 @@ final class SessionController {
 	var activeOrganizationName: String? {
 		if isFixture { return FixtureSession.organizationName }
 		return currentOrganizationId.flatMap(name(of:))
+	}
+
+	/// The region the screens' organization lives in.
+	var currentRegion: MapleRegion {
+		currentOrganizationId.flatMap(regions.region(of:)) ?? .default
+	}
+
+	/// The web dashboard of the current organization's region, for "Open on web".
+	var web: MapleWeb {
+		MapleWeb(baseURL: AppConfig.webBaseURL(forAPI: AppConfig.apiServers.url(for: currentRegion)))
 	}
 
 	/// The display name for an organization the user belongs to, for the line
@@ -205,6 +226,7 @@ final class SessionController {
 				// spin here forever.
 				if page > 20 { break }
 			}
+			regions.record(collected.map(\.organization))
 			memberships = collected
 			membershipsLoaded = true
 			organizationError = nil
@@ -226,6 +248,7 @@ final class SessionController {
 			// the auto-select path — the one that can silently pick wrong — is not
 			// taken on unverified data.
 			memberships = user.organizationMemberships ?? []
+			regions.record(memberships.map(\.organization))
 			organizationError = "Couldn't load your organizations. \(error.localizedDescription)"
 		}
 	}
@@ -303,6 +326,7 @@ final class SessionController {
 		// The Home Screen outlives the session: without this, the previous
 		// account's failures stay readable on a locked phone.
 		WidgetPublisher.shared.clear()
+		regions.removeAll()
 		// Same for the seeded screens: the next account must not open onto the
 		// previous one's board.
 		SnapshotCache.clear()
@@ -311,10 +335,29 @@ final class SessionController {
 	func signOut() async {
 		// While the token is still valid: the server keys the device on the
 		// org in the token, so this has to happen before Clerk drops it.
-		await PushRegistrar.shared.unregisterAll(api: api)
+		await PushRegistrar.shared.unregisterAll(api: api, organizationIds: memberIds)
 		// Same reason, plus one of its own: an activity left running would keep
 		// someone else's incident on this phone's Lock Screen after sign-out.
 		await LiveActivityController.shared.stop()
+		try? await Clerk.shared.auth.signOut()
+		memberships = []
+		membershipsLoaded = false
+		await signOutLocally()
+	}
+
+	/// Whether this account may delete itself here. Mirrors the web settings
+	/// page, which reads the same Clerk instance setting.
+	var canDeleteAccount: Bool {
+		!isFixture && Clerk.shared.user?.deleteSelfEnabled == true
+	}
+
+	/// Permanently deletes the signed-in Clerk user (App Review 5.1.1(v)).
+	/// Device rows are unregistered first, while the token still works.
+	func deleteAccount() async throws {
+		guard let user = Clerk.shared.user else { return }
+		await PushRegistrar.shared.unregisterAll(api: api, organizationIds: memberIds)
+		await LiveActivityController.shared.stop()
+		try await user.delete()
 		try? await Clerk.shared.auth.signOut()
 		memberships = []
 		membershipsLoaded = false

@@ -1,15 +1,9 @@
 /**
- * Morph as a cost provider. Morph serves only each member's spend so far this month, so every pull
- * first records that reading, then turns the readings of the window's months into daily rows. The
- * readings are the history: a re-pulled day comes out the same.
+ * Morph as a cost provider: the account's daily spend by model, from Morph's usage API, read with
+ * the key the org saved.
  */
-import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleDb } from "@maple/db/client"
-import { MorphSpendReadings } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, type Redacted, Array as Arr, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import {
 	type CostProviderAdapter,
 	CostProviderError,
@@ -18,8 +12,8 @@ import {
 	type CostPullWindow,
 } from "../../CostProvider"
 import { CostConnectionStore, loadFailureOf } from "../../CostConnectionStore"
-import { addDays, historyFloor, maxDay, minDay, monthStart, utcToday } from "../../sync-plan"
-import * as MorphBudgets from "./morph-budgets-api"
+import { addDays, minDay, utcToday } from "../../sync-plan"
+import * as MorphUsage from "./morph-usage-api"
 import { toCostRows } from "./normalize"
 
 type Reason = CostProviderError["reason"]
@@ -29,123 +23,28 @@ const failed = (reason: Reason, message: string) =>
 	new CostProviderError({ message, provider: "morph", reason, requests: 0 })
 
 /** Morph's failures, as what the sync does next and the Cost page shows. */
-export const toCostProviderError = (error: MorphBudgets.MorphBudgetsError): CostProviderError => {
+export const toCostProviderError = (error: MorphUsage.MorphUsageError): CostProviderError => {
 	switch (error.kind) {
 		case "unauthorized":
 			return failed("auth", "Morph rejected the saved key. Replace the key to resume the sync.")
-		// The key passed this check when it was saved: its owner is no longer an admin, or the key moved.
-		case "forbidden":
-			return failed(
-				"not_ready",
-				"Morph no longer lets the saved key read the organization's spend. Replace it with a key an organization admin owns.",
-			)
 		case "invalid_response":
-			return failed("invalid_response", "Morph's spend answer could not be read.")
+			return failed("invalid_response", "Morph's usage answer could not be read.")
 		case "rate_limited":
-			return failed("rate_limited", "Morph is rate limiting spend requests.")
+			return failed("rate_limited", "Morph is rate limiting usage requests.")
 		default:
-			return failed("upstream", "Morph did not answer the spend request.")
+			return failed("upstream", "Morph did not answer the usage request.")
 	}
 }
 
-/** The day a reading taken on `today` counts for: inside the month Morph says the spend covers. */
-export const readingDay = (month: string, today: string): string => {
-	const first = `${month}-01`
-	return maxDay(first, minDay(today, addDays(monthStart(first, 1), -1)))
+/** `start` through `end` in ranges Morph serves in one request each. */
+export const usageRanges = (
+	start: string,
+	end: string,
+): ReadonlyArray<{ readonly start: string; readonly end: string }> => {
+	if (start > end) return []
+	const last = minDay(end, addDays(start, MorphUsage.MORPH_MAX_RANGE_DAYS - 1))
+	return [{ start, end: last }, ...usageRanges(addDays(last, 1), end)]
 }
-
-export interface MemberReading {
-	readonly memberId: string
-	readonly memberLabel: string
-	readonly micros: number
-}
-
-/** Morph's answer as readings; none when an amount does not fit, which would store a wrong total. */
-export const toMemberReadings = (
-	list: MorphBudgets.MemberBudgetList,
-): Option.Option<ReadonlyArray<MemberReading>> =>
-	Option.all(
-		Arr.map(list.members, (member) =>
-			Option.map(Option.fromUndefinedOr(MorphBudgets.parseMicros(member.spent)), (micros) => ({
-				memberId: member.userId,
-				memberLabel:
-					member.email === undefined || member.email === null || Str.isEmpty(member.email)
-						? member.userId
-						: member.email,
-				micros,
-			})),
-		),
-	)
-
-/**
- * Keeps `readings`, taken at `readAt`, as their day's first and last where they are earlier or
- * later than what is stored. Then drops the months the sync no longer pulls,
- * keeping one more for a pull that started before the floor moved.
- */
-export const writeReadings = Effect.fnUntraced(function* (
-	db: MapleDb,
-	source: CostPullSource,
-	month: string,
-	readings: ReadonlyArray<MemberReading>,
-	readAt: number,
-) {
-	const day = readingDay(month, utcToday(readAt))
-	const keyOf = (reading: MemberReading) =>
-		({ connectionId: source.connectionRef, month, memberId: reading.memberId, day }) as const
-	const write = (reading: MemberReading) =>
-		Effect.gen(function* () {
-			const key = keyOf(reading)
-			yield* db.run(
-				PG.insertInto(MorphSpendReadings)
-					.values({
-						orgId: source.orgId,
-						...key,
-						memberLabel: reading.memberLabel,
-						openingMicros: reading.micros,
-						closingMicros: reading.micros,
-						firstReadAt: readAt,
-						lastReadAt: readAt,
-					})
-					.onConflictDoNothing(),
-			)
-			// Readings can land out of order: each end of the day moves only to a reading beyond it.
-			yield* db.run(
-				PG.update(MorphSpendReadings)
-					.set({
-						memberLabel: reading.memberLabel,
-						closingMicros: reading.micros,
-						lastReadAt: readAt,
-					})
-					.where(($) => [
-						$.connectionId.eq(key.connectionId),
-						$.month.eq(key.month),
-						$.memberId.eq(key.memberId),
-						$.day.eq(key.day),
-						$.lastReadAt.lt(readAt),
-					]),
-			)
-			yield* db.run(
-				PG.update(MorphSpendReadings)
-					.set({ openingMicros: reading.micros, firstReadAt: readAt })
-					.where(($) => [
-						$.connectionId.eq(key.connectionId),
-						$.month.eq(key.month),
-						$.memberId.eq(key.memberId),
-						$.day.eq(key.day),
-						$.firstReadAt.gt(readAt),
-					]),
-			)
-		})
-	yield* Effect.forEach(readings, write, { discard: true })
-	yield* db.run(
-		PG.deleteFrom(MorphSpendReadings).where(($) => [
-			$.orgId.eq(source.orgId),
-			$.connectionId.eq(source.connectionRef),
-			$.month.lt(Str.slice(0, 7)(monthStart(historyFloor("morph", utcToday(readAt)), -1))),
-		]),
-	)
-	return day
-})
 
 export class MorphCostProvider extends Context.Service<MorphCostProvider, CostProviderAdapter>()(
 	"@maple/backend/services/cost/MorphCostProvider",
@@ -153,35 +52,6 @@ export class MorphCostProvider extends Context.Service<MorphCostProvider, CostPr
 		make: Effect.gen(function* () {
 			const connections = yield* CostConnectionStore
 			const httpClient = yield* HttpClient.HttpClient
-			const database = yield* Database
-			const dbExecute = makeDbExecute(database, "MorphCostProvider", () =>
-				failed("upstream", "Cost connection database error"),
-			)
-
-			/** Keeps the reading as its day's last, and as its first when the day has none yet. */
-			const record = Effect.fn("MorphCostProvider.record")(function* (
-				source: CostPullSource,
-				secret: Redacted.Redacted,
-			) {
-				// Taken before the request: a slow answer must not pass for a newer reading.
-				const readAt = yield* Clock.currentTimeMillis
-				const list = yield* MorphBudgets.listMemberSpend(httpClient, secret).pipe(
-					Effect.mapError(toCostProviderError),
-				)
-				const readings = yield* Effect.fromOption(toMemberReadings(list)).pipe(
-					Effect.mapError(() =>
-						failed("invalid_response", "Morph reported a spend Maple cannot read."),
-					),
-				)
-				yield* Effect.annotateCurrentSpan({
-					"maple.cost.morph.month": list.month,
-					"maple.cost.morph.members": readings.length,
-				})
-				// One reading's members are kept all or none.
-				return yield* dbExecute((db) =>
-					db.transaction(writeReadings(db, source, list.month, readings, readAt)),
-				)
-			})
 
 			const pull = Effect.fn("MorphCostProvider.pull")(
 				function* (source: CostPullSource, window: CostPullWindow) {
@@ -198,30 +68,20 @@ export class MorphCostProvider extends Context.Service<MorphCostProvider, CostPr
 						return yield* failed("auth", "No Morph key is saved for this source.")
 					}
 					const { secret, accountId } = credential.value
-					const openDay = yield* record(source, secret)
-					// Whole months: a day's cost is its reading less the one before it in the month.
-					const stored = yield* dbExecute((db) =>
-						db.run(
-							PG.from(MorphSpendReadings)
-								.select(($) => ({
-									month: $.month,
-									day: $.day,
-									memberId: $.memberId,
-									memberLabel: $.memberLabel,
-									openingMicros: $.openingMicros,
-									closingMicros: $.closingMicros,
-								}))
-								.where(($) => [
-									$.orgId.eq(source.orgId),
-									$.connectionId.eq(source.connectionRef),
-									$.month.gte(Str.slice(0, 7)(window.startDay)),
-									$.month.lte(Str.slice(0, 7)(window.endDay)),
-								]),
+					// Morph refuses a range that ends before it starts, and has nothing after today.
+					const now = yield* Clock.currentTimeMillis
+					const today = utcToday(now)
+					const ranges = usageRanges(window.startDay, minDay(window.endDay, today))
+					const answers = yield* Effect.forEach(ranges, (range) =>
+						MorphUsage.getUsage(httpClient, secret, range).pipe(
+							Effect.mapError(toCostProviderError),
 						),
 					)
-					const rows = toCostRows(stored, accountId, window, openDay)
+					const days = Arr.flatMap(answers, (answer) => answer.days)
+					// Today's figures still grow: Morph refreshes them every 30 minutes.
+					const rows = toCostRows(days, accountId, window, today)
 					yield* Effect.annotateCurrentSpan({
-						"maple.cost.morph.readings": stored.length,
+						"maple.cost.morph.days": days.length,
 						"maple.cost.rows": rows.length,
 					})
 					return { rows, requests: 0 } satisfies CostPull

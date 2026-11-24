@@ -122,7 +122,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/meter.ts` `meter`, `segmentedBar`, `backdropBar`, `barFillClass`, `levelMeter`: Meter, SegmentedBar, BackdropBar and LevelMeter.
 - `packages/views/src/ui/metric-type.ts` `metricTypeLabel`, `metricTypeBadge`: A metric type's label, badge and colour, wherever a metric is listed.
 - `packages/views/src/ui/middle-truncate.ts` `middleTruncate`: Keeps the last `tail` characters visible and ellipsizes the middle.
-- `packages/views/src/ui/mini-bars.ts` `miniBars`: A static bar sparkline in one <svg>.
+- `packages/views/src/ui/mini-bars.ts` `miniBarsLayout`, `miniBarsRatio`, `miniBars`: A static bar sparkline in one <svg>.
 - `packages/views/src/ui/native-select.ts` `nativeOption`, `nativeOptGroup`, `nativeSelect`: `<NativeSelect>`: a styled native `<select>` with the chevron overlay; uncontrolled (`defaultValue`).
 - `packages/views/src/ui/nav-rail-row.ts` `navRailRow`: `NavRailRow`: a page's own nav rail row (settings, security, alerts), with the app sidebar row's height, type, radius and flush 2px active lane.
 - `packages/views/src/ui/navigation-menu.ts` `triggerIdOf`, `viewportId`, `rootId`, `navigationMenuLink`, `view` (stateful: Model, init, update): Base UI `NavigationMenu` (`@maple/ui/navigation-menu`): a trigger opens its content in one shared popup below the list (offset 8, start-aligned) on click, or after the pointer r...
@@ -146,6 +146,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/removable-chip.ts` `removableChip`: `RemovableChip`: an active filter as a small mono chip, its label then an x that removes it (the infra filter rails).
 - `packages/views/src/ui/resizable.ts` `panelId`, `handleId`, `resize`, `view` (stateful: Model, init, update): `react-resizable-panels` 4 (`@maple/ui/resizable`): one panel group, sizes in percent.
 - `packages/views/src/ui/reveal-icon.ts` `revealIcon`: `revealIcon`: a muted trailing icon (an external-link or "go" arrow) hidden until its `group` row is hovered or keyboard-focused.
+- `packages/views/src/ui/rolling-number.ts` `rollingNumber`: `RollingNumber`: a formatted number whose digits roll to their new value when it changes.
 - `packages/views/src/ui/row-actions-menu.ts` `rowActionsMenu`: A row's overflow menu of actions.
 - `packages/views/src/ui/row-focus.ts` `rowFocusAttributes`: The keyboard-focused row: the `data-focused` marker a row kit sets and the look it draws for it.
 - `packages/views/src/ui/rule.ts` `stripClass`, `strip`, `dividedList`, `fillRule`: Hairline rules: a `strip` (a band inside a panel or list, ruled off from its neighbours), a `dividedList` (a bordered box with a rule between its items) and a `fillRule`.
@@ -169,6 +170,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/spinner.ts` `spinner`: The loader glyph, spinning, as a status.
 - `packages/views/src/ui/split-button.ts` `splitButtonClass`: `SplitButton`'s two halves: the classes that join an action button and its chevron menu trigger into one control.
 - `packages/views/src/ui/sql-editor.ts` `sqlEditor`: `SqlEditor`: a SQL textarea whose text is drawn, syntax-highlighted, by a `<pre>` laid under it.
+- `packages/views/src/ui/stack-frames.ts` `stackFrameRows`, `defaultOpenFrameKey`, `isStackRowOpen`, `stackFrameList`: A symbolicated stack trace as a frame list: library runs fold, in-app frames open on their code.
 - `packages/views/src/ui/stack.ts` `hstackClass`, `vstackClass`, `hstack`, `vstack`: `HStack` and `VStack`: a flex row (items centred by default) or column with its gap on the spacing scale, instead of a hand-written `flex items-center gap-2` string.
 - `packages/views/src/ui/stat-figure.ts` `statFigure`: A headline number with a muted unit.
 - `packages/views/src/ui/status-dot.ts` `statusDot`: A static, decorative status dot.
@@ -201,7 +203,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 
 - `apps/web/src/page/kit/advanced-filter.ts` `advancedFilterButton`, `appliedWhereClause`, `advancedFilterDialog`, `whereClauseWarnings`: The pieces around a list page's advanced filter dialog (`/traces`, `/logs`).
 - `apps/web/src/page/kit/affected-chips.ts` `affectedChips`: The entities a setup-health check names, as chips with a "+N more" for the rest past the cap.
-- `apps/web/src/page/kit/agent-handoff-view.ts` `agentProgress`, `agentPrompt`: The coding-agent prompt with its handoff code masked, a Copy prompt that mints the code, and the agent's progress once a run exists.
+- `apps/web/src/page/kit/agent-handoff-view.ts` `agentProgress`, `missingKeyNote`, `agentPrompt`: The coding-agent prompt with its handoff code masked, a Copy prompt that mints the code, and the agent's progress once a run exists.
 - `apps/web/src/page/kit/agent-handoff.ts` `mintHandoff`, `isRunOpen`, `isPolling`, `shouldReadRun`, `shown` (stateful: Model, init, update): The coding-agent prompt's handoff: Copy mints a single-use code into the prompt (a new run), and the run's stages are read back while the connect step polls.
 - `apps/web/src/page/kit/alert-collections.ts` `ruleRows`, `ruleStateRows`, `incidentRows`, `destinationRows`: The alert rules, incidents and destinations as live streams.
 - `apps/web/src/page/kit/alert-links.ts` `ruleHref`, `incidentHref`, `alertsHref`, `createHref`: A rule's page.
@@ -236,7 +238,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/day-label.ts` `dayKey`, `dayLabel`, `dayEyebrow`: Calendar days in a time zone, for lists grouped by day ("Today", "Yesterday", "Mon 2 Nov").
 - `apps/web/src/page/kit/destination-picker.ts` `destinationPicker`, `pickedDestination`: The alert destinations a form notifies, each removable, then an "Add destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
 - `apps/web/src/page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: A detail page's title block and its loading skeleton.
-- `apps/web/src/page/kit/disclosure-strip.ts` `disclosureStrip`: A panel's last band that opens on a long block of monospace text.
+- `apps/web/src/page/kit/disclosure-strip.ts` `disclosureStrip`, `monospaceBlock`: A panel's last band that opens on a long block of monospace text.
 - `apps/web/src/page/kit/docs.ts` `docsUrl`: Every docs page the app links to from an empty state, as a path under maple.dev.
 - `apps/web/src/page/kit/environment-switcher.ts` `environmentEntries`, `entryLabel`, `stepEnvironmentSelect`, `environmentSwitcher`: The environment switcher the overview, the service map and a service's page share.
 - `apps/web/src/page/kit/error-chip.ts` `errorChip`: Tool failures read amber: the chip class for a tool error that is not a count.
@@ -271,7 +273,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/last-by.ts` `lastBy`: A derivation that views call on every message, recomputed only when one of its inputs changes.
 - `apps/web/src/page/kit/list-keys.ts` `listKeys`, `listStepOf`, `steppedFocus`, `listKeyAction`, `focusedIndexOf`, `scrollFocusedRowCommand`: Keyboard row navigation for a list page: the document key stream (J, K, the arrows, Enter and Escape), the focus step and the scroll that keeps the focused row in view.
 - `apps/web/src/page/kit/list-toolbar.ts` `listToolbar`, `toolbarCount`, `toolbarStat`: A list page's row of view tabs, then search, filters and the count readout.
-- `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
+- `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTextsWith`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
 - `apps/web/src/page/kit/mcp-client-config.ts` `isMcpClient`, `mcpClientConfig`, `claudeCodeCommand`, `cursorInstallUrl`, `vscodeInstallUrl`: The `mcpServers` entry each client reads.
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown laid out with Streamdown's element classes.
 - `apps/web/src/page/kit/nav-shell.ts` `navShell`: A page's own nav rail of titled sections (settings, security, alerts).
@@ -286,6 +288,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/pick-list.ts` `pickList`: What a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
 - `apps/web/src/page/kit/picker-card.ts` `pickerCard`: A provider in a picker grid (`/sources/new`, the Cost page's add dialog): its tile, name and what it brings in, as one card that acts in place or navigates.
 - `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: Replaces a rail's Namespace section while the org-global pin is on.
+- `apps/web/src/page/kit/platform-label.ts` `osName`, `platformLabel`: An operating system's name ("macOS" for `darwin`), or undefined for one with no mark.
 - `apps/web/src/page/kit/providers.ts` `providerBrand`: The integration providers: each one's name, mark, accent, docs and infra page, read by the integrations catalog, the sidebar, the infra overview, Sources and the provider pages.
 - `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `switchDataSource`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft, as data the host applies.
 - `apps/web/src/page/kit/query-builder/condition-builder-view.ts` `conditionBuilder`: The where clause as `[field] [operator] [values]` rows, AND-ed, each picked from the query's own vocabulary.
@@ -308,10 +311,13 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/query-panel-bar.ts` `queryPanelBar`: A query panel's header bar on the sunken wash: its collapse toggle, query badge, source and actions.
 - `apps/web/src/page/kit/recommendations.ts` `listRecommendations`, `listAttributeMappings`: Instrumentation recommendations, as the recommendation page and Settings > Ingestion both show them: the reads and the kind and status words.
 - `apps/web/src/page/kit/refresh-controls.ts` `formatRefreshInterval`, `refreshControls`: Reload joined to the auto-refresh cadence menu.
+- `apps/web/src/page/kit/refusal.ts` `refusalFailure`: A request the API refused with its own words (a 400 validation or a 403), kept as a LoadFailure so its message shows; those errors are not public bodies, so `settleTo` would rea...
 - `apps/web/src/page/kit/refused-badge.ts` `refusedBadge`: The mark on an audit entry that did not go through: a crossed circle and what happened ("Denied", "Failed").
 - `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: A timestamp as relative text.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
+- `apps/web/src/page/kit/row-warning.ts` `rowWarning`, `rowWarnings`: A list row's warning: a small glyph and a few words in the warning tone, under the row's name.
+- `apps/web/src/page/kit/ruled-section.ts` `ruledSection`: A section set off from the content above it by a full-width rule, its children stacked 12px apart.
 - `apps/web/src/page/kit/save-bar.ts` `saveBar`: Pinned while a settings tab has unsaved edits.
 - `apps/web/src/page/kit/saved-views/index.ts` `loadCommand`, `pageStep`: Saved views as a Submodel: the Views button an explorer's toolbar embeds (`/logs`, `/traces`, `/metrics`), with its menu and its save, rename and delete dialogs.
 - `apps/web/src/page/kit/saved-views/model.ts` `activeViewOf`, `remembered`: The Views control an explorer embeds (`/logs`, `/traces`, `/metrics`): its menu, the views it lists, and the save, rename and delete dialogs.
@@ -338,7 +344,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/sheet-param.ts` `withSheetParam`, `sheetParamOf`, `dismissalOf`, `pushSheetUrl`, `dismissSheetUrl`: A side sheet held in the URL as `?sheet=<id>`.
 - `apps/web/src/page/kit/signal-empty-state.ts` `docsLink`, `signalEmptyState`: The dashboard's copy for a signal's empty state: where each signal comes from, and the setup page and guides it links.
 - `apps/web/src/page/kit/signal-presence.ts` `loadSignalPresences`: Signal presence: which telemetry signals the org has sent.
-- `apps/web/src/page/kit/stable-slice.ts` `stableSlice`: A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on it skips the renders that change nothing the view reads.
+- `apps/web/src/page/kit/stable-slice.ts` `stableSlice`, `stableValue`, `reuseUnchangedRows`: A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on it skips the renders that change nothing the view reads.
 - `apps/web/src/page/kit/stat-rail.ts` `statRail`, `metricGrid`, `statRailItem`, `statRailItemSkeleton`, `statRailLoading`: A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
 - `apps/web/src/page/kit/switch-row.ts` `switchRow`: A settings row whose control is a switch: the row is the switch's field, so a checked switch marks the row, label and description filled.
 - `apps/web/src/page/kit/table-sort.ts` `sortStateOf`, `nextSort`, `isNumericString`, `compareValues`, `urlSortPatch`, `sortRows`, `sortRowsByField`, `sortRowsBy`: The click-to-sort state as Model data, and the comparator.

@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/effect-sdk",
-	"version": "0.15.0",
+	"version": "0.16.0",
 	"description": "Maple observability SDK for Effect applications",
 	"keywords": [
 		"effect",
@@ -62,9 +62,6 @@
 		"bench:profiling": "tsdown && node bench/profiling.ts",
 		"typecheck": "tsrs --noEmit",
 		"test": "vitest run"
-	},
-	"dependencies": {
-		"std-env": "^4.0.0"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",

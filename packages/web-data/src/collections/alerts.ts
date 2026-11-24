@@ -149,6 +149,7 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	hold_reason: Schema.NullOr(Schema.String),
 	held_since: Schema.NullOr(Schema.String),
 	acknowledged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	first_acknowledged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	acknowledged_by_user_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	acknowledged_by_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	acknowledged_via: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -198,12 +199,28 @@ export const rowToAlertRuleDocument = (
 		ruleDocument(row, statesByRuleId.get(row.id), sortAlertThresholds(thresholds)),
 	)
 
+// A document decoded from a row (and, for rules, its joined state row) is reused while the row
+// object is: callers that keep unchanged rows by reference skip decoding them again.
+const ruleDocuments = new WeakMap<
+	AlertRuleRow,
+	{ readonly state: AlertRuleStateRow | undefined; readonly document: Option.Option<AlertRuleDocument> }
+>()
+
 /** The live rules as documents, without rows this build cannot read. */
 export const rowsToAlertRuleDocuments = (
 	rows: ReadonlyArray<AlertRuleRow>,
 	statesByRuleId: Map<string, AlertRuleStateRow>,
 ): ReadonlyArray<AlertRuleDocument> =>
-	Arr.getSomes(Arr.map(rows, (row) => rowToAlertRuleDocument(row, statesByRuleId)))
+	Arr.getSomes(
+		Arr.map(rows, (row) => {
+			const state = statesByRuleId.get(row.id)
+			const cached = ruleDocuments.get(row)
+			if (cached !== undefined && cached.state === state) return cached.document
+			const document = rowToAlertRuleDocument(row, statesByRuleId)
+			ruleDocuments.set(row, { state, document })
+			return document
+		}),
+	)
 
 // Rows written before tiers carry none: they are one tier from the legacy columns
 // (`legacyAlertThreshold`, before its severity is known to be readable). Stored tiers this build
@@ -312,6 +329,7 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): Option.Option
 		holdReason: row.hold_reason,
 		heldSince: row.held_since,
 		acknowledgedAt: row.acknowledged_at ?? null,
+		firstAcknowledgedAt: row.first_acknowledged_at ?? null,
 		acknowledgedByUserId:
 			row.acknowledged_by_user_id != null
 				? Option.getOrNull(decodeUserId(row.acknowledged_by_user_id))
@@ -339,9 +357,20 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): Option.Option
 	})
 
 /** The live incidents as documents, without rows this build cannot read. */
+const incidentDocuments = new WeakMap<AlertIncidentRow, Option.Option<AlertIncidentDocument>>()
+
 export const rowsToAlertIncidentDocuments = (
 	rows: ReadonlyArray<AlertIncidentRow>,
-): ReadonlyArray<AlertIncidentDocument> => Arr.getSomes(Arr.map(rows, rowToAlertIncidentDocument))
+): ReadonlyArray<AlertIncidentDocument> =>
+	Arr.getSomes(
+		Arr.map(rows, (row) => {
+			const cached = incidentDocuments.get(row)
+			if (cached !== undefined) return cached
+			const document = rowToAlertIncidentDocument(row)
+			incidentDocuments.set(row, document)
+			return document
+		}),
+	)
 
 /**
  * Identity row schema for the `alert_destinations_v2` shape. The shape is

@@ -120,6 +120,7 @@ const makeHarness = () => {
 				else documents.delete(path)
 				return Effect.void
 			}),
+		upload: (path) => Effect.die(`unexpected upload ${path}`),
 	}
 	const providers = Layer.effect(
 		Providers,

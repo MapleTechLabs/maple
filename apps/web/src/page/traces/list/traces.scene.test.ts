@@ -13,6 +13,7 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
+import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -355,5 +356,11 @@ describe("traces list", () => {
 			given(withPresence(windowed(), "absent")),
 			expectView(text("No traces yet")).toExist(),
 		)
+	})
+})
+
+describe("traces list lazy sections", () => {
+	test("a scrolled, loaded list reuses its rail, actions, chips and rows on an unchanged render", () => {
+		Lazy.expectAllReused({ view, model: pageUpdate(loaded(page(100)), windowOver(10, 40)).model })
 	})
 })

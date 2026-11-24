@@ -13,6 +13,8 @@ import {
 	exploreAttributeValues,
 	productEventAttributeKeys,
 	productEventAttributeValues,
+	personPropertyKeys,
+	personPropertyValues,
 } from "@maple/query-engine/observability"
 import { MetricType } from "@maple/domain/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -44,7 +46,11 @@ const sourceLabelOf = (output: Output): string =>
 			? output.eventName === undefined
 				? "product events (every event)"
 				: `product events (${output.eventName})`
-			: `${output.source} (${output.scope ?? "span"})`
+			: output.source === "user_properties" || output.source === "group_properties"
+				? output.source === "user_properties"
+					? "user properties (current values, by users holding them)"
+					: "account properties (current values, by accounts holding them)"
+				: `${output.source} (${output.scope ?? "span"})`
 
 /** What narrows a product-event read: its event, the service that sent it, and the window. */
 const eventScope = (output: Output) => ({
@@ -58,44 +64,58 @@ const renderValues = (output: Output, key: string): ToolDoc => {
 	const values = output.values ?? []
 	const sourceLabel = sourceLabelOf(output)
 	const next: NextCall =
-		output.source === "product_events"
+		output.source === "user_properties" || output.source === "group_properties"
 			? doc.next(
 					"query_data",
 					{
 						source: "product_events",
 						kind: "breakdown",
-						group_by: "attribute",
-						attribute_key: key,
-						...eventScope(output),
+						metric: output.source === "user_properties" ? "users" : "groups",
+						group_by: output.source === "user_properties" ? "user_property" : "group_property",
+						property_key: key,
 					},
-					"count events per value of this property",
+					"count active users or accounts per value of this property",
 				)
-			: output.source === "metrics"
+			: output.source === "product_events"
 				? doc.next(
 						"query_data",
 						{
-							source: "metrics",
+							source: "product_events",
 							kind: "breakdown",
 							group_by: "attribute",
 							attribute_key: key,
-							metric_name: output.metricName,
-							metric_type: output.metricType,
-							service: output.service,
+							...eventScope(output),
 						},
-						output.metricName === undefined
-							? "break a metric down by this label (add metric_name and metric_type)"
-							: "break this metric down by this label",
+						"count events per value of this property",
 					)
-				: doc.next(
-						"query_data",
-						{
-							source: "traces",
-							kind: "timeseries",
-							attribute_key: key,
-							...(values[0] === undefined ? undefined : { attribute_value: values[0].value }),
-						},
-						"chart traces filtered by this attribute",
-					)
+				: output.source === "metrics"
+					? doc.next(
+							"query_data",
+							{
+								source: "metrics",
+								kind: "breakdown",
+								group_by: "attribute",
+								attribute_key: key,
+								metric_name: output.metricName,
+								metric_type: output.metricType,
+								service: output.service,
+							},
+							output.metricName === undefined
+								? "break a metric down by this label (add metric_name and metric_type)"
+								: "break this metric down by this label",
+						)
+					: doc.next(
+							"query_data",
+							{
+								source: "traces",
+								kind: "timeseries",
+								attribute_key: key,
+								...(values[0] === undefined
+									? undefined
+									: { attribute_value: values[0].value }),
+							},
+							"chart traces filtered by this attribute",
+						)
 	return {
 		title: `Attribute Values: ${key}`,
 		scope: [["Source", sourceLabel], ...(timeScope(output) ?? [])],
@@ -156,7 +176,12 @@ const renderServices = (output: Output): ToolDoc => {
 const renderKeys = (output: Output): ToolDoc => {
 	const keys = output.keys ?? []
 	const source =
-		output.source === "metrics" || output.source === "product_events" ? output.source : "traces"
+		output.source === "metrics" ||
+		output.source === "product_events" ||
+		output.source === "user_properties" ||
+		output.source === "group_properties"
+			? output.source
+			: "traces"
 	const unscopedMetrics = output.source === "metrics" && output.metricName === undefined
 	const rollupNote = unscopedMetrics
 		? [
@@ -222,11 +247,12 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 		description:
 			"Discover attribute keys and their values, for filtering in query_data and search_traces. " +
 			"source=product_events lists the properties `track()` and server events carry (narrow to one event with event_name). " +
+			"source=user_properties and group_properties list the properties users and accounts carry (identify() traits, set/set_once writes), at their current value, for user_property_filters and group_by=user_property. " +
 			"source=services instead lists the environments and commit SHAs seen in the window.",
 		parameters: Schema.Struct({
 			source: P.oneOf(
-				["traces", "metrics", "product_events", "services"],
-				"'traces' for span or resource attributes, 'metrics' for metric labels, 'product_events' for event properties, 'services' for environments and commit SHAs",
+				["traces", "metrics", "product_events", "user_properties", "group_properties", "services"],
+				"'traces' for span or resource attributes, 'metrics' for metric labels, 'product_events' for event properties, 'user_properties' / 'group_properties' for user and account properties, 'services' for environments and commit SHAs",
 			),
 			scope: P.optionalOneOf(
 				["span", "resource"],
@@ -280,6 +306,28 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 					message: `\`event_name\` applies to source=product_events only; source=${params.source} has no events to narrow to.`,
 					parameter: "event_name",
 				})
+			}
+			if (params.source === "user_properties" || params.source === "group_properties") {
+				const kind = params.source === "user_properties" ? "user" : "group"
+				if (params.key !== undefined) {
+					const rows = yield* withTenantExecutor(
+						personPropertyValues({ kind, key: params.key, limit: params.limit }),
+					).pipe(Effect.mapError(mapError))
+					return {
+						source: params.source,
+						key: params.key,
+						timeRange,
+						values: Arr.map(rows, (row) => ({ value: row.value, count: row.ids })),
+					}
+				}
+				const rows = yield* withTenantExecutor(
+					personPropertyKeys({ kind, limit: params.limit }),
+				).pipe(Effect.mapError(mapError))
+				return {
+					source: params.source,
+					timeRange,
+					keys: Arr.map(rows, (row) => ({ key: row.key, count: row.ids })),
+				}
 			}
 			if (params.source === "product_events") {
 				const events = {

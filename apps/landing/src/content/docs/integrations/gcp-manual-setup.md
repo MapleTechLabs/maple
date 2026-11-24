@@ -4,6 +4,7 @@ description: "Connect Google Cloud to Maple by creating each resource yourself i
 group: "Integrations"
 order: 9
 navLabel: "Google Cloud manual setup"
+icon: "googlecloud"
 ---
 
 Manual setup creates the same resources as the [setup script](/docs/integrations/gcp), by hand in the Google Cloud console. It takes about 20 minutes.

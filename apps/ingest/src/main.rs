@@ -5732,19 +5732,24 @@ async fn handle_product_events_inner(
 
     // One receipt time for the whole batch: rows without a `timestamp` all
     // land at the moment the request arrived, not spread across the parse.
+    // Each line adds its index in nanoseconds, so two property writes in one
+    // batch (`set` plan free, then pro) keep their order: the newest wins.
     let received_at = chrono::Utc::now();
     let mut rows: Vec<Vec<u8>> = Vec::new();
     let mut dropped: u64 = 0;
+    let mut line_index: i64 = 0;
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
+        let line_received_at = received_at + chrono::TimeDelta::nanoseconds(line_index);
+        line_index += 1;
         let mut value: serde_json::Value = serde_json::from_slice(line)
             .map_err(|e| ApiError::bad_request(format!("invalid product event JSON: {e}")))?;
         let obj = value
             .as_object_mut()
             .ok_or_else(|| ApiError::bad_request("product event must be a JSON object"))?;
-        if !sanitize_product_event(obj, received_at) {
+        if !sanitize_product_event(obj, line_received_at) {
             dropped += 1;
             continue;
         }
@@ -5855,6 +5860,7 @@ async fn handle_profiles(
         "maple.ingest.native_rows" = tracing::field::Empty,
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.profiles.dropped" = tracing::field::Empty,
         "maple.sdk" = tracing::field::Empty,
         "user_agent.original" = tracing::field::Empty,
@@ -6380,6 +6386,7 @@ fn redact_profile_export(
     ingest_rules::redact_profiles(&rules.compiled, request, &mut stats, charge)?;
     span.record("maple.ingest.rules.count", rules.compiled.len());
     span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
+    span.record("maple.ingest.rules.parse_failed", stats.total.parse_failed);
     Ok(())
 }
 
@@ -6948,6 +6955,7 @@ async fn handle_signal(
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.dropped_items" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.ingest.payload_format" = tracing::field::Empty,
         "maple.ingest.content_encoding" = tracing::field::Empty,
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
@@ -7038,6 +7046,7 @@ async fn handle_cloudflare_logpush(
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.dropped_items" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -7718,6 +7727,7 @@ async fn handle_gcp_logpush(
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.dropped_items" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -8173,6 +8183,7 @@ async fn handle_aws_firehose(
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.dropped_items" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
@@ -9902,10 +9913,13 @@ async fn apply_ingest_rules(
     span.record("maple.ingest.rules.count", rules.compiled.len());
     span.record("maple.ingest.rules.dropped_items", stats.total.dropped);
     span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
+    span.record("maple.ingest.rules.parse_failed", stats.total.parse_failed);
     if stats.total.dropped > 0 || stats.total.redacted_values > 0 {
         // One walk, only when something changed. Redaction's size change is not tracked, so
         // `before` is after plus the dropped bytes: drops are discounted, redaction never bills more.
-        let after = decoded.encoded_len();
+        // Parsing's net size change is taken back out, so parsing never moves the bill.
+        let encoded = i64::try_from(decoded.encoded_len()).unwrap_or(i64::MAX);
+        let after = usize::try_from(encoded.saturating_sub(stats.parse_size_change)).unwrap_or(0);
         let dropped_bytes = usize::try_from(stats.total.dropped_bytes).unwrap_or(usize::MAX);
         retained.retain(after.saturating_add(dropped_bytes), after);
         if stats.total.dropped > 0 {
@@ -9956,6 +9970,9 @@ struct RowStage {
     native: bool,
     /// What building the body forwarded to a collector allocates.
     forward_bytes: u64,
+    /// What the attributes parse rules wrote hold; they were allocated after the decode
+    /// reservation, so they are reserved here with the rows.
+    parse_heap: u64,
 }
 
 /// Admits the stage after decoding, before any of it runs: refuses a request whose
@@ -10020,7 +10037,9 @@ fn admit_rows(
     }
     // The forward body is reserved whole. Within the decode limits it always fits an
     // otherwise idle budget, so this refusal is for a gateway configured too small.
-    let needed = rows_heap.saturating_add(stage.forward_bytes);
+    let needed = rows_heap
+        .saturating_add(stage.forward_bytes)
+        .saturating_add(stage.parse_heap);
     if needed > room {
         metrics::org_data_loss(org_id, signal.path(), INGEST_PAYLOAD_TOO_LARGE.error_kind);
         return Err(refuse(ApiError::payload_too_large(format!(
@@ -10102,6 +10121,7 @@ async fn process_decoded_payload(
     let stage = RowStage {
         metered_bytes: retained.metered_bytes(received.bytes),
         decode_heap: received.decode_heap,
+        parse_heap: applied.as_ref().map_or(0, |applied| applied.stats.parse_heap_added),
         native,
         forward_bytes: forward_body.map_or(0, |body| body.heap_bytes()),
     };
@@ -11346,20 +11366,20 @@ impl PostgresTarget {
     }
 }
 
-/// One multi-row upsert adding counts into `org_ingest_rule_stats`; 8 parameters per row.
+/// One multi-row upsert adding counts into `org_ingest_rule_stats`; 9 parameters per row.
 /// Rows must have distinct keys, or Postgres refuses to update a row twice.
 fn ingest_rule_stats_upsert_sql(rows: usize) -> String {
     let mut sql = String::from(
         "INSERT INTO org_ingest_rule_stats \
-         (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values) VALUES ",
+         (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values, parse_failed) VALUES ",
     );
     for row in 0..rows {
-        let p = row * 8;
+        let p = row * 9;
         if row > 0 {
             sql.push_str(", ");
         }
         sql.push_str(&format!(
-            "(${}, ${}, to_timestamp(${}::bigint / 1000.0), ${}, ${}::bigint, ${}::bigint, ${}::bigint, ${}::bigint)",
+            "(${}, ${}, to_timestamp(${}::bigint / 1000.0), ${}, ${}::bigint, ${}::bigint, ${}::bigint, ${}::bigint, ${}::bigint)",
             p + 1,
             p + 2,
             p + 3,
@@ -11367,7 +11387,8 @@ fn ingest_rule_stats_upsert_sql(rows: usize) -> String {
             p + 5,
             p + 6,
             p + 7,
-            p + 8
+            p + 8,
+            p + 9
         ));
     }
     sql.push_str(
@@ -11375,7 +11396,8 @@ fn ingest_rule_stats_upsert_sql(rows: usize) -> String {
          matched = org_ingest_rule_stats.matched + EXCLUDED.matched, \
          dropped = org_ingest_rule_stats.dropped + EXCLUDED.dropped, \
          dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes, \
-         redacted_values = org_ingest_rule_stats.redacted_values + EXCLUDED.redacted_values",
+         redacted_values = org_ingest_rule_stats.redacted_values + EXCLUDED.redacted_values, \
+         parse_failed = org_ingest_rule_stats.parse_failed + EXCLUDED.parse_failed",
     );
     sql
 }
@@ -11822,7 +11844,7 @@ impl KeyStore for PostgresKeyStore {
         if rows.is_empty() {
             return Ok(());
         }
-        let numbers: Vec<[i64; 5]> = rows
+        let numbers: Vec<[i64; 6]> = rows
             .iter()
             .map(|row| {
                 let count = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
@@ -11832,11 +11854,12 @@ impl KeyStore for PostgresKeyStore {
                     count(row.counts.dropped),
                     count(row.counts.dropped_bytes),
                     count(row.counts.redacted_values),
+                    count(row.counts.parse_failed),
                 ]
             })
             .collect();
         let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(rows.len() * 8);
+            Vec::with_capacity(rows.len() * 9);
         for (row, values) in rows.iter().zip(&numbers) {
             params.push(&row.org_id);
             params.push(&row.rule_id);
@@ -17843,6 +17866,7 @@ mod tests {
             decode_heap: 4 * mib,
             native: true,
             forward_bytes: 2 * mib,
+            parse_heap: 0,
         };
         let admit = |stage: RowStage, memory: &mut DecodeReservation| {
             admit_rows(
@@ -17925,6 +17949,23 @@ mod tests {
             .expect_err("other requests hold the memory");
         assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
         assert!(error.kind.retryable);
+        drop(others);
+
+        // What parse rules wrote is reserved with the rows: it fits an idle gateway, and waits
+        // when other requests leave room for the rows but not for it.
+        let parsed = RowStage { parse_heap: mib, ..stage };
+        let mut memory = state.decode_memory.reservation();
+        admit(parsed, &mut memory).expect("fits an idle gateway");
+        assert_eq!(memory.held_bytes(), rows.heap_bytes() + 2 * mib + mib);
+        drop(memory);
+        let mut others = state.decode_memory.reservation();
+        assert!(others.try_add(total - rows.heap_bytes() - 2 * mib - mib / 2));
+        admit(stage, &mut state.decode_memory.reservation()).expect("the rows alone still fit");
+        let error = admit(parsed, &mut state.decode_memory.reservation())
+            .expect_err("no room left for the parsed attributes");
+        assert_eq!(error.kind.tag, "@maple/ingest/DecodeBusy");
+        assert!(error.kind.retryable);
+        drop(others);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -23358,10 +23399,11 @@ mod tests {
     fn rule_stats_upsert_numbers_every_row_and_adds_on_conflict() {
         let sql = ingest_rule_stats_upsert_sql(2);
         assert!(sql.contains(
-            "($1, $2, to_timestamp($3::bigint / 1000.0), $4, $5::bigint, $6::bigint, $7::bigint, $8::bigint), \
-             ($9, $10, to_timestamp($11::bigint / 1000.0), $12, $13::bigint, $14::bigint, $15::bigint, $16::bigint)"
+            "($1, $2, to_timestamp($3::bigint / 1000.0), $4, $5::bigint, $6::bigint, $7::bigint, $8::bigint, $9::bigint), \
+             ($10, $11, to_timestamp($12::bigint / 1000.0), $13, $14::bigint, $15::bigint, $16::bigint, $17::bigint, $18::bigint)"
         ));
         assert!(sql.contains("dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes"));
+        assert!(sql.contains("parse_failed = org_ingest_rule_stats.parse_failed + EXCLUDED.parse_failed"));
     }
 
     /// Prometheus remote write, posted over HTTP to the gateway's own routes.

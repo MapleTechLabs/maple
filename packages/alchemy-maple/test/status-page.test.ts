@@ -173,6 +173,7 @@ const makeFake = () => {
 		patch: (path, body) => Effect.suspend(() => route("PATCH", path, body)),
 		put: (path, body) => Effect.suspend(() => route("PUT", path, body)),
 		delete: (path) => Effect.suspend(() => route("DELETE", path)),
+		upload: (path) => Effect.die(`unexpected upload ${path}`),
 	}
 	return {
 		api,

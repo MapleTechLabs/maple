@@ -12,7 +12,8 @@ import {
 	skeletonRows,
 } from "../../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
-import { metaLine, platformLabel } from "../../kit/meta-line"
+import { platformLabel } from "../../../kit/platform-label"
+import { metaLine } from "../../kit/meta-line"
 import { listRelativeTime } from "../../../kit/relative-time"
 import type { SortDir, SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"

@@ -8,7 +8,7 @@ import {
 	McpToolsUnavailableError,
 } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./tenant"
-import { DATA_SOURCE_TOOLS, refusalFor, type McpToolResult } from "./tools/types"
+import { DATA_SOURCE_TOOLS, LLM_EVALS_TOOLS, refusalFor, type McpToolResult } from "./tools/types"
 import type { McpToolModule } from "./tools/registry-core"
 import { MCP_TOOL_MODULES } from "./tool-modules.generated"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
@@ -96,8 +96,9 @@ const toolsByName: ReadonlyMap<string, McpToolModule> = new Map(
 /**
  * Hides a tool from the `tools/list` of a caller the registry would refuse (a permission they lack,
  * a read-only key on a tool that changes data), and answers a call to it as unknown: a listed tool
- * invites the call. The data source tools are also hidden from an org outside the `dataSources`
- * rollout; flags that cannot be read in time hide nothing, since those tools still refuse such an org.
+ * invites the call. The data source and LLM evaluation tools are also hidden from an org outside the
+ * `dataSources` / `llmEvals` rollout; flags that cannot be read in time hide nothing, since those
+ * tools still refuse such an org.
  */
 const HiddenFromRefusedCallers = EffectMcpServer.visibility(
 	Effect.map(
@@ -107,13 +108,22 @@ const HiddenFromRefusedCallers = EffectMcpServer.visibility(
 				Effect.gen(function* () {
 					const tenant = yield* CurrentMcpRequestTenant
 					const tool = toolsByName.get(target)
-					if (tenant !== undefined && tool !== undefined && refusalFor(tenant, tool) !== undefined) {
+					if (
+						tenant !== undefined &&
+						tool !== undefined &&
+						refusalFor(tenant, tool) !== undefined
+					) {
 						return false
 					}
-					if (!DATA_SOURCE_TOOLS.has(target)) return true
+					const flag = DATA_SOURCE_TOOLS.has(target)
+						? "dataSources"
+						: LLM_EVALS_TOOLS.has(target)
+							? "llmEvals"
+							: undefined
+					if (flag === undefined) return true
 					if (tenant === undefined) return false
 					const flags = yield* flagsInTime(featureFlags, tenant.orgId)
-					return Option.isNone(flags) || flags.value.dataSources
+					return Option.isNone(flags) || flags.value[flag]
 				}),
 	),
 )

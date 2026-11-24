@@ -1,17 +1,16 @@
 import { consentAllowedSince, hasConsent, ingestHeaders, sdkHint } from "@maple/browser-session"
 import { ROOT_CONTEXT, trace } from "@opentelemetry/api"
-import { ExportResultCode } from "@opentelemetry/core"
-import { JsonLogsSerializer } from "@opentelemetry/otlp-transformer"
-import { resourceFromAttributes } from "@opentelemetry/resources"
+import type { ResolvedConfig } from "../config"
+import { attachLogSink, detachLogSink } from "../logs"
+import { newestFirstOnExit, OtlpExporter } from "../otlp"
 import {
 	BatchLogRecordProcessor,
 	LoggerProvider,
 	type LogRecordExporter,
 	type ReadableLogRecord,
-} from "@opentelemetry/sdk-logs"
-import type { ResolvedConfig } from "../config"
-import { attachLogSink, detachLogSink } from "../logs"
-import { newestFirstOnExit, OtlpExporter } from "../otlp"
+} from "../sdk/logs"
+import { JsonLogsSerializer } from "../sdk/otlp-json"
+import { ExportResultCode } from "../sdk/span"
 import { resourceAttributes } from "../tracing"
 import { SDK_NAME, SDK_VERSION } from "../version"
 
@@ -64,7 +63,7 @@ class OfflineLogExporter implements LogRecordExporter {
 	}
 }
 
-/** Start the OTel logs pipeline and drain the eager queue into it. Returns a shutdown. */
+/** Start the logs pipeline and drain the eager queue into it. Returns a shutdown. */
 export function startLogs(
 	config: ResolvedConfig,
 	stashOffline?: (logs: ReadableLogRecord[]) => void,
@@ -100,7 +99,7 @@ export function startLogs(
 	const canListen = typeof window !== "undefined" && typeof window.addEventListener === "function"
 	if (canListen) window.addEventListener("pagehide", onPageHide)
 	const provider = new LoggerProvider({
-		resource: resourceFromAttributes(resourceAttributes(config)),
+		resource: { attributes: resourceAttributes(config) },
 		processors: [new BatchLogRecordProcessor({ exporter, scheduledDelayMillis: 2_000 })],
 	})
 	const logger = provider.getLogger(SDK_NAME, SDK_VERSION)

@@ -40,12 +40,27 @@ export const ServiceRow = Schema.Struct({
 })
 export type ServiceRow = typeof ServiceRow.Type
 
-/** `getCustomChartServiceSparklines`, reduced to the two series the row draws. */
+/**
+ * `getCustomChartServiceSparklines`, reduced to the two series the row draws (throughput per second)
+ * and each point's bucket, for the hovered point's time.
+ */
 export const Sparklines = Schema.Record(
 	Schema.String,
-	Schema.Struct({ throughput: Schema.Array(Schema.Number), errorRate: Schema.Array(Schema.Number) }),
+	Schema.Struct({
+		buckets: Schema.Array(Schema.String),
+		throughput: Schema.Array(Schema.Number),
+		errorRate: Schema.Array(Schema.Number),
+	}),
 )
 export type Sparklines = typeof Sparklines.Type
+
+/** A resolved commit: its provider (`github`), subject and when it was committed (epoch ms). */
+export const CommitSummary = Schema.Struct({
+	provider: Schema.String,
+	subject: Schema.String,
+	committedAt: Schema.Number,
+})
+export type CommitSummary = typeof CommitSummary.Type
 
 const FacetCount = Schema.Struct({ name: Schema.String, count: Schema.Number })
 export const ServicesFacets = Schema.Struct({
@@ -79,8 +94,8 @@ export const Model = Schema.Struct({
 	incidents: IncidentsData.schema,
 	/** The loaded table has painted; the commit message lookup starts with it. */
 	hasPaintedTable: Schema.Boolean,
-	/** First lines of the deploy commits on screen, by sha. */
-	commitMessages: KeyedSchema(Schema.Record(Schema.String, Schema.String), LoadFailure),
+	/** The deploy and release-facet commits on screen, by sha. */
+	commitSummaries: KeyedSchema(Schema.Record(Schema.String, CommitSummary), LoadFailure),
 	presence: SignalPresenceData.schema,
 	/** The row tooltips: rollout split (left), sampling estimate and the unnamed-service hint (below). */
 	rolloutTooltip: Tooltip.Model,
@@ -96,5 +111,7 @@ export const Model = Schema.Struct({
 	isReloading: Schema.Boolean,
 	/** The keyboard-focused row, by its place in the table's order; none until J or K is pressed. */
 	focusedIndex: Schema.NullOr(Schema.Number),
+	/** The sparkline under the pointer and its hovered point; its cell shows that point's value. */
+	hoveredSparkline: Schema.NullOr(Schema.Struct({ slotId: Schema.String, index: Schema.Number })),
 })
 export type Model = typeof Model.Type

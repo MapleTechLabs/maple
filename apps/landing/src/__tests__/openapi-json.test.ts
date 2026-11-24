@@ -12,7 +12,10 @@ describe("/openapi.json", () => {
 		const doc = await response.json()
 		expect(doc.openapi).toMatch(/^3\.1\./)
 		expect(doc.info.title).toBe("Maple API")
-		expect(doc.servers).toEqual([{ url: "https://api.maple.dev", description: "Production" }])
+		expect(doc.servers).toEqual([
+			{ url: "https://api.maple.dev", description: "Production" },
+			{ url: "https://api.eu.maple.dev", description: "Production, EU region" },
+		])
 	})
 
 	it("is function-calling ready: every operation has an operationId and a description", () => {

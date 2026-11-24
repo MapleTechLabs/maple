@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { AiSessionSpanCursor } from "@maple/domain/http"
-import { Option, Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -11,6 +11,7 @@ import { init, update } from "./update"
 import { hashedMarkdownTexts, transcriptRows } from "./transcript-rows"
 import { buildLargeSessionFixture } from "../../../lab/agent-transcript-fixture"
 import { toWire } from "../../../lab/session-lab"
+import { REST_LOAD_FAILURE } from "./view-load"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -194,6 +195,71 @@ describe("agent session detail", () => {
 			}),
 		).model
 	}
+
+	test("an org in the llmEvals rollout reads the loaded traces' scores once the spans are in", () => {
+		// The fixture's trace ids are readable names; the read takes W3C ids.
+		const spans = toWire(buildLargeSessionFixture(3), SESSION)
+		const ids = Arr.dedupe(Arr.map(spans, (span) => span.traceId))
+		const hex = (traceId: string) => Str.padStart(32, "0")(String(ids.indexOf(traceId) + 1))
+		const wire = Arr.map(spans, (span) => ({ ...span, traceId: hex(span.traceId) }))
+		const firstPage = (ctx: PageContext) => {
+			const { model } = init({ sessionId: SESSION, search: {} }, ctx)
+			return update(
+				model,
+				Message.CompletedFetchFirstPage({
+					key: model.firstPage.key ?? "",
+					result: Result.succeed({
+						data: wire,
+						nextCursor: null,
+					}),
+				}),
+				ctx,
+			)
+		}
+		expect(names(firstPage(context).commands)).not.toContain("FetchAgentSessionScores")
+		// A session with more pages to load waits for them, so the read names every loaded trace.
+		const paging = (() => {
+			const ctx = { ...context, hasLlmEvals: true }
+			const { model } = init({ sessionId: SESSION, search: {} }, ctx)
+			return update(
+				model,
+				Message.CompletedFetchFirstPage({
+					key: model.firstPage.key ?? "",
+					result: Result.succeed({
+						data: wire,
+						nextCursor: Schema.decodeSync(AiSessionSpanCursor)({
+							timestamp: "2026-10-01 12:00:00",
+							spanId: "s1",
+						}),
+					}),
+				}),
+				ctx,
+			)
+		})()
+		expect(names(paging.commands)).not.toContain("FetchAgentSessionScores")
+		const flagged = firstPage({ ...context, hasLlmEvals: true })
+		const read = Arr.findFirst(flagged.commands ?? [], ({ name }) => name === "FetchAgentSessionScores")
+		const traceIds = Option.getOrUndefined(
+			Option.flatMap(read, ({ args }) =>
+				typeof args === "object" && args !== null && "traceIds" in args && Arr.isArray(args.traceIds)
+					? Option.some(args.traceIds)
+					: Option.none(),
+			),
+		)
+		expect(traceIds).toEqual(Arr.map(ids, hex))
+		// A failed read keeps its failure for the view, and Try again reads the scores again.
+		const failed = update(
+			flagged.model,
+			Message.CompletedFetchScores({
+				key: flagged.model.scores.key ?? "",
+				result: Result.fail(REST_LOAD_FAILURE),
+			}),
+			{ ...context, hasLlmEvals: true },
+		)
+		expect(AsyncData.isFailure(failed.model.scores.data)).toBe(true)
+		const retried = update(failed.model, Message.ClickedRetryScores(), { ...context, hasLlmEvals: true })
+		expect(names(retried.commands)).toContain("FetchAgentSessionScores")
+	})
 
 	test("the transcript rows are read once per filter and collapse, not on every scroll tick", () => {
 		const loaded = transcriptLoaded()

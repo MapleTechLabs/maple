@@ -1,4 +1,4 @@
-import { SLO_BURN_TIERS, windowLabel } from "@maple/domain/slo"
+import { SLO_BURN_TIERS, SLO_MIN_TIER_EVENTS, windowLabel } from "@maple/domain/slo"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -28,8 +28,16 @@ import {
 	managersOnlyPage,
 } from "../../kit/form-section"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
-import { formatPercent, formatThreshold, formatWindow } from "../shared/slo-derive"
-import { budgetDowntime, formIssues, targetOf } from "./derive"
+import {
+	factorOf,
+	formatFactor,
+	formatPercent,
+	formatThreshold,
+	formatWindow,
+	isCapped,
+	maxBurnLine,
+} from "../shared/slo-derive"
+import { budgetDowntime, formIssues, MAX_TARGET, targetOf } from "./derive"
 import { type Form, TARGET_PRESETS, type TextField, THRESHOLDS, type Tier, WINDOW_DAYS } from "./form"
 import { Message } from "./message"
 import { type Model } from "./model"
@@ -237,22 +245,62 @@ const windowSection = (h: H, form: Form): Html =>
 		}),
 	])
 
-const TIER_COPY = {
+const SEVERITY_COPY = {
 	critical: { role: "Pages", note: "" },
 	warning: { role: "Opens a ticket", note: " A critical incident notifies these too." },
 } as const satisfies Record<Tier, Readonly<{ role: string; note: string }>>
 
-/** Each tier's line, from the factors and windows the evaluator uses. */
-const TIERS = Arr.map(SLO_BURN_TIERS, (tier) => {
-	const copy = TIER_COPY[tier.severity]
-	return {
-		tier: tier.severity,
-		title: ALERT_SEVERITY_LABEL[tier.severity],
-		rule: `${copy.role} when the budget burns at ${tier.factor}x over ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}.${copy.note}`,
-	}
-})
+/** Destinations are picked per severity; a severity fires when any of its tiers does. */
+const SEVERITIES = ["critical", "warning"] as const satisfies ReadonlyArray<Tier>
 
-const tierPicker = (h: H, model: Model, entry: (typeof TIERS)[number]): Html =>
+type SeverityEntry = Readonly<{ tier: Tier; title: string; rule: string }>
+
+/** The target the tiers are read for: an unusable one caps nothing, as the highest target does. */
+const tierTarget = (form: Form) => ({ target_percent: Option.getOrElse(targetOf(form), () => MAX_TARGET) })
+
+/** Each severity's line: every tier of it, at the burn it fires at for the target typed. */
+const severityEntries = (form: Form): ReadonlyArray<SeverityEntry> => {
+	const target = tierTarget(form)
+	return Arr.map(SEVERITIES, (severity) => {
+		const copy = SEVERITY_COPY[severity]
+		const tiers = Arr.map(
+			Arr.filter(SLO_BURN_TIERS, (tier) => tier.severity === severity),
+			(tier) =>
+				`at ${formatFactor(factorOf(target, tier))} over ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}`,
+		)
+		return {
+			tier: severity,
+			title: ALERT_SEVERITY_LABEL[severity],
+			rule: `${copy.role} when the budget burns ${Arr.join(tiers, ", or ")}.${copy.note}`,
+		}
+	})
+}
+
+/** Why a low target's tiers fire under their own factors, or nothing when none is capped. */
+const capNote = (form: Form): ReadonlyArray<string> => {
+	const target = tierTarget(form)
+	const capped = Arr.filter(SLO_BURN_TIERS, (tier) => isCapped(target, tier))
+	const [first, ...rest] = capped
+	if (first === undefined) return []
+	const lead = maxBurnLine(target)
+	const factor = formatFactor(factorOf(target, first))
+	return rest.length === 0
+		? [`${lead}, so the ${first.severity} tier fires at ${factor}, not ${formatFactor(first.factor)}.`]
+		: [`${lead}, so no tier fires above ${factor}.`]
+}
+
+/** What holds for every tier, said once under the pickers. */
+const alertingNotes = (form: Form): string =>
+	Arr.join(
+		[
+			...capNote(form),
+			`A tier needs at least ${SLO_MIN_TIER_EVENTS} events to fire.`,
+			"A spent error budget opens a warning of its own.",
+		],
+		" ",
+	)
+
+const tierPicker = (h: H, model: Model, entry: SeverityEntry): Html =>
 	vstack(h, { gap: "1.5", attributes: [h.Key(entry.tier)] }, [
 		hstack(h, { gap: "2", align: "baseline", wrap: true }, [
 			typography(h, { size: "sm", weight: "medium" }, [entry.title]),
@@ -285,7 +333,12 @@ const alertingSection = (h: H, model: Model): Html =>
 				"Open incidents when the error budget burns too fast",
 			]),
 		]),
-		...(model.form.alertingEnabled ? Arr.map(TIERS, (entry) => tierPicker(h, model, entry)) : []),
+		...(model.form.alertingEnabled
+			? [
+					...Arr.map(severityEntries(model.form), (entry) => tierPicker(h, model, entry)),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [alertingNotes(model.form)]),
+				]
+			: []),
 	])
 
 const actionBar = (h: H, model: Model): Html => {

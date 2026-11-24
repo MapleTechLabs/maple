@@ -44,6 +44,9 @@ import {
 	WorkflowState,
 } from "../error-issues"
 import { EndpointAccess, requires } from "./endpoint-access"
+import { SymbolicatedStack } from "../errors/js-stack"
+import { GroupingRule } from "../tinybird/grouping"
+import { GroupingConfig, OrgGroupingRule } from "../tinybird/grouping-rules"
 export {
 	ActorType,
 	ErrorIncidentReason,
@@ -336,6 +339,8 @@ export class ErrorIssueDetailResponse extends Schema.Class<ErrorIssueDetailRespo
 	environments: Schema.Array(ErrorIssueEnvironment),
 	// The newest stack trace in the window; null when no occurrence there carried one.
 	latestStacktrace: Schema.NullOr(Schema.String),
+	// That stack mapped through the org's source maps; null when there is no stack.
+	latestStack: Schema.NullOr(SymbolicatedStack),
 }) {}
 
 export class ErrorIncidentsListResponse extends Schema.Class<ErrorIncidentsListResponse>(
@@ -399,6 +404,76 @@ export class ErrorIssueSetSeverityRequest extends Schema.Class<ErrorIssueSetSeve
 )({
 	severity: Schema.NullOr(IssueSeverity),
 	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+}) {}
+
+/**
+ * One fingerprint an issue owns, and why: the grouping key's rule and the inputs it read
+ * from the hash's latest sample. `rule` is null when the hash has not been keyed (no
+ * sample in range, or its span could not be read), so it groups with nothing.
+ */
+export class ErrorIssueFingerprintGrouping extends Schema.Class<ErrorIssueFingerprintGrouping>(
+	"ErrorIssueFingerprintGrouping",
+)({
+	fingerprintHash: Schema.String,
+	/** How the issue came to own it: its own hash, a merge, a version bump or the grouping key. */
+	source: Schema.Literals(["primary", "merge", "rekey", "group"]),
+	rule: Schema.NullOr(GroupingRule),
+	/** The org rule that grouped it, by title or id, when `rule` is `org-rule`. */
+	orgRule: Schema.NullOr(Schema.String),
+	/** Unmerged or detached by hand: never grouped again. */
+	pinned: Schema.Boolean,
+	exceptionType: Schema.String,
+	/** The message as the key read it, values redacted. */
+	messageSignature: Schema.String,
+	/** The frames the key read, top first. Empty when the rule does not read frames. */
+	frames: Schema.Array(Schema.String),
+	/** The frames skipped as a dependency's or a runtime's. */
+	skippedFrames: Schema.Array(Schema.String),
+	/** The `maple.fingerprint` value, when the error carried one. */
+	customKey: Schema.NullOr(Schema.String),
+	sampledAt: Schema.NullOr(IsoDateTimeString),
+}) {}
+
+export class ErrorIssueGroupingResponse extends Schema.Class<ErrorIssueGroupingResponse>(
+	"ErrorIssueGroupingResponse",
+)({
+	fingerprints: Schema.Array(ErrorIssueFingerprintGrouping),
+	/** More fingerprints than the response explains; the rest are left out. */
+	truncated: Schema.Boolean,
+}) {}
+
+/** An open issue that may be the same bug: same service and type, a similar message. */
+export class ErrorIssueSimilarIssue extends Schema.Class<ErrorIssueSimilarIssue>("ErrorIssueSimilarIssue")({
+	id: ErrorIssueId,
+	serviceName: Schema.String,
+	exceptionType: Schema.String,
+	exceptionMessage: Schema.String,
+	errorLabel: Schema.String,
+	workflowState: WorkflowState,
+	occurrenceCount: Schema.Number,
+	lastSeenAt: IsoDateTimeString,
+	/** Share of message words the two have in common, 0 to 1. */
+	similarity: Schema.Number,
+}) {}
+
+export class ErrorIssueSimilarResponse extends Schema.Class<ErrorIssueSimilarResponse>(
+	"ErrorIssueSimilarResponse",
+)({
+	issues: Schema.Array(ErrorIssueSimilarIssue),
+}) {}
+
+/** The whole rule list, replacing the stored one if it is still the one the editor loaded. */
+export class GroupingRulesUpdateRequest extends Schema.Class<GroupingRulesUpdateRequest>(
+	"GroupingRulesUpdateRequest",
+)({
+	rules: GroupingConfig.fields.rules,
+	/** `updatedAt` of the rules the edit started from; null when there were none. */
+	expectedUpdatedAt: Schema.NullOr(IsoDateTimeString),
+}) {}
+
+export class GroupingConfigDocument extends Schema.Class<GroupingConfigDocument>("GroupingConfigDocument")({
+	rules: Schema.Array(OrgGroupingRule),
+	updatedAt: Schema.NullOr(IsoDateTimeString),
 }) {}
 
 /** How many issues one merge folds into the kept one. */
@@ -891,6 +966,44 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			success: ErrorIssueDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
 		}).annotate(EndpointAccess, requires("error_issues:triage")),
+	)
+	.add(
+		HttpApiEndpoint.get("getIssueGrouping", "/issues/:issueId/grouping", {
+			params: { issueId: ErrorIssueId },
+			success: ErrorIssueGroupingResponse,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ...warehouseReadHttpErrors],
+		}).annotate(AuditedRead, "telemetry.read"),
+	)
+	.add(
+		HttpApiEndpoint.get("listSimilarIssues", "/issues/:issueId/similar", {
+			params: { issueId: ErrorIssueId },
+			success: ErrorIssueSimilarResponse,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post(
+			"detachIssueFingerprint",
+			"/issues/:issueId/fingerprints/:fingerprintHash/detach",
+			{
+				params: { issueId: ErrorIssueId, fingerprintHash: Schema.String },
+				success: ErrorIssueDocument,
+				error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
+			},
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("getGroupingRules", "/grouping-rules", {
+			success: GroupingConfigDocument,
+			error: ErrorPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("updateGroupingRules", "/grouping-rules", {
+			payload: GroupingRulesUpdateRequest,
+			success: GroupingConfigDocument,
+			error: [ErrorForbiddenError, ErrorPersistenceError, ErrorValidationError],
+		}).annotate(EndpointAccess, requires("error_policy:manage")),
 	)
 	.add(
 		HttpApiEndpoint.get("listIssueEvents", "/issues/:issueId/events", {

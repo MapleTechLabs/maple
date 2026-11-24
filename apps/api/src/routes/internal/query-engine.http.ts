@@ -87,6 +87,8 @@ import {
 	ListLogsResponse,
 	GetLogResponse,
 	ListMetricsResponse,
+	MetricDistributionResponse,
+	MetricExemplarsResponse,
 	MetricsSummaryResponse,
 	InfraPresenceResponse,
 	InfraSurfaceLiteral,
@@ -155,6 +157,7 @@ import {
 	isMissingAwsMetricsHourly,
 	isMissingProductEvents,
 	isMissingServiceEndpointDetails,
+	isMissingServiceIdentityColumns,
 	isMissingServiceMapDbEdgesMinutely,
 } from "@maple/backend/services/warehouse/missing-table"
 import type { QueryEngineDirectError } from "@maple/query-engine/runtime"
@@ -220,6 +223,11 @@ const withProductEventsFallback = makeRollupFallback(
 const withAwsMetricsHourlyFallback = makeRollupFallback(
 	isMissingAwsMetricsHourly,
 	"aws_metrics_hourly is absent on this cluster; reading raw AWS metric points. Apply ClickHouse schema to restore the fast path.",
+)
+
+const withServiceIdentityFallback = makeRollupFallback(
+	isMissingServiceIdentityColumns,
+	"service_platforms_hourly predates its service-identity columns on this cluster; the map shows platforms without identities. Apply ClickHouse schema to restore them.",
 )
 
 const withDbEdgesMinutelyFallback = makeRollupFallback(
@@ -310,7 +318,7 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 							: mapleSdkType === "client"
 								? "web"
 								: "unknown"
-	return {
+	const platformRow = {
 		serviceName: decodeServiceName(row.serviceName),
 		platform,
 		k8sCluster,
@@ -320,6 +328,8 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 		mapleSdkType,
 		processRuntimeName,
 	}
+	const identity = CH.servicePlatformIdentity(row)
+	return identity === undefined ? platformRow : { ...platformRow, identity }
 }
 
 const toReleaseRow = (row: CH.ReleasesListOutput): ReleaseRow => {
@@ -1517,7 +1527,13 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									tenant,
 									payload,
 								),
-								runQuery(Queries.servicePlatforms, tenant, payload),
+								withServiceIdentityFallback(
+									(t, pl: typeof payload) => runQuery(Queries.servicePlatforms, t, pl),
+									(t, pl: typeof payload) =>
+										runQuery(Queries.servicePlatformsWithoutIdentity, t, pl),
+									tenant,
+									payload,
+								),
 							],
 							{ concurrency: 4 },
 						)
@@ -1835,6 +1851,11 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("getLog", serve.rows(Queries.getLog, GetLogResponse))
 				.handle("listMetrics", serve.rows(Queries.listMetrics, ListMetricsResponse))
 				.handle("metricsSummary", serve.rows(Queries.metricsSummary, MetricsSummaryResponse))
+				.handle(
+					"metricDistribution",
+					serve.rows(Queries.metricDistribution, MetricDistributionResponse),
+				)
+				.handle("metricExemplars", serve.rows(Queries.metricExemplars, MetricExemplarsResponse))
 				.handle("infraPresence", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context

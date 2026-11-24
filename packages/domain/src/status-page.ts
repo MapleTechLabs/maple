@@ -1,5 +1,3 @@
-import { sha256 } from "@noble/hashes/sha2"
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils"
 import { Effect, Option, Schema, SchemaTransformation, Struct, Array as Arr, String as Str } from "effect"
 import {
 	StatusPageComponentId,
@@ -12,6 +10,8 @@ import {
 	StatusPageVisibility,
 	type UptimeMonitorStatus,
 } from "@maple/primitives"
+import { WebCrypto } from "effect/crypto"
+import { Hex } from "effect/encoding"
 
 // Status pages: the snapshot the publisher writes to edge storage and `apps/status` serves
 // without touching Maple, plus the pure rules both sides share (component status, bars,
@@ -79,11 +79,19 @@ export type StatusPageSlug = Schema.Schema.Type<typeof StatusPageSlug>
  * The org's part of a hosted address: the first 12 hex digits of SHA-256 over the org id. It
  * keeps slugs per org without putting the org id in the URL; web and the publisher both derive it.
  */
-export const statusPageOrgKey = (orgId: string): string =>
-	Str.slice(0, 12)(bytesToHex(sha256(utf8ToBytes(orgId))))
+export const statusPageOrgKey = (orgId: string): Effect.Effect<string> =>
+	// Effect's WebCrypto reference: `globalThis.crypto` in Workers, the browser and Node alike.
+	Effect.gen(function* () {
+		const crypto = yield* WebCrypto.WebCrypto
+		const digest = yield* Effect.promise(() =>
+			crypto.subtle.digest("SHA-256", new TextEncoder().encode(orgId)),
+		)
+		return Str.slice(0, 12)(Hex.encode(new Uint8Array(digest)))
+	})
 
 /** A page's hosted address on Maple's status domain, without the `/s/` prefix: `<org key>/<slug>`. */
-export const statusPageAddress = (orgId: string, slug: string): string => `${statusPageOrgKey(orgId)}/${slug}`
+export const statusPageAddress = (orgId: string, slug: string): Effect.Effect<string> =>
+	Effect.map(statusPageOrgKey(orgId), (orgKey) => `${orgKey}/${slug}`)
 
 const STATUS_PAGE_SLUG_MAX = 48
 

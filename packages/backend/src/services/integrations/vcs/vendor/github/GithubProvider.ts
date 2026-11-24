@@ -49,12 +49,13 @@ import type {
 } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { QUEUE_MESSAGE_LIMIT_BYTES } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { anchorComments } from "@maple/backend/services/integrations/vcs/diff-anchors"
-import { githubAuditEvent } from "./github-audit-events"
+import { githubAuditEvent, githubForcedBranch, githubRuleSuiteAuditEvent } from "./github-audit-events"
 import { type FileChange, rangeDiffPaths } from "@maple/backend/services/integrations/vcs/range-diff"
 import {
 	type GithubApiCommit,
 	type GithubApiComparison as GithubComparison,
 	type GithubApiPullRequest,
+	type GithubApiRuleSuite,
 	GithubAppClient,
 	GithubAppError,
 	isBlockedRepository,
@@ -75,6 +76,11 @@ const PROVIDER: VcsProviderId = "github"
 // queue layer) for the job envelope and the queue's own serialization. Pushes are
 // independent and idempotent (commits upsert by unique index), so splitting across
 // jobs is safe and order-independent.
+/** Pages of failed rule suites one read walks, and how many of them it asks which rules failed. */
+const RULE_SUITE_PAGES = 3
+const RULE_SUITE_PAGE_SIZE = 100
+const RULE_SUITE_DETAILS = 20
+
 const PUSH_JOB_MAX_BYTES = QUEUE_MESSAGE_LIMIT_BYTES - 16 * 1024 // 16 KB reserve ⇒ 112 KB target
 
 const PushAuthor = Schema.Struct({
@@ -1164,14 +1170,18 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					}),
 					{
 						onNone: () => [],
-						onSome: ({ installationId, auditEvent }) => [
-							{
-								kind: "audit-event",
-								provider: PROVIDER,
-								externalInstallationId: installationId,
-								event: auditEvent,
-							},
-						],
+						onSome: ({ installationId, auditEvent }) => {
+							const forcedBranch = Option.getOrUndefined(githubForcedBranch(event, parsed))
+							return [
+								{
+									kind: "audit-event",
+									provider: PROVIDER,
+									externalInstallationId: installationId,
+									event: auditEvent,
+									...(forcedBranch !== undefined ? { forcedBranch } : undefined),
+								},
+							]
+						},
 					},
 				)
 
@@ -1336,6 +1346,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						repo.name,
 						opts.limit,
 						opts.head,
+						opts.state,
 					)
 					.pipe(
 						Effect.mapBoth({
@@ -1343,6 +1354,103 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							onFailure: toVcsError,
 						}),
 					)
+
+			// Rule insights keep a window GitHub picks (hour, day, week): the smallest that covers the
+			// cursor. Past `RULE_SUITE_PAGES` pages the oldest refusals stay unread, and the read says so.
+			const fetchRefusedPushes: VcsProviderClient["fetchRefusedPushes"] = Effect.fn(
+				"GithubProvider.fetchRefusedPushes",
+			)(function* (installation, repo, opts) {
+				const age = opts.nowMs - opts.sinceMs
+				const timePeriod = age <= 3_600_000 ? "hour" : age <= 86_400_000 ? "day" : "week"
+				const readPage = (page: number) =>
+					client.listFailedRuleSuites(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						timePeriod,
+						page,
+					)
+				// Newest first: a page that reaches the cursor, or a short one, is the last.
+				const readFrom = (
+					page: number,
+					read: ReadonlyArray<GithubApiRuleSuite>,
+				): Effect.Effect<ReadonlyArray<GithubApiRuleSuite>, RepositoryListingError> =>
+					readPage(page).pipe(
+						Effect.flatMap((found) => {
+							const all = Arr.appendAll(read, found)
+							const last =
+								page >= RULE_SUITE_PAGES ||
+								found.length < RULE_SUITE_PAGE_SIZE ||
+								Arr.some(found, (suite) => timestampMs(suite.pushed_at) <= opts.sinceMs)
+							return last ? Effect.succeed(all) : readFrom(page + 1, all)
+						}),
+					)
+				const suites = yield* readFrom(1, [])
+				const fresh = Arr.filter(suites, (suite) => timestampMs(suite.pushed_at) > opts.sinceMs)
+				// The rules that failed, for the newest suites only (the ones an alert fires on); a failed
+				// read leaves the reason out.
+				const events = yield* Effect.forEach(
+					Arr.reverse(fresh),
+					(suite, index) =>
+						(index >= fresh.length - RULE_SUITE_DETAILS
+							? client
+									.getRuleSuite(
+										installation.externalInstallationId,
+										repo.owner,
+										repo.name,
+										suite.id,
+									)
+									.pipe(
+										Effect.map((detail) =>
+											Arr.map(
+												Arr.filter(
+													detail.rule_evaluations ?? [],
+													// A rule in evaluate (dry-run) mode failed but did not block the push.
+													(rule) =>
+														rule.result === "fail" &&
+														(rule.enforcement === undefined ||
+															rule.enforcement === "active"),
+												),
+												(rule) => rule.rule_type,
+											),
+										),
+										Effect.orElseSucceed(() => Arr.empty<string>()),
+									)
+							: Effect.succeed(Arr.empty<string>())
+						).pipe(
+							Effect.map((failedRules) =>
+								githubRuleSuiteAuditEvent({
+									account: installation.accountLogin,
+									repositoryFullName: repo.fullName,
+									suite: {
+										id: suite.id,
+										actorId: suite.actor_id,
+										actorName: suite.actor_name,
+										ref: suite.ref,
+										pushedAt: suite.pushed_at,
+										beforeSha: suite.before_sha,
+										afterSha: suite.after_sha,
+									},
+									failedRules,
+								}),
+							),
+						),
+					{ concurrency: 4 },
+				)
+				const newest = Arr.reduce(fresh, Number.NEGATIVE_INFINITY, (max, suite) =>
+					Math.max(max, timestampMs(suite.pushed_at)),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"vcs.rule_suites.time_period": timePeriod,
+					"vcs.rule_suites.read": suites.length,
+					"vcs.rule_suites.refused": fresh.length,
+				})
+				return {
+					events: Arr.getSomes(events),
+					newestMs: Number.isFinite(newest) ? newest : undefined,
+					truncated: fresh.length === RULE_SUITE_PAGES * RULE_SUITE_PAGE_SIZE,
+				}
+			}, Effect.mapError(toVcsError))
 
 			const fetchPullRequest: VcsProviderClient["fetchPullRequest"] = (installation, repo, number) =>
 				client
@@ -2125,6 +2233,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.streamJobLog(installation.externalInstallationId, repo.owner, repo.name, jobId)
 					.pipe(Stream.mapError(toVcsCommitError))
 
+			const canReadRuleSuites: VcsProviderClient["canReadRuleSuites"] = (installation) =>
+				client
+					.canReadAdministration(installation.externalInstallationId)
+					.pipe(Effect.mapError(toVcsCommitError))
+
 			const canReadWorkflowLogs: VcsProviderClient["canReadWorkflowLogs"] = (installation) =>
 				client
 					.canReadActions(installation.externalInstallationId)
@@ -2196,6 +2309,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchBranches,
 				fetchCommit,
 				fetchPullRequests,
+				fetchRefusedPushes,
 				fetchPullRequest,
 				fetchPullRequestFiles,
 				fetchPullRequestContext,
@@ -2222,6 +2336,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchWorkflowJobAnnotations,
 				streamWorkflowJobLog,
 				canReadWorkflowLogs,
+				canReadRuleSuites,
 				fetchBillingUsage,
 				installationSettingsUrl,
 			} satisfies VcsProviderClient

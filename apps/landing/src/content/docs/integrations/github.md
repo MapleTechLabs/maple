@@ -3,6 +3,7 @@ title: "GitHub"
 description: "Install the Maple GitHub App to sync repositories and commit history, resolve commit SHAs in your telemetry, trace your GitHub Actions runs, and give Maple's agents read access to your source code."
 group: "Integrations"
 order: 4
+icon: "github"
 ---
 
 The Maple GitHub App syncs your repositories and their commit history into Maple. You install the app, choose which repositories to share, and pick one branch to track per repository. Maple backfills the last 90 days of commits on that branch and keeps it current through GitHub webhooks.
@@ -11,7 +12,7 @@ Once connected, the integration does four things:
 
 - **Commit context in telemetry.** When your services report the `vcs.ref.head.revision` resource attribute, Maple resolves the SHA against synced commits. The trace view and service pages show a commit hover card with the author, message, and a link to GitHub.
 - **CI traces.** Every finished GitHub Actions run becomes a trace under the `github-actions` service: the run is the root span, each job a child span, and each step a span inside its job. No workflow changes are needed. Each job's log comes along as logs on those spans.
-- **Audit log.** Changes to the organization's people, access and repositories go to the audit log in the Security section, which only organization admins can read.
+- **Audit log.** Changes to the organization's people, access, repositories and protections, force pushes and more, in categories you pick, go to the audit log in the Security section, which only organization admins can read.
 - **Source code for Maple's agents.** Investigations and pull request review read your repositories through the app installation, so they can go from an exception in a trace to the code that raised it. These reads are not offered to third-party assistants on the [MCP server](/docs/reference/mcp).
 
 ## Prerequisites
@@ -75,23 +76,34 @@ Logs arrive a few seconds after their job's spans, since GitHub publishes a log 
 
 ## Audit log
 
-Maple writes these GitHub events to **Security → Audit log** under the GitHub platform, one entry per webhook delivery. Each entry names who acted (the GitHub user or bot), what changed and the organization or account it belongs to.
+Maple writes GitHub events to **Security → Audit log** under the GitHub platform, one entry per webhook delivery. Each entry names who acted (the GitHub user or bot), what changed and the organization or account it belongs to.
 
-| Category      | Events                                                                                                                                                 |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Membership    | People added to, removed from or invited to the organization; repository collaborators added or removed; team changes                                  |
-| Permissions   | A collaborator's role changed; a team given or removed from a repository; the Maple app installed, removed, suspended, or given or denied repositories |
-| Resources     | Repositories created, deleted, renamed, transferred, archived or edited                                                                                |
-| Configuration | A repository made public or private; branch protection rules, rulesets and code security settings changed; the organization renamed                    |
-| Credentials   | Deploy keys added or removed                                                                                                                           |
+Events are grouped into categories, each with its own switch under **Audit log** on the GitHub source in **Sources**. The action column is what an audit log detection matches. A detection on an action also counts its sub-actions, so `push.forced` alerts on every force push while `push.forced.default_branch` alerts only on the default branch.
 
-- **Permissions:** the Maple app's lifecycle and the organization, member, team and repository events need no new permission. Branch protections, rulesets and code security settings need **Administration: Read**, and deploy keys need **Deployments: Read**: until an owner accepts that request on GitHub (organization **Settings > GitHub Apps > Review request**), those events do not arrive. Maple never changes repository settings.
-- **Time:** GitHub's webhooks carry no event time, so an entry's time is when Maple received it, normally within seconds.
-- **Not covered:** sign-ins, Git operations, Actions settings, and other events GitHub records only in its own audit log, which GitHub offers on Enterprise Cloud.
+| Category                          | On by default | Events and actions                                                                                                                             | Needs                                                                                                     |
+| --------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Members and teams                 | Yes           | People invited, added or removed, role and team changes, blocked users (`organization.*`, `member.*`, `membership.*`, `team.*`, `org_block.*`) | Members: Read                                                                                             |
+| Repositories and app access       | Yes           | Repositories created, deleted, renamed, transferred, archived or made public; the Maple app installed or given repositories                    | None                                                                                                      |
+| Branch protections and rulesets   | Yes           | Branch protection rules and rulesets changed (`branch_protection_rule.*`, `repository_ruleset.*`)                                              | Administration: Read                                                                                      |
+| Deploy keys and access tokens     | Yes           | Deploy keys added or removed; fine-grained token requests (`deploy_key.*`, `personal_access_token_request.*`)                                  | Deployments: Read for deploy keys; Personal access token requests (organization): Read for token requests |
+| Code security settings            | Yes           | Secret scanning, push protection, Dependabot or code scanning turned on or off (`security_and_analysis.changed`)                               | Administration: Read                                                                                      |
+| Force pushes                      | Yes           | A push that rewrote a branch's or tag's history, with the commits before and after (`push.forced`, see below)                                  | None                                                                                                      |
+| Refused pushes                    | Yes           | Pushes a ruleset refused, such as a force push or an unsigned commit to a protected branch (`rule_suite.failed`), read every 15 minutes        | Administration: Read                                                                                      |
+| Branch and tag deletions          | Yes           | `delete.branch`, `delete.tag`                                                                                                                  | None                                                                                                      |
+| Branch and tag creations          | No            | `create.branch`, `create.tag`                                                                                                                  | None                                                                                                      |
+| Pull request merges and approvals | No            | `pull_request.merged`, `pull_request_review.approved`, `pull_request_review.dismissed`                                                         | None                                                                                                      |
+| Releases                          | No            | `release.published`, `.unpublished`, `.edited`, `.deleted`                                                                                     | None                                                                                                      |
+| Forks                             | No            | `fork.created`                                                                                                                                 | None                                                                                                      |
+| Deployments                       | No            | `deployment.created`, a status by its outcome (`deployment_status.failure`), environment approvals (`deployment_review.approved`)              | Deployments: Read                                                                                         |
+| Security alerts                   | No            | Secret scanning, code scanning and Dependabot alerts and repository security advisories (`secret_scanning_alert.created`, ...)                 | Secret scanning alerts, Code scanning alerts, Dependabot alerts, Repository security advisories: Read     |
 
-Pushes, pull requests and CI runs are not audit events and stay out of the audit log.
+- **Force pushes:** a force push to the repository's default branch is `push.forced.default_branch`. One to a branch with an open pull request that someone else opened is `push.forced.non_author`, and its entry names that pull request; Maple asks GitHub for the branch's pull requests when the push arrives, and if GitHub does not answer the entry stays `push.forced`. A rebase someone does for the author with **Update branch**, or a bot that pushes to a person's pull request, counts too. Only branches in the same repository are checked: a push to a fork's branch never reaches the upstream repository's webhooks. Every other force push is `push.forced`. The **Detections** page has a template for each of the first two.
+- **Refused pushes:** a push a ruleset refuses never reaches the repository, so GitHub sends no webhook for it. Maple reads each repository's rule insights every 15 minutes instead and writes every refusal as `rule_suite.failed` with the outcome **Denied**, naming who pushed, the branch, and the rules that failed (for example `non_fast_forward` for a force push, `required_signatures` for an unsigned commit). It needs **Administration: Read**, and only rulesets are covered: a push that classic branch protection refuses leaves no record GitHub shares. GitHub keeps rule insights for public repositories, and for private ones on paid plans. The **Detections** page has a template for refused pushes.
+- **Permissions:** until an owner accepts a permission the Maple app asks for (organization **Settings > GitHub Apps > Review request**), the events that need it do not arrive. Maple never changes repository settings.
+- **Time:** GitHub's webhooks carry no event time, so an entry's time is when GitHub sent it, normally seconds before Maple receives it.
+- **Not covered:** sign-ins, Actions settings, and other events GitHub records only in its own audit log, which GitHub offers on Enterprise Cloud. Ordinary pushes, pull request activity other than merges and approvals, and CI runs stay out.
 
-The audit log is on by default. To stop it, an admin turns off **Audit log** on the GitHub source in **Sources**; events that happen while it is off are not recorded, and turning it back on does not fill the gap. Entries already in the audit log stay.
+The audit log is on by default. To stop it, an admin turns off **Audit log** on the GitHub source; to stop one category, its switch below. Events that happen while something is off are not recorded, and turning it back on does not fill the gap. Entries already in the audit log stay.
 
 ## Verify
 

@@ -3,6 +3,7 @@ title: "PlanetScale"
 description: "Connect a PlanetScale organization to Maple with one authorization. Maple collects every branch's CPU, memory, storage, connections, and replica lag, registers webhooks, and adds your databases to the service map."
 group: "Integrations"
 order: 3
+icon: "planetscale"
 ---
 
 You connect a PlanetScale organization once, with an OAuth authorization. It covers everything Maple reads: the database inventory, query insights, branch metrics from PlanetScale's [metrics API](https://planetscale.com/docs/api/reference/get_branch_metrics), and the webhooks Maple registers for you. Maple reads every branch's metrics every 5 minutes, and picks up new branches and databases on its own.

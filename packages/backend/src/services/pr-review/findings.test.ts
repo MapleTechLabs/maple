@@ -417,7 +417,7 @@ describe("renderFollowUp", () => {
 			previousSha: "abcdef1234",
 			changes: { paths: ["src/a.ts"], rewritten: false },
 			open: [],
-			recheck: true,
+			recheck: "defect",
 		})
 		assert.include(Arr.join(followUp, "\n"), "review the whole diff")
 		assert.isUndefined(followUpScope(Arr.join(["Review pull request #7.", ...followUp], "\n")))

@@ -5220,11 +5220,49 @@ struct LogRow<'a> {
     trace_id: String,
 }
 
+/// A record's attributes, plus its OTLP `event_name` as `event.name`: the logs datasource has no
+/// column for it, and `ai_evaluations_mv` keys on it (`gen_ai.evaluation.result`). An emitter's own
+/// `event.name` attribute wins.
+fn log_attributes(log: &LogRecord) -> Map<String, Value> {
+    let mut attributes = attr_map(&log.attributes);
+    if !log.event_name.is_empty() && !attributes.contains_key(LOG_EVENT_NAME_ATTR) {
+        attributes.insert(
+            LOG_EVENT_NAME_ATTR.to_owned(),
+            Value::String(log.event_name.clone()),
+        );
+    }
+    attributes
+}
+
+const LOG_EVENT_NAME_ATTR: &str = "event.name";
+
+/// Moves a record's `event_name` into its attributes as `event.name`, where ingest rules read
+/// attributes. An emitter's own `event.name` attribute wins. The field is emptied either way, so
+/// `log_attributes` cannot restore a name a `remove` rule deleted.
+pub(crate) fn lift_log_event_name(record: &mut LogRecord) {
+    let event_name = std::mem::take(&mut record.event_name);
+    if event_name.is_empty()
+        || record
+            .attributes
+            .iter()
+            .any(|attribute| attribute.key == LOG_EVENT_NAME_ATTR)
+    {
+        return;
+    }
+    record.attributes.push(KeyValue {
+        key: LOG_EVENT_NAME_ATTR.to_owned(),
+        value: Some(AnyValue {
+            value: Some(any_value::Value::StringValue(event_name)),
+        }),
+        ..Default::default()
+    });
+}
+
 fn log_row<'a>(log: &'a LogRecord, context: &RowContext<'a>, trace_id: String) -> LogRow<'a> {
     LogRow {
         body: log.body.as_ref().map(any_value_text).unwrap_or_default(),
         flags: log.flags,
-        log_attributes: attr_map(&log.attributes),
+        log_attributes: log_attributes(log),
         resource_attributes: context.resource_attrs,
         resource_schema_url: context.resource_schema_url,
         scope_attributes: context.scope_attrs,
@@ -6818,6 +6856,64 @@ mod tests {
         assert_eq!(row["log_attributes"]["retryable"], "true");
         assert_eq!(row["trace_id"], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         assert_eq!(row["span_id"], "bbbbbbbbbbbbbbbb");
+        assert!(row["log_attributes"].get("event.name").is_none());
+    }
+
+    #[test]
+    fn log_event_name_lands_in_attributes_unless_the_emitter_set_one() {
+        let encode = |log: LogRecord| {
+            let request = ExportLogsServiceRequest {
+                resource_logs: vec![opentelemetry_proto::tonic::logs::v1::ResourceLogs {
+                    resource: Some(Resource {
+                        attributes: vec![string_kv("service.name", "worker")],
+                        dropped_attributes_count: 0,
+                        entity_refs: Vec::new(),
+                    }),
+                    scope_logs: vec![opentelemetry_proto::tonic::logs::v1::ScopeLogs {
+                        scope: None,
+                        log_records: vec![log],
+                        schema_url: String::new(),
+                    }],
+                    schema_url: String::new(),
+                }],
+            };
+            let (frames, _) = encode_logs(&test_cfg().datasources, "org_1", &request).unwrap();
+            frame_row(&frames[0])
+        };
+
+        let row = encode(LogRecord {
+            event_name: "gen_ai.evaluation.result".to_owned(),
+            attributes: vec![string_kv("gen_ai.evaluation.name", "Relevance")],
+            ..Default::default()
+        });
+        assert_eq!(row["log_attributes"]["event.name"], "gen_ai.evaluation.result");
+        assert_eq!(row["log_attributes"]["gen_ai.evaluation.name"], "Relevance");
+
+        let row = encode(LogRecord {
+            event_name: "from.field".to_owned(),
+            attributes: vec![string_kv("event.name", "from.attribute")],
+            ..Default::default()
+        });
+        assert_eq!(row["log_attributes"]["event.name"], "from.attribute");
+    }
+
+    #[test]
+    fn lifting_the_event_name_makes_it_an_attribute_rules_can_read() {
+        let mut record = LogRecord {
+            event_name: "gen_ai.evaluation.result".to_owned(),
+            ..Default::default()
+        };
+        lift_log_event_name(&mut record);
+        lift_log_event_name(&mut record);
+        let names: Vec<_> = record
+            .attributes
+            .iter()
+            .filter(|attribute| attribute.key == "event.name")
+            .collect();
+        assert_eq!(names.len(), 1);
+        // A `remove` rule deleting the attribute leaves no name for the row to restore.
+        record.attributes.clear();
+        assert!(!log_attributes(&record).contains_key("event.name"));
     }
 
     #[tokio::test]

@@ -13,6 +13,8 @@ type HeatmapSpec = Extract<ChartSpec, { readonly _tag: "Heatmap" }>
 type Slot = HeatmapSpec["cells"][number]
 
 const UNMATCHED_OPACITY = 0.28
+/** Empty cells fade almost into the card, so the filled ones carry the shape; stop 0 stays clear of them. */
+const HOLE_OPACITY = 0.25
 
 const slotTooltip = (points: ReadonlyArray<ChartPoint<Slot, string, string>>): Option.Option<ChartTooltip> =>
 	Option.map(Option.fromNullishOr(points[0]?.datum), (slot) =>
@@ -35,6 +37,7 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 		x: (slot: Slot) => slot.x,
 		y: (slot: Slot) => slot.y,
 		fill: spec.grout,
+		fillOpacity: HOLE_OPACITY,
 		radius: spec.radius,
 		states: focusStates,
 	})
@@ -53,7 +56,22 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 				x: {
 					scale: scaleBand<string>([...spec.xDomain], [0, 1]).paddingInner(spec.paddingInnerX),
 					grid: false,
-					axis: { line: false, ticks: { size: 0, padding: 6 } },
+					axis: {
+						line: false,
+						ticks: {
+							size: 0,
+							padding: 6,
+							format: (value: string) => spec.xLabels?.[value] ?? value,
+						},
+						// A full time grid comes with its labels already spaced (`timeTickColumns`).
+						...(spec.xLabels === undefined
+							? undefined
+							: {
+									tickLabels: {
+										thin: spec.xLabelsSpaced === true ? false : { priority: "ends" },
+									},
+								}),
+					},
 				},
 				y: {
 					scale: scaleBand<string>([...spec.yDomain], [0, 1]).paddingInner(spec.paddingInnerY),

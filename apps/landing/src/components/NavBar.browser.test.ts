@@ -1,0 +1,166 @@
+import { MapleBrowser } from "@maple-dev/browser"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import start from "../foldkit-island/client"
+import renderer from "../foldkit-island/server"
+import { NavBar } from "./NavBar"
+import { Array as Arr } from "effect"
+
+// The header reads the publishable key when its module loads; vi.hoisted runs above the imports.
+vi.hoisted(() => {
+	vi.stubEnv("PUBLIC_CLERK_PUBLISHABLE_KEY", `pk_test_${btoa("clerk.maple.test$")}`)
+})
+
+const props = { locale: "en", stars: 1900 }
+const mounted: Array<HTMLElement> = []
+
+const mount = async (): Promise<HTMLElement> => {
+	const element = document.body.appendChild(document.createElement("astro-island"))
+	element.innerHTML = (await renderer.renderToStaticMarkup(NavBar, props)).html
+	const serverRoot = element.firstElementChild
+	await start(element)(NavBar, props)
+	mounted.push(element)
+	// The live tree replaces the server markup on a later frame; clicks before that go nowhere.
+	await vi.waitFor(() => expect(element.firstElementChild).not.toBe(serverRoot))
+	return element
+}
+const navCta = () => document.querySelector('a[data-track-location="nav"]')
+
+const stubClerk = (userId: string | null) => {
+	const load = vi.fn(async () => undefined)
+	window.Clerk = {
+		load,
+		addListener: (listener) => {
+			listener({
+				session: userId === null ? null : { status: "active" },
+				user: userId === null ? null : { id: userId },
+			})
+			return () => undefined
+		},
+	}
+	return load
+}
+
+afterEach(() => {
+	Arr.forEach(mounted.splice(0), (element) => element.dispatchEvent(new Event("astro:unmount")))
+	document.body.innerHTML = ""
+	document.cookie = "__client_uat=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+	window.Clerk = undefined
+	window.__mapleSignedIn = undefined
+	vi.restoreAllMocks()
+})
+
+describe("NavBar island", () => {
+	it("renders signed out on the server: Log in and the sign-up CTA, the localized links", async () => {
+		const html = (await renderer.renderToStaticMarkup(NavBar, { locale: "ja", stars: null })).html
+		expect(html).toContain('data-track-location="nav_login"')
+		expect(html).toContain('href="https://app.maple.dev/sign-up"')
+		expect(html).not.toContain('href="https://app.maple.dev"')
+		expect(html).toContain('href="/ja/pricing"')
+		expect(html).toContain('aria-label="GitHub"')
+	})
+
+	it("a Clerk session flips the header to Dashboard, tells the page and names the visitor", async () => {
+		document.cookie = "__client_uat=1730000000"
+		const load = stubClerk("user_1")
+		const identify = vi.spyOn(MapleBrowser, "identify").mockImplementation(() => undefined)
+		const heard: Array<unknown> = []
+		document.addEventListener("maple:signed-in", (event) =>
+			heard.push(event instanceof CustomEvent && event.detail),
+		)
+		await mount()
+		await vi.waitFor(() => expect(navCta()?.textContent).toBe("Dashboard"))
+		expect(navCta()?.getAttribute("href")).toBe("https://app.maple.dev")
+		expect(document.querySelector('[data-track-location="nav_login"]')).toBeNull()
+		expect(load).toHaveBeenCalledTimes(1)
+		expect(heard).toEqual([false, true])
+		expect(window.__mapleSignedIn).toBe(true)
+		expect(identify.mock.calls).toEqual([[null], [{ id: "user_1" }]])
+	})
+
+	it("without Clerk's session cookie it stays signed out and never loads clerk-js", async () => {
+		document.cookie = "__client_uat=0"
+		const load = stubClerk("user_1")
+		await mount()
+		await vi.waitFor(() => expect(window.__mapleSignedIn).toBe(false))
+		expect(load).not.toHaveBeenCalled()
+		expect(navCta()?.textContent).toBe("Start free trial")
+	})
+
+	it("the menu button opens the sheet; a link in it closes the sheet", async () => {
+		await mount()
+		const open = document.querySelector('button[aria-label="Open menu"]')
+		expect(open).toBeInstanceOf(HTMLButtonElement)
+		open?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+		await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+		const overview = [...document.querySelectorAll('[role="dialog"] a')].find((a) =>
+			a.textContent?.startsWith("Explore all features"),
+		)
+		expect(overview?.getAttribute("href")).toBe("/features")
+		const pricing = [...document.querySelectorAll('[role="dialog"] a')].find(
+			(a) => a.textContent === "Pricing",
+		)
+		expect(pricing?.getAttribute("href")).toBe("/pricing")
+		pricing?.addEventListener("click", (event) => event.preventDefault())
+		pricing?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+		await vi.waitFor(() => expect(open?.getAttribute("aria-expanded")).toBe("false"))
+	})
+
+	const openMenu = async (label: string): Promise<string> => {
+		const trigger = [...document.querySelectorAll("button")].find((b) => b.textContent?.startsWith(label))
+		trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+		await vi.waitFor(() => expect(trigger?.getAttribute("aria-expanded")).toBe("true"))
+		return document.body.textContent ?? ""
+	}
+
+	it("Product shows nine pillars and lists every other feature, Maple Local included, below", async () => {
+		await mount()
+		await openMenu("Product")
+		const links = [...document.querySelectorAll('[data-slot="navigation-menu-link"]')]
+		const pillars = links.filter((a) => a.querySelector("svg") !== null)
+		expect(pillars.map((a) => a.getAttribute("href"))).toEqual([
+			"/features/distributed-tracing",
+			"/features/log-management",
+			"/features/metrics-dashboards",
+			"/features/error-tracking",
+			"/features/browser-sessions",
+			"/features/alerts",
+			"/features/uptime-monitoring",
+			"/features/ai-mcp-integration",
+			"/features/github",
+		])
+		const hrefs = links.map((a) => a.getAttribute("href"))
+		for (const href of [
+			"/features/status-pages",
+			"/features/kubernetes-monitoring",
+			"/features/cost-explorer",
+			"/local",
+		])
+			expect(hrefs).toContain(href)
+	})
+
+	it("Solutions holds the use cases, integrations and the tools people switch from", async () => {
+		await mount()
+		const text = await openMenu("Solutions")
+		for (const label of ["Use Cases", "Integrations", "Switching from", "Honeycomb"])
+			expect(text).toContain(label)
+		const honeycomb = [...document.querySelectorAll("a")].find((a) => a.textContent === "Honeycomb")
+		expect(honeycomb?.getAttribute("href")).toBe("/compare/honeycomb")
+	})
+
+	it("Resources gives each of its six links an icon and a description", async () => {
+		await mount()
+		await openMenu("Resources")
+		const tiles = [...document.querySelectorAll('[data-slot="navigation-menu-link"]')]
+		expect(tiles.map((a) => a.getAttribute("href"))).toEqual([
+			"/guides",
+			"/blog",
+			"/changelog",
+			"/customers",
+			"/roadmap",
+			"/opentelemetry",
+		])
+		expect(tiles.every((a) => a.querySelector("svg") !== null)).toBe(true)
+		const roadmap = tiles.find((a) => a.getAttribute("href") === "/roadmap")
+		expect(roadmap?.textContent).toBe("RoadmapWhat we are building next")
+	})
+})

@@ -53,10 +53,16 @@ import {
 	Layer,
 	Option,
 	Order,
+	Record as Rec,
 	Ref,
 	Schema,
 } from "effect"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
+import {
+	loadOrgGrouping,
+	resolveGroupingSiblings,
+	warehouseGroupingReads,
+} from "@maple/backend/services/errors/grouping-keys"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
 import {
 	EarlyPromotionsPerDay,
@@ -74,6 +80,7 @@ import {
 	type NotificationRequest,
 } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { StackSymbolicator } from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { EdgeCacheService } from "@maple/cache"
 import {
@@ -84,7 +91,7 @@ import { actorRowToDocument, ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService, leaseConflict } from "./ErrorIssueWorkflowService"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
-import { makeErrorDatabaseExecute, makePersistenceError } from "./error-persistence"
+import { describeCause, makeErrorDatabaseExecute, makePersistenceError } from "./error-persistence"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
@@ -291,6 +298,8 @@ const make: Effect.Effect<
 	const earlyPromotionsPerDay = yield* EarlyPromotionsPerDay
 	// Starts the investigation agent when an incident opens (org opt-in).
 	const starter = yield* InvestigationStarter
+	// Grouping keys read source-mapped frames where the host binds the source map bucket.
+	const symbolicator = yield* Effect.serviceOption(StackSymbolicator)
 
 	const newErrorIssueId = () => decodeErrorIssueIdSync(randomUUID())
 	const newErrorIncidentId = () => decodeErrorIncidentIdSync(randomUUID())
@@ -1389,6 +1398,46 @@ const make: Effect.Effect<
 						)
 		const previousByHash = Arr.groupBy(lineage, (row) => row.fingerprintHash)
 
+		// Hashes sharing a grouping key are one issue (`grouping-keys.ts`). Keying a new hash
+		// reads one sample from the window and its span. A failed read of the org's rules
+		// groups nothing this window: keying under no rules could fold what the rules keep apart.
+		const orgGrouping = yield* dbExecute((db) => loadOrgGrouping(db, orgId)).pipe(
+			Effect.asSome,
+			Effect.catch((error) =>
+				Effect.as(
+					Effect.logWarning("Error tick grouping rules read failed").pipe(
+						Effect.annotateLogs({ orgId, cause: describeCause(error) }),
+					),
+					Option.none(),
+				),
+			),
+		)
+		const groupedByHash = Option.isNone(orgGrouping)
+			? new Map<string, ReadonlyArray<string>>()
+			: yield* resolveGroupingSiblings(
+					dbExecute,
+					warehouseGroupingReads(
+						warehouse,
+						tenant,
+						orgId,
+						{ startMs: windowStartMs, endMs: windowEndMs },
+						"errorGrouping",
+						symbolicator,
+					),
+					{
+						orgId,
+						hashes: Arr.map(rows, (row) => row.fingerprintHash),
+						nowMs,
+						grouping: orgGrouping.value,
+						lineage: new Map(
+							Arr.map(Rec.toEntries(previousByHash), ([hash, entries]) => [
+								hash,
+								Arr.map(entries, (entry) => entry.previousFingerprintHash),
+							]),
+						),
+					},
+				)
+
 		const persistence = yield* dbExecute((db) =>
 			persistErrorTickWindow(db, {
 				orgId,
@@ -1399,6 +1448,7 @@ const make: Effect.Effect<
 						previousByHash[row.fingerprintHash] ?? [],
 						(entry) => entry.previousFingerprintHash,
 					),
+					groupedFingerprintHashes: groupedByHash.get(row.fingerprintHash) ?? [],
 					serviceName: row.serviceName,
 					exceptionType: row.exceptionType,
 					exceptionMessage: row.exceptionMessage,
@@ -1415,6 +1465,7 @@ const make: Effect.Effect<
 				autoResolveMinutes: ERROR_INCIDENT_AUTO_RESOLVE_MINUTES,
 				claimToken: tickWindow.claimToken,
 				earlyPromotionsPerDay,
+				groupingDigest: Option.isNone(orgGrouping) ? "" : orgGrouping.value.digest,
 				makeIssueId: newErrorIssueId,
 				makeIncidentId: newErrorIncidentId,
 				makeEventId: newEventId,
@@ -1865,19 +1916,21 @@ const make: Effect.Effect<
 				Effect.gen(function* () {
 					const cursorMs = row.processedThrough
 					const fromMs = Math.max(cursorMs, horizonMs)
-					const rows = yield* warehouse
-						.compiledQuery(
-							systemTenant(row.orgId, SYSTEM_USER_ID),
-							CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
-								orgId: row.orgId,
-								startTime: DateTime.makeUnsafe(fromMs),
-								endTime: DateTime.makeUnsafe(cutoffMs),
-							}),
-							{ profile: "discovery", context: "errorTickFirstErrorMinute" },
-						)
-						// The executor adds a client buffer and retries on top of the
-						// profile's 5s. A slow lookup is retried next tick, not waited on.
-						.pipe(Effect.timeout(TICK_IDLE_RECOVERY_LOOKUP_TIMEOUT_MS))
+					const rows = yield* (
+						warehouse
+							.compiledQuery(
+								systemTenant(row.orgId, SYSTEM_USER_ID),
+								CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
+									orgId: row.orgId,
+									startTime: DateTime.makeUnsafe(fromMs),
+									endTime: DateTime.makeUnsafe(cutoffMs),
+								}),
+								{ profile: "discovery", context: "errorTickFirstErrorMinute" },
+							)
+							// The executor adds a client buffer and retries on top of the
+							// profile's 5s. A slow lookup is retried next tick, not waited on.
+							.pipe(Effect.timeout(TICK_IDLE_RECOVERY_LOOKUP_TIMEOUT_MS))
+					)
 					if (cursorMs < horizonMs) {
 						yield* Effect.logInfo("Idle error tick cursor moved past the recovery horizon").pipe(
 							Effect.annotateLogs({

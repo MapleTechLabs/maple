@@ -114,6 +114,7 @@ export const toV2IssueDetail = (detail: ErrorIssueDetailResponse): V2ErrorIssueD
 	incidents: Arr.map(detail.incidents, toV2Incident),
 	environments: Arr.map(detail.environments, (env) => ({ name: env.name, count: env.count })),
 	latest_stacktrace: detail.latestStacktrace,
+	latest_stack: detail.latestStack,
 })
 
 const decodeCursor = (

@@ -1,5 +1,9 @@
 import { resolveWindowCommand } from "../../kit/time-frame"
-import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custom-charts"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import {
+	getCustomChartServiceSparklines,
+	serviceSparklineBucketSeconds,
+} from "@maple/web-data/warehouse/custom-charts"
 import { isMapleService, MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import {
 	getServiceHealthBaseline,
@@ -18,6 +22,7 @@ import { loadSignalPresences } from "../../kit/signal-presence"
 import { fetchAnomaliesCommand } from "../../kit/service-health"
 import { loadServicesFacets } from "../../../data/services-facets-probe"
 import { Message } from "./message"
+import { perSecondRates } from "./derive"
 import { ServiceRow, Sparklines } from "./model"
 
 /** The overview, sparklines and baseline input: the window plus the URL filters, pin applied. */
@@ -73,7 +78,13 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 					Arr.map(Rec.toEntries(response.data), ([service, points]) => [
 						service,
 						{
-							throughput: Arr.map(points, (point) => point.throughput),
+							buckets: Arr.map(points, (point) => point.bucket),
+							// Per second, like the row's throughput, so a hovered point reads in the same unit.
+							throughput: perSecondRates(points, {
+								startMs: toEpochMs(input.startTime),
+								endMs: toEpochMs(input.endTime),
+								bucketSeconds: serviceSparklineBucketSeconds(input.startTime, input.endTime),
+							}),
 							errorRate: Arr.map(points, (point) => point.errorRate),
 						},
 					]),
@@ -127,16 +138,23 @@ export const FetchAnomalies = fetchAnomaliesCommand(
 )
 
 /** Every deploy sha on screen in one request, first lines by sha. */
-export const FetchCommitMessages = Command.define("FetchCommitMessages", {
+export const FetchCommitSummaries = Command.define("FetchCommitSummaries", {
 	args: { key: Schema.String, shas: Schema.String },
-	messages: [Message.CompletedFetchCommitMessages],
+	messages: [Message.CompletedFetchCommitSummaries],
 	execute: ({ key, shas }) =>
 		Effect.gen(function* () {
 			const response = yield* readCommitDetails(key, shas)
 			return Rec.fromEntries(
-				Arr.map(response.commits, (commit) => [commit.sha, firstLine(commit.message)]),
+				Arr.map(response.commits, (commit) => [
+					commit.sha,
+					{
+						provider: commit.provider,
+						subject: firstLine(commit.message),
+						committedAt: commit.committedAt,
+					},
+				]),
 			)
-		}).pipe(settleTo((result) => Message.CompletedFetchCommitMessages({ key, result }))),
+		}).pipe(settleTo((result) => Message.CompletedFetchCommitSummaries({ key, result }))),
 })
 
 /** The commit hover card's arm timer and its commit lookup. */

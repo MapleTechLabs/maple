@@ -31,6 +31,7 @@ import {
 	serviceMap as obsServiceMap,
 	findSlowTraces as obsFindSlowTraces,
 	topOperations as obsTopOperations,
+	metricExemplars as obsMetricExemplars,
 	type MineLogPatternsOutput,
 	type SearchLogsOutput,
 	type SearchTracesOutput,
@@ -81,6 +82,7 @@ import {
 	type RemoteError,
 	makeV2Client,
 	toWarehouseError,
+	unsupportedInLocal,
 	unsupportedInRemote,
 } from "./v2-client"
 import { parseTimestampMs, type Range } from "./time"
@@ -1024,6 +1026,32 @@ const remoteMetricSeries = (client: MapleV2Client, p: MetricSeriesInput) =>
 export const metricSeries = (p: MetricSeriesInput) =>
 	dispatch(localMetricSeries(p), ({ v2 }) => remoteMetricSeries(v2, p), "metrics_timeseries")
 
+export interface MetricExemplarsInput {
+	readonly name: string
+	readonly range: Range
+	readonly bucketSeconds: number
+	readonly service?: string
+	readonly environment?: string
+	readonly perBucket?: number
+	readonly limit?: number
+}
+
+/** The traces behind a metric's highest values: its exemplars, a few per time bucket. */
+export const metricExemplars = (p: MetricExemplarsInput) =>
+	dispatch(
+		obsMetricExemplars({
+			metricName: p.name,
+			timeRange: p.range,
+			bucketSeconds: p.bucketSeconds,
+			...(p.service ? { service: p.service } : undefined),
+			...(p.environment ? { environment: p.environment } : undefined),
+			...(p.perBucket === undefined ? undefined : { perBucket: p.perBucket }),
+			...(p.limit === undefined ? undefined : { limit: p.limit }),
+		}),
+		({ mcp }) => RemoteMcp.metricExemplars(mcp, p),
+		"metric_exemplars",
+	)
+
 /** A parsed PromQL query over its evaluation grid (see `core/promql.ts`). */
 export const promqlQuery = (p: { query: string; expr: Expr; window: PromqlWindow; step?: string }) =>
 	dispatch(
@@ -1047,4 +1075,18 @@ export const promqlMetricNames = (p: { range: Range }) =>
 		}),
 		({ v2 }) => Remote.promqlMetricNames(v2, p),
 		"promql_metric_names",
+	)
+
+/** End users and product events live in a workspace's users directory: remote only. */
+export const listUsers = (p: Parameters<typeof RemoteMcp.listUsers>[1]) =>
+	dispatch(unsupportedInLocal("list_users"), ({ mcp }) => RemoteMcp.listUsers(mcp, p), "list_users")
+
+export const inspectUser = (p: Parameters<typeof RemoteMcp.inspectUser>[1]) =>
+	dispatch(unsupportedInLocal("inspect_user"), ({ mcp }) => RemoteMcp.inspectUser(mcp, p), "inspect_user")
+
+export const listProductEvents = (p: Parameters<typeof RemoteMcp.listProductEvents>[1]) =>
+	dispatch(
+		unsupportedInLocal("list_product_events"),
+		({ mcp }) => RemoteMcp.listProductEvents(mcp, p),
+		"list_product_events",
 	)

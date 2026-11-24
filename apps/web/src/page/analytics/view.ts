@@ -152,13 +152,7 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 	]
 }
 
-const body = (
-	h: H,
-	model: Model,
-	timeZone: string,
-	isNarrow: boolean,
-	hasProductAnalytics: boolean,
-): Html => {
+const body = (h: H, model: Model, timeZone: string, isNarrow: boolean): Html => {
 	if (tabOf(model.search) === "ai") return aiTab(h, model, timeZone)
 	if (tabOf(model.search) === "search") return searchTab(h, model, isNarrow)
 	const presence = presenceOf(model.presence, "sessions")
@@ -173,7 +167,7 @@ const body = (
 			action: "Set up web analytics",
 			guideDocs: "webAnalytics",
 		})
-	return overviewContent(h, model, timeZone, isNarrow, hasProductAnalytics)
+	return overviewContent(h, model, timeZone, isNarrow)
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
@@ -207,16 +201,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					]),
 					tabs: tabs(h, model),
 				},
-				[
-					...chipsRow(h, model),
-					body(
-						h,
-						model,
-						timeZone,
-						inputs.isBelowSm === true,
-						inputs.context.hasProductAnalytics === true,
-					),
-				],
+				[...chipsRow(h, model), body(h, model, timeZone, inputs.isBelowSm === true)],
 			),
 			expandDialog(h, model, timeZone),
 		],

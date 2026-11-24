@@ -1,4 +1,5 @@
 import type { GithubRepoSummary, VcsRepositoryId } from "@maple/domain/http"
+import { GITHUB_AUDIT_CATEGORIES, type GithubAuditCategoryId } from "@maple/domain/github-audit"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -9,6 +10,7 @@ import {
 	branchPopoverId,
 	DeleteGithubRepo,
 	type GithubCardModel,
+	SetAuditCategory,
 	SetAuditLog,
 	SetCiTraces,
 	SetTrackedBranch,
@@ -101,6 +103,7 @@ export const settledSwitches = (model: Model, succeeded: boolean): Model => {
 	return withCard(model, {
 		...(card.isSavingCiTraces ? undefined : { ciTraces: null, ciTracesServer: null }),
 		...(card.isSavingAuditLog ? undefined : { auditLog: null, auditLogServer: null }),
+		auditCategories: Arr.filter(card.auditCategories, (entry) => entry.isSaving),
 	})
 }
 
@@ -143,6 +146,52 @@ export const completedAuditLog = (
 			),
 		(next) => refresh(next, context),
 	])
+}
+
+/** An audit category's switch: its value switched here, else the server's, else its default. */
+export const auditCategoryShown = (model: Model, id: GithubAuditCategoryId): boolean => {
+	const local = Arr.findFirst(model.githubCard.auditCategories, (entry) => entry.id === id)
+	if (Option.isSome(local)) return local.value.enabled
+	const server = githubStatusOf(model)?.auditCategories[id]
+	return server ?? Arr.some(GITHUB_AUDIT_CATEGORIES, (spec) => spec.id === id && spec.defaultEnabled)
+}
+
+const withAuditCategory = (
+	model: Model,
+	id: GithubAuditCategoryId,
+	entry: { readonly enabled: boolean; readonly isSaving: boolean } | null,
+): Model =>
+	withCard(model, {
+		auditCategories: [
+			...Arr.filter(model.githubCard.auditCategories, (other) => other.id !== id),
+			...(entry === null ? [] : [{ id, ...entry }]),
+		],
+	})
+
+export const toggledAuditCategory = (model: Model, id: GithubAuditCategoryId): Return => {
+	const saving = Arr.some(model.githubCard.auditCategories, (entry) => entry.id === id && entry.isSaving)
+	if (saving) return { model }
+	const enabled = !auditCategoryShown(model, id)
+	return {
+		model: withAuditCategory(model, id, { enabled, isSaving: true }),
+		commands: [SetAuditCategory({ id, enabled })],
+	}
+}
+
+export const completedAuditCategory = (
+	model: Model,
+	context: PageContext,
+	id: GithubAuditCategoryId,
+	enabled: boolean,
+	failure: LoadFailure | null,
+): Return => {
+	// A lost response can follow a committed write, so a failure re-reads the status too.
+	if (failure !== null)
+		return chain(withAuditCategory(model, id, null), [
+			(next) => toast(next, "error", "Couldn't change that audit category.", failure.message),
+			(next) => refresh(next, context),
+		])
+	return refresh(withAuditCategory(model, id, { enabled, isSaving: false }), context)
 }
 
 export const clickedRefresh = (model: Model, context: PageContext): Return => {

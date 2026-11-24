@@ -5,6 +5,7 @@ import { AfterResponse } from "@maple/backend/platform/after-response"
 import { SandboxFetcher } from "@maple/backend/platform/bindings"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -143,6 +144,7 @@ const mcpClient = async (
 		Layer.provideMerge(loader),
 		Layer.provideMerge(services),
 		Layer.provideMerge(afterResponse),
+		Layer.provideMerge(EdgeCacheServiceLive),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const send = (

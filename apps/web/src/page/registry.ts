@@ -19,6 +19,8 @@ import * as AgentSessionsList from "./agent-sessions/list"
 import * as AgentSession from "./agent-sessions/session"
 import * as AgentSessionTool from "./agent-sessions/tool"
 import * as AgentSessionTools from "./agent-sessions/tools"
+import * as AgentSessionEvals from "./agent-sessions/evals"
+import * as AgentSessionEvaluator from "./agent-sessions/evaluator"
 import * as McpServers from "./mcp/hub"
 import * as AlertEditor from "./alerts/editor"
 import * as AlertsHub from "./alerts/hub"
@@ -190,6 +192,8 @@ export const pages = [
 	SecurityFinding.page,
 	AgentSessionsList.page,
 	AgentSessionTools.page,
+	AgentSessionEvals.page,
+	AgentSessionEvaluator.page,
 	McpServers.page,
 	AgentSessionTool.page,
 	AgentSession.page,

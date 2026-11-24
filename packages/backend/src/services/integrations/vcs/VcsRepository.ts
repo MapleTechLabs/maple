@@ -28,6 +28,7 @@ import {
 	type VcsRepositoryDiscovery,
 } from "@maple/domain/http"
 import type { MapleDb } from "@maple/db/client"
+import { GITHUB_AUDIT_CATEGORIES, type GithubAuditCategoryChanges } from "@maple/domain/github-audit"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PrReviewSettings,
@@ -130,6 +131,7 @@ const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
 		suspendedAt: row.suspendedAt,
 		ciTracesEnabled: row.ciTracesEnabled,
 		auditLogEnabled: row.auditLogEnabled,
+		auditCategories: row.auditCategories,
 		repositoryDiscovery: row.repositoryDiscovery,
 		installedByUserId: row.installedByUserId,
 		createdAt: row.createdAt,
@@ -577,6 +579,26 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 
 			// Org-scoped and active-only: false when the installation was removed, suspended or
 			// belongs to another tenant since it was read.
+			// Refused pushes are read from each repository's cursor. Turning their collection off
+			// clears the cursors, and turning it on starts cleared ones now, so a re-enabled org never
+			// backfills refusals from while it was off.
+			const restartRuleSuiteCursors = Effect.fn("VcsRepository.restartRuleSuiteCursors")(function* (
+				installationId: VcsInstallationId,
+				collecting: boolean,
+				now: number,
+			) {
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsRepositories)
+							.set({ ruleSuitesReadUntil: collecting ? now : null })
+							.where(($) => [
+								$.installationId.eq(installationId),
+								collecting ? $.ruleSuitesReadUntil.isNull() : undefined,
+							]),
+					),
+				)
+			})
+
 			const setAuditLogEnabled = Effect.fn("VcsRepository.setAuditLogEnabled")(function* (
 				orgId: OrgId,
 				installationId: VcsInstallationId,
@@ -591,7 +613,46 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 							.returning("id"),
 					),
 				)
+				if (rows.length > 0) yield* restartRuleSuiteCursors(installationId, enabled, now)
 				return rows.length > 0
+			})
+
+			// Writes only the categories sent, each its own key, so two people saving different
+			// categories at once both keep their change. Same scoping as `setAuditLogEnabled`; none
+			// when nothing was written, else the stored choices after the write.
+			const setAuditCategories = Effect.fn("VcsRepository.setAuditCategories")(function* (
+				orgId: OrgId,
+				installationId: VcsInstallationId,
+				changes: GithubAuditCategoryChanges,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const entries = Arr.flatMap(GITHUB_AUDIT_CATEGORIES, (spec) => {
+					const enabled = changes[spec.id]
+					return enabled === undefined ? [] : [[spec.id, enabled] as const]
+				})
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsInstallations)
+							.set(($) => ({
+								auditCategories: Arr.match(entries, {
+									onEmpty: () => $.auditCategories,
+									onNonEmpty: ([[firstId, firstEnabled], ...rest]) =>
+										Arr.reduce(
+											rest,
+											PG.jsonSet($.auditCategories, [firstId], firstEnabled),
+											(doc, [id, enabled]) => PG.jsonSet(doc, [id], enabled),
+										),
+								}),
+								updatedAt: now,
+							}))
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId), $.status.eq("active")])
+							.returning("auditCategories"),
+					),
+				)
+				const refusedPushes = changes.refusedPushes
+				if (rows.length > 0 && refusedPushes !== undefined)
+					yield* restartRuleSuiteCursors(installationId, refusedPushes, now)
+				return Option.map(Arr.head(rows), (row) => row.auditCategories)
 			})
 
 			const listRepositoriesByInstallation = Effect.fn("VcsRepository.listRepositoriesByInstallation")(
@@ -608,6 +669,51 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 						),
 					)
 					return yield* decodeAll("vcs_repositories", rows, rowToRepo)
+				},
+			)
+
+			// The repositories a refused-push scan reads next: active and unarchived, in id order after
+			// `afterId`, with how far each was read.
+			const listRuleSuiteScanTargets = Effect.fn("VcsRepository.listRuleSuiteScanTargets")(function* (
+				installationId: VcsInstallationId,
+				afterId: VcsRepositoryId | undefined,
+				limit: number,
+			) {
+				return yield* dbRead("vcs_repositories")((db) =>
+					db.run(
+						PG.from(VcsRepositories)
+							.select(($) => ({
+								id: $.id,
+								externalRepoId: $.externalRepoId,
+								owner: $.owner,
+								name: $.name,
+								ruleSuitesReadUntil: $.ruleSuitesReadUntil,
+							}))
+							.where(($) => [
+								$.installationId.eq(installationId),
+								$.status.eq("active"),
+								$.isArchived.eq(false),
+								afterId === undefined ? undefined : $.id.gt(afterId),
+							])
+							.orderBy(["id", "asc"])
+							.limit(limit),
+					),
+				)
+			})
+
+			// Moves a repository's refused-push cursor forward, never back.
+			const advanceRuleSuitesReadUntil = Effect.fn("VcsRepository.advanceRuleSuitesReadUntil")(
+				function* (repositoryId: VcsRepositoryId, readUntilMs: number) {
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(VcsRepositories)
+								.set({ ruleSuitesReadUntil: readUntilMs })
+								.where(($) => [
+									$.id.eq(repositoryId),
+									$.ruleSuitesReadUntil.isNull().or($.ruleSuitesReadUntil.lt(readUntilMs)),
+								]),
+						),
+					)
 				},
 			)
 
@@ -1425,7 +1531,10 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				markInstallationStatus,
 				setCiTracesEnabled,
 				setAuditLogEnabled,
+				setAuditCategories,
 				listRepositoriesByInstallation,
+				listRuleSuiteScanTargets,
+				advanceRuleSuitesReadUntil,
 				listActiveRepositoriesByOrg,
 				resolveRepository,
 				getRepositoryById,

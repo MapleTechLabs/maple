@@ -56,6 +56,7 @@ const engineerAccess = [
 	"ai_triage:configure",
 	"security:manage",
 	"ingest_keys:roll",
+	"source_maps:upload",
 	"status_pages:access",
 	"data_sources:manage",
 	"data_sources:query",

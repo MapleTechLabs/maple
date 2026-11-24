@@ -455,6 +455,23 @@ fn cases() -> Vec<Case> {
                 ..Default::default()
             })),
         ),
+        realistic(
+            "event-named log records",
+            Request::Logs(logs_under(
+                vec![kv("service.name", any_value::Value::StringValue("evaluator".to_owned()))],
+                None,
+                (0..2_000)
+                    .map(|_| LogRecord {
+                        event_name: "gen_ai.evaluation.result".to_owned(),
+                        attributes: vec![kv(
+                            "gen_ai.evaluation.name",
+                            any_value::Value::StringValue("Relevance".to_owned()),
+                        )],
+                        ..Default::default()
+                    })
+                    .collect(),
+            )),
+        ),
         hostile(
             "wide log attributes",
             Request::Logs(logs_under(

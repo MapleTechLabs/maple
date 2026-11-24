@@ -23,6 +23,7 @@ import type { CHQuery, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import type { AttributeFilter } from "@maple/domain/query-engine"
 import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import {
@@ -34,6 +35,7 @@ import {
 	epochMs,
 	flag,
 	hasPopulationFilter,
+	personPropertyConditions,
 	identityLinksByVisitor,
 	matchingPersonsSubquery,
 	personKey,
@@ -64,6 +66,9 @@ export interface ProductEventsPathsOpts {
 	/** Names (event names / page paths) dropped before sequencing — heartbeats, "/". */
 	readonly exclude?: ReadonlyArray<string>
 	readonly filters?: ProductEventsFilters
+	/** User and account property filters, as a funnel takes them (`personPropertyConditions`). */
+	readonly userPropertyFilters?: ReadonlyArray<AttributeFilter>
+	readonly groupPropertyFilters?: ReadonlyArray<AttributeFilter>
 }
 
 export const PATHS_MAX_DEPTH = 5
@@ -160,6 +165,7 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 		hasPopulationFilter(filters)
 			? inSubquery(keyOf($), matchingPersonsSubquery(keyBy, filters))
 			: undefined,
+		...personPropertyConditions(keyBy, keyOf($), opts),
 	]
 
 	// Each person's anchor instant. Rows are read by `idx_event_name` for an

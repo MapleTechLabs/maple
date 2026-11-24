@@ -88,7 +88,7 @@ const listQueryInputs = (orgId: OrgId, filters: AuditTrailListFilters) => {
 		...(filters.account !== undefined ? { account: filters.account } : undefined),
 		...(filters.category !== undefined ? { category: filters.category } : undefined),
 		...(filters.outcome !== undefined ? { outcome: filters.outcome } : undefined),
-		...(filters.action !== undefined ? { action: filters.action } : undefined),
+		...(filters.action !== undefined ? CH.auditTrailActionParams(filters.action) : undefined),
 		...(filters.actor !== undefined ? { actor: filters.actor } : undefined),
 		...(filters.actorAlias !== undefined ? { actorAlias: filters.actorAlias } : undefined),
 		...(filters.sinceMs !== undefined ? { since: DateTime.makeUnsafe(filters.sinceMs) } : undefined),
@@ -174,6 +174,9 @@ export class AuditTrailService extends Context.Service<AuditTrailService, AuditT
 								{
 									orgId,
 									...filters,
+									...(filters.action !== undefined
+										? CH.auditTrailActionParams(filters.action)
+										: undefined),
 									start: DateTime.makeUnsafe(window.startMs),
 									end: DateTime.makeUnsafe(window.endMs),
 								},

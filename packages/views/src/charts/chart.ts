@@ -20,6 +20,11 @@ export const PlotGeometry = Schema.Struct({
 	domainEndMs: Schema.Number,
 	rangeStart: Schema.Number,
 	rangeEnd: Schema.Number,
+	/** A linear numeric y scale's domain ends and their pixels; absent on a band or time y. */
+	valueStart: Schema.optionalKey(Schema.Number),
+	valueEnd: Schema.optionalKey(Schema.Number),
+	valueRangeStart: Schema.optionalKey(Schema.Number),
+	valueRangeEnd: Schema.optionalKey(Schema.Number),
 })
 export type PlotGeometry = typeof PlotGeometry.Type
 
@@ -59,6 +64,8 @@ export const Message = defineMessageUnion({
 	FailedMountChart: { reason: Schema.String },
 	RenderedPlot: { plot: PlotGeometry },
 	ChangedChartFocus: { maybeKey: Schema.Option(Schema.String) },
+	/** A click or Enter picked a datum (its focus key); a page that cares reads it, the chart keeps nothing. */
+	SelectedChartPoint: { maybeKey: Schema.Option(Schema.String) },
 	ChangedChartTooltip: { maybeTooltip: Schema.Option(ChartTooltip) },
 	CompletedPortalTooltipBody: {},
 	ResizedChartContainer: { width: Schema.Number, height: Schema.Number },
@@ -112,6 +119,7 @@ export const update = (model: Model, message: Message) =>
 		FailedMountChart: () => ({ model }),
 		RenderedPlot: ({ plot }) => ({ model: modifyFields(model, { plot: () => Option.some(plot) }) }),
 		ChangedChartFocus: ({ maybeKey }) => ({ model: modifyFields(model, { activeKey: () => maybeKey }) }),
+		SelectedChartPoint: () => ({ model }),
 		ChangedChartTooltip: ({ maybeTooltip }) => ({
 			model: modifyFields(model, { tooltip: () => maybeTooltip }),
 		}),

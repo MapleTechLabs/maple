@@ -389,6 +389,8 @@ interface IncidentSpec {
 	readonly held?: boolean
 	/** Acknowledged this long ago, from Slack. */
 	readonly ackedAgo?: number
+	/** First acknowledged this long after it opened; defaults to `ackedAgo`'s moment. */
+	readonly firstAckedAfter?: number
 }
 
 const OPEN_INCIDENTS: ReadonlyArray<IncidentSpec> = [
@@ -429,6 +431,7 @@ const RESOLVED_INCIDENTS: ReadonlyArray<IncidentSpec> = [
 		startAgo: 19 * HOUR,
 		endAgo: 18.4 * HOUR,
 		value: 0.061,
+		firstAckedAfter: 4 * MIN,
 	},
 	{
 		id: uuid(312),
@@ -437,6 +440,7 @@ const RESOLVED_INCIDENTS: ReadonlyArray<IncidentSpec> = [
 		startAgo: 7 * HOUR,
 		endAgo: 6.2 * HOUR,
 		value: 0.072,
+		firstAckedAfter: 12 * MIN,
 	},
 	{
 		id: uuid(313),
@@ -549,6 +553,12 @@ const incidentFrom = (spec: IncidentSpec, rule: AlertRuleDocument, nowMs: number
 		acknowledgedByUserId: null,
 		acknowledgedByName: spec.ackedAgo === undefined ? null : "Dana Kim",
 		acknowledgedVia: spec.ackedAgo === undefined ? null : "slack",
+		firstAcknowledgedAt:
+			spec.firstAckedAfter !== undefined
+				? iso(nowMs - spec.startAgo + spec.firstAckedAfter)
+				: spec.ackedAgo === undefined
+					? null
+					: iso(nowMs - spec.ackedAgo),
 		errorIssueId: null,
 		silenceId: null,
 		silencedAt: null,

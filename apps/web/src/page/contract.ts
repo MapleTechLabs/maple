@@ -24,12 +24,12 @@ export interface PageContext {
 	readonly infra?: ShellInfraSurfaces
 	/** Who the shell is drawn for, from the same Clerk role; absent means an operator. */
 	readonly audience?: NavAudience
-	/** The org is in the `productAnalytics` rollout, so pages may link to it; absent means it is not. */
-	readonly hasProductAnalytics?: boolean
 	/** The org is in the `profiling` rollout, so a service page shows its Profiles tab; absent means it is not. */
 	readonly hasProfiling?: boolean
 	/** The org is in the `cloudSecurity` rollout, so the Security rail lists Cloud; absent means it is not. */
 	readonly hasCloudSecurity?: boolean
+	/** The org is in the `llmEvals` rollout, so Agent sessions shows its Evals tab and session scores; absent means it is not. */
+	readonly hasLlmEvals?: boolean
 }
 
 /** The sidebar's last-hour presence probe (`null` until it answers) and the integration statuses. */

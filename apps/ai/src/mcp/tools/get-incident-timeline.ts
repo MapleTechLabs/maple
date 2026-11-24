@@ -27,7 +27,7 @@ function formatTimestamp(iso: string | null): string | undefined {
 }
 
 const channelLabel = (channel: string): string =>
-	channel === "email" ? "email" : `${Str.capitalize(channel)} DM`
+	channel === "email" ? "email" : channel === "push" ? "phone" : `${Str.capitalize(channel)} DM`
 
 interface PageRow {
 	readonly userId: string

@@ -91,6 +91,9 @@ const ingestRulesFetches = () => [
 	Command.mapMessage(IngestRules.FetchIngestRuleStats(), (message) =>
 		Message.GotIngestRulesMessage({ message }),
 	),
+	Command.mapMessage(IngestRules.FetchIngestRuleSuggestions(), (message) =>
+		Message.GotIngestRulesMessage({ message }),
+	),
 ]
 
 /** A refetch keeps the rows on screen. */
@@ -217,9 +220,22 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 			Message.GotIngestRulesMessage({ message }),
 		),
 	)
+	const suggestions = revisitData(model.ingestRules.suggestions, () =>
+		Command.mapMessage(IngestRules.FetchIngestRuleSuggestions(), (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+	)
 	return {
-		model: { ...base.model, ingestRules: { ...model.ingestRules, rules: rules.data, stats: stats.data } },
-		commands: [...(base.commands ?? []), ...rules.commands, ...stats.commands],
+		model: {
+			...base.model,
+			ingestRules: {
+				...model.ingestRules,
+				rules: rules.data,
+				stats: stats.data,
+				suggestions: suggestions.data,
+			},
+		},
+		commands: [...(base.commands ?? []), ...rules.commands, ...stats.commands, ...suggestions.commands],
 	}
 }
 

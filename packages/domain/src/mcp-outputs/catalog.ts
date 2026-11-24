@@ -7,6 +7,7 @@ import { ListMapleFeedbackOutput, SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { DeleteSourceOutput, ListSourcesOutput, SourceMutationOutput } from "./sources"
 import { ListDataSourcesOutput, QueryDataSourceOutput } from "./data-sources"
+import { GetEvaluationScoresOutput, ListEvaluationsOutput } from "./evaluations"
 import { SearchConsolePagesOutput, SearchConsoleQueriesOutput } from "./search-console"
 import { InspectUserOutput, ListUsersOutput } from "./users"
 import {
@@ -53,6 +54,7 @@ import {
 	GetIncidentTimelineOutput,
 	ListAlertChecksOutput,
 	PreviewAlertRuleOutput,
+	ResolveAlertIncidentOutput,
 	ListAlertDestinationsOutput,
 	ListAlertIncidentsOutput,
 	ListAlertRulesOutput,
@@ -90,6 +92,7 @@ import {
 } from "./dashboards"
 import { ErrorDetailOutput, FindErrorsOutput } from "./errors"
 import { QueryPromqlOutput } from "./promql"
+import { GetMetricExemplarsOutput } from "./metrics"
 import { GetInvestigationOutput } from "./investigations"
 import {
 	ClaimErrorIssueOutput,
@@ -103,6 +106,9 @@ import {
 	ReleaseErrorIssueOutput,
 	SetIssueSeverityOutput,
 	MergeErrorIssuesOutput,
+	ExplainErrorGroupingOutput,
+	ListSimilarErrorIssuesOutput,
+	DetachErrorFingerprintOutput,
 	TransitionErrorIssueOutput,
 	TransitionErrorIssuesOutput,
 	GetErrorNotificationPolicyOutput,
@@ -253,6 +259,7 @@ export const McpToolOutputs = {
 	delete_alert_rule: DeleteAlertRuleOutput,
 	delete_dashboard: DeleteDashboardOutput,
 	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
+	resolve_alert_incident: ResolveAlertIncidentOutput,
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,
 	describe_warehouse_tables: DescribeWarehouseTablesOutput,
 	diagnose_service: DiagnoseServiceOutput,
@@ -266,9 +273,11 @@ export const McpToolOutputs = {
 	get_agent_tools_overview: GetAgentToolsOverviewOutput,
 	get_alert_rule: GetAlertRuleOutput,
 	get_dashboard: GetDashboardOutput,
+	get_evaluation_scores: GetEvaluationScoresOutput,
 	get_incident_timeline: GetIncidentTimelineOutput,
 	get_ingest_setup: GetIngestSetupOutput,
 	get_investigation: GetInvestigationOutput,
+	get_metric_exemplars: GetMetricExemplarsOutput,
 	get_instrumentation_recommendations: GetInstrumentationRecommendationsOutput,
 	get_service_top_operations: GetServiceTopOperationsOutput,
 	profile_hotspots: ProfileHotspotsOutput,
@@ -287,6 +296,7 @@ export const McpToolOutputs = {
 	link_pull_request: LinkPullRequestOutput,
 	list_agent_sessions: ListAgentSessionsOutput,
 	list_alert_checks: ListAlertChecksOutput,
+	list_evaluations: ListEvaluationsOutput,
 	list_ingest_rules: ListIngestRulesOutput,
 	preview_alert_rule: PreviewAlertRuleOutput,
 	list_alert_destinations: ListAlertDestinationsOutput,
@@ -365,6 +375,9 @@ export const McpToolOutputs = {
 	manage_status_page: familyOutput(McpToolFamilyActions.manage_status_page),
 	manage_uptime_monitor: familyOutput(McpToolFamilyActions.manage_uptime_monitor),
 	merge_error_issues: MergeErrorIssuesOutput,
+	explain_error_grouping: ExplainErrorGroupingOutput,
+	list_similar_error_issues: ListSimilarErrorIssuesOutput,
+	detach_error_fingerprint: DetachErrorFingerprintOutput,
 	transition_error_issue: TransitionErrorIssueOutput,
 	transition_error_issues: TransitionErrorIssuesOutput,
 	update_alert_rule: UpdateAlertRuleOutput,

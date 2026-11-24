@@ -21,6 +21,8 @@ import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, Message, type Model, type PolicyDraft } from "./model"
+import * as GroupingRulesView from "./grouping-rules-view"
+import { canManageGrouping } from "./grouping-rules"
 import { gatedControl } from "../../kit/session-grants"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -458,5 +460,12 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 		policySection(h, model, inputs.isKnownMember),
 		simulator(h, model),
 		recentDeliveries(h, model, inputs),
+		h.submodel({
+			slotId: "automation-grouping-rules",
+			model: model.groupingRules,
+			view: GroupingRulesView.view,
+			viewInputs: { canManage: canManageGrouping(model.grants), isKnownMember: inputs.isKnownMember },
+			toParentMessage: (message) => Message.GotGroupingRulesMessage({ message }),
+		}),
 	]),
 )

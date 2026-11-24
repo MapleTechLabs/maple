@@ -448,7 +448,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 									),
 								)
 						yield* store.value.deletePage(deleted).pipe(
-							Effect.andThen(dropRoute(statusPageAddress(tenant.orgId, current.slug))),
+							Effect.andThen(
+								Effect.flatMap(statusPageAddress(tenant.orgId, current.slug), dropRoute),
+							),
 							Effect.andThen(dropRoute(current.slug)),
 							Effect.andThen(
 								hostname === null

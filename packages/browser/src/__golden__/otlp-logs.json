@@ -1,0 +1,66 @@
+{
+	"resourceLogs": [
+		{
+			"resource": {
+				"attributes": [
+					{ "key": "service.name", "value": { "stringValue": "acme-web" } },
+					{ "key": "telemetry.sdk.name", "value": { "stringValue": "@maple-dev/browser" } },
+					{ "key": "telemetry.sdk.language", "value": { "stringValue": "webjs" } },
+					{ "key": "telemetry.sdk.version", "value": { "stringValue": "__SDK_VERSION__" } },
+					{ "key": "maple.sdk.type", "value": { "stringValue": "browser" } },
+					{ "key": "service.namespace", "value": { "stringValue": "shop" } },
+					{
+						"key": "service.version",
+						"value": { "stringValue": "0123456789abcdef0123456789abcdef01234567" }
+					},
+					{
+						"key": "vcs.ref.head.revision",
+						"value": { "stringValue": "0123456789abcdef0123456789abcdef01234567" }
+					},
+					{ "key": "deployment.environment", "value": { "stringValue": "production" } },
+					{ "key": "deployment.environment.name", "value": { "stringValue": "production" } }
+				],
+				"droppedAttributesCount": 0
+			},
+			"scopeLogs": [
+				{
+					"scope": { "name": "maple-browser", "version": "__SDK_VERSION__" },
+					"logRecords": [
+						{
+							"timeUnixNano": "1763899200250000000",
+							"observedTimeUnixNano": "1763899201500000000",
+							"severityNumber": 9,
+							"severityText": "INFO",
+							"body": {
+								"kvlistValue": {
+									"values": [
+										{ "key": "name", "value": { "stringValue": "LCP" } },
+										{ "key": "value", "value": { "doubleValue": 1234.5 } }
+									]
+								}
+							},
+							"eventName": "browser.web_vital",
+							"attributes": [
+								{ "key": "session.id", "value": { "stringValue": "s-1" } },
+								{ "key": "web_vital.rating", "value": { "stringValue": "good" } }
+							],
+							"droppedAttributesCount": 0,
+							"flags": 1,
+							"traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+							"spanId": "00f067aa0ba902b7"
+						},
+						{
+							"timeUnixNano": "1763899202000000000",
+							"observedTimeUnixNano": "1763899202000000000",
+							"severityNumber": 17,
+							"severityText": "ERROR",
+							"body": { "stringValue": "checkout failed" },
+							"attributes": [{ "key": "attempt", "value": { "intValue": 2 } }],
+							"droppedAttributesCount": 0
+						}
+					]
+				}
+			]
+		}
+	]
+}

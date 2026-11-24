@@ -41,7 +41,7 @@ const member: ClerkOrganization = {
 		aiAutoTriage: false,
 		cloudSecurity: false,
 		dataSources: false,
-		productAnalytics: false,
+		llmEvals: false,
 		profiling: false,
 		securityAudit: false,
 	},

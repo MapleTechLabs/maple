@@ -28,13 +28,17 @@ export const disclosureStrip = <M>(
 					options.label,
 				],
 			),
-			h.pre(
-				[
-					h.Class(
-						"max-h-72 overflow-auto border-t bg-surface-sunken px-4 pt-3 pb-8 [mask-image:linear-gradient(to_bottom,black_80%,transparent)] font-mono text-xs leading-5 whitespace-pre-wrap break-words text-foreground-soft",
-					),
-				],
-				[options.text],
+			monospaceBlock(h, options.text),
+		],
+	)
+
+/** The strip's open block on its own: a capped, scrolling run of monospace text on the sunken wash. */
+export const monospaceBlock = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	h.pre(
+		[
+			h.Class(
+				"max-h-72 overflow-auto border-t bg-surface-sunken px-4 pt-3 pb-8 [mask-image:linear-gradient(to_bottom,black_80%,transparent)] font-mono text-xs leading-5 whitespace-pre-wrap break-words text-foreground-soft",
 			),
 		],
+		[text],
 	)

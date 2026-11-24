@@ -7,6 +7,7 @@ import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { LinearIssueTracker } from "./LinearIssueTracker"
+import { isAnticipatedAlertingFailure } from "./expected-failures"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
 	adminGrants,
@@ -410,6 +411,43 @@ describe("AlertsService with a Linear destination", () => {
 				missingIsNull: true,
 			})
 			assert.isNull(read)
+		}).pipe(Effect.provide(linearLayers(testDb, fetch)))
+	})
+
+	it.effect("reports a workspace at its Linear plan's issue limit as a refusal not worth retrying", () => {
+		const testDb = createTestDb(trackedDbs)
+		const orgId = asOrgId("org_linear_limit")
+		const { fetch } = VendorFake.make({
+			routes: [
+				tokenRoute("r"),
+				{
+					respond: (request) =>
+						VendorFake.json(
+							decodeGraphqlRequest(request.body).operationName === "MapleIssueCreate"
+								? {
+										data: null,
+										errors: [
+											{
+												message:
+													"You've exceeded the free issue limit for this workspace. Please upgrade.",
+												extensions: { code: "INPUT_ERROR" },
+											},
+										],
+									}
+								: { data: { organization: { id: "lin_org", name: "Acme" } } },
+						),
+				},
+			],
+		})
+		return Effect.gen(function* () {
+			yield* connectLinear(testDb, fetch, orgId)
+			const tracker = yield* LinearIssueTracker
+			const refused = yield* tracker
+				.request(orgId, { name: "MapleIssueCreate", document: "", variables: {} }, Schema.Unknown)
+				.pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/http/errors/AlertDeliveryRejectedError")
+			assert.isFalse(refused.error.retryable)
+			assert.isTrue(isAnticipatedAlertingFailure(refused))
 		}).pipe(Effect.provide(linearLayers(testDb, fetch)))
 	})
 })

@@ -1220,6 +1220,45 @@ describe("checkpoint create failures", () => {
 			ok(error._tag === "@maple/cli/CheckpointCreateError" && error.stage === "backup")
 		})
 	})
+
+	it("refuses with an expected outcome and an Ok span while another live process holds the store", async () => {
+		await withDataDir(async (dataDir) => {
+			// The parent process is alive and is not us: a concurrent `maple checkpoint`.
+			const lockPath = `${dataDir}.maple-maintenance-lock`
+			mkdirSync(lockPath, { mode: 0o700 })
+			writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.ppid }))
+			// The refusal comes before any BACKUP request.
+			const unreachable = HttpClient.make((request) =>
+				Effect.succeed(
+					HttpClientResponse.fromWeb(request, new Response("unexpected", { status: 500 })),
+				),
+			)
+			const spans: Array<Tracer.NativeSpan> = []
+			const tracer = Tracer.make({
+				span(options) {
+					const span = new Tracer.NativeSpan(options)
+					spans.push(span)
+					return span
+				},
+			})
+			const error = await Effect.runPromise(
+				Effect.flip(
+					createCheckpoint({ dataDir, host: "127.0.0.1", port: 1 }).pipe(
+						Effect.provideService(HttpClient.HttpClient, unreachable),
+						Effect.withTracer(tracer),
+					),
+				),
+			)
+			strictEqual(error._tag, "@maple/cli/CheckpointPreconditionError")
+			match(error.message, /another Maple maintenance operation is active/)
+			const create = Arr.findFirst(spans, (span) => span.name === "CheckpointService.create")
+			ok(Option.isSome(create))
+			const status = create.value.status
+			ok(status._tag === "Ended" && Exit.isSuccess(status.exit))
+			// The holder's lock is left alone.
+			ok(existsSync(join(lockPath, "owner.json")))
+		})
+	})
 })
 
 describe("maintenance operations", () => {

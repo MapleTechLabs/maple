@@ -75,8 +75,14 @@ export const isMissingServiceEndpointDetails = isMissingWarehouseTable(
 /** `user_activity_hourly` (migration 0056) is missing; the users pages degrade. */
 export const isMissingUserActivityHourly = isMissingWarehouseTable(Datasources.userActivityHourly)
 
+/** `person_properties` (migration 0071) is missing; a user profile then shows its session traits only. */
+export const isMissingPersonProperties = isMissingWarehouseTable(Datasources.personProperties)
+
 /** `user_activity_daily` (migration 0070) is missing; the activity calendar has no days to show. */
 export const isMissingUserActivityDaily = isMissingWarehouseTable(Datasources.userActivityDaily)
+
+/** `ai_evaluations` (migration 0072) is missing; evaluation reads degrade to no scores. */
+export const isMissingAiEvaluations = isMissingWarehouseTable(Datasources.aiEvaluations)
 
 /** `profiles` ships in migration 0067; a cluster without it has no profiles to show. */
 export const isMissingProfiles = isMissingWarehouseTable(Datasources.profiles)
@@ -104,6 +110,12 @@ export const isMissingUserActivityIdentity = namesDriftedColumn(/\bUser(?:Name|E
 /** `error_events.UserId` (migration 0057) is missing: schema drift naming `UserId` only, so every
  * other drift still surfaces. User issues and affected users then answer unattributed. */
 export const isMissingErrorEventsUserId = namesDriftedColumn(/\bUserId\b/)
+
+/** `service_platforms_hourly` predates its service-identity columns (migration 0074): schema drift
+ * quoting one of them (the message also echoes the query). The map then draws platforms without identities. */
+export const isMissingServiceIdentityColumns = namesDriftedColumn(
+	/[`'](?:service_platforms_hourly\.)?(?:ScopeNames|TelemetrySdkName|TelemetrySdkLanguage|OsName|ClassifiedSpanCount|ServerSpanCount|ConsumerSpanCount|RootSpanCount)[`']/,
+)
 
 /** `service_usage` predates its profile columns (migration 0068): schema drift naming one of them.
  * The billing chart then reads no profile usage. */

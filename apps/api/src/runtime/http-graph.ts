@@ -7,6 +7,7 @@ import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { rawRoutes } from "@maple/backend/http/raw-routes"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
+import { HttpAiEvaluationsInternalLive } from "@/routes/internal/ai-evaluations.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpMcpInternalLive } from "@/routes/internal/mcp.http"
 import { HttpUsersInternalLive } from "@/routes/internal/users.http"
@@ -48,6 +49,7 @@ import { HttpErrorsLive } from "@/routes/internal/errors.http"
 import { HttpIntegrationsLive } from "@/routes/internal/integrations.http"
 import { IntegrationsCallbackRouter } from "@/routes/integrations-callback.http"
 import { OAuthDiscoveryRouter } from "@/routes/oauth-discovery.http"
+import { OnCallCalendarRouter } from "@/routes/oncall-calendar.http"
 import { HttpOrgClickHouseSettingsLive } from "@/routes/internal/org-clickhouse-settings.http"
 import {
 	HttpOrganizationCreationLive,
@@ -75,6 +77,7 @@ import { HttpV2AlertRulesLive } from "@/routes/v2/alert-rules.http"
 import { HttpV2AnomaliesLive } from "@/routes/v2/anomalies.http"
 import { HttpV2ApiKeysLive } from "@/routes/v2/api-keys.http"
 import { HttpV2AttributeMappingsLive } from "@/routes/v2/attribute-mappings.http"
+import { HttpV2SourceMapsLive } from "@/routes/v2/source-maps.http"
 import { HttpV2DataSourcesLive } from "@/routes/v2/data-sources.http"
 import { HttpV2IngestRulesLive } from "@/routes/v2/ingest-rules.http"
 import { HttpV2DashboardsLive } from "@/routes/v2/dashboards.http"
@@ -177,6 +180,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpQueryEngineLive,
 			HttpSessionReplaysInternalLive,
 			HttpAiSessionsInternalLive,
+			HttpAiEvaluationsInternalLive,
 			HttpAiModelsInternalLive,
 			HttpMcpInternalLive,
 			HttpUsersInternalLive,
@@ -248,6 +252,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AwsIntegrationsLive,
 			HttpV2ErrorIssuesLive,
 			HttpV2AttributeMappingsLive,
+			HttpV2SourceMapsLive,
 			HttpV2DataSourcesLive,
 			HttpV2IngestRulesLive,
 			HttpV2AuditLogLive,
@@ -304,6 +309,7 @@ const RawRoutes = rawRoutes<Layer.Success<ApiPortsLayer>>()(
 		DocsRoute,
 		DocsV2Route,
 		DiscoveryRouter,
+		OnCallCalendarRouter,
 		AwsOidcRouter,
 		// Last by convention only — find-my-way ranks the wildcard below every other
 		// route regardless of registration order.

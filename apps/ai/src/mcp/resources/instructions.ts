@@ -80,6 +80,9 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
   \`propose_fix\` takes \`also_issue_ids\` when one PR fixes several issues.
 - \`merge_error_issues\`: fold duplicates of one bug into one issue. Only after you have confirmed
   they share a root cause; their future occurrences land on the kept issue.
+- \`explain_error_grouping\` shows why an issue holds each fingerprint; \`list_similar_error_issues\`
+  suggests duplicates to check before merging; \`detach_error_fingerprint\` splits off one the grouping
+  key joined by mistake (merged ones are unmerged instead).
 
 ## Attribute Filtering
 - Call \`explore_attributes\` before filtering by custom attributes
@@ -92,6 +95,7 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - For traces: available metrics are count, avg_duration, p50/p95/p99_duration, error_rate, apdex
 - For logs: only count is available
 - For custom metrics: specify both metric_name and metric_type
+- From a metric spike to its cause: get_metric_exemplars lists the traces behind its highest values (where the SDK records exemplars); inspect_trace them
 - Counters (sum metrics, Prometheus \`*_total\` gauges): use metric=increase or metric=rate, computed per series and reset-aware. metric=sum adds raw cumulative samples and is not a real total
 - Histogram percentiles (p50/p95/p99) are not available for metrics in query_data; use avg, or source=traces p95_duration for request latency
 

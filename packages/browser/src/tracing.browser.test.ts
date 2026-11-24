@@ -10,8 +10,8 @@ import {
 	type Tracer,
 	type TracerProvider,
 } from "@opentelemetry/api"
-import { TraceState } from "@opentelemetry/core"
-import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace"
+import { TraceState } from "./sdk/trace-state"
+import type { ReadableSpan, Span } from "./sdk/span"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 // Capture what the batch processor actually hands to the exporter, so the
@@ -694,6 +694,31 @@ describe("setupTracing unload flush", () => {
 		await new Promise((resolve) => setTimeout(resolve, 20))
 		expect(exported).toHaveLength(0)
 		URL.revokeObjectURL(url)
+	})
+
+	// A response body that never ends (a long poll, a chunked feed): the page leaving bounds its span.
+	const stubEndlessBody = () =>
+		vi.stubGlobal("fetch", () => Promise.resolve(new Response(new ReadableStream({ start: () => {} }))))
+
+	it("ends and exports a fetch whose body is still streaming when the page goes away", async () => {
+		stubEndlessBody()
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		await fetch("https://api.test/feed")
+
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1))
+		expect(exported[0]?.attributes["maple.response_body_unfinished"]).toBe(true)
+		expect(exported[0]?.attributes["http.response.status_code"]).toBe(200)
+	})
+
+	it("ends and exports a fetch whose body is still streaming on shutdown", async () => {
+		stubEndlessBody()
+		const stop = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		await fetch("https://api.test/feed")
+
+		await stop()
+		expect(exported).toHaveLength(1)
+		expect(exported[0]?.attributes["maple.response_body_unfinished"]).toBe(true)
 	})
 
 	it("removes its listeners on shutdown", async () => {

@@ -999,15 +999,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				{ discard: true },
 			)
 
-			// Disable subscriptions for members no longer in any Clerk org
-			const activeOrgIds = [...new Set(Arr.map(clerkMemberships, (m) => m.orgId))]
-			if (activeOrgIds.length === 0) return
+			// Disable subscriptions for members no longer in their Clerk org, including every
+			// member of an org Clerk no longer lists. An empty sweep is a Clerk blip, not a purge.
+			if (clerkMemberships.length === 0) return
 
 			const existingSubs = yield* dbExecute((db) =>
 				db.run(
 					PG.from(DigestSubscriptions)
 						.select("id", "orgId", "userId")
-						.where(($) => [PG.inList($.orgId, activeOrgIds)]),
+						.where(($) => [PG.or($.enabled.eq(true), $.webAnalyticsEnabled.eq(true))]),
 				),
 			)
 

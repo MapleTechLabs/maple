@@ -121,6 +121,20 @@ export const runScheduledSync = Effect.gen(function* () {
 	Effect.withSpan("VcsScheduledSync.tick"),
 )
 
+// The refused-push cron: enqueue a rule suite scan per GitHub installation that collects them.
+export const runRuleSuiteScan = Effect.gen(function* () {
+	const scheduler = yield* VcsScheduledSyncService
+	const enqueued = yield* scheduler.runRuleSuiteScan
+	yield* Effect.annotateCurrentSpan({ "vcs.rule_suites.enqueued": enqueued })
+}).pipe(
+	Effect.tapCause((cause) =>
+		Effect.logError("[VCS] rule suite scan tick failed").pipe(
+			Effect.annotateLogs({ error: summarizeCause(cause) }),
+		),
+	),
+	Effect.withSpan("VcsRuleSuiteScan.tick"),
+)
+
 // No DLQ exists, so on the final delivery (attempt > max_retries) we persist a terminal status
 // instead of silently dropping.
 

@@ -24,6 +24,7 @@ export const apiKeyScopeFamilies = [
 	{ id: "error_issues", label: "Errors", read: "telemetry:read", write: "error_issues:triage" },
 	{ id: "anomalies", label: "Anomalies", write: "anomalies:configure" },
 	{ id: "session_replays", label: "Session replays", read: "telemetry:read" },
+	{ id: "source_maps", label: "Source maps", read: "telemetry:read", write: "source_maps:upload" },
 	{ id: "traces", label: "Traces", read: "telemetry:read" },
 	{ id: "logs", label: "Logs", read: "telemetry:read" },
 	{ id: "metrics", label: "Metrics", read: "telemetry:read" },

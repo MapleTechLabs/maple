@@ -22,6 +22,8 @@ import {
 	ListHostsRequest,
 	ListPodsRequest,
 	ListWorkloadsRequest,
+	MetricDistributionRequest,
+	MetricExemplarsRequest,
 	PodDetailSummaryRequest,
 	ServiceHealthBaselineRequest,
 	ServiceHealthSnapshotRequest,
@@ -33,7 +35,7 @@ import {
 	WorkloadDetailSummaryRequest,
 } from "@maple/domain/http"
 import { utcSecondsParam } from "../ch/tables"
-import { DateTime, Effect, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Result, Schema } from "effect"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import {
 	type BuilderFixture,
@@ -473,6 +475,26 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 	{
 		module: "product-events",
 		name: "productEventsFunnelBreakdownQuery",
+		label: "user-property-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsFunnelBreakdownQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+						breakdownBy: "user:plan",
+						userPropertyFilters: [{ key: "role", value: "admin", mode: "equals" }],
+						groupPropertyFilters: [{ key: "tier", value: "gold", mode: "equals", negated: true }],
+						limit: 10,
+					}),
+				),
+				window,
+			),
+	},
+	{
+		module: "product-events",
+		name: "productEventsFunnelBreakdownQuery",
 		label: "attribute-session-step",
 		compile: () =>
 			CH.compileUnsafe(
@@ -748,6 +770,22 @@ const productEventsExploreFixtures: ReadonlyArray<BuilderFixture> = [
 					bucketSeconds: 3600,
 				}),
 				{ ...window, bucketSeconds: 3600 },
+			),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventsBreakdownQuery",
+		label: "users-by-user-property",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsBreakdownQuery({
+					metric: "users",
+					groupBy: "user_property",
+					groupByUserPropertyKey: "plan",
+					eventNames: ["signup_completed"],
+					groupPropertyFilters: [{ key: "tier", value: "gold", mode: "equals" }],
+				}),
+				window,
 			),
 	},
 	{
@@ -1359,6 +1397,53 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(CH.recentTraceTimeProbeQuery({ traceId: TRACE_ID, endBounded: true }), window),
 	},
+	// apps/api route `metricDistribution`: the metric page's histogram heatmap.
+	...Arr.map(["histogram", "exponential_histogram"] as const, (metricType): BuilderFixture => ({
+		module: "metrics",
+		name: "histogramDistributionQuery",
+		label: metricType,
+		compile: () =>
+			viaRegistry(
+				Queries.metricDistribution,
+				sample(MetricDistributionRequest, {
+					...span,
+					bucketSeconds: 300,
+					filters: { metricName: "http.server.request.duration", metricType, serviceName: "api" },
+				}),
+			),
+	})),
+	{
+		// apps/api route `metricExemplars`: the traces behind the metric chart.
+		module: "metrics",
+		name: "metricExemplarsQuery",
+		label: "chart",
+		compile: () =>
+			viaRegistry(
+				Queries.metricExemplars,
+				sample(MetricExemplarsRequest, {
+					...span,
+					bucketSeconds: 300,
+					filters: { metricName: "http.server.request.duration", metricType: "histogram" },
+				}),
+			),
+	},
+	{
+		// The same route reading one picked heatmap cell.
+		module: "metrics",
+		name: "metricExemplarsQuery",
+		label: "cell",
+		compile: () =>
+			viaRegistry(
+				Queries.metricExemplars,
+				sample(MetricExemplarsRequest, {
+					...span,
+					bucketSeconds: 300,
+					filters: { metricName: "http.server.request.duration", metricType: "histogram" },
+					cell: { bucket: START_TIME, lowerBound: 0.1, upperBound: 1 },
+					perBucket: 20,
+				}),
+			),
+	},
 ]
 
 const searchConsoleWindow = {
@@ -1502,6 +1587,39 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...searchConsoleFixtures,
 	...productEventsFixtures,
 	...productEventsExploreFixtures,
+	// Person and group properties: one user's, and a batch of accounts'.
+	{
+		module: "person-properties",
+		name: "personPropertiesQuery",
+		label: "user",
+		compile: () => CH.compileUnsafe(CH.personPropertiesQuery({ kind: "user", ids: ["user_a"] }), window),
+	},
+	{
+		module: "person-properties",
+		name: "personPropertiesQuery",
+		label: "groups",
+		compile: () =>
+			CH.compileUnsafe(CH.personPropertiesQuery({ kind: "group", ids: ["acme", "globex"] }), window),
+	},
+	{
+		module: "person-properties",
+		name: "personPropertyStatesQuery",
+		label: "user profile",
+		compile: () =>
+			CH.compileUnsafe(CH.personPropertyStatesQuery({ kind: "user", ids: ["user_a"] }), window),
+	},
+	{
+		module: "person-properties",
+		name: "personPropertyKeysQuery",
+		label: "user",
+		compile: () => CH.compileUnsafe(CH.personPropertyKeysQuery({ kind: "user" }), window),
+	},
+	{
+		module: "person-properties",
+		name: "personPropertyValuesQuery",
+		label: "group",
+		compile: () => CH.compileUnsafe(CH.personPropertyValuesQuery({ kind: "group", key: "tier" }), window),
+	},
 	// Signal presence — the org-wide "have you ever sent this?" probe behind every
 	// empty state (packages/backend/src/services/org/SignalPresenceService.ts). One fixture
 	// suffices: the builder takes no options, so there is only one SQL shape.
@@ -1677,7 +1795,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					account: "acme",
 					category: "membership",
 					outcome: "success",
-					action: "org.add_member",
+					...CH.auditTrailActionParams("org.add_member"),
 					actor: "octocat@acme.test",
 					actorAlias: "user_1",
 					since: START_TIME,
@@ -1700,7 +1818,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					provider: "vercel",
 					category: "membership",
 					outcome: "success",
-					action: "team.member.added",
+					...CH.auditTrailActionParams("team.member.added"),
 					start: START_TIME,
 					end: END_TIME,
 				},
@@ -2087,6 +2205,31 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "default",
 		compile: () =>
 			CH.compileUnsafe(CH.errorFingerprintLineageQuery({ fingerprintHashes: [FINGERPRINT] }), window),
+	},
+	{
+		// ErrorsService tick: one sample per new fingerprint, for its grouping key.
+		module: "errors",
+		name: "errorGroupingSamplesQuery",
+		label: "default",
+		sampleValues: { traceId: TRACE_ID, spanId: SPAN_ID },
+		compile: () =>
+			CH.compileUnsafe(CH.errorGroupingSamplesQuery({ fingerprintHashes: [FINGERPRINT] }), window),
+	},
+	{
+		// ErrorsService tick: the spans behind those samples (span name, maple.fingerprint).
+		module: "errors",
+		name: "errorGroupingSpansQuery",
+		label: "default",
+		sampleValues: { traceId: TRACE_ID, spanId: SPAN_ID },
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorGroupingSpansQuery({
+					serviceNames: ["api"],
+					traceIds: [TRACE_ID],
+					spanIds: [SPAN_ID],
+				}),
+				window,
+			),
 	},
 	{
 		module: "errors",

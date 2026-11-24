@@ -74,6 +74,116 @@ describe("local ingest rules", () => {
 		})
 	})
 
+	it("parses log bodies into attributes, severity and time before encoding", () => {
+		const parse = parseLocalIngestRules(
+			JSON.stringify([
+				{
+					name: "JSON logs",
+					signals: ["logs"],
+					conditions: [],
+					action: {
+						_tag: "parse",
+						steps: [
+							{ _tag: "json", source: "body" },
+							{ _tag: "severity", source: "attribute", key: "level" },
+							{ _tag: "timestamp", source: "attribute", key: "ts", format: "unix_ms" },
+						],
+					},
+				},
+			]),
+		)
+		const log = {
+			severityNumber: 9,
+			severityText: "INFO",
+			timeUnixNano: "1",
+			body: { stringValue: '{"level":"error","ts":1700000000123,"order":{"id":42}}' },
+			attributes: [],
+		}
+		const request = {
+			resourceLogs: [
+				{
+					resource: { attributes: [str("service.name", "api")] },
+					scopeLogs: [{ logRecords: [log] }],
+				},
+			],
+		}
+		applyLocalIngestRules("logs", request, parse.compiled)
+		expect(log).toMatchObject({
+			severityNumber: 17,
+			severityText: "ERROR",
+			timeUnixNano: "1700000000123000000",
+			attributes: [
+				{ key: "level", value: { stringValue: "error" } },
+				{ key: "order.id", value: { intValue: "42" } },
+				{ key: "ts", value: { intValue: "1700000000123" } },
+			],
+		})
+		expect(encodeLogs(request)[0]?.ndjson).toContain('"order.id":"42"')
+	})
+
+	it("lets a rule remove or mask a log record's event name, and hands the rest back untouched", () => {
+		const eventNameRule = (keys: ReadonlyArray<string>, method: "remove" | "mask") =>
+			parseLocalIngestRules(
+				JSON.stringify([
+					{
+						signals: ["logs"],
+						conditions: [],
+						action: {
+							_tag: "redact",
+							keys,
+							detectors: [],
+							patterns: [],
+							scopes: ["attributes"],
+							method,
+						},
+					},
+				]),
+			).compiled
+		const ruled = (
+			compiled: ReturnType<typeof eventNameRule>,
+			attributes: Array<ReturnType<typeof str>> = [str("k", "v")],
+		) => {
+			const log = {
+				timeUnixNano: "1700000000000000000",
+				eventName: "gen_ai.evaluation.result",
+				attributes,
+			}
+			const request = { resourceLogs: [{ scopeLogs: [{ logRecords: [log] }] }] }
+			applyLocalIngestRules("logs", request, compiled)
+			const [batch] = encodeLogs(request)
+			const row = JSON.parse(Str.split("\n")(batch?.ndjson ?? "")[0] ?? "{}")
+			return { eventName: log.eventName, attributes: log.attributes, logAttributes: row.log_attributes }
+		}
+		// Removed: gone from the record, so neither the row nor the eventing projection sees it.
+		expect(ruled(eventNameRule(["event.name"], "remove"))).toEqual({
+			eventName: undefined,
+			attributes: [str("k", "v")],
+			logAttributes: { k: "v" },
+		})
+		// Untouched by the rule: the record keeps its eventName and its attributes as sent.
+		expect(ruled(eventNameRule(["k"], "remove"))).toEqual({
+			eventName: "gen_ai.evaluation.result",
+			attributes: [],
+			logAttributes: { "event.name": "gen_ai.evaluation.result" },
+		})
+		// Masked: the masked value is the record's eventName from here on.
+		const masked = ruled(eventNameRule(["event.name"], "mask"))
+		expect(masked.eventName).not.toBe("gen_ai.evaluation.result")
+		expect(masked.logAttributes).toEqual({ k: "v", "event.name": masked.eventName })
+		// A record with its own event.name too: masking that redacts eventName as well, and a rule
+		// that leaves it alone leaves eventName as sent.
+		const own = [str("event.name", "own.name")]
+		const ownMasked = ruled(eventNameRule(["event.name"], "mask"), own)
+		expect([
+			ownMasked.eventName === "gen_ai.evaluation.result",
+			ownMasked.eventName === "own.name",
+		]).toEqual([false, false])
+		expect(ownMasked.logAttributes).toEqual({ "event.name": ownMasked.eventName })
+		expect(ruled(eventNameRule(["k"], "remove"), [str("event.name", "own.name")]).eventName).toBe(
+			"gen_ai.evaluation.result",
+		)
+	})
+
 	it("removes a resource whose every record was dropped", () => {
 		const request = {
 			resourceLogs: [

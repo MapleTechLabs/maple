@@ -38,6 +38,7 @@ import {
 	isMissingUserActivityDaily,
 	isMissingUserActivityHourly,
 	isMissingUserActivityIdentity,
+	isMissingPersonProperties,
 } from "@maple/backend/services/warehouse/missing-table"
 import { readUserMcpSessions } from "@maple/backend/services/mcp/mcp-reads"
 import { readUserIssueItems, readUserIssueTotalsRow, userIssueTotals } from "./user-issues"
@@ -167,6 +168,36 @@ export const newestIdentity = (
 		}),
 	)
 	return Option.match(newest, { onNone: () => null, onSome: (row) => row[field] })
+}
+
+/** A person-properties read, empty on a cluster without migration 0071. */
+const propertiesRead = <A, E, R>(
+	read: Effect.Effect<ReadonlyArray<A>, E, R>,
+): Effect.Effect<ReadonlyArray<A>, E, R> =>
+	read.pipe(Effect.catchIf(isMissingPersonProperties, () => Effect.succeed<ReadonlyArray<A>>([])))
+
+type Trait = Readonly<{ key: string; value: string }>
+type PropertyState = Readonly<{ key: string; value: string; cleared: boolean; writtenAtMs: number }>
+
+/**
+ * A profile's traits, by key the newer of two sources: the latest session's traits (resolved by
+ * session version) and the user's properties (`person_properties`). A session's traits are
+ * stamped there at its start, so a key written at or before `sessionAtMs` reads from the session;
+ * one written after it (a backend `set` or `unset`) reads from the properties, a cleared key not at all.
+ */
+export const mergeTraits = (
+	session: Readonly<{ traits: ReadonlyArray<Trait>; atMs: number }>,
+	properties: ReadonlyArray<PropertyState>,
+): ReadonlyArray<Trait> => {
+	const fromSession = new Map(Arr.map(session.traits, (trait) => [trait.key, trait.value] as const))
+	const merged = Arr.flatMap(properties, (property): ReadonlyArray<Trait> => {
+		const sessionValue = fromSession.get(property.key)
+		if (sessionValue !== undefined && property.writtenAtMs <= session.atMs)
+			return [{ key: property.key, value: sessionValue }]
+		return property.cleared ? [] : [{ key: property.key, value: property.value }]
+	})
+	const held = new Set(Arr.map(properties, (property) => property.key))
+	return [...merged, ...Arr.filter(session.traits, (trait) => !held.has(trait.key))]
 }
 
 /** A rollup identity read's one row, `None` on a cluster without migration 0056 or 0065. */
@@ -350,6 +381,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		...(payload.hasErrors !== undefined && { hasErrors: payload.hasErrors }),
 		...(payload.hasReplay !== undefined && { hasReplay: payload.hasReplay }),
 		...(payload.groups !== undefined && { groups: payload.groups }),
+		...(payload.userPropertyFilters !== undefined && { userProperties: payload.userPropertyFilters }),
 		...(payload.after !== undefined && { after: payload.after }),
 	}
 	const params = { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
@@ -506,6 +538,7 @@ export const readUsersGroups = Effect.fn("UsersReads.groups")(function* (
 		...(payload.hasErrors !== undefined && { hasErrors: payload.hasErrors }),
 		...(payload.hasReplay !== undefined && { hasReplay: payload.hasReplay }),
 		...(payload.groups !== undefined && { groups: payload.groups }),
+		...(payload.userPropertyFilters !== undefined && { userProperties: payload.userPropertyFilters }),
 	}
 	const params = {
 		orgId: tenant.orgId,
@@ -926,6 +959,7 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		rollupServices,
 		issueTotalsRow,
 		identity,
+		properties,
 	] = yield* Effect.all(
 		[
 			readsServices
@@ -981,6 +1015,14 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 					profile: "list",
 					context: "userActivityIdentity",
 				}),
+			),
+			// Current values, not windowed.
+			propertiesRead(
+				warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.personPropertyStatesQuery({ kind: "user", ids: [payload.userId] }), params),
+					{ profile: "list", context: "userPersonProperties" },
+				),
 			),
 		],
 		{ concurrency: USERS_READ_CONCURRENCY },
@@ -1053,7 +1095,18 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		email: newestIdentity([replay[0], mcp[0], Option.getOrUndefined(identity)], "email", "emailAt"),
 		groupId,
 		groupName: profileGroupName,
-		traits: Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),
+		traits: mergeTraits(
+			{
+				traits: Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),
+				atMs: replay[0] === undefined ? 0 : toMs(replay[0].traitsAt),
+			},
+			Arr.map(properties, (row) => ({
+				key: row.key,
+				value: row.value,
+				cleared: row.cleared === 1,
+				writtenAtMs: row.writtenAtMs,
+			})),
+		),
 		visitorIds: Arr.map(visitors, (row) => row.visitorId),
 		firstSeenMs: Math.min(...firstSeens),
 		lastSeenMs: Math.max(...lastSeens),

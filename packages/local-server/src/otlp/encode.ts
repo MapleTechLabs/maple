@@ -143,8 +143,7 @@ const SPAN_ID_BYTES = 8
  *     (an explicit deviation from proto3 JSON, which would base64 a `bytes`
  *     field), what every OTel language SDK emits over OTLP/HTTP+JSON, and what
  *     the Rust ingest gateway accepts on the same endpoints.
- *   - BASE64, which is what `decode*Request` produces, since protobufjs
- *     renders proto `bytes` as base64 under `bytes: String`.
+ *   - BASE64, which is what `decode*Request` produces for proto `bytes` fields.
  *
  * The two never collide: an id is read as hex only at its exact hex length (32
  * chars for a 16-byte trace id, 16 for an 8-byte span id), and the base64 form
@@ -627,6 +626,17 @@ export interface LogRecord {
 	flags?: number | string
 	traceId?: string
 	spanId?: string
+	eventName?: string
+}
+
+/** A record's attributes, plus its OTLP `eventName` as `event.name` unless it set that itself:
+ *  `ai_evaluations_mv` keys on it. The same rule as the ingest gateway's `log_attributes`. */
+function logAttributes(log: LogRecord): AttrMap {
+	const attributes = attrMap(log.attributes)
+	if (log.eventName !== undefined && log.eventName !== "" && attributes["event.name"] === undefined) {
+		attributes["event.name"] = log.eventName
+	}
+	return attributes
 }
 
 export function encodeLogs(req: unknown): EncodedBatch[] {
@@ -665,7 +675,7 @@ export function encodeLogs(req: unknown): EncodedBatch[] {
 					scope_name: scopeName,
 					scope_version: scopeVersion,
 					scope_attributes: scopeAttrs,
-					log_attributes: attrMap(log.attributes),
+					log_attributes: logAttributes(log),
 				})
 			}
 		}

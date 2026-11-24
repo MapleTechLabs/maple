@@ -16,6 +16,7 @@ import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilenc
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorGroupingService } from "@maple/backend/services/errors/ErrorGroupingService"
 import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
@@ -39,6 +40,7 @@ import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMoni
 import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
+import { AiEvaluationReadService } from "@maple/backend/services/ai-evaluations/AiEvaluationReadService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
@@ -72,6 +74,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(ErrorIssueReadModelsService)({}),
 	ErrorIssueWorkflowService.layer,
 	Layer.mock(ErrorIssueMergeService)({}),
+	Layer.mock(ErrorGroupingService)({}),
 	ErrorPolicyService.layer,
 	Layer.mock(ErrorsService)({}),
 	Layer.mock(InvestigationService)({}),
@@ -93,6 +96,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(UptimeMonitorsService)({}),
 	Layer.mock(UsersReadService)({}),
 	Layer.mock(AiSessionReadService)({}),
+	Layer.mock(AiEvaluationReadService)({}),
 	Layer.mock(IngestRuleService)({}),
 	Layer.mock(StatusPagesService)({}),
 	Layer.mock(StatusPageSnapshotBuilder)({}),

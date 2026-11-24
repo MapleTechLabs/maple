@@ -348,6 +348,13 @@ export const permissions = {
 		description: "See and triage security findings and dependency scans.",
 		action: "open the Security Center and triage its findings",
 	},
+	"source_maps:upload": {
+		code: 51,
+		group: "integrations",
+		label: "Upload source maps",
+		description: "Upload and delete JavaScript source maps for mapped error stacks.",
+		action: "upload and delete source maps",
+	},
 	"security_audit:run": {
 		code: 30,
 		group: "integrations",

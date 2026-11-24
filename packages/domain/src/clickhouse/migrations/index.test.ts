@@ -268,9 +268,12 @@ describe("ClickHouse migrations", () => {
 		// identity_links and trace_index are exempt because a replay is a merge
 		// no-op: their only aggregates are SimpleAggregateFunction(min/max) keyed by
 		// the full sorting key, so re-inserted rows collapse to the values stored.
+		// person_properties likewise: max/min plus argMaxIf/argMinIf by time, so a
+		// replayed row ties with itself and changes nothing, and emptying it would
+		// drop the property writes the views made from events and spans.
 		// A backfill that skips every span its target already holds (0047) converges
 		// without emptying a target that outlives its source.
-		const mergeIdempotentTargets = new Set(["identity_links", "trace_index"])
+		const mergeIdempotentTargets = new Set(["identity_links", "person_properties", "trace_index"])
 		const skipsStored = (stmt: BackfillSpec) =>
 			stmt.where !== undefined &&
 			Str.includes(`(TraceId, SpanId) NOT IN (SELECT TraceId, SpanId FROM ${stmt.target})`)(stmt.where)

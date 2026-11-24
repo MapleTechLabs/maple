@@ -69,6 +69,10 @@ import { migration_0067_profiles } from "./0067_profiles"
 import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
 import { migration_0069_error_fingerprint_v5 } from "./0069_error_fingerprint_v5"
 import { migration_0070_user_activity_daily } from "./0070_user_activity_daily"
+import { migration_0071_person_properties } from "./0071_person_properties"
+import { migration_0072_ai_evaluations } from "./0072_ai_evaluations"
+import { migration_0073_error_fingerprint_default_extension } from "./0073_error_fingerprint_default_extension"
+import { migration_0074_service_identity } from "./0074_service_identity"
 import { Array as Arr } from "effect"
 
 /**
@@ -171,6 +175,10 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0068_service_usage_profiles,
 	migration_0069_error_fingerprint_v5,
 	migration_0070_user_activity_daily,
+	migration_0071_person_properties,
+	migration_0072_ai_evaluations,
+	migration_0073_error_fingerprint_default_extension,
+	migration_0074_service_identity,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

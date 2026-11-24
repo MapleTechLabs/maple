@@ -119,3 +119,26 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 		}).pipe(Effect.provide(schedulerLayer(testDb, sent, { failQueue: true })))
 	})
 })
+
+describe("VcsScheduledSyncService.runRuleSuiteScan", () => {
+	it.effect("enqueues a scan per active installation that collects refused pushes", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsScheduledSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_a"), "1")
+			const auditOff = yield* seedInstallation(repo, asOrgId("org_b"), "2")
+			const categoryOff = yield* seedInstallation(repo, asOrgId("org_c"), "3")
+			const suspended = yield* seedInstallation(repo, asOrgId("org_d"), "4")
+			yield* repo.setAuditLogEnabled(asOrgId("org_b"), auditOff.id, false)
+			yield* repo.setAuditCategories(asOrgId("org_c"), categoryOff.id, { refusedPushes: false })
+			yield* repo.markInstallationStatus(suspended.id, "suspended")
+
+			assert.strictEqual(yield* svc.runRuleSuiteScan, 1)
+			assert.deepStrictEqual(sent, [
+				{ kind: "rule-suite-scan", provider: "github", externalInstallationId: "1" },
+			])
+		}).pipe(Effect.provide(schedulerLayer(testDb, sent)))
+	})
+})

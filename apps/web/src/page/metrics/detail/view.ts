@@ -22,6 +22,10 @@ import { metricTypeLabel } from "@maple/views/ui/metric-type"
 import { DEFAULT_PRESET, draftOf, summaryOf } from "./update"
 import { graduationActions, queryControls } from "./view-controls"
 import { metadataPanel, metricBreakdown, metricChart } from "./view-panels"
+import { exemplarsPanel } from "./view-exemplars"
+import { isHistogramType } from "./exemplars"
+import { HEATMAP_TOKENS } from "@maple/views/charts/heatmap-chart"
+import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -99,6 +103,13 @@ const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string):
 			[
 				vstack(h, { gap: "4", shrink: true }, [
 					metricChart(h, model, draft, summary.unit, timeZone),
+					exemplarsPanel(
+						h,
+						model,
+						chartUnitFromOtel(summary.unit, summary.metricName),
+						timeZone,
+						isHistogramType(summary.metricType) && model.search.display === "distribution",
+					),
 					metricBreakdown(h, model, draft),
 				]),
 				metadataPanel(h, model, summary, timeZone),
@@ -126,7 +137,10 @@ const typeLabelOf = (model: Model): string | null => {
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }))],
+		[
+			h.Class("contents"),
+			h.OnMount(ResolveThemeColors({ tokens: [...AREA_CHART_TOKENS, ...HEATMAP_TOKENS] })),
+		],
 		[
 			dashboardPage(
 				h,

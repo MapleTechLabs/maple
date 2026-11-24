@@ -39,6 +39,12 @@ export interface MapleApiContract {
 	readonly patch: (path: string, body: unknown) => Effect.Effect<unknown, MapleError>
 	readonly put: (path: string, body: unknown) => Effect.Effect<unknown, MapleError>
 	readonly delete: (path: string) => Effect.Effect<unknown, MapleError>
+	/** POSTs raw bytes (a file upload) as the body; `path` carries any query string. */
+	readonly upload: (
+		path: string,
+		body: Uint8Array,
+		contentType: string,
+	) => Effect.Effect<unknown, MapleError>
 }
 
 export class MapleApi extends Context.Service<MapleApi, MapleApiContract>()("Maple::Api") {}
@@ -134,7 +140,12 @@ export const make = Effect.gen(function* () {
 	const { baseUrl, apiKey } = yield* MapleEnvironment
 	const httpClient = yield* HttpClient.HttpClient
 
-	const request = (method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown) => {
+	const request = (
+		method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+		path: string,
+		body?: unknown,
+		raw?: { readonly bytes: Uint8Array; readonly contentType: string },
+	) => {
 		const canAutomaticallyRetry = method === "GET" || method === "DELETE"
 		const execute: (attempt: number) => Effect.Effect<unknown, MapleError> = Effect.fn(
 			"MapleApi.requestAttempt",
@@ -146,7 +157,9 @@ export const make = Effect.gen(function* () {
 						Accept: "application/json",
 					}),
 				)
-				if (body !== undefined) {
+				if (raw !== undefined) {
+					req = HttpClientRequest.bodyUint8Array(req, raw.bytes, raw.contentType)
+				} else if (body !== undefined) {
 					req = yield* HttpClientRequest.bodyJson(req, body).pipe(
 						Effect.mapError(
 							(error) =>
@@ -212,6 +225,8 @@ export const make = Effect.gen(function* () {
 		patch: (path: string, body: unknown) => request("PATCH", path, body),
 		put: (path: string, body: unknown) => request("PUT", path, body),
 		delete: (path: string) => request("DELETE", path),
+		upload: (path: string, bytes: Uint8Array, contentType: string) =>
+			request("POST", path, undefined, { bytes, contentType }),
 	}
 })
 

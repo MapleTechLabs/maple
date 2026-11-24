@@ -134,6 +134,9 @@ export const refusesReadOnlyCredential = (name: string, readOnly: boolean): bool
 /** The tools that read an org's connected data sources: absent for an org without that feature. */
 export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_sources", "query_data_source"])
 
+/** The LLM evaluation tools: absent for an org outside the `llmEvals` rollout. */
+export const LLM_EVALS_TOOLS: ReadonlySet<string> = new Set(["list_evaluations", "get_evaluation_scores"])
+
 /**
  * The permission a tool asks of the caller, or `null` for one anybody may call ({@link FEEDBACK_TOOL}).
  * Declared on every tool; the registry hides and refuses a tool whose permission the caller lacks.
@@ -234,6 +237,7 @@ const ANONYMOUS_TOOLS: ReadonlySet<string> = new Set([
 	"get_error_notification_policy",
 	"get_incident_timeline",
 	"get_instrumentation_recommendations",
+	"get_metric_exemplars",
 	"get_service_top_operations",
 	"get_status_page",
 	"ingest_freshness",

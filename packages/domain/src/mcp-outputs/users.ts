@@ -20,6 +20,8 @@ export const ListUsersFilters = Schema.Struct({
 	search: Schema.optionalKey(Schema.String),
 	hasErrors: Schema.optionalKey(Schema.Boolean),
 	groups: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** The `user_property_filters` JSON as the call passed it. */
+	userPropertyFilters: Schema.optionalKey(Schema.String),
 })
 
 export const ListUsersOutput = Schema.Struct({

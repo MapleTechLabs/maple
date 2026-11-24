@@ -2,7 +2,10 @@ import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import { McpToolPlatformLive, mcpServicesWithFeatureFlags } from "../../runtime/mcp-tool-graph"
 import { McpRuntimeServicesLive } from "../tools/runtime-services"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import {
+	OrganizationFeatureFlagsService,
+	type OrganizationFeatureFlagsRequirements,
+} from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Env } from "@maple/backend/platform/Env"
 import type { Database } from "@maple/backend/platform/DatabaseLive"
 import type { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
@@ -57,7 +60,7 @@ export const makeEvalRuntime = (
 	featureFlags: Layer.Layer<
 		OrganizationFeatureFlagsService,
 		never,
-		Env
+		OrganizationFeatureFlagsRequirements
 	> = OrganizationFeatureFlagsService.layer,
 	/** Fake data source drivers; the runtime then also serves the service, for seeding. */
 	dataSources?: Layer.Layer<ExternalDataSourceService, DataSourcePersistenceError, Database | Env>,

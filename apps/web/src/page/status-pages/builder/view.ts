@@ -39,8 +39,8 @@ import { resourceNotFound } from "../../kit/resource-not-found"
 import { settingsSection } from "../../kit/settings-section"
 import {
 	newStatusPageHref,
-	publicAddress,
-	publicUrl,
+	publicAddressOf,
+	publicUrlOf,
 	STATUS_PAGE_BASE_URL,
 	statusPagesHref,
 } from "../shared/commands"
@@ -111,7 +111,8 @@ const pageSection = (h: H, model: Model): Html =>
 				hint:
 					model.slug === ""
 						? "Follows the name until you type one."
-						: publicAddress(model.orgKey, model.slug),
+						: // A blank hint of the same height until the org key lands.
+							Option.getOrElse(publicAddressOf(model.orgKey, model.slug), () => "\u00a0"),
 				error: slugError(model),
 				onInput: (value) => Message.ChangedSlug({ value }),
 			}),
@@ -360,7 +361,7 @@ const draftDocument = (model: Model): string => {
 		page: {
 			name: Str.trim(model.name) === "" ? "Status page" : Str.trim(model.name),
 			slug: isSlug(model.slug) ? model.slug : "preview",
-			orgKey: model.orgKey,
+			orgKey: Option.getOrElse(model.orgKey, () => ""),
 			description: null,
 			websiteUrl: null,
 			logoUrl: null,
@@ -403,7 +404,9 @@ const draftDocument = (model: Model): string => {
 		snapshot,
 		nowMs,
 		isSelectable: false,
-		publicUrl: isSlug(model.slug) ? publicUrl(STATUS_PAGE_BASE_URL, model.orgKey, model.slug) : null,
+		publicUrl: isSlug(model.slug)
+			? Option.getOrNull(publicUrlOf(STATUS_PAGE_BASE_URL, model.orgKey, model.slug))
+			: null,
 	})
 }
 

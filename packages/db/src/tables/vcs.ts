@@ -1,4 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { GithubAuditCategoryOverrides } from "@maple/domain/github-audit"
 import {
 	PrReviewCategory,
 	PrReviewFindingStatus,
@@ -69,6 +70,11 @@ export const VcsInstallations = PG.table("vcs_installations", {
 		ciTracesEnabled: PG.column(PG.bool, { name: "ci_traces_enabled", default: true }),
 		/** Opt-out: organization, member and repository changes go to the Security audit log. */
 		auditLogEnabled: PG.column(PG.bool, { name: "audit_log_enabled", default: true }),
+		/** The audit categories the org turned on or off; a category not listed keeps its default. */
+		auditCategories: PG.column(PG.jsonb(GithubAuditCategoryOverrides), {
+			name: "audit_categories",
+			default: {},
+		}),
 		repositoryDiscovery: PG.column(PG.nullable(PG.jsonb(VcsRepositoryDiscovery)), {
 			name: "repository_discovery",
 		}),
@@ -134,6 +140,8 @@ export const VcsRepositories = PG.table("vcs_repositories", {
 		prReviewConfig: PG.column(PG.nullable(PG.jsonb(PrReviewRepositoryConfig)), {
 			name: "pr_review_config",
 		}),
+		/** When the newest refused push the audit log read for this repository happened; null before the first read. */
+		ruleSuitesReadUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "rule_suites_read_until" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},

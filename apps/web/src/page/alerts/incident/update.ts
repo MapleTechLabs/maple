@@ -6,7 +6,8 @@ import {
 	formatSignalValue as formatAnomalyValue,
 	SIGNAL_LABEL as ANOMALY_SIGNAL_LABEL,
 } from "@maple/web-data/anomalies/format"
-import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
+import { isSloBudgetIncident } from "@maple/domain/slo"
+import { budgetUsedLabel, incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import {
 	AlertIncidentRowSchema,
 	AlertRuleRowSchema,
@@ -15,6 +16,7 @@ import {
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
+import * as Dialog from "@maple/views/ui/dialog"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -36,15 +38,16 @@ import {
 	FetchIncidentSilences,
 	FetchIncidentSlos,
 	ReadIncidentClock,
+	ResolveIncident,
 	SetIncidentAcknowledged,
 	TrackAcknowledged,
 } from "./command"
-import { withAcknowledgement } from "../shared/commands"
+import { withAcknowledgement, withResolution } from "../shared/commands"
 import { SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { type Model, RESOLVE_DIALOG_ID } from "./model"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { matchersForRule } from "../shared/silences"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -64,6 +67,13 @@ const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMod
 			commands: [FetchIncidentSilences({ key: silences.key })],
 		}),
 	})
+
+const liftResolveDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, resolveDialog: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotResolveDialogMessage({ message }),
+	),
+})
 
 /** The silence dialog's outcome: a toast, and a re-read so the header shows the new silence. */
 const liftSilenceDialog = (
@@ -156,6 +166,8 @@ export const init = (route: IncidentRoute, context: PageContext): Return => {
 			escalation: Keyed.idle(),
 			activity: Keyed.idle(),
 			isUpdatingAcknowledgement: false,
+			resolveDialog: Dialog.init(RESOLVE_DIALOG_ID, "alert-dialog"),
+			isResolving: false,
 			slos: Keyed.idle(),
 			monitors: Keyed.idle(),
 			anomaly: Keyed.idle(),
@@ -375,6 +387,12 @@ const followData = (model: Model, context: PageContext): Return =>
 		},
 	})
 
+/** A spent budget observes the share of the budget used: no burn rate and no factor to send. */
+const budgetFacts = (incident: AlertIncidentDocument) => [
+	{ label: "Signal", value: "SLO error budget" },
+	{ label: "Observed", value: budgetUsedLabel(incident.lastObservedValue) },
+]
+
 const thresholdFacts = (incident: AlertIncidentDocument) => [
 	{ label: "Signal", value: signalLabels[incident.signalType] },
 	{ label: "Observed", value: formatSignalValue(incident.signalType, incident.lastObservedValue) },
@@ -412,7 +430,12 @@ const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams>
 			scope: incidentGroup(incident) ?? "all",
 			status: incident.status,
 			severity: incident.severity === "critical" ? ("critical" as const) : ("medium" as const),
-			facts: incident.signalType === "anomaly" ? anomalyFacts(model) : thresholdFacts(incident),
+			facts:
+				incident.signalType === "anomaly"
+					? anomalyFacts(model)
+					: isSloBudgetIncident(incident)
+						? budgetFacts(incident)
+						: thresholdFacts(incident),
 			references: incident.errorIssueId
 				? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
 				: [],
@@ -592,6 +615,54 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						title: acknowledged
 							? "Couldn't acknowledge the incident"
 							: "Couldn't unacknowledge the incident",
+						description: failure.message,
+					}),
+				}),
+			}),
+		ClickedResolve: () => liftResolveDialog(model, Dialog.open(model.resolveDialog)),
+		// Escape and Cancel are ignored while the resolve runs.
+		GotResolveDialogMessage: ({ message: child }) =>
+			model.isResolving
+				? { model }
+				: liftResolveDialog(model, Dialog.update(model.resolveDialog, child)),
+		ClickedConfirmResolve: () =>
+			model.isResolving
+				? { model }
+				: Option.match(incidentViewOf(model), {
+						onNone: () => ({ model }),
+						onSome: ({ incident }) => ({
+							model: { ...model, isResolving: true },
+							commands: [ResolveIncident({ incidentId: incident.id })],
+						}),
+					}),
+		CompletedResolve: ({ result }) =>
+			Result.match(result, {
+				onSuccess: (incident) => {
+					const closed = liftResolveDialog(
+						{
+							...model,
+							isResolving: false,
+							incidents:
+								model.incidents === null ? null : withResolution(model.incidents, incident),
+						},
+						Dialog.close(model.resolveDialog),
+					)
+					const next = followData(closed.model, context)
+					return {
+						...next,
+						commands: [...(closed.commands ?? []), ...(next.commands ?? [])],
+						outMessage: PageOutMessage.RequestedToast({
+							type: "success",
+							title: "Incident resolved",
+							description: "Everyone it notified gets the all-clear.",
+						}),
+					}
+				},
+				onFailure: (failure) => ({
+					model: { ...model, isResolving: false },
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: "Couldn't resolve the incident",
 						description: failure.message,
 					}),
 				}),

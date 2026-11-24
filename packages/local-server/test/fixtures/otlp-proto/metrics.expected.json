@@ -1,0 +1,579 @@
+{
+	"resourceMetrics": [
+		{
+			"scopeMetrics": [
+				{
+					"metrics": [
+						{
+							"metadata": [
+								{
+									"key": "m",
+									"value": {
+										"stringValue": "d",
+										"value": "stringValue"
+									}
+								}
+							],
+							"name": "g",
+							"description": "gauge",
+							"unit": "1",
+							"gauge": {
+								"dataPoints": [
+									{
+										"exemplars": [
+											{
+												"filteredAttributes": [
+													{
+														"key": "e",
+														"value": {
+															"stringValue": "1",
+															"value": "stringValue"
+														}
+													}
+												],
+												"timeUnixNano": "1763200000500000000",
+												"spanId": "t61rcWkgMzE=",
+												"traceId": "CvdlGRbNQ92ESOshHIAxnA==",
+												"asDouble": 1.5,
+												"value": "asDouble"
+											},
+											{
+												"filteredAttributes": [
+													{
+														"key": "e",
+														"value": {
+															"stringValue": "1",
+															"value": "stringValue"
+														}
+													}
+												],
+												"timeUnixNano": "1763200000500000000",
+												"spanId": "t61rcWkgMzE=",
+												"traceId": "CvdlGRbNQ92ESOshHIAxnA==",
+												"asInt": "-3",
+												"value": "asInt"
+											}
+										],
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"flags": 1,
+										"asDouble": 3.14,
+										"value": "asDouble"
+									},
+									{
+										"exemplars": [],
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"flags": 0,
+										"asInt": "-9223372036854775808",
+										"value": "asInt"
+									}
+								]
+							},
+							"data": "gauge"
+						},
+						{
+							"metadata": [],
+							"name": "s",
+							"description": "",
+							"unit": "",
+							"sum": {
+								"dataPoints": [
+									{
+										"exemplars": [
+											{
+												"filteredAttributes": [
+													{
+														"key": "e",
+														"value": {
+															"stringValue": "1",
+															"value": "stringValue"
+														}
+													}
+												],
+												"timeUnixNano": "1763200000500000000",
+												"spanId": "t61rcWkgMzE=",
+												"traceId": "CvdlGRbNQ92ESOshHIAxnA==",
+												"asInt": "9007199254740993",
+												"value": "asInt"
+											}
+										],
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"flags": 0,
+										"asInt": "42",
+										"value": "asInt"
+									}
+								],
+								"aggregationTemporality": 2,
+								"isMonotonic": true
+							},
+							"data": "sum"
+						},
+						{
+							"metadata": [],
+							"name": "s-delta",
+							"description": "",
+							"unit": "",
+							"sum": {
+								"dataPoints": [
+									{
+										"exemplars": [],
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"flags": 0,
+										"asDouble": 0,
+										"value": "asDouble"
+									}
+								],
+								"aggregationTemporality": 1,
+								"isMonotonic": false
+							},
+							"data": "sum"
+						},
+						{
+							"metadata": [],
+							"name": "h",
+							"description": "",
+							"unit": "ms",
+							"histogram": {
+								"dataPoints": [
+									{
+										"bucketCounts": ["1", "2", "18446744073709551614"],
+										"explicitBounds": [1, 2.5],
+										"exemplars": [
+											{
+												"filteredAttributes": [
+													{
+														"key": "e",
+														"value": {
+															"stringValue": "1",
+															"value": "stringValue"
+														}
+													}
+												],
+												"timeUnixNano": "1763200000500000000",
+												"spanId": "t61rcWkgMzE=",
+												"traceId": "CvdlGRbNQ92ESOshHIAxnA==",
+												"asDouble": 2,
+												"value": "asDouble"
+											}
+										],
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"count": "18446744073709551615",
+										"flags": 0,
+										"sum": 5.5,
+										"min": 0.1,
+										"max": 9.9
+									},
+									{
+										"bucketCounts": [],
+										"explicitBounds": [],
+										"exemplars": [],
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"count": "0",
+										"flags": 0
+									}
+								],
+								"aggregationTemporality": 2
+							},
+							"data": "histogram"
+						},
+						{
+							"metadata": [],
+							"name": "eh",
+							"description": "",
+							"unit": "",
+							"exponentialHistogram": {
+								"dataPoints": [
+									{
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"exemplars": [
+											{
+												"filteredAttributes": [
+													{
+														"key": "e",
+														"value": {
+															"stringValue": "1",
+															"value": "stringValue"
+														}
+													}
+												],
+												"timeUnixNano": "1763200000500000000",
+												"spanId": "t61rcWkgMzE=",
+												"traceId": "CvdlGRbNQ92ESOshHIAxnA==",
+												"asDouble": 3,
+												"value": "asDouble"
+											}
+										],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"count": "7",
+										"scale": -3,
+										"zeroCount": "1",
+										"positive": {
+											"bucketCounts": ["1", "0", "9007199254740993"],
+											"offset": -2
+										},
+										"negative": {
+											"bucketCounts": ["2"],
+											"offset": 5
+										},
+										"flags": 0,
+										"zeroThreshold": 1e-9,
+										"sum": 12.5,
+										"min": -1,
+										"max": 8
+									},
+									{
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"exemplars": [],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"count": "0",
+										"scale": 20,
+										"zeroCount": "0",
+										"positive": null,
+										"negative": null,
+										"flags": 0,
+										"zeroThreshold": 0
+									}
+								],
+								"aggregationTemporality": 1
+							},
+							"data": "exponentialHistogram"
+						},
+						{
+							"metadata": [],
+							"name": "sm",
+							"description": "",
+							"unit": "",
+							"summary": {
+								"dataPoints": [
+									{
+										"quantileValues": [
+											{
+												"quantile": 0,
+												"value": 1
+											},
+											{
+												"quantile": 0.5,
+												"value": 2.5
+											},
+											{
+												"quantile": 1,
+												"value": 4
+											}
+										],
+										"attributes": [
+											{
+												"key": "k",
+												"value": {
+													"stringValue": "v",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "s",
+												"value": {
+													"stringValue": "héllo ✓ 漢字 🎉",
+													"value": "stringValue"
+												}
+											},
+											{
+												"key": "b",
+												"value": {
+													"boolValue": true,
+													"value": "boolValue"
+												}
+											},
+											{
+												"key": "bf",
+												"value": {
+													"boolValue": false,
+													"value": "boolValue"
+												}
+											}
+										],
+										"startTimeUnixNano": "1763200000000000000",
+										"timeUnixNano": "1763200001000000000",
+										"count": "4",
+										"sum": 10,
+										"flags": 0
+									}
+								]
+							},
+							"data": "summary"
+						},
+						{
+							"metadata": [],
+							"name": "no-data",
+							"description": "",
+							"unit": ""
+						}
+					],
+					"scope": {
+						"attributes": [],
+						"name": "meter",
+						"version": "1",
+						"droppedAttributesCount": 0
+					},
+					"schemaUrl": ""
+				}
+			],
+			"resource": {
+				"attributes": [
+					{
+						"key": "service.name",
+						"value": {
+							"stringValue": "api",
+							"value": "stringValue"
+						}
+					}
+				],
+				"droppedAttributesCount": 0
+			},
+			"schemaUrl": ""
+		}
+	]
+}

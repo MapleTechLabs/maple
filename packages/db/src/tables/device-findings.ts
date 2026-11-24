@@ -15,6 +15,8 @@ export const DevicePolicyFindings = PG.table("device_policy_findings", {
 		connectionId: PG.column(PG.text, { name: "connection_id" }),
 		policyId: PG.column(PG.text, { name: "policy_id" }),
 		name: PG.text,
+		/** The device group the policy is set for, as the source names it (a Fleet fleet); null for no one group. */
+		groupName: PG.column(PG.nullable(PG.text), { name: "group_name" }),
 		description: PG.nullable(PG.text),
 		resolution: PG.nullable(PG.text),
 		critical: PG.bool,

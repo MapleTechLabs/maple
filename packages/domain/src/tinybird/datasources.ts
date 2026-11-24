@@ -803,6 +803,16 @@ export const servicePlatformsHourly = defineDatasource("service_platforms_hourly
 		MapleSdkType: t.simpleAggregateFunction("max", t.string()),
 		ProcessRuntimeName: t.simpleAggregateFunction("max", t.string()),
 		SpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Service identity (migration 0074): instrumentation scopes, SDK self-report and the span-kind
+		// mix. `ClassifiedSpanCount` is 0 on rows written before it, so their kind counts mean unknown.
+		ScopeNames: t.simpleAggregateFunction("groupUniqArrayArray", t.array(t.string())),
+		TelemetrySdkName: t.simpleAggregateFunction("max", t.string()),
+		TelemetrySdkLanguage: t.simpleAggregateFunction("max", t.string()),
+		OsName: t.simpleAggregateFunction("max", t.string()),
+		ClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ServerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ConsumerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		RootSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
@@ -1380,6 +1390,68 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 })
 
 export type AiTraceIndexRow = InferRow<typeof aiTraceIndex>
+
+/**
+ * One row per LLM evaluation score: the OTel GenAI `gen_ai.evaluation.result` event, from an OTLP
+ * log record (`ai_evaluations_mv`) or a span event (`ai_evaluations_span_events_mv`). See
+ * `gen-ai-evaluation.ts` for the attributes.
+ *
+ * `TraceId`/`SpanId` are the TARGET: the span the score grades, which is the record's own span
+ * context unless `maple_ai.evaluation.target.*` names another. A session-scope score carries its
+ * session in `SessionId`; every other row resolves its session per trace at read time, like Agent
+ * Sessions. `ScoreValue` is 0 where `HasScore` is 0 (a label-only score). `Verdict` is `pass` /
+ * `fail` read from the label, `''` when it says neither.
+ *
+ * TTL 90 days, longer than `traces`: scores are small and their trends outlive the traces, so a
+ * score whose trace has aged out still counts and just cannot be opened.
+ */
+export const aiEvaluations = defineDatasource("ai_evaluations", {
+	tenantColumn: "OrgId",
+	description:
+		"LLM evaluation scores (OTel gen_ai.evaluation.result events from log records and span events), one row per score, keyed to the span it grades. Populated by materialized views.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
+		TraceId: t.string(),
+		SpanId: t.string(),
+		Scope: t.string().lowCardinality(),
+		SessionId: t.string(),
+		ResponseId: t.string(),
+		Name: t.string().lowCardinality(),
+		ScoreValue: t.float64(),
+		HasScore: t.uint8(),
+		ScoreLabel: t.string().lowCardinality(),
+		Verdict: t.string().lowCardinality(),
+		Explanation: t.string(),
+		ErrorType: t.string().lowCardinality(),
+		AnnotatorKind: t.string().lowCardinality(),
+		Source: t.string().lowCardinality(),
+		EvaluatorId: t.string().lowCardinality(),
+		EvaluatorVersion: t.string().lowCardinality(),
+		ExperimentId: t.string(),
+		Identifier: t.string(),
+		JudgeModel: t.string().lowCardinality(),
+		ServiceName: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+	},
+	// A session page reads its scores by trace: `TraceId` is not in the sorting key.
+	indexes: [
+		{
+			name: "idx_trace_id",
+			expr: "TraceId",
+			type: "bloom_filter(0.01)",
+			granularity: 1,
+		},
+	],
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "Name", "Timestamp"],
+		ttl: "toDate(Timestamp) + INTERVAL 90 DAY",
+	}),
+})
+
+export type AiEvaluationRow = InferRow<typeof aiEvaluations>
 
 /**
  * AI crawler requests: Server spans whose user agent names a published AI
@@ -3077,8 +3149,9 @@ export type ProductEventsRow = InferRow<typeof productEvents>
 
 /**
  * Identity links — one row per (visitor, user) pair ever observed together on a
- * session, materialized out of `session_replays` (later also from mobile
- * `identify` calls). This is how a funnel collapses a person's anonymous
+ * session, materialized out of `session_replays`, and on a server, mobile or
+ * trace product event (`identity_links_events_mv`). The `description` below still
+ * names sessions only, so the datafile changes no more than it has to. This is how a funnel collapses a person's anonymous
  * marketing visit (VisitorId only) and their later server-side events (UserId
  * only) into one row: a `product_events` row resolves its person as
  * `if(UserId != '', UserId, coalesce(link.UserId, VisitorId))`.
@@ -3109,6 +3182,11 @@ export const identityLinks = defineDatasource("identity_links", {
 		UserId: t.string(),
 		FirstSeen: t.simpleAggregateFunction("min", utcDateTime64(9)),
 	},
+	// REQUIRED: adding a feeding view makes Tinybird rebuild this table from its views, and
+	// `session_replays` keeps 30 days against these links' 365: without it every older link is
+	// dropped (seen in the #2960 preview plan). The copy and the views' backfill overlap, which
+	// the `min(FirstSeen)` merge collapses.
+	forwardQuery: "SELECT *",
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "tuple()",
 		sortingKey: ["OrgId", "VisitorId", "UserId"],
@@ -3120,6 +3198,50 @@ export const identityLinks = defineDatasource("identity_links", {
 })
 
 export type IdentityLinksRow = InferRow<typeof identityLinks>
+
+/**
+ * Person and group properties: one row per (Kind, Id, Key) after merging, where
+ * Kind is `user` (Id = UserId) or `group` (Id = GroupId). Written only by views:
+ * `person_properties_events_mv` from the `$<op>.<property>` keys a product event
+ * carries (`PERSON_PROPERTY_OPS` in `product-event-attributes.ts`) and
+ * `person_properties_traits_mv` from browser `identify()` traits.
+ *
+ * Each column merges to one answer whatever the merge timing, so a read never
+ * depends on which parts have merged: `set` keeps its newest value
+ * (`argMaxIf` by event time), `set_once` its earliest (`argMinIf`), `unset` its
+ * newest time. `PERSON_PROPERTY_VALUE_SQL` resolves them. Sorted by Key before Id
+ * so "everyone's plan" is one contiguous range.
+ *
+ * Kept a year past the property's last write. Browser traits rewrite their keys
+ * every session, so an active user never ages out.
+ */
+export const personProperties = defineDatasource("person_properties", {
+	tenantColumn: "OrgId",
+	description:
+		"Person (Kind = 'user', Id = UserId) and group (Kind = 'group', Id = GroupId) properties, one row per (Kind, Id, Key) after merging. Populated by views from product events' $set/$set_once/$unset attributes and browser identify() traits. Read the value with argMaxIfMerge(SetValue) when max(SetAt) > max(UnsetAt), else argMinIfMerge(OnceValue) when min(OnceAt) is after max(UnsetAt) and before 2199.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		/** `user` | `group`. */
+		Kind: t.string().lowCardinality(),
+		Id: t.string(),
+		Key: t.string(),
+		SetAt: t.simpleAggregateFunction("max", utcDateTime64(9)),
+		SetValue: t.aggregateFunction("argMaxIf", t.string(), utcDateTime64(9), t.uint8()),
+		/** `PERSON_PROPERTY_NEVER_SQL` when no `set_once` touched the key. */
+		OnceAt: t.simpleAggregateFunction("min", utcDateTime64(9)),
+		OnceValue: t.aggregateFunction("argMinIf", t.string(), utcDateTime64(9), t.uint8()),
+		UnsetAt: t.simpleAggregateFunction("max", utcDateTime64(9)),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime64(9)),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "tuple()",
+		sortingKey: ["OrgId", "Kind", "Key", "Id"],
+		ttl: "toDate(LastSeen) + INTERVAL 365 DAY",
+	}),
+})
+
+export type PersonPropertiesRow = InferRow<typeof personProperties>
 
 /**
  * Google Search Console per (site, grain, Pacific day as midnight UTC, page, query, country, device), from `SearchConsoleImportService`.

@@ -1,0 +1,51 @@
+diff --git a/dist/schema/index.js b/dist/schema/index.js
+index d25261f64aadd984acd82ec41a4ae38c2d4dadb2..f1d354d2e6ccdcf8cbacc2555b077246d5e57db9 100644
+--- a/dist/schema/index.js
++++ b/dist/schema/index.js
+@@ -70,6 +70,35 @@ const makeCallable = (tag, fields) => {
+     const make = (value) => schema.make(
+     /* eslint-disable-next-line @typescript-eslint/consistent-type-assertions */
+     (value ?? {}));
++    // Patched (maple): `schema.make` deep-copies array and object fields, so every live-sync
++    // message handed update all-new rows and defeated reference caches downstream. Validate
++    // with `Schema.is` and keep the caller's references; anything it rejects (bad input, a
++    // constructor default to fill) still goes through `make`. Keep until upstream foldkit
++    // stops copying; `apps/web/src/foldkit-message-references.test.ts` fails if this is lost.
++    const isMessage = Schema.is(schema);
++    const fieldNames = schema.ast.propertySignatures.map(({ name }) => name);
++    const keepReferences = (value) => {
++        const input = (value ?? {});
++        if (Object(input) !== input) {
++            return make(value);
++        }
++        if (Reflect.has(input, '_tag') && input._tag !== tag) {
++            return make(value);
++        }
++        const output = { _tag: tag };
++        for (const name of fieldNames) {
++            if (name === '_tag') {
++                continue;
++            }
++            const hasProperty = name === '__proto__'
++                ? Object.hasOwn(input, name)
++                : Reflect.has(input, name);
++            if (hasProperty) {
++                assignPlainProperty(output, name, input[name]);
++            }
++        }
++        return isMessage(output) ? output : make(value);
++    };
+     const construct = propertyNames !== undefined
+         ? (value) => {
+             /* eslint-disable-next-line @typescript-eslint/consistent-type-assertions */
+@@ -97,7 +126,9 @@ const makeCallable = (tag, fields) => {
+             }
+             return output;
+         }
+-        : make;
++        : Object.hasOwn(fields, '_tag')
++            ? make
++            : keepReferences;
+     /* eslint-disable-next-line @typescript-eslint/consistent-type-assertions */
+     return new Proxy(function () { }, {
+         apply(_target, _thisArg, argumentsList) {

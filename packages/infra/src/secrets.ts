@@ -158,6 +158,14 @@ export class OtelIngestKey extends Secret<OtelIngestKey>()("MAPLE_OTEL_INGEST_KE
 	sharesProdValueWith: ["dev", "preview"],
 }) {}
 
+// Uploads the dashboard's source maps into Maple's own org at deploy (`source_maps:write` only). Prd
+// alone: dev and preview builds upload nothing.
+export class MapleSourceMapsApiKey extends Secret<MapleSourceMapsApiKey>()("MAPLE_SOURCEMAPS_API_KEY", {
+	issuer: "maple",
+	consumers: ["web"],
+	environments: PRD_ONLY,
+}) {}
+
 export class ProductEventsIngestKey extends Secret<ProductEventsIngestKey>()(
 	"MAPLE_PRODUCT_EVENTS_INGEST_KEY",
 	// ai and alerting stamp an org's first data, which emits `first_data_received`.

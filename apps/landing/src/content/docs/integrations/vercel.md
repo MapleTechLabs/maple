@@ -3,6 +3,7 @@ title: "Vercel"
 description: "Connect a Vercel team with an access token. Maple creates log, trace and AI Gateway drains on the team, so request, function, build and edge logs, deployment traces, and AI Gateway usage arrive in Maple. Speed Insights, Web Analytics and audit log drains are optional."
 group: "Integrations"
 order: 11
+icon: "vercel"
 ---
 
 The Vercel integration connects one Vercel team to Maple with an access token. Maple creates three drains on the team: a log drain for request, function, build and edge logs, a trace drain for deployment traces, and an AI Gateway drain for model usage and cost. The data appears under **Infrastructure → Vercel**, in the [logs](/docs/explore/logs) and [traces](/docs/explore/traces) explorers, and AI Gateway requests also appear in Agent Sessions. You can also turn on drains for Speed Insights (Core Web Vitals), Web Analytics (page views and events) and the team's audit log. Maple also keeps a list of the team's projects and recent deployments.

@@ -6,10 +6,13 @@ import type {
 	SessionCoverageSignal,
 	SessionFinding,
 } from "@maple/agent-sessions"
+import type { AiEvaluationScore } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { pressable } from "@maple/views/ui/pressable"
@@ -18,6 +21,7 @@ import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosureChevron } from "./view-kit"
+import { scoreText, verdictTone } from "../kit/evals"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
@@ -405,6 +409,63 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 		],
 	)
 
+const scoreCells = (h: H, score: AiEvaluationScore): ReadonlyArray<Html> => [
+	statusDot(h, { tone: verdictTone(score), className: "translate-y-[-1px] justify-self-center" }),
+	typography(h, { size: "ui", truncate: true, attributes: [h.Title(score.name)] }, [score.name]),
+	vstack(h, { gap: "0.5", shrink: true }, [
+		typography(h, { size: "xs", mono: true, tone: "foreground" }, [scoreText(score)]),
+		...(score.explanation === ""
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", className: "line-clamp-2 font-prose" }, [
+						score.explanation,
+					]),
+				]),
+	]),
+]
+
+/** A score row; one that grades a span opens it, a trace- or session-scope score has none to open. */
+const scoreRow = (h: H, openSpanId: string | undefined, score: AiEvaluationScore): Html => {
+	const key = h.Key(`${score.name}:${score.spanId}:${score.timestamp}`)
+	return score.spanId === ""
+		? h.div([key, h.Class(cn(ROW_GRID, "w-full py-2"))], scoreCells(h, score))
+		: pressable(
+				h,
+				{
+					onClick: Message.ClickedSpan({
+						spanId: openSpanId === score.spanId ? undefined : score.spanId,
+					}),
+					className: cn(
+						ROW_GRID,
+						"w-full py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+					),
+					attributes: [key, h.AriaHasPopup("dialog")],
+				},
+				scoreCells(h, score),
+			)
+}
+
+/** The session's eval scores, failing first, each opening its span; nothing when there are none. */
+export const sessionScores = (
+	h: H,
+	scores: ReadonlyArray<AiEvaluationScore>,
+	openSpanId: string | undefined,
+): ReadonlyArray<Html> => {
+	if (scores.length === 0) return []
+	const failing = Arr.filter(scores, (score) => score.verdict === "fail")
+	const rest = Arr.filter(scores, (score) => score.verdict !== "fail")
+	return [
+		vstack(h, { gap: "2", as: "section" }, [
+			sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Scores", className: "mb-0" }),
+			vstack(
+				h,
+				{ className: "divide-y divide-border border-border border-y" },
+				Arr.map([...failing, ...rest], (score) => scoreRow(h, openSpanId, score)),
+			),
+		]),
+	]
+}
+
 export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): Html => {
 	const attention = Arr.filter(
 		report.checks,
@@ -466,6 +527,23 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 					]
 				: []),
 		]),
+		// A failed read says so, with a retry; only a read that found nothing is silent.
+		...Option.match(AsyncData.getError(model.scores.data), {
+			onSome: (failure) => [
+				errorState(h, {
+					failure,
+					title: "Couldn't load this session's scores",
+					variant: "row",
+					onRetry: Message.ClickedRetryScores(),
+				}),
+			],
+			onNone: () =>
+				sessionScores(
+					h,
+					Option.getOrElse(AsyncData.getData(model.scores.data), () => []),
+					model.search.span,
+				),
+		}),
 		coverageLine(h, report.coverage),
 	])
 }

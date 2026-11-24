@@ -67,6 +67,7 @@ const INSTALLATION = Schema.decodeSync(VcsInstallation)({
 	suspendedAt: null,
 	ciTracesEnabled: true,
 	auditLogEnabled: true,
+	auditCategories: {},
 	repositoryDiscovery: null,
 	installedByUserId: "user_1",
 	createdAt: 0,
@@ -233,6 +234,32 @@ describe("GithubProvider commits", () => {
 			yield* Effect.gen(function* () {
 				const provider = yield* GithubProvider
 				const exit = yield* Effect.exit(provider.fetchCommit(INSTALLATION, REPO, sha))
+				assert.isTrue(Exit.isFailure(exit))
+			}).pipe(Effect.provide(layer))
+		}),
+	)
+})
+
+describe("GithubProvider workflow job annotations", () => {
+	it.effect("answers no annotations for a check run GitHub no longer has", () =>
+		Effect.gen(function* () {
+			const layer = providerLayer([tokenResponse(), jsonResponse({ message: "Not Found" }, 404)])
+			yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "991")
+				assert.deepStrictEqual(annotations, [])
+			}).pipe(Effect.provide(layer))
+		}),
+	)
+
+	it.effect("still fails when GitHub refuses for another reason", () =>
+		Effect.gen(function* () {
+			const layer = providerLayer([tokenResponse(), jsonResponse({ message: "Bad credentials" }, 401)])
+			yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const exit = yield* Effect.exit(
+					provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "991"),
+				)
 				assert.isTrue(Exit.isFailure(exit))
 			}).pipe(Effect.provide(layer))
 		}),
