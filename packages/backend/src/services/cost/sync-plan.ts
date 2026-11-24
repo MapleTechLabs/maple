@@ -11,10 +11,6 @@ export const COST_DATASOURCE = "cost_daily"
 export const HEAD_DAYS = 4
 // An hour under a day: a source pulled a few minutes past the hour is due at that hour tomorrow.
 export const HEAD_INTERVAL_MS = 23 * 60 * 60_000
-// Five minutes under an hour, for the same reason: the sync runs every five minutes.
-export const MORPH_HEAD_INTERVAL_MS = 55 * 60_000
-/** Through this day of a month Morph's floor keeps the month before it. */
-const MORPH_PREVIOUS_MONTH_DAYS = 3
 // The open months are re-pulled whole about weekly, to pick up what the provider restated.
 export const SETTLE_INTERVAL_MS = (7 * 24 - 1) * 60 * 60_000
 /**
@@ -91,8 +87,6 @@ interface CostSyncProfile {
 	 * monthly bill: a new line changes every day of the month.
 	 */
 	readonly head: "days" | "month"
-	/** How long after a head the next one is due; {@link HEAD_INTERVAL_MS} when unset. */
-	readonly headIntervalMs?: number
 }
 
 const COST_SYNC_PROFILES = {
@@ -115,24 +109,8 @@ const COST_SYNC_PROFILES = {
 	openai: { floor: (today) => monthStart(today, -MODEL_API_HISTORY_MONTHS), lagDays: 0, head: "days" },
 	// The export holds every day since it was enabled, today's so far included.
 	gcp: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0, head: "days" },
-	// Morph serves only this month's spend so far: each pull records a reading, and a day's cost is
-	// the change between readings. Hourly, so a day's last reading is close to its end.
-	// The previous month only while its last readings may still land, so a source added mid-month
-	// does not show a month of zeros before it.
-	morph: {
-		floor: (today) =>
-			monthStart(today, Number(Str.slice(8, 10)(today)) <= MORPH_PREVIOUS_MONTH_DAYS ? -1 : 0),
-		lagDays: 0,
-		head: "days",
-		headIntervalMs: MORPH_HEAD_INTERVAL_MS,
-	},
+	morph: { floor: (today) => monthStart(today, -MODEL_API_HISTORY_MONTHS), lagDays: 0, head: "days" },
 } as const satisfies Record<CostProvider, CostSyncProfile>
-
-/** How long after a source's head the next one is due. */
-export const headIntervalMs = (provider: CostProvider): number => {
-	const profile: CostSyncProfile = COST_SYNC_PROFILES[provider]
-	return profile.headIntervalMs ?? HEAD_INTERVAL_MS
-}
 
 /** The oldest day the sync pulls from `provider`. */
 export const historyFloor = (provider: CostProvider, today: string): string =>
@@ -220,7 +198,7 @@ export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan =>
 	if (state.watermarkDate === null) {
 		return { mode: "settle", startDay: maxDay(floor, monthStart(today, -1)), endDay: latest }
 	}
-	const headDue = state.lastSyncedAt === null || now - state.lastSyncedAt >= headIntervalMs(state.provider)
+	const headDue = state.lastSyncedAt === null || now - state.lastSyncedAt >= HEAD_INTERVAL_MS
 	if (headDue) {
 		const settleDue = state.lastSettledAt === null || now - state.lastSettledAt >= SETTLE_INTERVAL_MS
 		const usualStart = settleDue

@@ -54,6 +54,14 @@ export const Sparklines = Schema.Record(
 )
 export type Sparklines = typeof Sparklines.Type
 
+/** A resolved commit: its provider (`github`), subject and when it was committed (epoch ms). */
+export const CommitSummary = Schema.Struct({
+	provider: Schema.String,
+	subject: Schema.String,
+	committedAt: Schema.Number,
+})
+export type CommitSummary = typeof CommitSummary.Type
+
 const FacetCount = Schema.Struct({ name: Schema.String, count: Schema.Number })
 export const ServicesFacets = Schema.Struct({
 	environments: Schema.Array(FacetCount),
@@ -86,8 +94,8 @@ export const Model = Schema.Struct({
 	incidents: IncidentsData.schema,
 	/** The loaded table has painted; the commit message lookup starts with it. */
 	hasPaintedTable: Schema.Boolean,
-	/** First lines of the deploy commits on screen, by sha. */
-	commitMessages: KeyedSchema(Schema.Record(Schema.String, Schema.String), LoadFailure),
+	/** The deploy and release-facet commits on screen, by sha. */
+	commitSummaries: KeyedSchema(Schema.Record(Schema.String, CommitSummary), LoadFailure),
 	presence: SignalPresenceData.schema,
 	/** The row tooltips: rollout split (left), sampling estimate and the unnamed-service hint (below). */
 	rolloutTooltip: Tooltip.Model,

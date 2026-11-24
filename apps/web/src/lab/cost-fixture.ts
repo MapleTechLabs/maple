@@ -177,14 +177,14 @@ const openAiLine = (
 	drift,
 })
 
-/** A Morph organization member's daily spend: Morph has no split by model. */
-const morphLine = (member: string, daily: number, drift: number): Line => ({
+/** A Morph model's daily spend. */
+const morphLine = (model: string, daily: number, drift: number): Line => ({
 	cloud_service: "morph",
 	provider: "morph",
 	service_category: "AI and Machine Learning",
 	region: "global",
-	usage_type: "Usage",
-	resource: member,
+	usage_type: model,
+	resource: "",
 	account: "organization",
 	daily,
 	drift,
@@ -265,8 +265,8 @@ const LINES: ReadonlyArray<Line> = [
 	openAiLine("gpt-5", "gpt-5, output", "proj_ExampleSupport", 14.2, 0.12),
 	openAiLine("gpt-5", "gpt-5, input", "proj_ExampleSupport", 5.3, 0.08),
 	openAiLine("text-embedding-3-large", "text-embedding-3-large, input", "proj_ExampleSearch", 0.9, 0.0),
-	morphLine("dev@example.com", 2.4, 0.1),
-	morphLine("ops@example.com", 0.8, 0.05),
+	morphLine("morph-v3-fast", 2.4, 0.1),
+	morphLine("morph-v3-large", 0.8, 0.05),
 	productLine("Example Function Duration", "Compute", "iad1", "function-duration", "example-web", 9.4, 0.2),
 	productLine(
 		"Example Function Duration",
@@ -530,7 +530,7 @@ const openAiSource = source({
 	requestsThisMonth: 0,
 })
 
-/** The Morph source: readings start the day it was added, so it has no older history. */
+/** The Morph source. */
 const morphSource = source({
 	id: "0190f2b3-0000-7000-8000-00000000c068",
 	provider: "morph",

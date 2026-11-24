@@ -211,10 +211,9 @@ export const CREDENTIAL_SOURCES = {
 		save: (apiKey) => SaveOpenAiCostKey({ apiKey }),
 		delete: () => RemoveOpenAiCostKey(),
 	},
-	// Morph serves no history: the source starts the day it is added.
 	morph: {
 		pick: {
-			meta: "Daily spend by organization member",
+			meta: "Daily spend by model",
 			addedMeta: "Replace its key in the Sources panel",
 		},
 		field: {
@@ -226,18 +225,17 @@ export const CREDENTIAL_SOURCES = {
 				before: "Create one under ",
 				link: "API keys",
 				href: "https://www.morphllm.com/dashboard/api-keys",
-				after: " in Morph, in your organization, as one of its admins. Keys of personal accounts cannot read spend. Morph has no read-only key, so this one can also run models: Maple only reads the organization's spend with it, and stores it encrypted.",
+				after: " in Morph. A key of your organization reads the organization's spend, a personal key your own. Morph has no read-only key, so this one can also run models: Maple only reads spend with it, and stores it encrypted.",
 			},
 		},
 		add: {
 			title: "Add Morph",
-			description:
-				"Morph reports only this month's spend so far, so Maple starts today: what was spent earlier this month shows on the month's first day, and from here on Maple reads it hourly and counts each day's change.",
+			description: THREE_MONTHS_ADD,
 			toast: "Morph added",
 		},
 		replace: {
 			title: "Replace the Morph key",
-			description: "The source and its history stay. Use a key from the same Morph organization.",
+			description: "The source and its history stay. Use a key of the same Morph account.",
 			label: "Replace key",
 			toast: "Morph key replaced",
 		},
