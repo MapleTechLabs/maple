@@ -257,7 +257,7 @@ describe("SLO page", () => {
 			expectView(
 				within(
 					burnPanel,
-					text("Holding: too few events in 1h to judge, an open incident stays open."),
+					text("Holding: too few events or failures in 1h to judge, an open incident stays open."),
 				),
 			).toExist(),
 			expectView(within(burnPanel, text(/no events in/u))).not.toExist(),
@@ -275,7 +275,10 @@ describe("SLO page", () => {
 			),
 			themeResolved(),
 			expectView(
-				within(callout, text("Holding: too few events in 1h to judge, an open incident stays open")),
+				within(
+					callout,
+					text("Holding: too few events or failures in 1h to judge, an open incident stays open"),
+				),
 			).toExist(),
 			expectView(
 				within(callout, text(/needs 10 events and 2 bad ones in 1h to judge the burn/u)),
