@@ -27,6 +27,8 @@ import { coveragePreview, type PreviewShift } from "../shared/coverage-preview"
 import { editScheduleHref, formatShiftEdge, oncallTabHref } from "../shared/oncall-schedules"
 import { uncoveredIntervals } from "@maple/alerting-core/oncall"
 import { memberName, memberOf, type OrgMember } from "../shared/org-members"
+import { departedSentence } from "../shared/schedule-health"
+import { textLink } from "@maple/views/ui/text-link"
 import { Message } from "./message"
 import { type Model } from "./model"
 import {
@@ -56,6 +58,37 @@ const onCallLine = (model: Model, schedule: V2OnCallSchedule): string =>
 		onNone: () => "Nobody is on call right now",
 		onSome: (now) =>
 			`${memberName(model.members, now.user_id)} is on call until ${formatShiftEdge(toEpochMs(now.ends_at), schedule.time_zone)}`,
+	})
+
+/**
+ * Participants who left the org: who, what happens to their shifts, and where to take them out.
+ * Nothing while everyone in the rotation is a member.
+ */
+const departedNotice = (h: H, model: Model, schedule: V2OnCallSchedule): ReadonlyArray<Html> =>
+	Option.match(departedSentence(model.members, schedule), {
+		onNone: () => [],
+		onSome: (sentence) => [
+			alert(h, { variant: "warn", role: "status" }, [
+				icon(h, "CircleWarningIcon"),
+				alertTitle(h, [sentence]),
+				alertDescription(h, [
+					h.p(
+						[],
+						canManageAlerts(model)
+							? [
+									"Their shifts pass to the next person in the rotation. ",
+									textLink(h, { href: editScheduleHref(schedule.id) }, [
+										"Edit the schedule",
+									]),
+									" to take them out of it.",
+								]
+							: [
+									"Their shifts pass to the next person in the rotation. An org admin or engineer can edit the schedule to take them out of it.",
+								],
+					),
+				]),
+			]),
+		],
 	})
 
 const previewShiftOf = (shift: V2OnCallShift): PreviewShift => ({
@@ -421,6 +454,7 @@ const page = (h: H, model: Model, viewerZone: string): Html => {
 							gap: "lg",
 						},
 						[
+							...departedNotice(h, model, schedule),
 							calendarSection(h, model, schedule, viewerZone),
 							overridesSection(h, model, schedule),
 						],
