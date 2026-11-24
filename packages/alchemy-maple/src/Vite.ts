@@ -13,6 +13,7 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { injectDirectory, relocateMaps } from "@maple/sourcemaps"
+import { Array as Arr } from "effect"
 import * as Effect from "effect/Effect"
 import { Path } from "effect/Path"
 import type { Plugin } from "vite"
@@ -32,19 +33,21 @@ export interface MapleSourceMapsOptions {
 
 /** What one build did: the maps moved and the files the manifest lists. */
 export interface MapleSourceMapsResult {
-	readonly outDir: string
+	readonly outDirs: ReadonlyArray<string>
 	readonly mapsDir: string
 	readonly moved: number
 	readonly files: number
 }
 
-/** Runs the inject and the move over a finished build's output directory. */
-export const processBuildOutput = (outDir: string, mapsDir: string) =>
+/** Injects every output, then moves their maps to `mapsDir` under one manifest. */
+export const processBuildOutputs = (outDirs: ReadonlyArray<string>, mapsDir: string) =>
 	Effect.gen(function* () {
-		const results = yield* injectDirectory(outDir, { dryRun: false })
-		const relocated = yield* relocateMaps(outDir, mapsDir, results)
+		const outputs = yield* Effect.forEach(Arr.dedupe(outDirs), (outDir) =>
+			Effect.map(injectDirectory(outDir, { dryRun: false }), (results) => ({ outDir, results })),
+		)
+		const relocated = yield* relocateMaps(mapsDir, outputs)
 		return {
-			outDir,
+			outDirs: Arr.map(outputs, (output) => output.outDir),
 			mapsDir,
 			moved: relocated.moved,
 			files: relocated.files.length,
@@ -53,12 +56,23 @@ export const processBuildOutput = (outDir: string, mapsDir: string) =>
 
 /**
  * Requires source maps (`build.sourcemap` becomes `"hidden"` when unset or off, so no public
- * `sourceMappingURL` comment is written), injects debug ids into the written output and moves every
- * `.map` to `mapsDir` with a `maple-sourcemaps.json` manifest. Runs in Node; Bun is not required.
+ * `sourceMappingURL` comment is written). When a build finishes it injects debug ids into every
+ * output it wrote and moves each `.map` to `mapsDir` with a `maple-sourcemaps.json` manifest. Runs
+ * in Node; Bun is not required.
+ *
+ * The first deploy with the plugin changes chunk contents without changing their hashed names
+ * (the injection runs after Rollup names them), so a browser or CDN that cached a chunk from the
+ * build before may still serve it unshifted for that one release. Later builds are deterministic,
+ * so it does not recur.
  */
 export const mapleSourceMaps = (options: MapleSourceMapsOptions = {}): Plugin => {
 	const environments = options.environments ?? ["client"]
 	let root = process.cwd()
+	// Output dirs written in the current build, per environment: several outputs may share a dir.
+	const written = new Map<string, Array<string>>()
+	// A build without the environment API (Vite 5) has no `environment` on its plugin context.
+	const environmentOf = (context: { readonly environment?: { readonly name: string } }) =>
+		context.environment?.name
 	return {
 		name: "maple:source-maps",
 		apply: "build",
@@ -69,19 +83,26 @@ export const mapleSourceMaps = (options: MapleSourceMapsOptions = {}): Plugin =>
 		configResolved: (config) => {
 			root = config.root
 		},
-		async writeBundle(outputOptions) {
-			const environment = "environment" in this ? this.environment : undefined
-			if (environment !== undefined && !environments.includes(environment.name)) return
-			const dir = outputOptions.dir
-			if (dir === undefined) return
+		writeBundle(outputOptions) {
+			const environment = environmentOf(this)
+			if (environment !== undefined && !environments.includes(environment)) return
+			if (outputOptions.dir === undefined) return
+			const key = environment ?? ""
+			written.set(key, [...(written.get(key) ?? []), outputOptions.dir])
+		},
+		async closeBundle() {
+			const key = environmentOf(this) ?? ""
+			const dirs = written.get(key) ?? []
+			written.delete(key)
+			if (dirs.length === 0) return
 			const program = Effect.gen(function* () {
 				const path = yield* Path
-				const outDir = path.resolve(root, dir)
+				const outDirs = Arr.map(dirs, (dir) => path.resolve(root, dir))
 				const mapsDir =
 					options.mapsDir === undefined
-						? path.join(root, ".maple", "sourcemaps", path.basename(outDir))
+						? path.join(root, ".maple", "sourcemaps", path.basename(outDirs[0] ?? root))
 						: path.resolve(root, options.mapsDir)
-				return yield* processBuildOutput(outDir, mapsDir)
+				return yield* processBuildOutputs(outDirs, mapsDir)
 			})
 			const result = await Effect.runPromise(program.pipe(Effect.provide(NodeServices.layer)))
 			this.info(

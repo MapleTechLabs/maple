@@ -10,7 +10,7 @@ import {
 	mapUsers,
 	SourceMapsManifest,
 } from "@maple/sourcemaps"
-import { Array as Arr, Effect, Option, Order, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Order, Result, Schema, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { Path } from "effect/Path"
 import { isResolved } from "alchemy/Diff"
@@ -40,6 +40,13 @@ export interface SourceMapsProps {
 	 * after the build and re-checks the maps when the build changes. Not uploaded.
 	 */
 	after?: unknown
+	/**
+	 * How stacks find these maps. `"debugId"` (default) uploads each map under the debug id its file
+	 * registers, for SDKs that report debug ids. `"release"` uploads without them, matched by service,
+	 * release and path: for telemetry that sends no debug ids, where a chunk shared by two releases
+	 * would otherwise keep one row under one release. Needs `release`.
+	 */
+	matchBy?: "debugId" | "release"
 }
 
 export type SourceMaps = Resource<
@@ -156,6 +163,7 @@ export const sourceMapsDigest = (props: SourceMapsProps, maps: ReadonlyArray<Pla
 				props.service,
 				props.release ?? "",
 				props.urlPrefix ?? "",
+				props.matchBy ?? "debugId",
 				...Arr.map(
 					Arr.sort(
 						maps,
@@ -172,12 +180,16 @@ export const sourceMapsDigest = (props: SourceMapsProps, maps: ReadonlyArray<Pla
 		),
 	)
 
+const byRelease = (props: SourceMapsProps) => props.matchBy === "release"
+const hasRelease = (props: SourceMapsProps) => props.release !== undefined && props.release !== ""
+
 /** Why a map is not uploaded, or none when it is. */
 const skipReason = (props: SourceMapsProps, map: PlannedMap): Option.Option<string> => {
 	if (map.bytes.byteLength > SOURCE_MAP_MAX_BYTES) return Option.some("it is over 10 MiB")
 	if (isIndexMap(new TextDecoder().decode(map.bytes)))
 		return Option.some("index source maps are not supported")
-	if (Option.isNone(map.debugId) && (props.release === undefined || props.release === ""))
+	if (byRelease(props) && !hasRelease(props)) return Option.some('`matchBy: "release"` needs a release')
+	if (Option.isNone(map.debugId) && !hasRelease(props))
 		return Option.some("it has no debug id and no release is set")
 	return Option.none()
 }
@@ -187,9 +199,28 @@ const uploadQuery = (props: SourceMapsProps, map: PlannedMap): string => {
 		["minified_path", map.minifiedPath],
 		["service", props.service],
 	]
-	if (Option.isSome(map.debugId)) params.push(["debug_id", map.debugId.value])
-	if (props.release !== undefined && props.release !== "") params.push(["version", props.release])
+	if (!byRelease(props) && Option.isSome(map.debugId)) params.push(["debug_id", map.debugId.value])
+	if (hasRelease(props)) params.push(["version", props.release ?? ""])
 	return new URLSearchParams(params).toString()
+}
+
+const MapJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+const decodeMapJson = Schema.decodeUnknownResult(MapJson)
+const encodeMapJson = Schema.encodeResult(MapJson)
+
+/**
+ * The body to upload. Matched by release, the map's own `debugId` / `debug_id` go too, or the server
+ * would file it under that id and one release's upload would replace another's.
+ */
+const uploadBody = (props: SourceMapsProps, map: PlannedMap): Uint8Array => {
+	if (!byRelease(props)) return map.bytes
+	return Result.match(
+		Result.flatMap(
+			decodeMapJson(new TextDecoder().decode(map.bytes)),
+			({ debugId: _a, debug_id: _b, ...rest }) => encodeMapJson(rest),
+		),
+		{ onFailure: () => map.bytes, onSuccess: (text) => new TextEncoder().encode(text) },
+	)
 }
 
 export const SourceMapsProvider = () =>
@@ -202,12 +233,20 @@ export const SourceMapsProvider = () =>
 				Effect.map(planMaps(props), (maps) => ({ maps, digest: sourceMapsDigest(props, maps) })).pipe(
 					Effect.provide(platform),
 				)
+			// A redeploy of an unchanged build skips the bundler, so no maps were written this run.
+			const warnNoMaps = (props: SourceMapsProps) =>
+				Effect.logWarning(
+					`No source maps in ${props.dir}: the build did not run in this deploy, so nothing was uploaded. The next deploy that builds uploads them.`,
+				)
 			return {
 				// The maps on disk decide: a build that changed them updates, one that did not is a noop.
 				diff: Effect.fn(function* ({ news, output }) {
 					if (output === undefined || !isResolved(news)) return undefined
 					const planned = yield* plan(news)
-					if (planned.maps.length === 0) return { action: "noop" } as const
+					if (planned.maps.length === 0) {
+						yield* warnNoMaps(news)
+						return { action: "noop" } as const
+					}
 					return planned.digest === output.digest
 						? ({ action: "noop" } as const)
 						: ({ action: "update", stables: [] } as const)
@@ -215,8 +254,10 @@ export const SourceMapsProvider = () =>
 				reconcile: Effect.fn(function* ({ news, output }) {
 					const planned = yield* plan(news)
 					// No maps here (a build that was skipped): keep what the last upload recorded.
-					if (planned.maps.length === 0)
+					if (planned.maps.length === 0) {
+						yield* warnNoMaps(news)
 						return output ?? { uploaded: 0, debugIds: [], digest: planned.digest }
+					}
 					if (output !== undefined && output.digest === planned.digest) return output
 					const sendable = yield* Effect.filter(planned.maps, (map) =>
 						Option.match(skipReason(news, map), {
@@ -235,7 +276,7 @@ export const SourceMapsProvider = () =>
 						(map) =>
 							api.upload(
 								`/v2/source_maps?${uploadQuery(news, map)}`,
-								map.bytes,
+								uploadBody(news, map),
 								"application/json",
 							),
 						{ concurrency: 4, discard: true },
@@ -243,7 +284,9 @@ export const SourceMapsProvider = () =>
 					yield* Effect.logInfo(`Uploaded ${sendable.length} source map(s) for ${news.service}`)
 					return {
 						uploaded: sendable.length,
-						debugIds: Arr.dedupe(Arr.getSomes(Arr.map(sendable, (map) => map.debugId))),
+						debugIds: byRelease(news)
+							? []
+							: Arr.dedupe(Arr.getSomes(Arr.map(sendable, (map) => map.debugId))),
 						digest: planned.digest,
 					}
 				}),

@@ -25,52 +25,101 @@ export const SourceMapsManifest = Schema.Struct({
 export type SourceMapsManifest = typeof SourceMapsManifest.Type
 
 const encodeManifest = Schema.encodeEffect(Schema.fromJsonString(SourceMapsManifest))
+const decodeManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(SourceMapsManifest))
+
+/** `mapsDir` is, holds or sits inside a build output: moving maps there could delete the build. */
+export class SourceMapsDirOverlapError extends Schema.TaggedError<SourceMapsDirOverlapError>()(
+	"@maple/sourcemaps/SourceMapsDirOverlapError",
+	{ message: Schema.String, mapsDir: Schema.String, outDir: Schema.String },
+) {}
+
+/** One build output and what the inject did to it. */
+export interface BuildOutput {
+	readonly outDir: string
+	readonly results: ReadonlyArray<InjectResult>
+}
 
 /**
- * Moves every `.map` below `outDir` to the same relative path below `mapsDir` (emptied first, so it
- * holds one build) and writes {@link MANIFEST_FILE} for the injected files among `results`.
+ * Moves every `.map` below each output to the same relative path below `mapsDir` and writes one
+ * {@link MANIFEST_FILE} for all of them. Only the files the previous manifest listed are removed
+ * first, so anything else in `mapsDir` is left alone; a `mapsDir` that overlaps an output is refused
+ * before any file is touched.
  */
-export const relocateMaps = (outDir: string, mapsDir: string, results: ReadonlyArray<InjectResult>) =>
+export const relocateMaps = (mapsDir: string, outputs: ReadonlyArray<BuildOutput>) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
 		const path = yield* Path
-		yield* fs
-			.remove(mapsDir, { recursive: true, force: true })
-			.pipe(Effect.mapError(fileError(mapsDir, "clear")))
-		yield* fs
-			.makeDirectory(mapsDir, { recursive: true })
-			.pipe(Effect.mapError(fileError(mapsDir, "create")))
-		const maps = yield* listFiles(outDir, Str.endsWith(".map"))
-		// Copy then delete: `mapsDir` may be on another device than the build output.
+		const maps = path.resolve(mapsDir)
+		const within = (base: string, target: string) => {
+			const relative = path.relative(base, target)
+			return relative === "" || (!Str.startsWith("..")(relative) && !path.isAbsolute(relative))
+		}
+		const overlapping = Arr.findFirst(outputs, ({ outDir }) => {
+			const out = path.resolve(outDir)
+			return within(out, maps) || within(maps, out)
+		})
+		if (Option.isSome(overlapping)) {
+			return yield* new SourceMapsDirOverlapError({
+				message: `The source maps directory ${maps} overlaps the build output ${overlapping.value.outDir}; choose one outside it.`,
+				mapsDir: maps,
+				outDir: overlapping.value.outDir,
+			})
+		}
+		const manifestPath = path.join(maps, MANIFEST_FILE)
+		// The last build's maps go, by its manifest; nothing it did not write is deleted.
+		const previous = yield* fs.readFileString(manifestPath).pipe(
+			Effect.flatMap(decodeManifest),
+			Effect.map((manifest) => manifest.files),
+			Effect.orElseSucceed(() => []),
+		)
 		yield* Effect.forEach(
-			maps,
-			(file) =>
-				Effect.gen(function* () {
-					const from = path.join(outDir, file)
-					const to = path.join(mapsDir, file)
-					yield* fs.makeDirectory(path.dirname(to), { recursive: true })
-					yield* fs.copyFile(from, to)
-					yield* fs.remove(from)
-				}).pipe(Effect.mapError(fileError(path.join(outDir, file), "move"))),
+			previous,
+			(entry) =>
+				Option.match(path.resolveWithin(maps, entry.map), {
+					onNone: () => Effect.void,
+					onSome: (file) =>
+						fs.remove(file, { force: true }).pipe(Effect.mapError(fileError(file, "remove"))),
+				}),
 			{ discard: true },
 		)
-		const files = Arr.flatMap(results, (result) =>
-			result.status === "injected" || result.status === "already_injected"
-				? Option.toArray(
-						Option.map(result.mapPath, (mapPath) => ({
-							file: result.file,
-							debugId: Option.getOrNull(result.debugId),
-							map: Str.replaceAll("\\", "/")(path.relative(outDir, mapPath)),
-						})),
-					)
-				: [],
+		yield* fs.makeDirectory(maps, { recursive: true }).pipe(Effect.mapError(fileError(maps, "create")))
+		const moved = yield* Effect.forEach(outputs, ({ outDir }) =>
+			Effect.gen(function* () {
+				const files = yield* listFiles(outDir, Str.endsWith(".map"))
+				// Copy then delete: `mapsDir` may be on another device than the build output.
+				yield* Effect.forEach(
+					files,
+					(file) =>
+						Effect.gen(function* () {
+							const from = path.join(outDir, file)
+							const to = path.join(maps, file)
+							yield* fs.makeDirectory(path.dirname(to), { recursive: true })
+							yield* fs.copyFile(from, to)
+							yield* fs.remove(from)
+						}).pipe(Effect.mapError(fileError(path.join(outDir, file), "move"))),
+					{ discard: true },
+				)
+				return files.length
+			}),
+		)
+		const files = Arr.flatMap(outputs, ({ outDir, results }) =>
+			Arr.flatMap(results, (result) =>
+				result.status === "injected" || result.status === "already_injected"
+					? Option.toArray(
+							Option.map(result.mapPath, (mapPath) => ({
+								file: result.file,
+								debugId: Option.getOrNull(result.debugId),
+								map: Str.replaceAll("\\", "/")(path.relative(outDir, mapPath)),
+							})),
+						)
+					: [],
+			),
 		)
 		const manifest = yield* encodeManifest({ version: 1, files }).pipe(
 			Effect.mapError(fileError(MANIFEST_FILE, "encode")),
 		)
-		const manifestPath = path.join(mapsDir, MANIFEST_FILE)
 		yield* fs
 			.writeFileString(manifestPath, manifest)
 			.pipe(Effect.mapError(fileError(manifestPath, "write")))
-		return { moved: maps.length, files }
+		return { moved: Arr.reduce(moved, 0, (sum, n) => sum + n), files }
 	})

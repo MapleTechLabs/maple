@@ -10,11 +10,14 @@ import { join } from "node:path"
 import { MapleApi, type MapleApiContract } from "../src/MapleApi"
 import { Providers } from "../src/Providers"
 import { SourceMaps, SourceMapsProvider } from "../src/SourceMaps"
-import { processBuildOutput } from "../src/Vite"
+import { processBuildOutputs } from "../src/Vite"
 import { SourceMapsManifest } from "@maple/sourcemaps"
 import { Schema } from "effect"
 
 const decodeManifest = Schema.decodeUnknownSync(Schema.fromJsonString(SourceMapsManifest))
+const decodeMap = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
 
 interface Upload {
 	readonly path: string
@@ -69,7 +72,7 @@ const buildOutput = (root: string, secondSource = "src/b.ts") =>
 		writeFileSync(join(dist, "assets/a.js.map"), map("src/a.ts"))
 		writeFileSync(join(dist, "assets/b.js"), "b()\n")
 		writeFileSync(join(dist, "assets/b.js.map"), map(secondSource))
-		return yield* processBuildOutput(dist, join(root, "maps")).pipe(Effect.provide(NodeServices.layer))
+		return yield* processBuildOutputs([dist], join(root, "maps")).pipe(Effect.provide(NodeServices.layer))
 	})
 
 describe("Maple.SourceMaps", () => {
@@ -134,6 +137,39 @@ describe("Maple.SourceMaps", () => {
 				h.uploads.length = 0
 				yield* stack.destroy()
 				expect(h.uploads).toEqual([])
+			}),
+		)
+	})
+
+	it.live("matched by release, uploads without debug ids, in the query or the map", () => {
+		const h = makeHarness()
+		const stack = h.stack("by-release")
+		const root = mkdtempSync(join(tmpdir(), "maple-maps-"))
+		const props = { dir: join(root, "maps"), service: "maple-web", release: "sha-1" }
+		return h.run(
+			Effect.gen(function* () {
+				yield* buildOutput(root)
+				const result = yield* stack.deploy(
+					SourceMaps("maps", { ...props, matchBy: "release" as const }),
+				)
+				expect([result.uploaded, result.debugIds]).toEqual([2, []])
+				expect(Arr.map(h.uploads, (u) => u.query)).toEqual([
+					{ minified_path: "assets/a.js", service: "maple-web", version: "sha-1" },
+					{ minified_path: "assets/b.js", service: "maple-web", version: "sha-1" },
+				])
+				Arr.forEach(h.uploads, (u) => {
+					const body = decodeMap(u.body)
+					expect(["debugId" in body, "debug_id" in body, body["mappings"]]).toEqual([
+						false,
+						false,
+						";AAAA;AACA",
+					])
+				})
+				// The default keeps the debug ids, so switching mode uploads again.
+				h.uploads.length = 0
+				yield* stack.deploy(SourceMaps("maps", props))
+				expect(Arr.every(h.uploads, (u) => u.query["debug_id"] !== undefined)).toBe(true)
+				expect(Arr.every(h.uploads, (u) => "debugId" in decodeMap(u.body))).toBe(true)
 			}),
 		)
 	})

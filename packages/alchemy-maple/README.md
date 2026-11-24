@@ -219,15 +219,27 @@ export default defineConfig({ plugins: [mapleSourceMaps()] })
 
 ```typescript
 // alchemy.run.ts
-const web = yield * Cloudflare.Website.Vite("web")
-yield *
-	Maple.SourceMaps("web-sourcemaps", {
+Effect.gen(function* () {
+	const web = yield* Cloudflare.Website.Vite("web")
+	yield* Maple.SourceMaps("web-sourcemaps", {
 		dir: ".maple/sourcemaps/client",
 		service: "web", // the service.name the app reports
 		release: process.env.GITHUB_SHA, // its service.version: matches maps without a debug id
 		after: web.hash, // upload after the build, and re-check when it changes
+		matchBy: "release", // telemetry without debug ids: see below
 	})
+})
 ```
+
+Set `matchBy: "release"` when your telemetry reports no debug ids (Maple's SDKs other than
+`@maple-dev/browser`): maps then upload without them, matched by `service`, `release` and path, so
+a chunk two releases share keeps a map under each. The default, `"debugId"`, suits `@maple-dev/browser`.
+
+The first upload happens on the first deploy that runs the build after you add the plugin; a
+redeploy that skips an unchanged build finds no maps and logs a warning. On that first deploy, a
+chunk whose hashed name is unchanged gets new contents (the snippet goes in after Rollup names it),
+so a browser or CDN that cached it may serve the old copy for that one release; later builds are
+deterministic.
 
 The plugin runs in Node and needs `@effect/platform-node`. `dir` can also be any build output where
 each JS file has its map beside it, as `maple sourcemaps upload` reads it.

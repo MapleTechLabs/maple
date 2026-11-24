@@ -44,6 +44,8 @@ export const uploadWebSourceMaps = (input: {
 			dir: input.dir,
 			service: input.service,
 			...(release === "" ? undefined : { release }),
+			// web's telemetry reports no debug ids: each release keeps its own id-less maps.
+			matchBy: "release",
 			after: input.after,
 		})
 	})
