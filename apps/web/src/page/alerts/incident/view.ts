@@ -1,3 +1,4 @@
+import { isSloBudgetIncident } from "@maple/domain/slo"
 import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 import type {
 	AlertCheckDocument,
@@ -15,6 +16,7 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import {
 	acknowledgedLine,
+	budgetUsedLabel,
 	buildIncidentTimeline,
 	conditionPhrase,
 	holdReasonLabel,
@@ -134,22 +136,30 @@ export const headerTitle = <M>(
 				: // An anomaly's severity badge says how bad it is: no threshold to read out.
 					isAnomaly
 					? [`Rule ${rule?.name ?? incident.ruleName}`, "detected by Maple's anomaly detector"]
-					: isSlo
+					: isSloBudgetIncident(incident)
 						? [
-								"SLO burn rate",
-								// A resolved incident's last value is the healthy burn it ended on.
+								// A spent budget is no burn: it reads the share used, never a factor.
+								"SLO error budget",
 								incident.status === "resolved"
 									? null
-									: `now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
-								group,
+									: Str.uncapitalize(budgetUsedLabel(incident.lastObservedValue)),
 							]
-						: [
-								isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
-								`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
-								rule != null && rule.environments.length > 0
-									? Arr.join(rule.environments, ", ")
-									: null,
-							],
+						: isSlo
+							? [
+									"SLO burn rate",
+									// A resolved incident's last value is the healthy burn it ended on.
+									incident.status === "resolved"
+										? null
+										: `now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+									group,
+								]
+							: [
+									isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
+									`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
+									rule != null && rule.environments.length > 0
+										? Arr.join(rule.environments, ", ")
+										: null,
+								],
 			(part) => part != null,
 		),
 		" · ",
@@ -341,7 +351,9 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 								[h.Class("space-y-3")],
 								[
 									eyebrow(h, { as: "h2" }, [
-										signalTitle(incident.signalType),
+										isSloBudgetIncident(incident)
+											? "SLO error budget"
+											: signalTitle(incident.signalType),
 										...(group != null ? [` · ${group}`] : []),
 									]),
 									incident.signalType === "anomaly"
@@ -362,7 +374,9 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 												})
 											: incident.signalType === "slo_burn_rate"
 												? sourceNote(h, {
-														text: "This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
+														text: isSloBudgetIncident(incident)
+															? "This incident follows an SLO's error budget: it opened when the SLO's window had used the whole budget, and resolves once bad hours leave the window and budget is left again. It reminds once a day while open. The SLO's page charts the budget."
+															: "This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
 														href: inputs.sourceHref ?? null,
 														label: "Open SLO",
 														fallback: { href: slosTabHref(), label: "Open SLOs" },

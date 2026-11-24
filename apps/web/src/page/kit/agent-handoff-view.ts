@@ -21,7 +21,7 @@ import { REPLAY_BLOCK_CLASS } from "./replay-privacy"
 
 export type AgentPromptOptions<M> = Readonly<{
 	model: Model
-	/** The org's public key, or "" when it could not be read (the guide then uses a placeholder). */
+	/** The org's public key, or "" while it is not loaded (Copy prompt waits for it). */
 	publicKey: string
 	toMessage: (message: Message) => M
 	/** The connect step shows the run's stages; the Connect popover only copies. */
@@ -115,6 +115,15 @@ const copyFallback = <M>(h: HtmlBuilder<M>, options: AgentPromptOptions<M>): Rea
 	]
 }
 
+/**
+ * Why Copy prompt is off: a prompt without the key sends with a placeholder ingest drops, so the
+ * agent's setup would look done while nothing is stored.
+ */
+export const missingKeyNote = <M>(h: HtmlBuilder<M>): Html =>
+	typography(h, { size: "xs", tone: "muted", as: "p" }, [
+		"The prompt needs your ingest key, which has not loaded. Reload the page, or ask an admin for access to Ingestion settings.",
+	])
+
 /** The prompt block, its Copy prompt, the notes a copy leaves, and the run's progress. */
 export const agentPrompt = <M>(h: HtmlBuilder<M>, options: AgentPromptOptions<M>): Html => {
 	const { model } = options
@@ -141,8 +150,13 @@ export const agentPrompt = <M>(h: HtmlBuilder<M>, options: AgentPromptOptions<M>
 			size: "default",
 			keepsFillInk: true,
 			className: "w-full",
-			attributes: model.isMinting ? [h.AriaBusy(true), h.Disabled(true)] : [],
+			attributes: model.isMinting
+				? [h.AriaBusy(true), h.Disabled(true)]
+				: options.publicKey === ""
+					? [h.Disabled(true)]
+					: [],
 		}),
+		...(options.publicKey === "" ? [missingKeyNote(h)] : []),
 		...(model.isTrackingUnavailable
 			? [
 					typography(h, { size: "xs", tone: "muted", as: "p" }, [

@@ -1,4 +1,9 @@
-import { NS_LABEL_HEIGHT, NS_PADDING_X, NS_PADDING_Y } from "../graph/service-map-utils"
+import {
+	DEFAULT_LAYOUT_CONFIG,
+	NS_LABEL_HEIGHT,
+	NS_PADDING_X,
+	NS_PADDING_Y,
+} from "../graph/service-map-utils"
 import { getValueHue } from "@maple/ui/lib/colors"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
@@ -14,7 +19,7 @@ import { typography } from "../../ui/typography"
 // The dotted namespace boxes the service map derives from node extents, and their node.
 
 const FALLBACK_NODE_WIDTH = 220
-const FALLBACK_NODE_HEIGHT = 70
+const FALLBACK_NODE_HEIGHT = DEFAULT_LAYOUT_CONFIG.nodeHeight
 
 const nsGroupId = (namespace: string) => `nsgroup:${encodeURIComponent(namespace)}`
 

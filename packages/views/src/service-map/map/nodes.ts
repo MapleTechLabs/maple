@@ -17,6 +17,8 @@ import {
 	avgCell,
 	DB_ICON,
 	errCell,
+	frameworkIcon,
+	identityText,
 	HANDLE_CLASSES,
 	HEALTH_TONE,
 	metricCell,
@@ -69,6 +71,19 @@ const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 			: typography(h, { size: "2xs", tone: "faint", mono: true, numeric: true }, [EMPTY_VALUE]),
 	])
 
+/** What kind of service this is and its framework, under the name; the service panel shows why. */
+const identityLine = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): ReadonlyArray<Html> => {
+	const text = identityText(data.identity)
+	return text === null
+		? []
+		: [
+				hstack(h, { gap: "1.5", className: "min-w-0" }, [
+					...frameworkIcon(h, data.identity, 12),
+					typography(h, { size: "2xs", tone: "muted", truncate: true }, [text]),
+				]),
+			]
+}
+
 const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): ReadonlyArray<Html> => {
 	const {
 		label,
@@ -103,38 +118,48 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 			[
 				h.div([h.Class("w-[3px] shrink-0"), h.Style({ "background-color": accentColor })]),
 				vstack(h, { gap: "2", shrink: true, grow: true, className: "px-3 py-2.5" }, [
-					hstack(h, { gap: "1.5" }, [
-						statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
-						tooltipTrigger(h, [
-							icon(h, platformIcon.icon, {
-								size: 12,
-								className: cn("shrink-0", !platformIcon.branded && "text-foreground-subtle"),
+					vstack(h, { gap: "0.5" }, [
+						hstack(h, { gap: "1.5" }, [
+							statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
+							tooltipTrigger(h, [
+								icon(h, platformIcon.icon, {
+									size: 12,
+									className: cn(
+										"shrink-0",
+										!platformIcon.branded && "text-foreground-subtle",
+									),
+								}),
+							]),
+							middleTruncate(h, {
+								text: label,
+								tail: 12,
+								className: typographyClass({
+									size: "xs",
+									tone: "foreground",
+									weight: "medium",
+								}),
 							}),
+							...(runtimeInfo === null
+								? []
+								: [
+										runtimeInfo.icon === null
+											? eyebrow(
+													h,
+													{
+														variant: "mono",
+														className: "shrink-0 text-4xs",
+													},
+													[runtimeInfo.short],
+												)
+											: tooltipTrigger(h, [
+													icon(h, runtimeInfo.icon, {
+														size: 12,
+														className: "shrink-0 text-foreground-subtle",
+													}),
+												]),
+									]),
 						]),
-						middleTruncate(h, {
-							text: label,
-							tail: 12,
-							className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
-						}),
-						...(runtimeInfo === null
-							? []
-							: [
-									runtimeInfo.icon === null
-										? eyebrow(
-												h,
-												{
-													variant: "mono",
-													className: "shrink-0 text-4xs",
-												},
-												[runtimeInfo.short],
-											)
-										: tooltipTrigger(h, [
-												icon(h, runtimeInfo.icon, {
-													size: 12,
-													className: "shrink-0 text-foreground-subtle",
-												}),
-											]),
-								]),
+						...identityLine(h, data),
 					]),
 					hstack(h, { gap: "4", align: "stretch" }, [
 						tooltipTrigger(h, [metricCell(h, "req/s", rateText(throughput, hasSampling))]),

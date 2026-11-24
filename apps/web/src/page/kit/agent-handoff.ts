@@ -1,5 +1,9 @@
 import { V2OnboardingAgentHandoff, V2OnboardingAgentRun } from "@maple/domain/http/v2"
-import { OnboardingHandoffArm, onboardingHandoffArm } from "@maple/domain/onboarding-agent-run"
+import {
+	ONBOARDING_HANDOFF_ROLLOUT_PERCENT,
+	OnboardingHandoffArm,
+	onboardingHandoffArm,
+} from "@maple/domain/onboarding-agent-run"
 import { Effect, Option, Predicate, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -90,10 +94,14 @@ const handoffPrompt = (publicKey: string, handoff: Option.Option<V2OnboardingAge
 			agentSetupPrompt(ingestUrl, publicKey, { code: minted.handoff_code, apiUrl: apiPublicUrl }),
 	})
 
-/** The org's arm, read on every call (the page outlives an org switch); self-hosted is always `handoff`. */
+/**
+ * The org's arm, read on every call (the page outlives an org switch). An org Clerk has not loaded yet
+ * is `control`, so it never lands in the other arm; self-hosted follows the rollout as a whole.
+ */
 const readArm: Effect.Effect<OnboardingHandoffArm> = Effect.sync(() => {
+	if (!isClerkAuthEnabled) return ONBOARDING_HANDOFF_ROLLOUT_PERCENT > 0 ? "handoff" : "control"
 	const orgId = window.Clerk?.organization?.id
-	return isClerkAuthEnabled && orgId !== undefined ? onboardingHandoffArm(orgId) : "handoff"
+	return orgId === undefined ? "control" : onboardingHandoffArm(orgId)
 })
 
 export const ResolveArm = Command.define("ResolveOnboardingHandoffArm", {

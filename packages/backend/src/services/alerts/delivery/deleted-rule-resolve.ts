@@ -15,7 +15,19 @@ import { StoredDeliveryPayloadSchema } from "./stored-payload"
 
 
 
+/**
+ * How long the all-clear waits for a page still on its way out: sent first, a pager keyed by
+ * incident would take the late page as a new alert.
+ */
+export const DELETED_RULE_IN_FLIGHT_DELAY_MS = 60_000
+
 const decodeStored = Schema.decodeUnknownOption(StoredDeliveryPayloadSchema)
+
+/** The alerts list of the app `link` points into: the incident and the rule it named are gone. */
+const alertsListUrl = (link: string | undefined): Option.Option<string> =>
+	link !== undefined && URL.canParse(link)
+		? Option.some(new URL("/alerts", link).toString())
+		: Option.none()
 const decodeComparator = Schema.decodeUnknownOption(AlertComparator)
 
 /** `stored` (a trigger or reminder payload) as the resolve that closes it, when it names its rule. */
@@ -52,6 +64,10 @@ export const deletedRuleResolvePayload = (
 		return {
 			// An escalation step's marker belongs to the page, not to its all-clear.
 			...Struct.omit(payload, ["escalation"]),
+			...Option.match(alertsListUrl(payload.linkUrl ?? payload.chatUrl), {
+				onNone: () => ({}),
+				onSome: (url) => ({ linkUrl: url, chatUrl: url }),
+			}),
 			event,
 			eventType: "resolve",
 			incidentStatus: "resolved",
@@ -61,19 +77,15 @@ export const deletedRuleResolvePayload = (
 		}
 	})
 
-type PageRow = Pick<
-	AlertDeliveryEventRow,
-	"incidentId" | "destinationId" | "status" | "eventType" | "payloadJson" | "createdAt"
->
+type PageRow = Pick<AlertDeliveryEventRow, "incidentId" | "destinationId" | "payloadJson">
 
-const MAX_PAGES_READ = 2_000
 /** Resolve rows per insert, well inside the statement's bind limit. */
 export const DELETED_RULE_RESOLVE_INSERT_CHUNK = 200
 
 /**
  * One queued `resolve` per destination each open incident of `ruleId` paged: a page that left,
- * or may have left (not held by a silence, not still waiting). Read before the rule's rows are
- * deleted; insert the result after, so the delete does not take it too.
+ * or may have left (not held by a silence, not still waiting). Read once the pages that never
+ * left are deleted, and before the rest are; insert the result after.
  */
 export const deletedRuleResolveRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId, nowMs: number) =>
 	Effect.gen(function* () {
@@ -84,29 +96,44 @@ export const deletedRuleResolveRows = (db: MapleDb, orgId: OrgId, ruleId: AlertR
 		)
 		const incidentIds = Arr.map(open, (incident) => incident.id)
 		if (!Arr.isArrayNonEmpty(incidentIds)) return []
-		// Only rows that may have paged, newest first and capped: a long-open grouped rule can hold
-		// thousands of reminders, and this runs under the org's rules lock.
-		const pages: ReadonlyArray<PageRow> = yield* db.run(
+		// The newest page per incident and destination, picked in SQL: a long run of reminders to
+		// one destination cannot crowd out the single page another one got.
+		const latest: ReadonlyArray<PageRow> = yield* db.run(
 			PG.from(AlertDeliveryEvents)
-				.select("incidentId", "destinationId", "status", "eventType", "payloadJson", "createdAt")
+				.select("incidentId", "destinationId", "payloadJson")
+				.distinctOn("incidentId", "destinationId")
 				.where(($) => [
 					$.orgId.eq(orgId),
 					$.incidentId.in_(...incidentIds),
 					$.eventType.in_("trigger", "renotify"),
 					$.status.in_("success", "failed", "processing"),
 				])
-				.orderBy(["createdAt", "desc"])
-				.limit(MAX_PAGES_READ),
+				.orderBy(($) => [
+					[$.incidentId, "asc"],
+					[$.destinationId, "asc"],
+					[$.createdAt, "desc"],
+				]),
 		)
-		// The first page seen for a pair is the one the all-clear answers.
-		const latest = Arr.dedupeWith(
-			pages,
-			(a: PageRow, b: PageRow) => a.incidentId === b.incidentId && a.destinationId === b.destinationId,
+		const inFlight = yield* db.run(
+			PG.from(AlertDeliveryEvents)
+				.select("incidentId", "destinationId")
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.incidentId.in_(...incidentIds),
+					$.eventType.in_("trigger", "renotify"),
+					$.status.eq("processing"),
+				]),
 		)
+		const isInFlight = (page: PageRow) =>
+			Arr.some(
+				inFlight,
+				(row) => row.incidentId === page.incidentId && row.destinationId === page.destinationId,
+			)
 		return Arr.flatMap(latest, (page) => {
 			const incidentId = page.incidentId
 			if (incidentId === null) return []
 			const destinationId: AlertDestinationId = page.destinationId
+			const scheduledAt = isInFlight(page) ? nowMs + DELETED_RULE_IN_FLIGHT_DELAY_MS : nowMs
 			return Option.match(deletedRuleResolvePayload(orgId, page.payloadJson, nowMs), {
 				onNone: () => [],
 				onSome: (payload) => [
@@ -118,7 +145,7 @@ export const deletedRuleResolveRows = (db: MapleDb, orgId: OrgId, ruleId: AlertR
 						destinationId,
 						eventType: "resolve",
 						payload,
-						scheduledAt: nowMs,
+						scheduledAt,
 						deliveryKey: makeAlertDeliveryKey(incidentId, destinationId, "resolve", nowMs),
 						attemptNumber: 1,
 					}),

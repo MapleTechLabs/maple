@@ -1,6 +1,7 @@
 import type { AlertSeverity } from "@maple/domain/http"
-import { windowLabel } from "@maple/domain/slo"
-import { Option } from "effect"
+import { SLO_MIN_TIER_BAD_EVENTS, SLO_MIN_TIER_EVENTS, windowLabel } from "@maple/domain/slo"
+import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
+import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
@@ -23,14 +24,20 @@ import { incidentHref } from "../../kit/alert-links"
 import { editSloHref, SLO_NOT_FOUND_CODE, slosTabHref } from "../shared/slo-commands"
 import {
 	burnOf,
+	factorOf,
 	firingTier,
 	formatBurn,
+	formatFactor,
 	formatTarget,
 	formatWindow,
+	hasNoData,
+	holdReason,
 	holdingLine,
 	holdingTier,
 	isBudgetSpent,
-	openIncident,
+	isSpent,
+	openBudgetIncident,
+	openBurnIncident,
 	scopeLine,
 	sliDescription,
 	sliLabel,
@@ -80,19 +87,24 @@ const headerActions = (h: H, model: Model, slo: Slo): Html =>
 
 const statusOf = (model: Model): Option.Option<SloStatus> => AsyncData.getData(model.status.data)
 
-/** A firing tier leads the page: what burns, at which rates, and the incident it opened. */
-const callout = (h: H, model: Model, slo: Slo, status: SloStatus): Html | null => {
-	const incident = openIncident(slo, model.incidents ?? [])
-	const action = Option.match(incident, {
+const incidentAction = (
+	h: H,
+	incident: Option.Option<AlertIncidentRow>,
+	label: string,
+): ReadonlyArray<Html> =>
+	Option.match(incident, {
 		onNone: () => [],
 		onSome: (row) => [
 			alertAction(h, [
-				linkButton(h, { size: "sm", variant: "outline", href: incidentHref(row.id) }, [
-					"Open incident",
-				]),
+				linkButton(h, { size: "sm", variant: "outline", href: incidentHref(row.id) }, [label]),
 			]),
 		],
 	})
+
+/** A firing tier leads the page: what burns, at which rates, and the incident it opened. */
+const burnCallout = (h: H, model: Model, slo: Slo, status: SloStatus): Option.Option<Html> => {
+	const incident = openBurnIncident(slo, model.incidents ?? [])
+	const action = incidentAction(h, incident, "Open incident")
 	const firing = Option.map(firingTier(slo, status), (tier) =>
 		alert(h, { variant: tier.severity === "critical" ? "crit" : "warn" }, [
 			icon(h, "FireIcon"),
@@ -100,52 +112,78 @@ const callout = (h: H, model: Model, slo: Slo, status: SloStatus): Html | null =
 				`Burning the error budget at ${formatBurn(burnOf(status, tier.longWindowMinutes))} over ${windowLabel(tier.longWindowMinutes)}`,
 			]),
 			alertDescription(h, [
-				`At this rate the ${slo.window_days}-day budget runs out early. The ${tier.severity} tier fires at ${tier.factor}x over both ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}.`,
+				`At this rate the ${slo.window_days}-day budget runs out early. The ${tier.severity} tier fires at ${formatFactor(factorOf(slo, tier))} over both ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}.`,
 			]),
 			...action,
 		]),
 	)
 	// An outage empties the short window: the tier holds, so the open incident leads the page.
 	const holding = Option.flatMap(holdingTier(slo, status), (tier) =>
-		Option.map(incident, (row) =>
-			alert(h, { variant: row.severity === "critical" ? "crit" : "warn" }, [
+		Option.map(incident, (row) => {
+			const reason = holdReason(status, tier)
+			return alert(h, { variant: row.severity === "critical" ? "crit" : "warn" }, [
 				icon(h, "FireIcon"),
-				alertTitle(h, [holdingLine(tier)]),
+				alertTitle(h, [holdingLine(tier, reason)]),
 				alertDescription(h, [
-					`The ${tier.severity} tier cannot judge the burn without events, so it neither fires nor resolves. Check whether ${slo.service_name} is down or has stopped reporting.`,
+					reason === "no-events"
+						? `The ${tier.severity} tier cannot judge the burn without events, so it neither fires nor resolves. Check whether ${slo.service_name} is down or has stopped reporting.`
+						: `The ${tier.severity} tier needs ${SLO_MIN_TIER_EVENTS} events and ${SLO_MIN_TIER_BAD_EVENTS} bad ones in ${windowLabel(tier.longWindowMinutes)} to judge the burn. On fewer it neither fires nor resolves.`,
 				]),
 				...action,
-			]),
-		),
+			])
+		}),
 	)
-	const spent = isBudgetSpent(status.budget_remaining)
-		? Option.some(
-				alert(h, { variant: "crit" }, [
-					icon(h, "CircleXmarkIcon"),
-					alertTitle(h, ["Error budget spent"]),
-					alertDescription(h, [
-						`The last ${formatWindow(slo.window_days)} used every bad event ${formatTarget(slo)} allows: ${overspentText(status.budget_remaining)}. It recovers as bad hours leave the window.`,
-					]),
-					...action,
-				]),
-			)
-		: Option.none()
-	return Option.getOrNull(
-		Option.orElse(
-			Option.orElse(firing, () => holding),
-			() => spent,
-		),
+	return Option.orElse(firing, () => holding)
+}
+
+/** A spent budget is a standing warning of its own beside any burn: calmer, with its own incident. */
+const budgetCallout = (h: H, model: Model, slo: Slo, status: SloStatus): Option.Option<Html> => {
+	const incident = openBudgetIncident(slo, model.incidents ?? [])
+	if (Option.isNone(incident) && !isSpent(slo, status)) return Option.none()
+	return Option.some(
+		alert(h, { variant: "warn" }, [
+			icon(h, "AlertWarningIcon"),
+			alertTitle(h, ["Error budget spent"]),
+			alertDescription(h, [
+				isBudgetSpent(status.budget_remaining)
+					? `The last ${formatWindow(slo.window_days)} used every bad event ${formatTarget(slo)} allows: ${overspentText(status.budget_remaining)}. It recovers as bad hours leave the window.`
+					: "Budget is left again. The incident resolves on the next check.",
+			]),
+			...incidentAction(h, incident, "Open budget incident"),
+		]),
 	)
 }
 
-/** The header's severity: the firing tier, or the open incident's while a tier holds it open. */
+/** No events at all: say which filter to check, instead of figures that read as healthy. */
+const noDataCallout = (h: H, slo: Slo, status: SloStatus): Option.Option<Html> =>
+	hasNoData(status)
+		? Option.some(
+				alert(h, {}, [
+					icon(h, "CircleInfoIcon"),
+					alertTitle(h, [`No events in the last ${formatWindow(slo.window_days)}`]),
+					alertDescription(h, [
+						`No entry-point spans from ${scopeLine(slo)} were counted, so there is no SLI or budget to show. Check the service and the environments: environments are free text, so prod does not match production.`,
+					]),
+				]),
+			)
+		: Option.none()
+
+/** The notices that lead the page: the burn first, then the spent budget, or that nothing is counted. */
+const callouts = (h: H, model: Model, slo: Slo, status: SloStatus): ReadonlyArray<Html> =>
+	Arr.getSomes([
+		burnCallout(h, model, slo, status),
+		budgetCallout(h, model, slo, status),
+		noDataCallout(h, slo, status),
+	])
+
+/** The header's severity: the firing tier, or the open burn incident's while a tier holds it open. */
 const headerSeverity = (model: Model, slo: Slo): Option.Option<AlertSeverity> =>
 	Option.flatMap(statusOf(model), (status) =>
 		Option.orElse(
 			Option.map(firingTier(slo, status), (tier) => tier.severity),
 			() =>
 				Option.flatMap(holdingTier(slo, status), () =>
-					Option.map(openIncident(slo, model.incidents ?? []), (row) =>
+					Option.map(openBurnIncident(slo, model.incidents ?? []), (row) =>
 						row.severity === "critical" ? "critical" : "warning",
 					),
 				),
@@ -160,13 +198,16 @@ const body = (h: H, model: Model, slo: Slo, timeZone: string): ReadonlyArray<Htm
 		model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
 			? { theme: model.themeColors, timeZone, nowMs: model.nowMs ?? 0 }
 			: null
-	const lead = Option.getOrNull(Option.map(statusOf(model), (status) => callout(h, model, slo, status)))
+	const lead = Option.match(statusOf(model), {
+		onNone: () => [],
+		onSome: (status) => callouts(h, model, slo, status),
+	})
 	// The description scrolls with the body: the pinned header stays short on phones.
 	return [
 		...(slo.description === null || slo.description === ""
 			? []
 			: [typography(h, { size: "sm", tone: "soft", as: "p" }, [slo.description])]),
-		...(lead === null ? [] : [lead]),
+		...lead,
 		figures(h, model, slo),
 		h.div(
 			[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]")],

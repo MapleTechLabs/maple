@@ -12,7 +12,7 @@ import { defineShellLab } from "../shell-lab"
 
 // `/lab/analyst-home`: the Overview an analyst gets, inside the analyst's shell, with nothing
 // wrong, with incidents and failing checks, with nothing set up, loading and with one read failing
-// (`?state=clear|attention|empty|loading|failed`).
+// (`?state=clear|attention|no-data|empty|loading|failed`).
 
 const Model = Schema.Struct({ page: PageModel })
 type Model = typeof Model.Type

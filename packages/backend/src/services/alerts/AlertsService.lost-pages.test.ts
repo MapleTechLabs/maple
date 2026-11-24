@@ -9,7 +9,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Duration, Effect, Option, String as Str } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Option, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	cleanupTestDbs,
@@ -20,6 +20,7 @@ import {
 } from "@maple/backend/testing/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { type AlertsServiceApi } from "./AlertsService"
+import { DELETED_RULE_IN_FLIGHT_DELAY_MS } from "./delivery/deleted-rule-resolve"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
 	adminRoles,
@@ -191,6 +192,44 @@ describe("AlertsService flap suppression after a page that never arrived", () =>
 	})
 })
 
+describe("AlertsService flap suppression after an incident that paged nobody", () => {
+	it.effect("pages a reopen when the earlier incident's destination was switched off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_flap_silent")
+			const userId = asUserId("user_flap_silent")
+			const team = yield* webhook(alerts, orgId, userId, "team")
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				tieredRule([tier("critical", 5, [team.id])], 60),
+			)
+			const setEnabled = (enabled: boolean) =>
+				alerts.updateDestination(orgId, userId, adminRoles, team.id, { type: "webhook", enabled })
+
+			// Opens and resolves while its only destination is off: no page is even queued.
+			yield* setEnabled(false)
+			yield* ticks(alerts, 2)
+			state.tracesAggregateRows = errorRateRows(0.5)
+			yield* ticks(alerts, 2)
+			assert.deepStrictEqual(requests, [])
+
+			// Back minutes later with the destination on: nobody has heard of it, so it pages.
+			yield* setEnabled(true)
+			state.tracesAggregateRows = errorRateRows(10)
+			yield* ticks(alerts, 2)
+			assert.deepStrictEqual(requests, ["trigger team"])
+		}).pipe(
+			Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) })),
+		)
+	})
+})
+
 describe("AlertsService rule deletion", () => {
 	it.effect("sends the all-clear to a destination the open incident paged", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -247,6 +286,223 @@ describe("AlertsService rule deletion", () => {
 			assert.deepStrictEqual(requests, ["trigger team", "resolve team"])
 		}).pipe(
 			Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) })),
+		)
+	})
+})
+
+describe("AlertsService rule deletion with pages in other states", () => {
+	interface Sent {
+		readonly event: string | null
+		readonly destination: string
+		readonly body: string
+	}
+
+	const capturingFetch = (sent: Array<Sent>, failing: { resolves: boolean }) =>
+		(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const event = new Headers(init?.headers).get("x-maple-event-type")
+			if (event === "resolve" && failing.resolves) return new Response("down", { status: 503 })
+			const url = String(input instanceof Request ? input.url : input)
+			sent.push({
+				event,
+				destination: Str.replace("https://example.com/", "")(url),
+				body: requestBodyText(init?.body),
+			})
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+	const openIncidentWith = (testDb: TestDb, names: Arr.NonEmptyReadonlyArray<string>) =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_delete_states")
+			const userId = asUserId("user_delete_states")
+			const destinations = yield* Effect.forEach(names, (name) => webhook(alerts, orgId, userId, name))
+			const first = Arr.headNonEmpty(destinations)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				tieredRule([tier("critical", 5, [first.id])], 60),
+			)
+			yield* ticks(alerts, 2)
+			const incident = yield* Effect.promise(() =>
+				queryFirstRow<{ id: string }>(
+					testDb,
+					"select id from alert_incidents where rule_id = $1 and status = 'open'",
+					[rule.id],
+				),
+			)
+			return { alerts, orgId, rule, destinations, incidentId: incident?.id ?? "" }
+		})
+
+	const resolveRows = (testDb: TestDb, ruleId: string) =>
+		Effect.promise(() =>
+			testDb.pglite.query<{ destination_id: string; scheduled_at: Date }>(
+				"select destination_id, scheduled_at from alert_delivery_events where rule_id = $1 and event_type = 'resolve' order by destination_id",
+				[ruleId],
+			),
+		).pipe(Effect.map((result) => result.rows))
+
+	it.effect("reaches a destination paged once, however many reminders another got since", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<Sent> = []
+		return Effect.gen(function* () {
+			const { alerts, orgId, rule, destinations, incidentId } = yield* openIncidentWith(testDb, [
+				"team",
+				"pager",
+			])
+			const pager = destinations[1]?.id ?? ""
+			// The pager was paged once, long ago; the team has had thousands of reminders since.
+			yield* Effect.promise(() =>
+				insertDeliveryEventRow(testDb, {
+					id: "00000000-0000-4000-8000-0000000007a1",
+					orgId,
+					incidentId,
+					ruleId: rule.id,
+					destinationId: pager,
+					deliveryKey: "old-pager-page",
+					eventType: "trigger",
+					attemptNumber: 1,
+					status: "success",
+					scheduledAt: DEFAULT_CLOCK_EPOCH_MS - 86_400_000,
+					payloadJson: JSON.stringify({ rule: { id: rule.id, comparator: "gt" }, incidentId }),
+					createdAt: DEFAULT_CLOCK_EPOCH_MS - 86_400_000,
+				}),
+			)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`insert into alert_delivery_events
+					   (id, org_id, incident_id, rule_id, destination_id, delivery_key, event_type,
+					    attempt_number, status, scheduled_at, payload_json, created_at, updated_at)
+					 select gen_random_uuid()::text, org_id, incident_id, rule_id, destination_id,
+					        'reminder-' || n, 'renotify', 1, 'success', scheduled_at, payload_json,
+					        created_at + (n || ' seconds')::interval, updated_at
+					   from alert_delivery_events, generate_series(1, 2100) as n
+					  where rule_id = $1 and event_type = 'trigger' and destination_id <> $2`,
+					[rule.id, pager],
+				),
+			)
+
+			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* tick(alerts)
+
+			assert.sameMembers(
+				Arr.map(
+					Arr.filter(sent, (request) => request.event === "resolve"),
+					(request) => request.destination,
+				),
+				["team", "pager"],
+			)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: errorRateRows(10) }), {
+					fetch: capturingFetch(sent, { resolves: false }),
+				}),
+			),
+		)
+	})
+
+	it.effect("answers a page still on its way out a minute later, and a waiting one not at all", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<Sent> = []
+		return Effect.gen(function* () {
+			const { alerts, orgId, rule, destinations, incidentId } = yield* openIncidentWith(testDb, [
+				"team",
+				"flying",
+				"waiting",
+			])
+			const page = (index: number, status: string) =>
+				Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: `00000000-0000-4000-8000-0000000007b${index}`,
+						orgId,
+						incidentId,
+						ruleId: rule.id,
+						destinationId: destinations[index]?.id ?? "",
+						deliveryKey: `page-${index}`,
+						eventType: "trigger",
+						attemptNumber: 1,
+						status,
+						// Not due, so no tick sends the waiting one before the delete.
+						scheduledAt: DEFAULT_CLOCK_EPOCH_MS + 3_600_000,
+						payloadJson: JSON.stringify({ rule: { id: rule.id, comparator: "gt" }, incidentId }),
+					}),
+				)
+			yield* page(1, "processing")
+			yield* page(2, "queued")
+			const deletedAt = yield* Clock.currentTimeMillis
+
+			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+
+			const queued = yield* resolveRows(testDb, rule.id)
+			const dueIn = (destinationId: string | undefined) =>
+				Arr.map(
+					Arr.filter(queued, (row) => row.destination_id === destinationId),
+					(row) => row.scheduled_at.getTime() - deletedAt,
+				)
+			assert.deepStrictEqual(dueIn(destinations[0]?.id), [0])
+			assert.deepStrictEqual(dueIn(destinations[1]?.id), [DELETED_RULE_IN_FLIGHT_DELAY_MS])
+			assert.deepStrictEqual(dueIn(destinations[2]?.id), [])
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: errorRateRows(10) }), {
+					fetch: capturingFetch(sent, { resolves: false }),
+				}),
+			),
+		)
+	})
+
+	it.effect("still sends an all-clear that was waiting for a retry when its rule went", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const sent: Array<Sent> = []
+		const failing = { resolves: true }
+		return Effect.gen(function* () {
+			const { alerts, orgId, rule } = yield* openIncidentWith(testDb, ["team"])
+			// The incident resolves, but its all-clear does not get through.
+			state.tracesAggregateRows = errorRateRows(0.5)
+			yield* ticks(alerts, 2)
+			assert.deepStrictEqual(
+				Arr.map(sent, (request) => request.event),
+				["trigger"],
+			)
+
+			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			failing.resolves = false
+			yield* ticks(alerts, 30)
+
+			assert.deepStrictEqual(
+				Arr.map(sent, (request) => request.event),
+				["trigger", "resolve"],
+			)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub(state), { fetch: capturingFetch(sent, failing) }),
+			),
+		)
+	})
+
+	it.effect("links the all-clear to the alerts list, not to what was deleted", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<Sent> = []
+		return Effect.gen(function* () {
+			const { alerts, orgId, rule } = yield* openIncidentWith(testDb, ["team"])
+			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* tick(alerts)
+
+			const resolve = Arr.findFirst(sent, (request) => request.event === "resolve")
+			const links: { readonly linkUrl?: string; readonly chatUrl?: string } = JSON.parse(
+				Option.match(resolve, { onNone: () => "{}", onSome: (request) => request.body }),
+			)
+			assert.match(links.linkUrl ?? "", /\/alerts$/)
+			assert.strictEqual(links.chatUrl, links.linkUrl)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: errorRateRows(10) }), {
+					fetch: capturingFetch(sent, { resolves: false }),
+				}),
+			),
 		)
 	})
 })

@@ -171,6 +171,9 @@ const EXPECTED_TAGS = new Set([
 	"@maple/cli/ReadOnlyQueryError",
 	"@maple/cli/ServerStateError",
 	"@maple/cli/CheckpointPreconditionError",
+	"@maple/cli/LoginRefusedError",
+	// A flag or env var `maple start` cannot use: the person's config to fix.
+	"@maple/cli/ServerOptionError",
 ])
 
 /** Pipe names of the warehouse calls that run the user's own SQL (local and remote `maple query`). */
