@@ -29,6 +29,16 @@ describe("migration 0074 degrade detector", () => {
 		)
 	})
 
+	it("recognizes the table-qualified column the compiled query names", () => {
+		expect(
+			isMissingServiceIdentityColumns(
+				drift(
+					"Unknown expression identifier `service_platforms_hourly.ScopeNames` in scope SELECT ...",
+				),
+			),
+		).toBe(true)
+	})
+
 	it("surfaces every other drift", () => {
 		expect(
 			isMissingServiceIdentityColumns(

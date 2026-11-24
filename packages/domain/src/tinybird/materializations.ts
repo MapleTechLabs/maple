@@ -956,6 +956,9 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
 	description:
 		"Pre-aggregates per-service hosting-platform resource attributes (k8s.*, cloud.*, faas.*), instrumentation scopes, SDK self-report and span-kind counts into hourly buckets for the service map's platform and service-identity resolvers.",
 	datasource: servicePlatformsHourly,
+	// Migration 0074 adds the service-identity columns. A rebuild would replay `traces` (30 days)
+	// into this 365-day target and drop the rest; `alter` adds them in place.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_platforms_hourly_mv_node",
