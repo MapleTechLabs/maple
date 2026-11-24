@@ -773,6 +773,11 @@ export const AuditEventJob = Schema.Struct({
 	provider: VcsProviderId,
 	externalInstallationId: Schema.String,
 	event: AuditTrailEventSchema,
+	/**
+	 * A force push to a branch other than the default: the worker checks whether one of the
+	 * branch's open pull requests belongs to someone other than the pusher.
+	 */
+	forcedBranch: Schema.optionalKey(Schema.Struct({ repository: VcsRepositoryRef, branch: Schema.String })),
 	/** How many times the job waited for its installation to be stored (a connect still finishing). */
 	installationWaits: Schema.optionalKey(Schema.Number),
 	deliveryId: Schema.optionalKey(Schema.String),

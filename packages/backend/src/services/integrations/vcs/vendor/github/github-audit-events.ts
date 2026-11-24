@@ -6,6 +6,7 @@ import type {
 	AuditTrailOutcome,
 } from "@maple/domain/audit-trail"
 import type { GithubAuditWebhookEvent } from "@maple/domain/github-audit"
+import type { VcsRepositoryRef } from "@maple/domain/http"
 import { Array as Arr, Option, Predicate, Record as Rec, Schema, String as Str } from "effect"
 
 // A GitHub webhook as an audit trail event: who changed the organization's people, access,
@@ -81,6 +82,37 @@ const refTarget = (payload: Json): Target | undefined => {
 	const type = Str.startsWith("refs/tags/")(ref) ? "tag" : "branch"
 	const name = Str.replace(/^refs\/(heads|tags)\//u, "")(ref)
 	return { type, name: withRepository(payload, name) }
+}
+
+/** `refs/heads/<default branch>` of the payload's repository. */
+const defaultBranchRef = (payload: Json): string | undefined => {
+	const branch = textAt(objectAt(payload, "repository"), "default_branch")
+	return branch === undefined ? undefined : `refs/heads/${branch}`
+}
+
+/**
+ * The branch a force push rewrote, when it is not the default branch: the sync worker asks
+ * GitHub whether a pull request from it belongs to someone other than the pusher.
+ */
+export const githubForcedBranch = (
+	event: string | undefined,
+	payload: unknown,
+): Option.Option<{ readonly repository: VcsRepositoryRef; readonly branch: string }> => {
+	if (event !== "push" || !Predicate.isObject(payload) || Arr.isArray(payload)) return Option.none()
+	const json: Json = payload
+	const ref = textAt(json, "ref")
+	if (json["forced"] !== true || ref === undefined || ref === defaultBranchRef(json)) return Option.none()
+	if (!Str.startsWith("refs/heads/")(ref)) return Option.none()
+	const repository = objectAt(json, "repository")
+	const externalRepoId = idAt(repository, "id")
+	const owner = textAt(objectAt(repository, "owner"), "login")
+	const name = textAt(repository, "name")
+	return externalRepoId === undefined || owner === undefined || name === undefined
+		? Option.none()
+		: Option.some({
+				repository: { externalRepoId, owner, name },
+				branch: Str.slice("refs/heads/".length)(ref),
+			})
 }
 
 /** `create` and `delete` name the ref short (`main`) beside its `ref_type`. */
@@ -281,7 +313,11 @@ const AUDITED_WEBHOOKS = {
 	},
 	push: {
 		// Only a push that rewrote the ref's history; an ordinary push is code, not an audit event.
-		action: (payload) => (payload["forced"] === true ? "forced" : undefined),
+		// The default branch gets its own sub-action, which a `push.forced` detection still matches.
+		action: (payload) => {
+			if (payload["forced"] !== true) return undefined
+			return textAt(payload, "ref") === defaultBranchRef(payload) ? "forced.default_branch" : "forced"
+		},
 		category: () => "resource",
 		target: refTarget,
 	},

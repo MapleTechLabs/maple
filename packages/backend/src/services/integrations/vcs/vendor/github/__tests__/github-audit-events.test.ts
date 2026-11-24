@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Option, String as Str } from "effect"
-import { deliveryTimeMs, githubAuditEvent } from "../github-audit-events"
+import { deliveryTimeMs, githubAuditEvent, githubForcedBranch } from "../github-audit-events"
 
 const RECEIVED_AT = 1_763_000_000_000
 
@@ -165,6 +165,31 @@ describe("githubAuditEvent", () => {
 			type: "tag",
 			name: "acme/api: v1.2.0",
 		})
+	})
+
+	it("names a force push to the default branch apart from one to any other branch", () => {
+		const repo = { ...repository, name: "api", default_branch: "main" }
+		const push = (ref: string) => mapped("push", { ref, forced: true, repository: repo, sender }).action
+		expect(push("refs/heads/main")).toBe("push.forced.default_branch")
+		expect(push("refs/heads/feature")).toBe("push.forced")
+		// A tag named like the default branch is not the branch.
+		expect(push("refs/tags/main")).toBe("push.forced")
+	})
+
+	it("hands the worker a forced branch to check for pull requests, never the default branch", () => {
+		const repo = { ...repository, name: "api", default_branch: "main" }
+		const forced = (event: string, payload: Record<string, unknown>) =>
+			githubForcedBranch(event, { forced: true, repository: repo, sender, ...payload })
+		expect(forced("push", { ref: "refs/heads/feature/x" })).toEqual(
+			Option.some({
+				repository: { externalRepoId: "7", owner: "acme", name: "api" },
+				branch: "feature/x",
+			}),
+		)
+		expect(Option.isNone(forced("push", { ref: "refs/heads/main" }))).toBe(true)
+		expect(Option.isNone(forced("push", { ref: "refs/tags/v1" }))).toBe(true)
+		expect(Option.isNone(forced("push", { ref: "refs/heads/feature/x", forced: false }))).toBe(true)
+		expect(Option.isNone(forced("create", { ref: "refs/heads/feature/x" }))).toBe(true)
 	})
 
 	it("records branch and tag deletions and creations by their ref type", () => {

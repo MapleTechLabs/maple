@@ -386,7 +386,7 @@ SELECT
         OFFSET 50
         FORMAT JSON
 
--- builder:audit-trail:auditTrailCountQuery:filtered  [ee015597]
+-- builder:audit-trail:auditTrailCountQuery:filtered  [91239090]
 SELECT
           uniqExact(audit_trail_events.Id) AS events
         FROM audit_trail_events
@@ -397,7 +397,7 @@ SELECT
           AND audit_trail_events.Provider = 'vercel'
           AND audit_trail_events.Category = 'membership'
           AND audit_trail_events.Outcome = 'success'
-          AND audit_trail_events.Action = 'team.member.added'
+          AND (audit_trail_events.Action = 'team.member.added' OR audit_trail_events.Action LIKE (replace(replace(replace('team.member.added.', '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%'))
         FORMAT JSON
 
 -- builder:audit-trail:auditTrailEventsQuery:default  [9ab77231]
@@ -429,7 +429,7 @@ SELECT
         LIMIT 51
         FORMAT JSON
 
--- builder:audit-trail:auditTrailEventsQuery:filtered  [fb4fb694]
+-- builder:audit-trail:auditTrailEventsQuery:filtered  [2a89f005]
 SELECT
           audit_trail_events.Id AS id,
           audit_trail_events.OccurredAt AS occurredAt,
@@ -458,7 +458,7 @@ SELECT
           AND audit_trail_events.Account = 'acme'
           AND audit_trail_events.Category = 'membership'
           AND audit_trail_events.Outcome = 'success'
-          AND audit_trail_events.Action = 'org.add_member'
+          AND (audit_trail_events.Action = 'org.add_member' OR audit_trail_events.Action LIKE (replace(replace(replace('org.add_member.', '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%'))
           AND ((audit_trail_events.ActorId = 'octocat@acme.test' OR audit_trail_events.ActorEmail = 'octocat@acme.test') OR audit_trail_events.ActorId = 'user_1')
           AND audit_trail_events.OccurredAt >= '2026-01-01 10:30:00'
           AND audit_trail_events.OccurredAt <= '2026-01-03 14:15:00'

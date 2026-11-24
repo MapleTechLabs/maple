@@ -15,7 +15,7 @@ export const Form = Schema.Struct({
 	provider: Schema.String,
 	category: Schema.String,
 	outcome: Schema.String,
-	/** The platform's own action name, matched exactly; empty counts every action. */
+	/** The platform's own action name, with its sub-actions; empty counts every action. */
 	action: Schema.String,
 	/** As typed: the count and the window are numbers only once they are valid. */
 	threshold: Schema.String,

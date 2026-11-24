@@ -1220,7 +1220,7 @@ export const SecurityDetectionNewSearch = Schema.Struct({
 	provider: StringParam,
 	category: StringParam,
 	outcome: StringParam,
-	/** The platform's own action name, matched exactly. */
+	/** The platform's own action name; a detection also counts its sub-actions. */
 	action: StringParam,
 })
 export type SecurityDetectionNewSearch = typeof SecurityDetectionNewSearch.Type
