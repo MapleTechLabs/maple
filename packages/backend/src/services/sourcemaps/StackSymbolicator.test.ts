@@ -695,4 +695,49 @@ describe("StackSymbolicator", () => {
 			assert.strictEqual(state.reads, 1)
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect("leaves a map over the budget unloaded without crowding out a later small one", () => {
+		const { state, layer } = makeHarness()
+		const urls = Arr.makeBy(3, (i) => `https://shop.example.com/assets/part-${i}.js`)
+		const ids = Arr.makeBy(3, (i) => `7d6f3c2b-2a3f-4e4d-9c8b-12345678900${i}`)
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			const database = yield* Database
+			const rows = yield* Effect.forEach(urls, (url, i) =>
+				sourceMaps.upload(ORG, {
+					bytes: mapBytes(),
+					minifiedPath: `assets/part-${i}.js`,
+					debugId: ids[i] ?? "",
+				}),
+			)
+			// 2, 9 and 2 MiB: 12, 54 and 12 MiB by estimate against the 64 MiB budget.
+			yield* Effect.forEach(
+				Arr.zip(rows, [2, 9, 2]),
+				([row, mib]) =>
+					database.execute((db) =>
+						db.run(
+							PG.update(SourceMapFiles)
+								.set({ sizeBytes: mib * 1024 * 1024 })
+								.where(($) => [PG.inList($.id, [row.id])]),
+						),
+					),
+				{ discard: true },
+			)
+			const stack = yield* symbolicator.symbolicate(
+				request({
+					stacktrace: Arr.join(
+						["TypeError: boom", ...Arr.map(urls, (url) => `    at a (${url}:1:1)`)],
+						"\n",
+					),
+					debugIds: new Map(Arr.zip(urls, ids)),
+				}),
+			)
+			assert.deepStrictEqual(
+				Arr.map(stack.frames, (frame) => frame.resolved),
+				[true, false, true],
+			)
+			assert.strictEqual(state.reads, 2)
+		}).pipe(Effect.provide(layer))
+	})
 })

@@ -401,13 +401,15 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 				// One at a time: each parse briefly holds the file, its string and the parsed map. Every
 				// loaded map stays live for the request, so past the budget the rest are left unloaded.
 				const estimate = (row: SourceMapFileRow) => row.sizeBytes * PARSED_MAP_SIZE_FACTOR
-				const withinBudget = Arr.filter(
+				// Only rows taken count toward the budget: one left out does not crowd out a later small one.
+				const withinBudget = Arr.reduce(
 					rows,
-					(row, i) =>
-						i === 0 ||
-						Arr.reduce(Arr.take(rows, i + 1), 0, (sum, r) => sum + estimate(r)) <=
-							REQUEST_MAX_ESTIMATED_BYTES,
-				)
+					{ taken: Arr.empty<SourceMapFileRow>(), planned: 0 },
+					(plan, row) =>
+						plan.taken.length === 0 || plan.planned + estimate(row) <= REQUEST_MAX_ESTIMATED_BYTES
+							? { taken: [...plan.taken, row], planned: plan.planned + estimate(row) }
+							: plan,
+				).taken
 				const overBudget = rows.length - withinBudget.length
 				if (overBudget > 0) {
 					yield* Effect.logWarning(
