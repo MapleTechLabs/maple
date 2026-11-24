@@ -7,6 +7,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
 import { ClerkRolesGateway } from "./ClerkRolesGateway"
 import { RolesService } from "./RolesService"
+import { RoleWriteLock } from "./RoleWriteLock"
 
 // Clerk's API is faked before any import runs: the organization answers with `publicMetadata`, its
 // memberships with `memberships`, and every call is recorded.
@@ -57,7 +58,13 @@ const clerkMode = ConfigProvider.layer(
 
 const gateway = ClerkRolesGateway.layer.pipe(Layer.provide(Env.layer.pipe(Layer.provide(clerkMode))))
 const layer = Layer.effect(RolesService, RolesService.make).pipe(
-	Layer.provide(Layer.mergeAll(gateway, Layer.mock(MembershipRevocationService)({}))),
+	Layer.provide(
+		Layer.mergeAll(
+			gateway,
+			Layer.mock(MembershipRevocationService)({}),
+			Layer.succeed(RoleWriteLock, { withLock: (_orgId, effect) => effect }),
+		),
+	),
 )
 
 describe("ClerkRolesGateway", () => {

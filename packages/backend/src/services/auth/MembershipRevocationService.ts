@@ -593,23 +593,27 @@ const make = Effect.gen(function* () {
 							? Result.succeed(key)
 							: Result.fail(key.id),
 					)
-					for (const { id, metadata, pinned } of narrowed) {
-						const held = Arr.filter(
-							pinnedGrants(pinned.roles, pinned.permissions),
-							(permission) => Policy.can(current, permission),
-						)
-						yield* db.run(
-							PG.update(ApiKeys)
-								.set({
-									metadataJson: {
-										...metadata,
-										roles: [Policy.CUSTOM_ROLE_CLERK_KEY],
-										permissions: Policy.encodePermissions(held),
-									},
-								})
-								.where(($) => [$.id.eq(id), $.revoked.eq(false)]),
-						)
-					}
+					yield* Effect.forEach(
+						narrowed,
+						({ id, metadata, pinned }) => {
+							const held = Arr.filter(
+								pinnedGrants(pinned.roles, pinned.permissions),
+								(permission) => Policy.can(current, permission),
+							)
+							return db.run(
+								PG.update(ApiKeys)
+									.set({
+										metadataJson: {
+											...metadata,
+											roles: [Policy.CUSTOM_ROLE_CLERK_KEY],
+											permissions: Policy.encodePermissions(held),
+										},
+									})
+									.where(($) => [$.id.eq(id), $.revoked.eq(false)]),
+							)
+						},
+						{ discard: true },
+					)
 					const stale = staleKeys
 					const [first, ...rest] = stale
 					if (first === undefined)

@@ -47,7 +47,8 @@ with `packageManager`.
   `tenant.permissions`, never a role. Endpoints carry `EndpointAccess`
   (`packages/domain/src/http/endpoint-access.ts`): `requires(permission)`, `"personal"` for the caller's own
   state, `"handler"` when the handler checks. Endpoint and group rules both apply; an unmarked non-GET is
-  refused. Every MCP tool declares its `permission`.
+  refused, and a GET no `requires` or `"personal"` covers needs `telemetry:read`. Every MCP tool declares
+  its `permission`.
 
 ### Service conventions
 

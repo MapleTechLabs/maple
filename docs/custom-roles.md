@@ -25,15 +25,18 @@
 - Production needs Clerk's B2B Authentication add-on for custom roles.
 - The `organizationMembership.*` webhook events are enabled (`/webhooks/clerk`): they demote
   pinned credentials and evict cached memberships.
-- Change roles in Maple, not in the Clerk dashboard. A member set back to `org:custom` by hand keeps
-  whatever `maple_role` their membership still carries.
+- Change roles in Maple, not in the Clerk dashboard. A member set back to `org:custom` by hand is
+  checked by the webhook against the role their `maple_role` names: a deleted role leaves them with
+  nothing and a narrowed one with its current permissions.
 
 ## Known limits
 
-- Role definition writes are version-checked, but Clerk has no conditional write: two admins
-  saving at once can still lose one edit. Holders are reconciled after every write, and the
-  reconcile repeats until they match the latest stored definition (three passes, then
-  `concurrent_edit`).
+- Every role write in Maple holds a per-org Postgres advisory lock (`RoleWriteLock`), so two admins
+  saving at once take turns. A change made in the Clerk dashboard in between is still possible:
+  writes stay version-checked, and the holder reconcile repeats until holders match the latest
+  stored definition (three passes, then `concurrent_edit`).
+- A holder Clerk refuses to rewrite does not stop the others; the save then fails with
+  `roles_unavailable`, and sending the same save again finishes the remaining holders.
 - Membership answers are cached up to 5 minutes (shared) and 60 s (per isolate). A narrowing
   evicts the shared entry and the handling isolate's memo; other isolates keep the old permissions
   up to 60 s, and everything up to 5 minutes if the eviction never ran.

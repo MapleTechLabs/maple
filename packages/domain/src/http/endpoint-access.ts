@@ -9,13 +9,15 @@ import type { Permission } from "../policy"
  *
  * - `{ requires }`: the caller must hold every permission it lists.
  * - `"personal"`: open to every member: the caller's own state (sessions, revoking their own
- *   devices, preferences), or a POST that only reads something that is not telemetry.
+ *   devices, preferences), or a read of something that is not telemetry or configuration.
  * - `"handler"`: the handler checks named permissions itself, because which one depends on the
  *   payload or the resource (a status page's visibility, a key's kind).
  *
- * Unmarked, a GET or HEAD is open to every member and anything else is refused, so an endpoint added
- * later cannot change data until someone decides what it needs. `endpoint-access.test.ts` holds every
- * non-GET endpoint marked.
+ * A GET or HEAD that no `requires` or `"personal"` covers (unmarked, or only `"handler"`) needs
+ * `telemetry:read`: what an org has configured is read by those who can read its telemetry, and a
+ * role built without it (billing only, say) sees only what is marked open to it. Anything else
+ * unmarked is refused, so an endpoint added later cannot change data until someone decides what it
+ * needs. `endpoint-access.test.ts` holds every non-GET endpoint marked.
  */
 export type EndpointAccessRule =
 	| { readonly requires: Arr.NonEmptyReadonlyArray<Permission> }
@@ -50,6 +52,9 @@ export const endpointAccessRules = (called: CalledEndpoint): ReadonlyArray<Endpo
 		(rule) => rule !== undefined,
 	)
 
+/** What a read no rule covers needs. */
+const READ_DEFAULT: Permission = "telemetry:read"
+
 export type EndpointAccessDecision =
 	| { readonly _tag: "Allowed" }
 	| { readonly _tag: "Denied"; readonly permission: Permission }
@@ -61,14 +66,15 @@ export const decideEndpointAccess = (
 	called: CalledEndpoint,
 ): EndpointAccessDecision => {
 	const rules = endpointAccessRules(called)
-	if (rules.length === 0) {
-		const { method } = called.endpoint
-		return method === "GET" || method === "HEAD" ? { _tag: "Allowed" } : { _tag: "Unmarked" }
-	}
+	const { method } = called.endpoint
+	const isRead = method === "GET" || method === "HEAD"
+	if (rules.length === 0 && !isRead) return { _tag: "Unmarked" }
+	const required = Arr.flatMap(rules, (rule) => (typeof rule === "object" ? rule.requires : []))
+	const readDefault: ReadonlyArray<Permission> =
+		isRead && required.length === 0 && !Arr.contains(rules, "personal") ? [READ_DEFAULT] : []
 	return Option.match(
-		Arr.findFirst(
-			Arr.flatMap(rules, (rule) => (typeof rule === "object" ? rule.requires : [])),
-			(permission) => (Arr.contains(permissions, permission) ? Option.none() : Option.some(permission)),
+		Arr.findFirst([...required, ...readDefault], (permission) =>
+			Arr.contains(permissions, permission) ? Option.none() : Option.some(permission),
 		),
 		{
 			onNone: (): EndpointAccessDecision => ({ _tag: "Allowed" }),

@@ -10,11 +10,12 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, ConfigProvider, Effect, Layer, Order, Schema, String as Str } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Order, Schema, Semaphore, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
 import { ClerkRolesGateway, type RoleMembership } from "./ClerkRolesGateway"
 import { RolesService } from "./RolesService"
+import { RoleWriteLock } from "./RoleWriteLock"
 
 const ORG = Schema.decodeSync(OrgId)("org_roles")
 const user = Schema.decodeSync(UserId)
@@ -66,6 +67,8 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 		onRolesRead: [] as Array<() => void>,
 		onRolesWrite: [] as Array<() => void>,
 		onMetadataWrite: [] as Array<() => void>,
+		/** Members whose membership metadata writes Clerk refuses. */
+		refuseMetadataFor: new Set<string>(),
 	}
 	const toMembership = (member: FakeMember): RoleMembership => ({
 		userId: user(member.userId),
@@ -97,20 +100,27 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 				state.roles = [...next.roles]
 				state.onRolesWrite.shift()?.()
 			}),
-		memberships: () => Effect.sync(() => Arr.map(Arr.fromIterable(state.members.values()), toMembership)),
+		// Answers, then yields, as a network read would: two concurrent writes both read before either writes.
+		memberships: () =>
+			Effect.tap(
+				Effect.sync(() => Arr.map(Arr.fromIterable(state.members.values()), toMembership)),
+				() => Effect.yieldNow,
+			),
 		setMembershipRole: (_orgId, userId, role) =>
 			Effect.sync(() => {
 				state.writes.push(`role:${userId}`)
 				change(userId, (member) => ({ ...member, role }))
 			}),
 		setMembershipCustomRole: (_orgId, userId, custom) =>
-			Effect.sync(() => {
-				state.onMetadataWrite.shift()?.()
-				state.writes.push(`metadata:${userId}`)
-				change(userId, ({ custom: _dropped, ...member }) =>
-					custom === null ? member : { ...member, custom },
-				)
-			}),
+			state.refuseMetadataFor.has(userId)
+				? Effect.fail(new RolesUnavailableError({ message: `Clerk refused ${userId}` }))
+				: Effect.sync(() => {
+						state.onMetadataWrite.shift()?.()
+						state.writes.push(`metadata:${userId}`)
+						change(userId, ({ custom: _dropped, ...member }) =>
+							custom === null ? member : { ...member, custom },
+						)
+					}),
 	})
 	const roleOf = (userId: string) => state.members.get(userId)?.role
 	const customOf = (userId: string) => state.members.get(userId)?.custom
@@ -139,11 +149,24 @@ const recordingRevocation = () => {
 	return { demoted, layer }
 }
 
-const setup = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: ReadonlyArray<FakeMember>) => {
+/** The org lock as Postgres's advisory lock behaves within one org: one write at a time. */
+const serialLock = Layer.sync(RoleWriteLock, () => {
+	const gate = Semaphore.makeUnsafe(1)
+	return { withLock: (_orgId, effect) => gate.withPermits(1)(effect) }
+})
+
+/** No lock at all, to show what the lock prevents. */
+const noLock = Layer.succeed(RoleWriteLock, { withLock: (_orgId, effect) => effect })
+
+const setup = (
+	roles: ReadonlyArray<Policy.StoredCustomRole>,
+	members: ReadonlyArray<FakeMember>,
+	lock: Layer.Layer<RoleWriteLock> = serialLock,
+) => {
 	const clerk = fakeClerk(roles, members)
 	const revocation = recordingRevocation()
 	const layer = Layer.effect(RolesService, RolesService.make).pipe(
-		Layer.provide(Layer.mergeAll(clerk.layer, revocation.layer)),
+		Layer.provide(Layer.mergeAll(clerk.layer, revocation.layer, lock)),
 	)
 	return { clerk, revocation, layer }
 }
@@ -859,6 +882,155 @@ describe("RolesService.setMemberRole", () => {
 	})
 })
 
+describe("RolesService concurrent and partial writes", () => {
+	const twoAdmins: ReadonlyArray<FakeMember> = [
+		{ userId: "user_admin", role: "org:admin" },
+		{ userId: "user_bea", role: "org:admin" },
+	]
+	const bea = { ...adminTenant, userId: user("user_bea") }
+	const toMember = { _tag: "BuiltIn", clerkKey: "org:member" } as const
+
+	const demoteEachOther = Effect.gen(function* () {
+		const roles = yield* RolesService
+		return yield* Effect.all(
+			[
+				Effect.result(roles.setMemberRole(adminTenant, user("user_bea"), toMember)),
+				Effect.result(roles.setMemberRole(bea, ADMIN, toMember)),
+			],
+			{ concurrency: 2 },
+		)
+	})
+
+	it.effect("keeps an Admin when two admins demote each other at once", () => {
+		const { layer, clerk } = setup([], twoAdmins)
+		return Effect.gen(function* () {
+			yield* demoteEachOther
+			const admins = Arr.filter(["user_admin", "user_bea"], (id) => clerk.roleOf(id) === "org:admin")
+			assert.strictEqual(admins.length, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("without the org lock, the same two demotions leave no Admin", () => {
+		const { layer, clerk } = setup([], twoAdmins, noLock)
+		return Effect.gen(function* () {
+			yield* demoteEachOther
+			const admins = Arr.filter(["user_admin", "user_bea"], (id) => clerk.roleOf(id) === "org:admin")
+			assert.strictEqual(admins.length, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
+	const narrowed: ReadonlyArray<Policy.Permission> = ["telemetry:read", "incidents:respond"]
+	const narrow = new UpdateRoleRequest({
+		expectedUpdatedAt: 1,
+		name: "On-call",
+		description: "",
+		permissions: narrowed,
+	})
+
+	it.live("narrows every other holder when Clerk refuses one, and says the save did not finish", () => {
+		const { layer, clerk } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[onCallHolder("user_cat"), onCallHolder("user_dan"), onCallHolder("user_eve")],
+		)
+		clerk.state.refuseMetadataFor.add("user_dan")
+		return Effect.gen(function* () {
+			const error = yield* Effect.flip((yield* RolesService).update(adminTenant, ON_CALL, narrow))
+			assert.instanceOf(error, RolesUnavailableError)
+			assert.include(error.message, "1 of 3 members")
+			assert.deepStrictEqual(
+				clerk.customOf("user_cat")?.permissions,
+				Policy.encodePermissions(narrowed),
+			)
+			assert.deepStrictEqual(
+				clerk.customOf("user_eve")?.permissions,
+				Policy.encodePermissions(narrowed),
+			)
+			assert.deepStrictEqual(
+				clerk.customOf("user_dan")?.permissions,
+				Policy.encodePermissions(onCallPermissions),
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.live(
+		"finishes the holders when the same save is sent again, though the role's timestamp moved",
+		() => {
+			const { layer, clerk } = setup(
+				[stored(ON_CALL, "On-call", onCallPermissions)],
+				[onCallHolder("user_cat"), onCallHolder("user_dan")],
+			)
+			clerk.state.refuseMetadataFor.add("user_dan")
+			return Effect.gen(function* () {
+				const roles = yield* RolesService
+				yield* Effect.flip(roles.update(adminTenant, ON_CALL, narrow))
+				clerk.state.refuseMetadataFor.delete("user_dan")
+				const { role } = yield* roles.update(adminTenant, ON_CALL, narrow)
+				assert.deepStrictEqual(role.permissions, narrowed)
+				assert.deepStrictEqual(
+					clerk.customOf("user_dan")?.permissions,
+					Policy.encodePermissions(narrowed),
+				)
+			}).pipe(Effect.provide(layer))
+		},
+	)
+})
+
+describe("RolesService.settleMembership", () => {
+	const metadataOf = (
+		permissions: ReadonlyArray<Policy.Permission>,
+		id = ON_CALL,
+	): Policy.MembershipRoleMetadata => ({ id, permissions: Policy.encodePermissions(permissions) })
+	const narrowed: ReadonlyArray<Policy.Permission> = ["telemetry:read", "incidents:respond"]
+
+	it.effect("holds nothing, and clears the membership, when the role it names was deleted", () => {
+		const { layer, clerk } = setup([], [onCallHolder("user_cat")])
+		return Effect.gen(function* () {
+			const held = yield* (yield* RolesService).settleMembership(
+				ORG,
+				user("user_cat"),
+				metadataOf(onCallPermissions),
+			)
+			assert.deepStrictEqual(held, [])
+			assert.strictEqual(clerk.customOf("user_cat"), undefined)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect(
+		"holds the role's current codes, and rewrites the membership, when the role was narrowed",
+		() => {
+			const { layer, clerk } = setup([stored(ON_CALL, "On-call", narrowed)], [onCallHolder("user_cat")])
+			return Effect.gen(function* () {
+				const held = yield* (yield* RolesService).settleMembership(
+					ORG,
+					user("user_cat"),
+					metadataOf(onCallPermissions),
+				)
+				assert.deepStrictEqual(held, narrowed)
+				assert.deepStrictEqual(
+					clerk.customOf("user_cat")?.permissions,
+					Policy.encodePermissions(narrowed),
+				)
+			}).pipe(Effect.provide(layer))
+		},
+	)
+
+	it.effect("writes nothing for a membership that matches its role", () => {
+		const { layer, clerk } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[onCallHolder("user_cat")],
+		)
+		return Effect.gen(function* () {
+			const held = yield* (yield* RolesService).settleMembership(
+				ORG,
+				user("user_cat"),
+				metadataOf(onCallPermissions),
+			)
+			assert.deepStrictEqual(held, onCallPermissions)
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
 describe("RolesService without Clerk", () => {
 	const selfHosted = ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
@@ -875,7 +1047,7 @@ describe("RolesService without Clerk", () => {
 
 	it.effect("answers that roles need Clerk, for reads and writes alike", () => {
 		const layer = Layer.effect(RolesService, RolesService.make).pipe(
-			Layer.provide(Layer.mergeAll(ClerkRolesGateway.layer, recordingRevocation().layer)),
+			Layer.provide(Layer.mergeAll(ClerkRolesGateway.layer, recordingRevocation().layer, serialLock)),
 			Layer.provide(Env.layer.pipe(Layer.provide(selfHosted))),
 		)
 		return Effect.gen(function* () {

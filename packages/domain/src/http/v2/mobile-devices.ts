@@ -180,14 +180,16 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 		HttpApiEndpoint.get("list", "/", {
 			success: MobileDeviceList,
 			error: [persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listMobileDevices",
-				summary: "List my devices",
-				description:
-					"Returns the devices the current user has registered in the current organization. Requires the `mobile_devices:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listMobileDevices",
+					summary: "List my devices",
+					description:
+						"Returns the devices the current user has registered in the current organization. Requires the `mobile_devices:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.put("register", "/:token", {

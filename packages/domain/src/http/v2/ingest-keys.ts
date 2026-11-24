@@ -5,7 +5,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 const ingestKeysExample = {
 	object: "ingest_keys",
@@ -90,14 +90,16 @@ export class V2IngestKeysApiGroup extends HttpApiGroup.make("ingestKeys")
 		HttpApiEndpoint.get("retrievePublic", "/public", {
 			success: V2PublicIngestKey,
 			error: [V2InsufficientPermissions.schema, ...ingestKeyErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getPublicIngestKey",
-				summary: "Retrieve the public ingest key",
-				description:
-					"Returns your organization's public ingest key, creating the keys on first access. Any member may call it. Requires the `ingest_keys:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("ingest_keys:view_public"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getPublicIngestKey",
+					summary: "Retrieve the public ingest key",
+					description:
+						"Returns your organization's public ingest key, creating the keys on first access. Any member may call it. Requires the `ingest_keys:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("rollPublic", "/public/roll", {

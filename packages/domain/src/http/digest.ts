@@ -157,7 +157,7 @@ export class DigestApiGroup extends HttpApiGroup.make("digest")
 		HttpApiEndpoint.get("getSubscription", "/", {
 			success: DigestSubscriptionResponse,
 			error: [DigestPersistenceError, DigestNotFoundError],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("upsertSubscription", "/", {

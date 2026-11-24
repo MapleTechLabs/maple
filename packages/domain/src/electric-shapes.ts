@@ -30,7 +30,7 @@ import type { Permission } from "./policy"
 // scrape_target_checks are gone (20260727105910_electric_publication_prune).
 const SUBSCRIPTIONS = {
 	dashboards: { table: "dashboards", permission: "telemetry:read" },
-	alert_rules: { table: "alert_rules" },
+	alert_rules: { table: "alert_rules", permission: "telemetry:read" },
 	alert_rule_states: { table: "alert_rule_states", permission: "telemetry:read" },
 	alert_incidents: { table: "alert_incidents", permission: "telemetry:read" },
 	// API key hashes and agent metadata are authentication material/internal
@@ -39,6 +39,7 @@ const SUBSCRIPTIONS = {
 	// and tenant scoping.
 	api_keys: {
 		table: "api_keys",
+		permission: "telemetry:read",
 		columns: [
 			"id",
 			"org_id",
@@ -64,6 +65,7 @@ const SUBSCRIPTIONS = {
 	// why Maple stopped delivering.
 	alert_destinations_v2: {
 		table: "alert_destinations",
+		permission: "telemetry:read",
 		columns: [
 			"id",
 			"org_id",

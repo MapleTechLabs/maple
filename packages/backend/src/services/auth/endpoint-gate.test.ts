@@ -30,12 +30,13 @@ describe("checkEndpointAccess", () => {
 	)
 
 	it.effect(
-		"refuses an unmarked write to everyone, admins included, and lets an unmarked GET through",
+		"refuses an unmarked write to everyone, admins included, and lets an unmarked GET through with telemetry:read",
 		() =>
 			Effect.gen(function* () {
 				const error = yield* Effect.flip(checkEndpointAccess(Policy.allPermissions, unmarked("POST")))
 				expect(error.message).toBe(Policy.limitedAccessMessage)
-				expect(yield* allowed(checkEndpointAccess([], unmarked("GET")))).toBe(true)
+				expect(yield* allowed(checkEndpointAccess(["telemetry:read"], unmarked("GET")))).toBe(true)
+				expect(yield* allowed(checkEndpointAccess(["billing:manage"], unmarked("GET")))).toBe(false)
 			}),
 	)
 })

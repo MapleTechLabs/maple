@@ -188,14 +188,14 @@ export class RolesApiGroup extends HttpApiGroup.make("roles")
 		HttpApiEndpoint.get("list", "/", {
 			success: RoleListResponse,
 			error: RolesUnavailableError,
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("members", "/:roleId/members", {
 			params: { roleId: RoleKey },
 			success: RoleMembersResponse,
 			error: [RolesUnavailableError, RoleNotFoundError],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("create", "/", {

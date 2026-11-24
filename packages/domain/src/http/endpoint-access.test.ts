@@ -62,6 +62,44 @@ describe("EndpointAccess", () => {
 		).toEqual([])
 	})
 
+	it("needs telemetry:read for a configuration read whose group the handler checks", () => {
+		const billingOnly: Policy.Grants = ["billing:manage"]
+		for (const called of [
+			find(v2.alertRules, "list"),
+			find(v2.alertDestinations, "list"),
+			find(v2.apiKeys, "list"),
+			find(v2.slos, "list"),
+			find(v2.sources, "list"),
+			find(v2.ingestRules, "stats"),
+		]) {
+			expect(decideEndpointAccess(billingOnly, called)).toEqual({
+				_tag: "Denied",
+				permission: "telemetry:read",
+			})
+			expect(decideEndpointAccess(ANALYST, called)._tag).toBe("Allowed")
+		}
+	})
+
+	it("leaves a read marked personal open to a role without telemetry:read", () => {
+		const billingOnly: Policy.Grants = ["billing:manage"]
+		for (const called of [
+			find(internal.billing, "getUsage"),
+			find(v2.organization, "retrieve"),
+			find(v2.mcpConnections, "list"),
+		]) {
+			expect(decideEndpointAccess(billingOnly, called)._tag).toBe("Allowed")
+		}
+	})
+
+	it("needs the public ingest key permission, not telemetry, to read the public key", () => {
+		const called = find(v2.ingestKeys, "retrievePublic")
+		expect(decideEndpointAccess(["ingest_keys:view_public"], called)._tag).toBe("Allowed")
+		expect(decideEndpointAccess(["telemetry:read"], called)).toEqual({
+			_tag: "Denied",
+			permission: "ingest_keys:view_public",
+		})
+	})
+
 	it("needs telemetry:read for a dashboard query and query:sql for raw SQL", () => {
 		const batch = find(internal.queryEngine, "executeBatch")
 		const rawSql = find(internal.queryEngine, "executeRawSql")

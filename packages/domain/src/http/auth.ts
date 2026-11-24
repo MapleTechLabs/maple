@@ -272,7 +272,7 @@ export class AuthApiGroup extends HttpApiGroup.make("auth")
 	.add(
 		HttpApiEndpoint.get("session", "/session", {
 			success: SessionTenantResponse,
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	// Renewal for self-hosted sessions, whose tokens are deliberately short-lived.
 	// It sits in the authenticated group because the presented token IS the
@@ -305,7 +305,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 			params: { userCode: Schema.String },
 			success: CliDeviceInfoResponse,
 			error: [CliDeviceNotFoundError, CliDeviceExpiredError, CliDevicePersistenceError],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("cliDeviceApprove", "/cli/device/:userCode/approve", {
@@ -340,7 +340,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				McpOAuthAuthorizationExpiredError,
 				McpOAuthPersistenceError,
 			],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("mcpOAuthAuthorizationApprove", "/mcp/oauth/authorization/:requestId/approve", {

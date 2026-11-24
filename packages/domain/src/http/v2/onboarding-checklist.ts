@@ -150,15 +150,17 @@ export class V2OnboardingChecklistApiGroup extends HttpApiGroup.make("onboarding
 		HttpApiEndpoint.get("retrieve", "/", {
 			success: V2OnboardingChecklist,
 			error: checklistUnavailable,
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getOnboardingChecklist",
-				summary: "Retrieve the onboarding checklist",
-				description:
-					"Reports the org's progress through the onboarding reward checklist. Each step is verified from the org's state on every call; nothing here is self-reported. " +
-					"An org past its reward window answers `expired` without evaluating the steps. Requires the `onboarding:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getOnboardingChecklist",
+					summary: "Retrieve the onboarding checklist",
+					description:
+						"Reports the org's progress through the onboarding reward checklist. Each step is verified from the org's state on every call; nothing here is self-reported. " +
+						"An org past its reward window answers `expired` without evaluating the steps. Requires the `onboarding:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("claim", "/claim", {

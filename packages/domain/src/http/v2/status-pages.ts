@@ -1185,14 +1185,16 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			query: ListQuery,
 			success: StatusPageList,
 			error: [V2ParameterInvalid.schema, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listStatusPages",
-				summary: "List status pages",
-				description:
-					"Returns your organization's status pages, oldest first. Cursor-paginated. Requires the `status_pages:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listStatusPages",
+					summary: "List status pages",
+					description:
+						"Returns your organization's status pages, oldest first. Cursor-paginated. Requires the `status_pages:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("create", "/", {
@@ -1228,14 +1230,16 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			params: pageParams,
 			success: V2StatusPage,
 			error: [pageNotFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getStatusPage",
-				summary: "Retrieve a status page",
-				description:
-					"Returns a status page by its `stp_…` ID. Requires the `status_pages:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getStatusPage",
+					summary: "Retrieve a status page",
+					description:
+						"Returns a status page by its `stp_…` ID. Requires the `status_pages:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("view", "/:id/view", {
@@ -1459,14 +1463,16 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			query: ListQuery,
 			success: StatusPageComponentList,
 			error: [V2ParameterInvalid.schema, pageNotFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listStatusPageComponents",
-				summary: "List status page components",
-				description:
-					"Returns a page's components in display order. Requires the `status_pages:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listStatusPageComponents",
+					summary: "List status page components",
+					description:
+						"Returns a page's components in display order. Requires the `status_pages:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("createComponent", "/:id/components", {
@@ -1552,14 +1558,16 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 			query: IncidentsQuery,
 			success: StatusPageIncidentList,
 			error: [V2ParameterInvalid.schema, pageNotFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listStatusPageIncidents",
-				summary: "List status page incidents",
-				description:
-					"Returns incidents and maintenance across your pages or one page, newest first. Requires the `status_page_incidents:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listStatusPageIncidents",
+					summary: "List status page incidents",
+					description:
+						"Returns incidents and maintenance across your pages or one page, newest first. Requires the `status_page_incidents:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("create", "/", {
@@ -1582,14 +1590,16 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 			params: { id: StatusPageIncidentPublicId },
 			success: V2StatusPageIncident,
 			error: [incidentNotFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getStatusPageIncident",
-				summary: "Retrieve a status page incident",
-				description:
-					"Returns an incident with its updates. Requires the `status_page_incidents:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getStatusPageIncident",
+					summary: "Retrieve a status page incident",
+					description:
+						"Returns an incident with its updates. Requires the `status_page_incidents:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.patch("update", "/:id", {

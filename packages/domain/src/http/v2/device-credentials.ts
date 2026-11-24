@@ -221,14 +221,16 @@ export class V2DeviceCredentialsApiGroup extends HttpApiGroup.make("deviceCreden
 			params: { installation_id: InstallationId },
 			success: V2AttestationChallenge,
 			error: [sessionRequired, publicError(DeviceTokensUnavailableError)],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getDeviceAttestationChallenge",
-				summary: "Get an App Attest challenge",
-				description:
-					"Returns a single-use challenge, valid for five minutes, for an App Attest attestation of this installation's registration. Signed-in sessions only.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getDeviceAttestationChallenge",
+					summary: "Get an App Attest challenge",
+					description:
+						"Returns a single-use challenge, valid for five minutes, for an App Attest attestation of this installation's registration. Signed-in sessions only.",
+				}),
+			),
 	)
 	.prefix("/v2/device_credentials")
 	.middleware(AuthorizationV2)

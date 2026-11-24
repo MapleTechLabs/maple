@@ -28,6 +28,9 @@ import {
 	Order,
 	Random,
 	Record as Rec,
+	Ref,
+	Result,
+	Schedule,
 	Schema,
 	String as Str,
 } from "effect"
@@ -36,6 +39,7 @@ import {
 	MembershipRevocationService,
 } from "@maple/backend/services/auth/MembershipRevocationService"
 import { ClerkRolesGateway, type RoleMembership } from "./ClerkRolesGateway"
+import { RoleWriteLock } from "./RoleWriteLock"
 
 /**
  * Custom roles and who holds which role. Clerk is the store (`Policy.versionedCustomRolesFromOrgMetadata`):
@@ -44,9 +48,11 @@ import { ClerkRolesGateway, type RoleMembership } from "./ClerkRolesGateway"
  * someone holds ends with `demoteMembership`, so pinned credentials and membership caches follow at
  * once rather than when Clerk's webhook arrives.
  *
- * Two admins can edit at once and Clerk has no locks: the definitions carry a version that every
- * write checks and bumps (`editRoles`), and every write to a role or onto one ends by reconciling
- * its holders with the latest stored definition (`reconcileHolders`).
+ * Clerk has no locks, so every write holds the org's {@link RoleWriteLock} while it reads and
+ * writes Clerk. A change made outside Maple (Clerk's dashboard) can still land in between: the
+ * definitions carry a version that every write checks and bumps (`editRoles`), and every write to a
+ * role or onto one ends by reconciling its holders with the latest stored definition
+ * (`reconcileHolders`).
  */
 
 /** What the roles endpoints read off the caller. */
@@ -101,6 +107,16 @@ export interface RolesServiceApi {
 		MemberRoleChange,
 		RolesUnavailableError | RoleNotFoundError | RoleConflictError | RoleMemberNotFoundError
 	>
+	/**
+	 * The permissions an `org:custom` membership holds, checked against the role it names: a role
+	 * since deleted holds nothing and one since narrowed holds its current codes, and the membership is
+	 * rewritten to match. For Clerk's webhook, so a role set outside Maple cannot revive stale codes.
+	 */
+	readonly settleMembership: (
+		orgId: OrgId,
+		userId: UserId,
+		held: Policy.MembershipRoleMetadata,
+	) => Effect.Effect<ReadonlyArray<Policy.Permission>, RolesUnavailableError>
 }
 
 /** How many times a write to the definitions is tried while other writes keep landing first. */
@@ -108,6 +124,9 @@ const MAX_EDIT_ATTEMPTS = 3
 
 /** How many times holders are reconciled while the role keeps changing under them. */
 const MAX_RECONCILE_PASSES = 3
+
+/** How often one holder's rewrite is retried before the pass reports it. */
+const HOLDER_RETRY = Schedule.max([Schedule.exponential("100 millis"), Schedule.recurs(2)])
 
 /** What an `org:custom` member with no role on the membership holds. */
 const NOTHING = Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], [])
@@ -205,7 +224,8 @@ const toMember = (holder: RoleMembership) =>
 /** How many holders a role's row shows as avatars before "+N". */
 const HOLDER_PREVIEW = 5
 
-const previewOf = (holders: ReadonlyArray<RoleMembership>) => Arr.map(Arr.take(holders, HOLDER_PREVIEW), toMember)
+const previewOf = (holders: ReadonlyArray<RoleMembership>) =>
+	Arr.map(Arr.take(holders, HOLDER_PREVIEW), toMember)
 
 const sameCodes = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean =>
 	a.length === b.length && Arr.every(a, (code, index) => code === b[index])
@@ -255,6 +275,7 @@ const checkName = (
 const make = Effect.gen(function* () {
 	const clerk = yield* ClerkRolesGateway
 	const revocation = yield* MembershipRevocationService
+	const lock = yield* RoleWriteLock
 
 	const readState = (orgId: OrgId) =>
 		Effect.all(
@@ -349,14 +370,29 @@ const make = Effect.gen(function* () {
 					),
 				)
 				yield* Effect.annotateCurrentSpan({ "maple.role.holders_rewritten": stale.length })
-				yield* Effect.forEach(
+				// One holder Clerk refuses must not leave the rest on the old codes: each is retried on
+				// its own, every one is tried, and only then does a failure fail the pass.
+				const results = yield* Effect.forEach(
 					stale,
 					(holder) =>
-						clerk
-							.setMembershipCustomRole(orgId, holder.userId, target.metadata)
-							.pipe(Effect.andThen(demote(orgId, holder.userId, target.grants))),
-					{ concurrency: 4, discard: true },
+						Effect.result(
+							clerk
+								.setMembershipCustomRole(orgId, holder.userId, target.metadata)
+								.pipe(
+									Effect.andThen(demote(orgId, holder.userId, target.grants)),
+									Effect.retry(HOLDER_RETRY),
+								),
+						),
+					{ concurrency: 4 },
 				)
+				const failed = Arr.filter(results, Result.isFailure)
+				if (failed.length > 0) {
+					yield* Effect.annotateCurrentSpan({ "maple.role.holders_failed": failed.length })
+					return yield* new RolesUnavailableError({
+						message: `${failed.length} of ${stale.length} members still hold this role's previous permissions. Save the role again to finish.`,
+						cause: failed[0]?.failure,
+					})
+				}
 				return { role, holders: holders.length }
 			}
 			const target =
@@ -391,21 +427,26 @@ const make = Effect.gen(function* () {
 		roleId: Policy.CustomRoleId,
 		orphansTo: RoleRef | undefined,
 	) {
-		for (let pass = 1; ; pass++) {
+		const passes = yield* Ref.make(0)
+		const settledPass = Effect.gen(function* () {
+			yield* Ref.update(passes, (count) => count + 1)
 			const result = yield* reconcilePass(orgId, roleId, orphansTo)
 			const { roles } = yield* clerk.customRoles(orgId)
 			const now = Arr.findFirst(roles, (candidate) => candidate.id === roleId)
-			if (sameStoredRole(now, result.role)) {
-				yield* Effect.annotateCurrentSpan({ "maple.role.reconcile_passes": pass })
-				return result
-			}
-			if (pass === MAX_RECONCILE_PASSES) {
-				yield* Effect.logWarning("Role holders did not settle while the role kept changing").pipe(
-					Effect.annotateLogs({ orgId, "maple.role.id": roleId }),
-				)
-				return yield* concurrentEdit
-			}
-		}
+			return sameStoredRole(now, result.role) ? result : yield* concurrentEdit
+		})
+		const result = yield* settledPass.pipe(
+			Effect.retry({ times: MAX_RECONCILE_PASSES - 1, while: isConcurrentEdit }),
+			Effect.tapError((error) =>
+				isConcurrentEdit(error)
+					? Effect.logWarning("Role holders did not settle while the role kept changing").pipe(
+							Effect.annotateLogs({ orgId, "maple.role.id": roleId }),
+						)
+					: Effect.void,
+			),
+		)
+		yield* Effect.annotateCurrentSpan({ "maple.role.reconcile_passes": yield* Ref.get(passes) })
+		return result
 	})
 
 	const list = Effect.fn("RolesService.list")(function* (tenant: RolesTenant) {
@@ -437,7 +478,9 @@ const make = Effect.gen(function* () {
 						previewOf(Arr.filter(memberships, (membership) => membership.role === role.clerkKey)),
 					]),
 				),
-				...Rec.fromEntries(Arr.map(roles, (role) => [role.id, previewOf(holdersOf(memberships, role.id))])),
+				...Rec.fromEntries(
+					Arr.map(roles, (role) => [role.id, previewOf(holdersOf(memberships, role.id))]),
+				),
 			},
 		})
 	})
@@ -453,7 +496,7 @@ const make = Effect.gen(function* () {
 		return new RoleMembersResponse({ members: Arr.map(holders, toMember) })
 	})
 
-	const create = Effect.fn("RolesService.create")(function* (
+	const createUnlocked = Effect.fn("RolesService.create")(function* (
 		tenant: RolesTenant,
 		request: CreateRoleRequest,
 	) {
@@ -484,7 +527,7 @@ const make = Effect.gen(function* () {
 		return toCustomRole(role, 0)
 	})
 
-	const update = Effect.fn("RolesService.update")(function* (
+	const updateUnlocked = Effect.fn("RolesService.update")(function* (
 		tenant: RolesTenant,
 		roleId: Policy.CustomRoleId,
 		request: UpdateRoleRequest,
@@ -494,13 +537,21 @@ const make = Effect.gen(function* () {
 		const { before, after } = yield* editRoles(tenant.orgId, (roles) =>
 			Effect.gen(function* () {
 				const current = yield* findRole(roles, roleId)
+				const permissions = Policy.encodePermissions(Policy.withImplied(request.permissions))
+				// A save repeated after its holders failed to update finds its own definition stored:
+				// it writes nothing and goes on to finish the holders.
+				const alreadySaved =
+					current.name === request.name &&
+					current.description === request.description &&
+					sameCodes(current.permissions, permissions)
+				if (alreadySaved) return { next: roles, result: { before: current, after: current } }
 				if (current.updatedAt !== request.expectedUpdatedAt) return yield* staleEdit
 				yield* checkName(roles, request.name, roleId)
 				const next: Policy.StoredCustomRole = {
 					...current,
 					name: request.name,
 					description: request.description,
-					permissions: Policy.encodePermissions(Policy.withImplied(request.permissions)),
+					permissions,
 					updatedAt: yield* Clock.currentTimeMillis,
 				}
 				return {
@@ -514,7 +565,7 @@ const make = Effect.gen(function* () {
 		return { before: toCustomRole(before, holders), role: toCustomRole(after, holders) }
 	})
 
-	const deleteRole = Effect.fn("RolesService.delete")(function* (
+	const deleteUnlocked = Effect.fn("RolesService.delete")(function* (
 		tenant: RolesTenant,
 		roleId: Policy.CustomRoleId,
 		reassignTo: RoleRef | undefined,
@@ -554,7 +605,7 @@ const make = Effect.gen(function* () {
 		return { id: role.id, name: role.name, moved }
 	})
 
-	const setMemberRole = Effect.fn("RolesService.setMemberRole")(function* (
+	const setMemberRoleUnlocked = Effect.fn("RolesService.setMemberRole")(function* (
 		tenant: RolesTenant,
 		userId: UserId,
 		ref: RoleRef,
@@ -591,7 +642,49 @@ const make = Effect.gen(function* () {
 		}
 	})
 
-	return { list, members, create, update, delete: deleteRole, setMemberRole } satisfies RolesServiceApi
+	// Every write holds the org's lock, so the checks it makes (a name, the version, the last Admin)
+	// still hold when it writes.
+	const create: RolesServiceApi["create"] = (tenant, request) =>
+		lock.withLock(tenant.orgId, createUnlocked(tenant, request))
+	const update: RolesServiceApi["update"] = (tenant, roleId, request) =>
+		lock.withLock(tenant.orgId, updateUnlocked(tenant, roleId, request))
+	const deleteRole: RolesServiceApi["delete"] = (tenant, roleId, reassignTo) =>
+		lock.withLock(tenant.orgId, deleteUnlocked(tenant, roleId, reassignTo))
+	const setMemberRole: RolesServiceApi["setMemberRole"] = (tenant, userId, ref) =>
+		lock.withLock(tenant.orgId, setMemberRoleUnlocked(tenant, userId, ref))
+
+	const settleUnlocked = Effect.fn("RolesService.settleMembership")(function* (
+		orgId: OrgId,
+		userId: UserId,
+		held: Policy.MembershipRoleMetadata,
+	) {
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.role.member_id": userId })
+		const { roles } = yield* clerk.customRoles(orgId)
+		const role = Arr.findFirst(roles, (candidate) => candidate.id === held.id)
+		if (Option.isNone(role)) {
+			yield* Effect.annotateCurrentSpan({ "maple.role.settled": "cleared" })
+			yield* clerk.setMembershipCustomRole(orgId, userId, null)
+			return []
+		}
+		if (!sameCodes(held.permissions, role.value.permissions)) {
+			yield* Effect.annotateCurrentSpan({ "maple.role.settled": "rewritten" })
+			yield* clerk.setMembershipCustomRole(orgId, userId, customTarget(role.value).metadata)
+		}
+		return Policy.decodeCustomPermissions(role.value.permissions)
+	})
+
+	const settleMembership: RolesServiceApi["settleMembership"] = (orgId, userId, held) =>
+		lock.withLock(orgId, settleUnlocked(orgId, userId, held))
+
+	return {
+		list,
+		members,
+		create,
+		update,
+		delete: deleteRole,
+		setMemberRole,
+		settleMembership,
+	} satisfies RolesServiceApi
 })
 
 export class RolesService extends Context.Service<RolesService, RolesServiceApi>()(
@@ -599,6 +692,8 @@ export class RolesService extends Context.Service<RolesService, RolesServiceApi>
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(ClerkRolesGateway.layer, MembershipRevocationService.layer)),
+		Layer.provide(
+			Layer.mergeAll(ClerkRolesGateway.layer, MembershipRevocationService.layer, RoleWriteLock.layer),
+		),
 	)
 }

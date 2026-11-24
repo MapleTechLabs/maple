@@ -680,26 +680,26 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getCustomer", "/customer", {
 			success: BillingCustomer,
 			error: [...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("getUsage", "/usage", {
 			query: BillingUsageQuery,
 			success: BillingUsage,
 			error: [...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("getAiCreditUsage", "/ai-credit-usage", {
 			success: AiCreditUsageResponse,
 			error: [...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("listInvoices", "/invoices", {
 			success: BillingInvoicesResponse,
 			error: [BillingManagedByBillingOrgError, ...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	// Warehouse-backed, unlike every other read in this group: Autumn only knows
 	// cycle totals, so the daily shape behind the spend chart comes from
@@ -709,7 +709,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getDailySpend", "/daily-spend", {
 			success: DailySpendResponse,
 			error: [BillingForbiddenError, ...billingTransportErrors, WarehouseQueryError],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.put("updateBillingControls", "/billing-controls", {
@@ -746,7 +746,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getBillingProfile", "/profile", {
 			success: BillingProfile,
 			error: [BillingManagedByBillingOrgError, ...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.put("updateBillingProfile", "/profile", {
@@ -789,13 +789,13 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getBillingAccount", "/account", {
 			success: BillingAccount,
 			error: [...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("getBillingAccountUsage", "/account/usage", {
 			success: BillingAccountUsageResponse,
 			error: [BillingForbiddenError, ...billingTransportErrors, WarehouseQueryError],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("linkBillingOrg", "/account/link", {

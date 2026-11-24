@@ -4,6 +4,7 @@ import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { DEFAULT_MAPLE_REGION } from "@maple/domain/organization-regions"
 import { ClerkWebhookSecret } from "@maple/infra/secrets"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
+import { RolesService } from "@maple/backend/services/roles/RolesService"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import {
 	CLERK_MEMBERSHIP_EVENTS,
@@ -69,6 +70,7 @@ const handler = Effect.gen(function* () {
 	const audit = yield* AuditLogService
 	const regions = yield* OrganizationRegionService
 	const sso = yield* EnterpriseSsoService
+	const roles = yield* RolesService
 
 	/**
 	 * A revocation that only half-ran is the state this whole handler exists to
@@ -198,10 +200,23 @@ const handler = Effect.gen(function* () {
 			const evicted = yield* revoke(revocation.invalidateMembership(userId.value))
 			return home === "unknown" && evicted.status === 200 ? yield* regionUnknown : evicted
 		}
-		const current = Policy.grantsOf(
-			[role.value],
-			Policy.customPermissionsFromMembershipMetadata(payload.value.public_metadata),
-		)
+		// A custom role's codes are checked against the role it names, so a role set by hand in Clerk
+		// cannot revive codes from a role since deleted or narrowed.
+		const held =
+			role.value === Policy.CUSTOM_ROLE_CLERK_KEY
+				? Policy.membershipRoleFromMetadata(payload.value.public_metadata)
+				: Option.none()
+		const custom = Option.isSome(held)
+			? yield* roles.settleMembership(orgId.value, userId.value, held.value).pipe(Effect.option)
+			: Option.some([])
+		if (Option.isNone(custom)) {
+			yield* Effect.annotateCurrentSpan({
+				"http.response.status_code": 500,
+				"maple.webhook.outcome": "custom_role_settle_failed",
+			})
+			return webhookText("Custom role check failed", 500)
+		}
+		const current = Policy.grantsOf([role.value], custom.value)
 		const demoted = yield* revoke(revocation.demoteMembership(orgId.value, userId.value, current))
 		if (demoted.status !== 200) return demoted
 		if (home === "unknown") return yield* regionUnknown
@@ -357,5 +372,5 @@ export const ClerkWebhookRouter = ClerkWebhookRoute.pipe(
 	// Provided here rather than in the HTTP graph: the sweep pulls in the edge
 	// cache and the destination encryption key, and nothing else in the router
 	// tree needs them.
-	Layer.provide(MembershipRevocationService.layer),
+	Layer.provide(Layer.mergeAll(MembershipRevocationService.layer, RolesService.layer)),
 )

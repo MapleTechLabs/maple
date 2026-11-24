@@ -1755,6 +1755,41 @@ describe("v2 raw SQL widgets", () => {
 		await harness.dispose()
 	})
 
+	it("refuses to share a board that holds raw SQL to a caller without query:sql", async () => {
+		const harness = makeHarness()
+		const author = await harness.bootstrapKey(["dashboards:write", ...TELEMETRY])
+		const created = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			author.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(created.status).toBe(200)
+		const id = created.body.id as string
+
+		const sharer = await harness.bootstrapKey(
+			["dashboards:write", ...TELEMETRY],
+			["org:custom"],
+			["telemetry:read", "dashboards:share"],
+		)
+		const refused = await harness.request("PUT", `/v2/dashboards/${id}/share`, sharer.secret, {
+			mode: "public",
+		})
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.code).toBe("insufficient_permissions")
+		const widget = await harness.request("PUT", `/v2/dashboards/${id}/widgets/sql/share`, sharer.secret, {
+			mode: "public",
+		})
+		expect(widget.status).toBe(403)
+
+		const plain = await harness.request("POST", "/v2/dashboards", author.secret, board([]))
+		const shared = await harness.request("PUT", `/v2/dashboards/${plain.body.id}/share`, sharer.secret, {
+			mode: "public",
+		})
+		expect(shared.status).toBe(200)
+		await harness.dispose()
+	})
+
 	it("lets a narrow key edit around SQL it did not write, but not change or restore it", async () => {
 		const harness = makeHarness()
 		const author = await harness.bootstrapKey(["dashboards:write", ...TELEMETRY])

@@ -186,14 +186,16 @@ export class V2OnboardingAgentRunApiGroup extends HttpApiGroup.make("onboardingA
 		HttpApiEndpoint.get("retrieve", "/", {
 			success: V2OnboardingAgentRun,
 			error: publicErrors(OnboardingAgentRunNotFoundError, OnboardingAgentRunUnavailableError),
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getOnboardingAgentRun",
-				summary: "Retrieve your onboarding agent run",
-				description:
-					"Returns the caller's latest onboarding run. Requires the `onboarding:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getOnboardingAgentRun",
+					summary: "Retrieve your onboarding agent run",
+					description:
+						"Returns the caller's latest onboarding run. Requires the `onboarding:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("report", "/status", {

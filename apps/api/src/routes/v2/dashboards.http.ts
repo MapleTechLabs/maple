@@ -39,7 +39,7 @@ import { DashboardId } from "@maple/primitives"
 import { Clock, DateTime, Effect, Option, Ref, Result, Schema, Array as Arr } from "effect"
 import { Base64Url } from "effect/encoding"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { addsRawSql } from "@maple/widgets/dashboard"
+import { addsRawSql, dataSourceRawSql } from "@maple/widgets/dashboard"
 import * as Policy from "@maple/domain/policy"
 import { getTemplate, listTemplateMetadata } from "@maple/backend/dashboard-templates"
 import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
@@ -98,6 +98,21 @@ const requireRawSqlAccess = (
 	return Policy.check(tenant.permissions, "query:sql", (denial) =>
 		V2InsufficientPermissions.make(denial.message),
 	)
+}
+
+/**
+ * A share link runs the board's raw SQL for whoever opens it, so sharing a board (or a widget) that
+ * holds raw SQL needs `query:sql`, as running it would.
+ */
+const requireRawSqlToShare = (
+	permissions: Policy.Grants,
+	widgets: DashboardWidgets,
+	widgetId: string | null,
+): Effect.Effect<void, ReturnType<typeof V2InsufficientPermissions.make>> => {
+	const shared = widgetId === null ? widgets : Arr.filter(widgets, (widget) => widget.id === widgetId)
+	return Arr.some(shared, (widget) => dataSourceRawSql(widget.dataSource) !== null)
+		? Policy.check(permissions, "query:sql", (denial) => V2InsufficientPermissions.make(denial.message))
+		: Effect.void
 }
 
 const toV2DashboardSnapshot = (dashboard: DashboardDocument): V2DashboardVersionDetail["snapshot"] => ({
@@ -409,6 +424,11 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 		) =>
 			Effect.gen(function* () {
 				yield* requireShareableScopes(context.tenant.scopes)
+				yield* requireRawSqlToShare(
+					context.tenant.permissions,
+					context.dashboard.widgets,
+					context.scope.widgetId,
+				)
 				const created = yield* shares.upsert(
 					context.tenant.orgId,
 					context.tenant.userId,

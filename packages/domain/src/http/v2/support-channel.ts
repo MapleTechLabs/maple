@@ -63,14 +63,16 @@ export class V2SupportChannelApiGroup extends HttpApiGroup.make("supportChannel"
 		HttpApiEndpoint.get("retrieve", "/", {
 			success: V2SupportChannel,
 			error: publicError(SupportChannelUnavailableError),
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getSupportChannel",
-				summary: "Retrieve the shared Slack channel",
-				description:
-					"Reports whether the org has a shared Slack channel with the Maple team. Requires the `support:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getSupportChannel",
+					summary: "Retrieve the shared Slack channel",
+					description:
+						"Reports whether the org has a shared Slack channel with the Maple team. Requires the `support:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("invite", "/invite", {
