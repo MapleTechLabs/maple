@@ -154,12 +154,13 @@ export function incidentGroup(
 	incident: Pick<AlertIncidentDocument, "groupKey"> &
 		Partial<Pick<AlertIncidentDocument, "groupLabel" | "signalType">>,
 ): string | null {
+	// An SLO's budget key says which of its incidents this is, not a group to name: checked
+	// first, since the incident is stored with a label ("Error budget") all the same.
+	if (isSloBudgetIncident({ signalType: incident.signalType ?? "", groupKey: incident.groupKey }))
+		return null
 	// An anomaly's key is the anomaly incident id: its stored label is what people read.
 	if (incident.groupLabel != null) return incident.groupLabel
 	if (incident.signalType === "anomaly") return null
-	// An SLO's budget key says which of its incidents this is, not a group to name.
-	if (isSloBudgetIncident({ signalType: incident.signalType ?? "", groupKey: incident.groupKey }))
-		return null
 	return incident.groupKey == null || incident.groupKey === UNGROUPED_GROUP_KEY ? null : incident.groupKey
 }
 
