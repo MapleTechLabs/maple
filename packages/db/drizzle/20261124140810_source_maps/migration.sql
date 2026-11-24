@@ -21,4 +21,4 @@ CREATE INDEX IF NOT EXISTS "source_map_files_org_created_idx" ON "source_map_fil
 CREATE UNIQUE INDEX IF NOT EXISTS "source_map_files_org_debug_id_idx" ON "source_map_files" USING btree ("org_id", "debug_id");
 --> statement-breakpoint
 -- metadata
-CREATE UNIQUE INDEX IF NOT EXISTS "source_map_files_org_release_path_idx" ON "source_map_files" USING btree ("org_id", "service_name", "version", "minified_path");
+CREATE UNIQUE INDEX IF NOT EXISTS "source_map_files_org_release_path_idx" ON "source_map_files" USING btree ("org_id", "service_name", "version", "minified_path") WHERE "debug_id" IS NULL;
