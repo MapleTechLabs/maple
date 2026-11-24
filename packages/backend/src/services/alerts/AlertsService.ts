@@ -6500,7 +6500,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"maple.escalation.targets": enabled.size,
 					"maple.escalation.users_paged": admins.length > 0 ? admins.length : paged.userIds.length,
 				})
-				// A step that reached nobody mid-pass left the run on its next step, due now.
+				// A step that reached nobody mid-pass left the run on its next step, due as it was.
 				return outcome === "skipped" && plan.next.kind === "step" && continuesPass(plan)
 					? {
 							outcome,
@@ -6509,7 +6509,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								status: "active",
 								stepIndex: plan.next.stepIndex,
 								passIndex: plan.next.passIndex,
-								nextStepAt: nowMs,
 							}),
 						}
 					: done(outcome)

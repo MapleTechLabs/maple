@@ -12,6 +12,7 @@ export const ESCALATION_SILENCE_RECHECK_MS = 60_000
 /**
  * A step sent within this of its due time waits from the due time, so the scheduler's own
  * lateness does not add up across steps. Later than that (a silence, an ack), it waits from now.
+ * Either way the person paged gets at least half the wait to acknowledge.
  */
 export const ESCALATION_LATENESS_TOLERANCE_MS = 120_000
 
@@ -62,8 +63,9 @@ const nextPosition = (
 	step: EscalationStep,
 	nowMs: number,
 ): Extract<EscalationAdvancePlan, { kind: "send" }>["next"] => {
+	const waitMs = step.waitMinutes * 60_000
 	const sentFor = nowMs - run.nextStepAt <= ESCALATION_LATENESS_TOLERANCE_MS ? run.nextStepAt : nowMs
-	const nextStepAt = sentFor + step.waitMinutes * 60_000
+	const nextStepAt = Math.max(sentFor + waitMs, nowMs + waitMs / 2)
 	if (run.stepIndex + 1 < run.steps.length) {
 		return { kind: "step", stepIndex: run.stepIndex + 1, passIndex: run.passIndex, nextStepAt }
 	}

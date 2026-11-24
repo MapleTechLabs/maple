@@ -179,28 +179,12 @@ describe("OnCallSchedulesService", () => {
 			yield* TestClock.setTime(at("2026-11-17T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.deepStrictEqual(schedule.departedUserIds, [])
 			directory.splice(1, 1)
-			// A fresh service: the member list is remembered for a minute.
-			return yield* Effect.gen(function* () {
-				const fresh = yield* OnCallSchedulesService
-				const read = yield* fresh.get(ORG, schedule.id)
-				assert.deepStrictEqual(read.departedUserIds, [ben])
-				assert.strictEqual(read.onCallNow?.userId, chen)
-				assert.deepStrictEqual(read.coverageGaps, [])
-			}).pipe(
-				Effect.provide(
-					Layer.fresh(
-						Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
-							Layer.provide(
-								Layer.merge(
-									testDb.layer,
-									Layer.succeed(OrgMembersService, stubOrgMembersService(directory)),
-								),
-							),
-						),
-					),
-				),
-			)
+			const read = yield* schedules.get(ORG, schedule.id)
+			assert.deepStrictEqual(read.departedUserIds, [ben])
+			assert.strictEqual(read.onCallNow?.userId, chen)
+			assert.deepStrictEqual(read.coverageGaps, [])
 		}).pipe(
 			Effect.provide(
 				Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
