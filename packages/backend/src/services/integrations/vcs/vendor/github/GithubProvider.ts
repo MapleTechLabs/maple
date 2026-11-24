@@ -49,7 +49,7 @@ import type {
 } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { QUEUE_MESSAGE_LIMIT_BYTES } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { anchorComments } from "@maple/backend/services/integrations/vcs/diff-anchors"
-import { githubAuditEvent } from "./github-audit-events"
+import { githubAuditEvent, githubForcedBranch } from "./github-audit-events"
 import { type FileChange, rangeDiffPaths } from "@maple/backend/services/integrations/vcs/range-diff"
 import {
 	type GithubApiCommit,
@@ -1164,14 +1164,18 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					}),
 					{
 						onNone: () => [],
-						onSome: ({ installationId, auditEvent }) => [
-							{
-								kind: "audit-event",
-								provider: PROVIDER,
-								externalInstallationId: installationId,
-								event: auditEvent,
-							},
-						],
+						onSome: ({ installationId, auditEvent }) => {
+							const forcedBranch = Option.getOrUndefined(githubForcedBranch(event, parsed))
+							return [
+								{
+									kind: "audit-event",
+									provider: PROVIDER,
+									externalInstallationId: installationId,
+									event: auditEvent,
+									...(forcedBranch !== undefined ? { forcedBranch } : undefined),
+								},
+							]
+						},
 					},
 				)
 

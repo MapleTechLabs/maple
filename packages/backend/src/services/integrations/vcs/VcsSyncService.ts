@@ -1111,10 +1111,60 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				)
 			})
 
+			// A force push to a branch whose open pull request someone else opened becomes
+			// `push.forced.non_author`, naming that pull request. A failed lookup keeps `push.forced`,
+			// which every force push detection still matches, rather than losing the event.
+			const attributeForcePush = Effect.fn("VcsSyncService.attributeForcePush")(function* (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: AuditEventJob,
+			) {
+				const pusher =
+					job.event.actor.name === undefined ? undefined : Str.toLowerCase(job.event.actor.name)
+				if (job.forcedBranch === undefined || pusher === undefined) return job.event
+				const { repository, branch } = job.forcedBranch
+				const pulls = yield* provider
+					.fetchPullRequests(installation, repository, {
+						limit: 10,
+						head: `${repository.owner}:${branch}`,
+					})
+					.pipe(
+						Effect.tapError((error) =>
+							Effect.logWarning(
+								"[VCS] Force push left unattributed: pull request lookup failed",
+							).pipe(Effect.annotateLogs({ "vcs.error": error._tag })),
+						),
+						Effect.option,
+					)
+				const foreign = Option.flatMap(pulls, (found) =>
+					Arr.findFirst(
+						found,
+						(pr) => pr.authorLogin !== null && Str.toLowerCase(pr.authorLogin) !== pusher,
+					),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"vcs.audit.pull_lookup": Option.isSome(pulls) ? "ok" : "failed",
+					"vcs.audit.non_author": Option.isSome(foreign),
+				})
+				return Option.match(foreign, {
+					onNone: () => job.event,
+					onSome: (pr) => ({
+						...job.event,
+						action: "push.forced.non_author",
+						target: {
+							type: "pull_request",
+							id: String(pr.number),
+							name: `${repository.owner}/${repository.name}#${pr.number}`,
+						},
+					}),
+				})
+			})
+
 			// Not behind `ensureProcessable`: an installation that was just suspended or removed is
 			// itself the event, and audit events need no synced data. A failed write fails the job,
-			// so the queue retries it; a retried event writes the same row.
+			// so the queue retries it; a retry writes the same event id.
 			const handleAuditEvent = Effect.fn("VcsSyncService.handleAuditEvent")(function* (
+				provider: VcsProviderClient,
 				installation: VcsInstallation,
 				job: AuditEventJob,
 			) {
@@ -1132,8 +1182,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					"maple.audit.category": Option.getOrElse(category, () => "none"),
 					"maple.audit.forwarded": auditSink !== undefined && collected,
 				})
-				if (auditSink !== undefined && collected)
-					yield* auditSink.onAuditEvent(installation.orgId, job.event)
+				if (auditSink !== undefined && collected) {
+					const event = yield* attributeForcePush(provider, installation, job)
+					yield* auditSink.onAuditEvent(installation.orgId, event)
+				}
 			})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
@@ -1255,7 +1307,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					Match.discriminator("kind")("workflow-job", (job) =>
 						handleWorkflowJob(provider, installation, job),
 					),
-					Match.discriminator("kind")("audit-event", (job) => handleAuditEvent(installation, job)),
+					Match.discriminator("kind")("audit-event", (job) =>
+						handleAuditEvent(provider, installation, job),
+					),
 					Match.exhaustive,
 				)
 

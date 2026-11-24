@@ -10,6 +10,16 @@ import { CHNumber } from "../schema"
 import { orgIdParam } from "../tables"
 
 /**
+ * An action filter matches the action and its sub-actions: `push.forced` also matches
+ * `push.forced.default_branch`. Binds `action`, and `actionFamily` as the action plus a dot.
+ */
+const actionMatch = (action: CH.Expr<string>) =>
+	action.eq(param.string("action")).or(action.startsWith(param.string("actionFamily")))
+
+/** The parameter values an action filter binds. */
+export const auditTrailActionParams = (action: string) => ({ action, actionFamily: `${action}.` })
+
+/**
  * Which optional filters a listing applies. Every set flag binds a parameter of the same name at
  * compile time; the values themselves never enter the SQL.
  */
@@ -66,7 +76,7 @@ export function auditTrailEventsQuery(opts: AuditTrailEventsOpts) {
 				CH.whenTrue(!!opts.account, () => $.Account.eq(param.string("account"))),
 				CH.whenTrue(!!opts.category, () => $.Category.eq(param.string("category"))),
 				CH.whenTrue(!!opts.outcome, () => $.Outcome.eq(param.string("outcome"))),
-				CH.whenTrue(!!opts.action, () => $.Action.eq(param.string("action"))),
+				CH.whenTrue(!!opts.action, () => actionMatch($.Action)),
 				CH.whenTrue(!!opts.actor, () => {
 					const byActor = $.ActorId.eq(param.string("actor")).or(
 						$.ActorEmail.eq(param.string("actor")),
@@ -121,7 +131,7 @@ export function auditTrailCountQuery(opts: AuditTrailCountOpts = {}) {
 			CH.whenTrue(!!opts.provider, () => $.Provider.eq(param.string("provider"))),
 			CH.whenTrue(!!opts.category, () => $.Category.eq(param.string("category"))),
 			CH.whenTrue(!!opts.outcome, () => $.Outcome.eq(param.string("outcome"))),
-			CH.whenTrue(!!opts.action, () => $.Action.eq(param.string("action"))),
+			CH.whenTrue(!!opts.action, () => actionMatch($.Action)),
 		])
 		.format("JSON")
 		.route("ingest")

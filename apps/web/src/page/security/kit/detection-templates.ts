@@ -5,7 +5,14 @@ import { Array as Arr, Option } from "effect"
 // The ready-made detections the empty Detections page and the editor start from. Picking one
 // fills the form; nothing is created until it is saved.
 
-type DetectionTemplateId = "membership" | "permission" | "credential" | "refused" | "sign_in"
+type DetectionTemplateId =
+	| "membership"
+	| "permission"
+	| "credential"
+	| "refused"
+	| "sign_in"
+	| "force_push_default_branch"
+	| "force_push_non_author"
 
 export type DetectionTemplate = Readonly<{
 	id: DetectionTemplateId
@@ -64,6 +71,24 @@ export const DETECTION_TEMPLATES: ReadonlyArray<DetectionTemplate> = [
 		threshold: 5,
 		windowMinutes: 10,
 		severity: "critical",
+	},
+	{
+		id: "force_push_default_branch",
+		title: "Force push to a default branch",
+		summary: "Fires when anyone rewrites the history of a GitHub repository's default branch.",
+		filters: { provider: "github", action: "push.forced.default_branch" },
+		threshold: 1,
+		windowMinutes: 5,
+		severity: "critical",
+	},
+	{
+		id: "force_push_non_author",
+		title: "Force push to someone else's pull request",
+		summary: "Fires when someone rewrites a GitHub pull request branch they did not open.",
+		filters: { provider: "github", action: "push.forced.non_author" },
+		threshold: 1,
+		windowMinutes: 5,
+		severity: "warning",
 	},
 ]
 

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import {
 	AuditTrailPersistenceError,
 	type PullRequestEventJob,
+	type PullRequestSummary,
 	VcsInstallation,
 	VcsInstallationGoneError,
 	VcsProviderError,
@@ -2063,6 +2064,11 @@ describe("VcsSyncService orchestrator", () => {
 		readonly forwardedAudit?: Array<{ orgId: string; action: string }>
 		/** The audit sink fails every write. */
 		readonly auditWriteFails?: boolean
+		/** The open pull requests the stubbed provider lists for any branch. */
+		readonly pullRequests?: ReadonlyArray<PullRequestSummary>
+		readonly pullRequestsError?: VcsRateLimitedError
+		/** The `head` of every pull request listing the stubbed provider was asked for. */
+		readonly pullRequestHeads?: Array<string | undefined>
 		/** CI job logs the sync service forwarded, read to the end. */
 		readonly forwardedLogs?: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }>
 		/** The lines the stubbed provider serves as any job's log. */
@@ -2153,6 +2159,14 @@ describe("VcsSyncService orchestrator", () => {
 					: opts.workflowAnnotationsError
 						? Effect.fail(opts.workflowAnnotationsError)
 						: Effect.succeed(opts.workflowAnnotations ?? []),
+			fetchPullRequests: (_installation, _repo, request) =>
+				Effect.sync(() => opts.pullRequestHeads?.push(request.head)).pipe(
+					Effect.andThen(
+						opts.pullRequestsError === undefined
+							? Effect.succeed(opts.pullRequests ?? [])
+							: Effect.fail(opts.pullRequestsError),
+					),
+				),
 			canReadWorkflowLogs: () =>
 				opts.workflowLogsCheckHang === undefined
 					? Effect.succeed(opts.workflowLogsReadable ?? true)
@@ -2533,6 +2547,66 @@ describe("VcsSyncService orchestrator", () => {
 			)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedAudit })))
 	})
+
+	it.effect(
+		"names a force push to someone else's pull request branch, and keeps it when GitHub cannot say",
+		() => {
+			const pullRequest = (authorLogin: string): PullRequestSummary => ({
+				number: 12,
+				title: "Add retries",
+				url: "https://github.com/acme/api/pull/12",
+				authorLogin,
+				state: "open",
+				headRef: "feature/x",
+				baseRef: "main",
+				isDraft: false,
+				updatedAtMs: 1_700_000_000_000,
+				mergedAtMs: null,
+				mergeCommitSha: null,
+			})
+			const forcePush: VcsSyncJob = {
+				...auditJob("42", "push.forced"),
+				forcedBranch: {
+					repository: { externalRepoId: "7", owner: "acme", name: "api" },
+					branch: "feature/x",
+				},
+			}
+			const run = (opts: Pick<StubOpts, "pullRequests" | "pullRequestsError">) => {
+				const testDb = createTestDb(trackedDbs)
+				const forwardedAudit: Array<{ orgId: string; action: string }> = []
+				const pullRequestHeads: Array<string | undefined> = []
+				return Effect.gen(function* () {
+					const svc = yield* VcsSyncService
+					yield* seedInstallation(yield* VcsRepository, asOrgId("org_force_push"))
+					yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(forcePush))
+					return { actions: Arr.map(forwardedAudit, (row) => row.action), pullRequestHeads }
+				}).pipe(
+					Effect.provide(
+						orchestratorLayer(testDb, { sent: [], forwardedAudit, pullRequestHeads, ...opts }),
+					),
+				)
+			}
+			return Effect.gen(function* () {
+				// The pusher is `octocat`; logins compare without case.
+				const foreign = yield* run({ pullRequests: [pullRequest("OctoCat"), pullRequest("alice")] })
+				assert.deepStrictEqual(foreign, {
+					actions: ["push.forced.non_author"],
+					pullRequestHeads: ["acme:feature/x"],
+				})
+				const own = yield* run({ pullRequests: [pullRequest("OctoCat")] })
+				assert.deepStrictEqual(own.actions, ["push.forced"])
+				const noPullRequest = yield* run({ pullRequests: [] })
+				assert.deepStrictEqual(noPullRequest.actions, ["push.forced"])
+				const lookupFailed = yield* run({
+					pullRequestsError: new VcsRateLimitedError({
+						message: "rate limited",
+						retryAfterSeconds: 60,
+					}),
+				})
+				assert.deepStrictEqual(lookupFailed.actions, ["push.forced"])
+			})
+		},
+	)
 
 	it.effect("holds an audit event for an installation a connect has not stored yet, then gives up", () => {
 		const testDb = createTestDb(trackedDbs)
