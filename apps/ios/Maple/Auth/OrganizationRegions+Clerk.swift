@@ -1,5 +1,6 @@
 import ClerkKit
 import MapleAPI
+import MapleWidgetData
 
 extension Organization {
 	/// Where the organization's data lives, from the `regions` key of its public
@@ -14,10 +15,14 @@ extension OrganizationRegions {
 		record(Dictionary(organizations.map { ($0.id, $0.mapleRegion) }, uniquingKeysWith: { _, latest in latest }))
 	}
 
-	/// What Clerk restored from the keychain, so a launch (including a background
-	/// wake that never loads memberships) can route before the list arrives.
+	/// What the widget index and Clerk's restored session know, so a launch (including
+	/// a background wake that never loads memberships) can route before the list
+	/// arrives. The index covers pinned organizations Clerk's payload can omit.
 	@MainActor
-	func recordRestoredSession() {
+	func recordRestoredSession(index: WidgetOrganizationIndex = WidgetOrganizationIndex()) {
+		record(index.load().reduce(into: [:]) { known, organization in
+			if let region = organization.region.flatMap(MapleRegion.init(rawValue:)) { known[organization.id] = region }
+		})
 		record((Clerk.shared.user?.organizationMemberships ?? []).map(\.organization))
 		if let active = Clerk.shared.organization { record([active]) }
 	}

@@ -124,7 +124,13 @@ final class SessionController {
 	/// has ever been fetched for it, and the index keeps the timestamp it
 	/// already had.
 	var widgetOrganizations: [WidgetOrganization] {
-		memberships.map { WidgetOrganization(id: $0.organization.id, name: $0.organization.name) }
+		memberships.map {
+			WidgetOrganization(
+				id: $0.organization.id,
+				name: $0.organization.name,
+				region: $0.organization.mapleRegion.rawValue
+			)
+		}
 	}
 
 	/// Re-runs the widget publish when the active organization *or* the set the
@@ -329,7 +335,7 @@ final class SessionController {
 	func signOut() async {
 		// While the token is still valid: the server keys the device on the
 		// org in the token, so this has to happen before Clerk drops it.
-		await PushRegistrar.shared.unregisterAll(api: api)
+		await PushRegistrar.shared.unregisterAll(api: api, organizationIds: memberIds)
 		// Same reason, plus one of its own: an activity left running would keep
 		// someone else's incident on this phone's Lock Screen after sign-out.
 		await LiveActivityController.shared.stop()
@@ -349,7 +355,7 @@ final class SessionController {
 	/// Device rows are unregistered first, while the token still works.
 	func deleteAccount() async throws {
 		guard let user = Clerk.shared.user else { return }
-		await PushRegistrar.shared.unregisterAll(api: api)
+		await PushRegistrar.shared.unregisterAll(api: api, organizationIds: memberIds)
 		await LiveActivityController.shared.stop()
 		try await user.delete()
 		try? await Clerk.shared.auth.signOut()
