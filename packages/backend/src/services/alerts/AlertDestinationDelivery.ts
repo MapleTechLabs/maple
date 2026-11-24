@@ -36,6 +36,8 @@ export type AlertDispatchContext = Omit<
 	readonly incidentId: AlertIncidentId | null
 	readonly incidentStatus: DeliveryDispatchContext["incidentStatus"]
 	readonly linkUrl: string
+	/** The rule is gone (deleted while this was queued): no link may point at it. */
+	readonly isRuleDeleted?: boolean
 	readonly sentAtMs: number
 }
 
@@ -124,7 +126,7 @@ export const makeAlertDestinationDelivery = (options: {
 			payloadJson,
 			options.runtime.deliveryTimeoutMs(),
 			context.linkUrl,
-			composeRuleUrl(context),
+			context.isRuleDeleted === true ? context.linkUrl : composeRuleUrl(context),
 			{ sendEmail, postChatAlert: options.postChatAlert, linear: options.linear },
 		).pipe(Effect.provideService(HttpClient.HttpClient, options.httpClient))
 
