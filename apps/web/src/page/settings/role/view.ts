@@ -4,7 +4,7 @@ import { Array as Arr, Option, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { actionBar } from "@maple/views/ui/action-bar"
-import { alert, alertTitle } from "@maple/views/ui/alert"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { collapsible } from "@maple/views/ui/collapsible"
@@ -448,10 +448,22 @@ const unsavedBar = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> =>
 	]
 }
 
+/** Built-in roles are fixed presets: say so up front, and point at duplicating one to change it. */
+const builtInBanner = (h: H): Html =>
+	alert(h, { variant: "info", role: "status" }, [
+		icon(h, "LockIcon"),
+		alertTitle(h, ["Built-in role, read-only"]),
+		alertDescription(h, [
+			"Maple manages this role's permissions, so they can't be changed. Duplicate it to make a custom role you can edit.",
+		]),
+	])
+
 const readOnlyNote = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> =>
-	role.isBuiltIn || canManageRoles(model)
-		? []
-		: [typography(h, { size: "xs", tone: "muted", as: "p" }, [denialReason("roles:manage")])]
+	role.isBuiltIn
+		? [builtInBanner(h)]
+		: canManageRoles(model)
+			? []
+			: [typography(h, { size: "xs", tone: "muted", as: "p" }, [denialReason("roles:manage")])]
 
 const createDialog = (h: H, model: Model): Html =>
 	h.submodel({

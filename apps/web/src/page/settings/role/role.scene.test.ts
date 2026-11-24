@@ -161,6 +161,7 @@ describe("built-in role", () => {
 			{ update: pageUpdate, view },
 			given(opened("engineer")),
 			tabsMounted,
+			expectView(text(/Duplicate it to make a custom role you can edit/u)).toExist(),
 			expectView(role("button", { name: "Duplicate to customize" })).toExist(),
 			expectView(role("checkbox", { name: /Manage alerts/u })).toBeDisabled(),
 			expectView(role("button", { name: "Save role" })).toBeAbsent(),
