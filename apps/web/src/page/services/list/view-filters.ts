@@ -17,7 +17,7 @@ import {
 	hasActiveServiceFilters,
 	commitSummariesOf,
 	type HealthSummary,
-	releaseLabel,
+	releaseLabeler,
 	releaseOptions,
 } from "./derive"
 import { type Facet, Message } from "./message"
@@ -61,7 +61,7 @@ const releaseSection = (h: HtmlBuilder<Message>, model: Model, facets: ServicesF
 		model.search.excludedCommitShas,
 		true,
 		{
-			getOptionLabel: (sha) => releaseLabel(sha, summaries),
+			getOptionLabel: releaseLabeler(summaries),
 			getOptionDescription: (sha) => {
 				const subject = summaries[sha]?.subject
 				return subject === undefined ? sha : `${Str.slice(0, 7)(sha)} · ${subject}`

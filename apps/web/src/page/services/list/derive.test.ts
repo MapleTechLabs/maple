@@ -4,7 +4,7 @@ import {
 	commitsKey,
 	healthSummary,
 	perSecondRates,
-	releaseLabel,
+	releaseLabeler,
 	releaseOptions,
 	serviceHealthRowKey,
 } from "./derive"
@@ -138,8 +138,22 @@ describe("release facet", () => {
 	})
 
 	it("labels a row by its commit subject, or its short sha until the commit resolves", () => {
-		expect(releaseLabel(sha("b"), summaries)).toBe("feat: newer")
-		expect(releaseLabel(sha("c"), summaries)).toBe("ccccccc")
-		expect(releaseLabel("release-42", summaries)).toBe("release-42")
+		const label = releaseLabeler(summaries)
+		expect(label(sha("b"))).toBe("feat: newer")
+		expect(label(sha("c"))).toBe("ccccccc")
+		expect(label("release-42")).toBe("release-42")
+	})
+
+	it("adds the short sha when two commits share a subject", () => {
+		const label = releaseLabeler({
+			[sha("a")]: { subject: "chore: bump deps", committedAt: 1000 },
+			[sha("b")]: { subject: "chore: bump deps", committedAt: 2000 },
+			[sha("c")]: { subject: "feat: unique", committedAt: 3000 },
+		})
+		expect(Arr.map([sha("a"), sha("b"), sha("c")], label)).toEqual([
+			"chore: bump deps · aaaaaaa",
+			"chore: bump deps · bbbbbbb",
+			"feat: unique",
+		])
 	})
 })

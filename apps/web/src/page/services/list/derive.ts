@@ -7,7 +7,7 @@ import {
 	type ServiceHealth,
 } from "../../kit/service-health-rollup"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Array as Arr, String as Str, Option, Order } from "effect"
+import { Array as Arr, String as Str, Option, Order, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { ServicesSearch } from "../../../route/search"
 import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"
@@ -232,10 +232,19 @@ export const commitSummariesOf = (
 ): Readonly<Record<string, CommitSummary>> =>
 	Option.getOrElse(AsyncData.getData(model.commitSummaries.data), () => ({}))
 
-/** A release facet row's label: the commit subject once resolved, else the short sha, else the raw value. */
-export const releaseLabel = (value: string, summaries: Readonly<Record<string, CommitSummary>>): string => {
-	const subject = summaries[value]?.subject ?? ""
-	return subject !== "" ? subject : isResolvableSha(value) ? Str.slice(0, 7)(value) : value
+/**
+ * `releaseLabeler`: a release's label is its commit subject once resolved (with the short sha when
+ * another resolved commit shares the subject), else the short sha, else the raw value.
+ */
+export const releaseLabeler = (summaries: Readonly<Record<string, CommitSummary>>) => {
+	const subjects = Arr.map(Rec.values(summaries), (summary) => summary.subject)
+	const repeated = new Set(Arr.filter(subjects, (subject, index) => subjects.indexOf(subject) !== index))
+	return (value: string): string => {
+		const subject = summaries[value]?.subject ?? ""
+		const short = Str.slice(0, 7)(value)
+		if (subject !== "") return repeated.has(subject) ? `${subject} · ${short}` : subject
+		return isResolvableSha(value) ? short : value
+	}
 }
 
 /** The release facet's order: resolved commits newest first, then the rest by span count as the query sent them. */

@@ -13,7 +13,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_PRESET, summaryOf } from "./update"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
-import { commitSummariesOf, displayedServices, releaseLabel, singleRowServices } from "./derive"
+import { commitSummariesOf, displayedServices, releaseLabeler, singleRowServices } from "./derive"
 import { filtersRail } from "./view-filters"
 import { loadingState, servicesTable, THROUGHPUT_COLOR } from "./view-table"
 import { Array as Arr } from "effect"
@@ -31,7 +31,7 @@ type ChipParam = (typeof FACETS)[number]["include" | "exclude"]
 
 /** Exclusions first; URL namespace chips hide while the org pin is on. */
 const filterChips = (model: Model, pinnedNamespace: string | null) => {
-	const summaries = commitSummariesOf(model)
+	const releaseLabel = releaseLabeler(commitSummariesOf(model))
 	const chipOf = (param: ChipParam, label: string, isNegated: boolean) => {
 		const values = model.search[param]
 		return values === undefined || values.length === 0
@@ -45,7 +45,7 @@ const filterChips = (model: Model, pinnedNamespace: string | null) => {
 						onRemove: Message.RemovedFilterChip({ param }),
 						valueLabel: (value: string) =>
 							param === "commitShas" || param === "excludedCommitShas"
-								? releaseLabel(value, summaries)
+								? releaseLabel(value)
 								: value,
 					},
 				]
