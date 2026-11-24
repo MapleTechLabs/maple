@@ -5,7 +5,7 @@ import { FetchHttpClient } from "effect/http"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { debugIdFor, debugIdSnippet, existingDebugId, injectDirectory } from "./sourcemaps"
+import { canPrepend, debugIdFor, debugIdSnippet, existingDebugId, injectDirectory } from "./sourcemaps"
 import { uploadDirectory } from "./sourcemaps-upload"
 
 const run = <A, E>(effect: Effect.Effect<A, E, BunServices.BunServices>) =>
@@ -154,6 +154,15 @@ describe("injectDirectory", () => {
 		expect(Arr.map(again, (r) => [r.status, r.mapUpdated])).toEqual(
 			Arr.makeBy(4, () => ["already_injected", false]),
 		)
+	})
+
+	test("reads a directive prologue past comments in one linear pass", () => {
+		expect(canPrepend('/*! a */\n// b\n  "use strict";\nrun()')).toBe(false)
+		expect(canPrepend("/* a */ run('x')")).toBe(true)
+		const started = performance.now()
+		canPrepend(Str.repeat(100_000)("/*"))
+		canPrepend(`${Str.repeat(100_000)(" ")}x`)
+		expect(performance.now() - started).toBeLessThan(50)
 	})
 
 	test("gives identical JS with different maps different ids", async () => {
