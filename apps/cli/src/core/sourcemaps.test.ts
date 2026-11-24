@@ -204,7 +204,7 @@ describe("injectDirectory", () => {
 		// The JS write fails after the map was moved: the next run must not move it again.
 		writeFileSync(join(dir, "a.js"), code)
 		writeFileSync(join(dir, "a.js.map"), original)
-		expect(Result.isFailure(await injectWith((path) => path.endsWith("a.js")))).toBe(true)
+		expect(Result.isFailure(await injectWith((path) => Str.endsWith("a.js")(path)))).toBe(true)
 		expect(read(join(dir, "a.js"))).toBe(code)
 		expect(mappings()).toBe(";AAAA;AACA")
 		const [repaired] = await run(injectDirectory(dir, { dryRun: false }))
@@ -222,7 +222,7 @@ describe("injectDirectory", () => {
 		// The map write fails: nothing changes, and the next run injects as if the first never ran.
 		writeFileSync(join(dir, "a.js"), code)
 		writeFileSync(join(dir, "a.js.map"), original)
-		expect(Result.isFailure(await injectWith((path) => path.includes("a.js.map")))).toBe(true)
+		expect(Result.isFailure(await injectWith((path) => Str.includes("a.js.map")(path)))).toBe(true)
 		expect([read(join(dir, "a.js")), read(join(dir, "a.js.map"))]).toEqual([code, original])
 		await run(injectDirectory(dir, { dryRun: false }))
 		expect(mappings()).toBe(";AAAA;AACA")
