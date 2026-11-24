@@ -4,7 +4,7 @@ import { MountPeekRows } from "./command"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { errorState } from "@maple/views/ui/error-state"
 import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
 import { listFooter, loadingMoreRow } from "@maple/views/ui/list-footer"
@@ -134,6 +134,22 @@ const spacer = (h: HtmlBuilder<Message>, key: string, height: number): Html =>
 		h.Style({ height: `${height}px` }),
 	])
 
+/** One trace row from positional args, so the keyed slot below can compare each by reference. */
+const rowView = (
+	h: HtmlBuilder<Message>,
+	row: Parameters<typeof traceRow>[1],
+	index: number,
+	timeZone: string,
+	nowMs: number,
+	search: Model["search"],
+	isFocused: boolean,
+	isActive: boolean,
+	isMobile: boolean,
+): Html => traceRow(h, row, index, timeZone, nowMs, { search, isFocused, isActive, isMobile })
+
+// Keyed by list position: a scroll step rebuilds only the rows entering the window.
+const lazyRow = createKeyedLazy()
+
 /** Spacers around the rendered window, then the loading row. */
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
 	const rows = allRows(model)
@@ -147,12 +163,17 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 			return row === undefined
 				? []
 				: [
-						traceRow(h, row, item.index, timeZone, model.nowMs, {
-							search: model.search,
-							isFocused: model.focusedIndex === item.index,
-							isActive: activeIndex === item.index,
+						lazyRow(item.index, rowView, [
+							h,
+							row,
+							item.index,
+							timeZone,
+							model.nowMs,
+							model.search,
+							model.focusedIndex === item.index,
+							activeIndex === item.index,
 							isMobile,
-						}),
+						]),
 					]
 		}),
 		...(last === undefined ? [] : [spacer(h, "spacer-after", model.totalSize - last.end)]),

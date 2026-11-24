@@ -6,6 +6,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { MapleDbConnection, SandboxFetcher } from "@maple/backend/platform/bindings"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { Env } from "@maple/backend/platform/Env"
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import {
 	makePgConnectionScope,
 	type PgConnectionScopeApi,
@@ -107,6 +108,7 @@ const isolate = async () => {
 			),
 		),
 		Layer.provideMerge(DatabasePgLive),
+		Layer.provideMerge(EdgeCacheServiceLive),
 		Layer.provideMerge(ports),
 	)
 	const handler = await Effect.runPromise(

@@ -21,9 +21,12 @@ import type { Model, TracesFacets } from "./model"
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
+/** Everything the rail reads, so the page can cache it across messages that leave these alone. */
+export type RailModel = Pick<Model, "search" | "facets" | "filterSections" | "firstPage" | "durationDraft">
+
 const facetSection = (
 	h: HtmlBuilder<Message>,
-	model: Model,
+	model: RailModel,
 	title: string,
 	facet: Facet,
 	options: TracesFacets[Facet],
@@ -60,7 +63,7 @@ const durationPresets = (stats: TracesFacets["durationStats"]): ReadonlyArray<Ra
 
 const loadedRail = (
 	h: HtmlBuilder<Message>,
-	model: Model,
+	model: RailModel,
 	facets: TracesFacets,
 	pinnedNamespace: string | null,
 ): Html => {
@@ -124,7 +127,11 @@ const loadedRail = (
 	])
 }
 
-export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespace: string | null): Html =>
+export const filtersRail = (
+	h: HtmlBuilder<Message>,
+	model: RailModel,
+	pinnedNamespace: string | null,
+): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 5),
 		onFailure: (failure) =>
