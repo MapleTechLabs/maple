@@ -264,7 +264,7 @@ export const V2AlertIncidentEvent = Schema.Struct({
 	incident_id: AlertIncidentPublicId,
 	type: AlertIncidentEventType.annotate({
 		description:
-			"`acknowledged` or `unacknowledged` by a person, `ack_cleared` when the scheduler cleared an acknowledgement because the incident escalated to a higher severity, or `paged` when an escalation step paged a person (see `page`).",
+			"`acknowledged` or `unacknowledged` by a person, `ack_cleared` when the scheduler cleared an acknowledgement because the incident escalated to a higher severity, `paged` when an escalation step paged a person (see `page`), or `on_call_gap` when a step's on-call schedule had nobody on call (see `detail`).",
 		examples: ["acknowledged"],
 	}),
 	actor: Schema.NullOr(V2AlertIncidentActor).annotate({
@@ -292,6 +292,12 @@ export const V2AlertIncidentEvent = Schema.Struct({
 					"Why a `failed` or `skipped` page was not delivered; on a `queued` page, why the last attempt failed before the retry.",
 			}),
 		}).annotate({ description: "Set on a `paged` event. Never carries the address." }),
+	),
+	detail: Schema.optionalKey(
+		Schema.String.annotate({
+			description: "Set on an `on_call_gap` event: the names of the schedules that had nobody on call.",
+			examples: ["Checkout primary"],
+		}),
 	),
 	created_at: Timestamp,
 }).annotate({

@@ -307,6 +307,8 @@ export const AlertIncidentEvents = PG.table("alert_incident_events", {
 		actorName: PG.column(PG.nullable(PG.text), { name: "actor_name" }),
 		/** Null for scheduler-written events. */
 		source: PG.nullable(PG.text),
+		/** What the event is about when its type alone does not say, e.g. the schedules of an `on_call_gap`. */
+		detail: PG.nullable(PG.text),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 	},
 	primaryKey: ["id"],

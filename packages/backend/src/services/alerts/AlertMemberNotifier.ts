@@ -64,6 +64,8 @@ const FailureMessages = {
 	gaveUp: "Not sent: every attempt was used up",
 } as const
 
+export const LAST_RESORT_SUBJECT_PREFIX = "Nobody on call was reached: "
+
 /** The stored step payload, read leniently: only what the email and the card show. */
 const MemberPayload = Schema.Struct({
 	eventType: Schema.optionalKey(Schema.String),
@@ -99,6 +101,8 @@ const MemberPayload = Schema.Struct({
 	),
 	recipient: Schema.Struct({
 		externalUserId: Schema.optionalKey(Schema.String),
+		/** An org admin, paged because the escalation chain reached nobody else. */
+		lastResort: Schema.optionalKey(Schema.Boolean),
 	}),
 })
 type MemberPayload = Schema.Schema.Type<typeof MemberPayload>
@@ -263,6 +267,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 				row: AlertMemberNotificationRow,
 				input: ChatAlertCardInput,
 				members: Exit.Exit<ReadonlyArray<OrgMember>, { readonly _tag: string }>,
+				lastResort: boolean,
 			) =>
 				Effect.gen(function* () {
 					if (Exit.isFailure(members)) {
@@ -287,7 +292,9 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					// A deployment that cannot send email never will: fail now instead of retrying.
 					if (!email.isConfigured) return failure(FailureMessages.emailNotConfigured, false)
 					const content = yield* buildAlertEmailContent(input.context, input.linkUrl)
-					return yield* email.send(member.value.email, content.subject, content.html).pipe(
+					// An admin did not sign up for this page, so the subject says why it reached them.
+					const subject = lastResort ? `${LAST_RESORT_SUBJECT_PREFIX}${content.subject}` : content.subject
+					return yield* email.send(member.value.email, subject, content.html).pipe(
 						Effect.as<Attempt>({ status: "sent" }),
 						Effect.orElseSucceed(() => failure(FailureMessages.emailFailed, true)),
 					)
@@ -424,7 +431,12 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					Option.isNone(payload) || Option.isNone(input)
 						? failure(FailureMessages.unreadable, false)
 						: row.channel === "email"
-							? yield* sendEmail(row, input.value, members(row.orgId))
+							? yield* sendEmail(
+									row,
+									input.value,
+									members(row.orgId),
+									payload.value.recipient.lastResort === true,
+								)
 							: yield* sendDirectMessage(row, payload.value, input.value)
 				const attemptedAt = yield* runtime.now
 				if (attempt.status === "sent") {

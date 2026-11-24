@@ -71,6 +71,16 @@ export class OnCallNow extends Schema.Class<OnCallNow>("OnCallNow")({
 	endsAt: IsoDateTimeString,
 }) {}
 
+/** A stretch when nobody is on call. */
+export class OnCallGap extends Schema.Class<OnCallGap>("OnCallGap")({
+	startsAt: IsoDateTimeString,
+	endsAt: IsoDateTimeString,
+}) {}
+
+/** How far ahead a schedule's coverage gaps are reported, and how many at most. */
+export const ONCALL_GAP_LOOKAHEAD_MS = 14 * 86_400_000
+export const MAX_ONCALL_REPORTED_GAPS = 20
+
 export class OnCallScheduleDocument extends Schema.Class<OnCallScheduleDocument>("OnCallScheduleDocument")({
 	id: OnCallScheduleId,
 	name: Schema.String,
@@ -79,6 +89,10 @@ export class OnCallScheduleDocument extends Schema.Class<OnCallScheduleDocument>
 	layers: OnCallLayers,
 	/** Null when nobody is on call right now. */
 	onCallNow: Schema.NullOr(OnCallNow),
+	/** Stretches of the next 14 days when nobody is on call, earliest first. */
+	coverageGaps: Schema.Array(OnCallGap),
+	/** Participants who have left the org; their shifts pass to the next person in the rotation. */
+	departedUserIds: Schema.Array(UserId),
 	/** Escalation chains that page this schedule. */
 	chainIds: Schema.Array(EscalationChainId),
 	createdAt: IsoDateTimeString,

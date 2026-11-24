@@ -52,6 +52,11 @@ export const toV2OnCallSchedule = (doc: OnCallScheduleDocument): V2OnCallSchedul
 					starts_at: timestamp(doc.onCallNow.startsAt),
 					ends_at: timestamp(doc.onCallNow.endsAt),
 				},
+	coverage_gaps: Arr.map(doc.coverageGaps, (gap) => ({
+		starts_at: timestamp(gap.startsAt),
+		ends_at: timestamp(gap.endsAt),
+	})),
+	departed_user_ids: doc.departedUserIds,
 	chain_ids: doc.chainIds,
 	created_at: timestamp(doc.createdAt),
 	updated_at: timestamp(doc.updatedAt),

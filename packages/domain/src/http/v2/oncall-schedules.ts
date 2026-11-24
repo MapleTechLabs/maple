@@ -207,6 +207,15 @@ export const V2OnCallNow = Schema.Struct({
 	description: "Who holds the current shift, with its bounds (looked up at most 15 days either side).",
 })
 
+export const V2OnCallGap = Schema.Struct({
+	starts_at: Timestamp,
+	ends_at: Timestamp,
+}).annotate({
+	identifier: "OnCallGap",
+	title: "On-call gap",
+	description: "A stretch when nobody is on call.",
+})
+
 const scheduleExample = {
 	id: "onc_gQtGH2s65G6a7sJmuayXL6",
 	object: "oncall_schedule",
@@ -226,6 +235,8 @@ const scheduleExample = {
 		starts_at: "2026-11-09T08:00:00.000Z",
 		ends_at: "2026-11-16T08:00:00.000Z",
 	},
+	coverage_gaps: [],
+	departed_user_ids: [],
 	chain_ids: [],
 	created_at: "2026-11-06T09:00:00.000Z",
 	updated_at: "2026-11-06T09:00:00.000Z",
@@ -243,6 +254,14 @@ export const V2OnCallSchedule = Schema.Struct({
 	layers: V2OnCallLayers,
 	on_call_now: Schema.NullOr(V2OnCallNow).annotate({
 		description: "Who is on call right now, or `null` when nobody is.",
+	}),
+	coverage_gaps: Schema.Array(V2OnCallGap).annotate({
+		description:
+			"Stretches of the next 14 days when nobody is on call, earliest first (at most 20). An escalation step that pages this schedule in a gap reaches nobody and moves straight to the next step.",
+	}),
+	departed_user_ids: Schema.Array(UserId).annotate({
+		description:
+			"Participants who are no longer members of the organization. Their shifts pass to the next person in the rotation until the schedule is edited.",
 	}),
 	chain_ids: Schema.Array(EscalationChainPublicId).annotate({
 		description: "Escalation chains (`esc_…`) that page this schedule.",

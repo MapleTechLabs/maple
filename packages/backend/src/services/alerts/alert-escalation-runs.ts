@@ -12,15 +12,16 @@ import {
 	planEscalationAdvance,
 	type EscalationAdvancePlan,
 } from "@maple/alerting-core"
-import type {
-	AlertDestinationId,
-	AlertIncidentId,
-	AlertSeverity,
-	EscalationChainId,
-	EscalationStep,
-	EscalationSteps,
-	OnCallScheduleId,
-	OrgId,
+import {
+	AlertIncidentEventId,
+	type AlertDestinationId,
+	type AlertIncidentId,
+	type AlertSeverity,
+	type EscalationChainId,
+	type EscalationStep,
+	type EscalationSteps,
+	type OnCallScheduleId,
+	type OrgId,
 } from "@maple/domain/http"
 import type { AlertEscalationRunId, ChatConnectorId, ChatIdentityId, UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -28,6 +29,7 @@ import {
 	AlertDeliveryEvents,
 	AlertDestinations,
 	AlertEscalationRuns,
+	AlertIncidentEvents,
 	AlertIncidents,
 	AlertMemberNotifications,
 	ChatIdentities,
@@ -37,8 +39,10 @@ import {
 	OnCallSchedules,
 } from "@maple/db/tables"
 import type { MapleDb } from "@maple/db/client"
-import { Array as Arr, DateTime, Effect, Option } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Schema } from "effect"
 import { queuedDeliveryEventRow } from "./alert-delivery-rows"
+
+const decodeIncidentEventId = Schema.decodeUnknownSync(AlertIncidentEventId)
 
 const LIVE_STATUSES = ["active", "acknowledged"] as const
 
@@ -168,7 +172,10 @@ export const endEscalationRunsAbove = (
 				)
 				.pipe(Effect.asVoid)
 
-/** The running chain's next steps carry the incident's new trigger (its severity), on an escalation. */
+/**
+ * The running chain's next steps carry the incident's new trigger (its severity), on an
+ * escalation. Returns the runs it reached: none means no chain is live on the incident.
+ */
 export const refreshEscalationRunPayload = (
 	db: MapleDb,
 	input: {
@@ -185,7 +192,8 @@ export const refreshEscalationRunPayload = (
 				$.orgId.eq(input.orgId),
 				$.incidentId.eq(input.incidentId),
 				$.status.in_(...LIVE_STATUSES),
-			]),
+			])
+			.returning("id"),
 	)
 
 /**
@@ -302,17 +310,21 @@ export interface StepRecipients {
 	readonly userIds: ReadonlyArray<UserId>
 	/** Schedule targets with nobody on call at `nowMs` (or deleted since). */
 	readonly gapScheduleIds: ReadonlyArray<OnCallScheduleId>
+	/** Their names, for the incident's timeline. */
+	readonly gapScheduleNames: ReadonlyArray<string>
 	/** Each schedule target's on-call user at `nowMs`. */
 	readonly onCall: ReadonlyArray<{ readonly scheduleId: OnCallScheduleId; readonly userId: UserId }>
 	/** Resolved users dropped because they are no longer org members. */
 	readonly missingUserIds: ReadonlyArray<UserId>
 }
 
+const DELETED_SCHEDULE_NAME = "a deleted schedule"
+
 /**
  * Who a step pages at `nowMs`: its user targets, plus whoever each schedule target has on call.
  * Each person gets an email row and one row per chat account they linked in the org, on a
  * connector in `directMessageConnectors` with a workspace linked in the org that has direct
- * messages on.
+ * messages on. With `members` known, a shift of someone who left passes to the next in rotation.
  */
 export const loadStepRecipients = (
 	db: MapleDb,
@@ -320,6 +332,7 @@ export const loadStepRecipients = (
 	step: EscalationStep,
 	nowMs: number,
 	directMessageConnectors: ReadonlySet<ChatConnectorId>,
+	members: ReadonlySet<string> | null = null,
 ) =>
 	Effect.gen(function* () {
 		const directUserIds = Arr.flatMap(step.targets, (target) =>
@@ -335,7 +348,7 @@ export const loadStepRecipients = (
 					? Effect.succeed([])
 					: db.run(
 							PG.from(OnCallSchedules)
-								.select("id", "timeZone", "layersJson")
+								.select("id", "name", "timeZone", "layersJson")
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...scheduleIds)]),
 						),
 				scheduleIds.length === 0
@@ -353,24 +366,30 @@ export const loadStepRecipients = (
 			],
 			{ concurrency: "unbounded" },
 		)
+		const isPresent = members === null ? undefined : (userId: UserId) => members.has(userId)
 		const shifts = Arr.map(scheduleIds, (scheduleId) => {
 			const schedule = Arr.findFirst(schedules, (row) => row.id === scheduleId)
-			if (Option.isNone(schedule)) return { scheduleId, userId: null }
+			if (Option.isNone(schedule)) return { scheduleId, name: DELETED_SCHEDULE_NAME, userId: null }
 			const shift = onCallAt(
 				{ timeZone: schedule.value.timeZone, layers: schedule.value.layersJson },
 				Arr.filter(overrides, (override) => override.scheduleId === scheduleId),
 				nowMs,
+				isPresent === undefined ? {} : { isPresent },
 			)
-			return { scheduleId, userId: shift === null ? null : shift.userId }
+			return { scheduleId, name: schedule.value.name, userId: shift === null ? null : shift.userId }
 		})
 		const onCall = Arr.flatMap(shifts, ({ scheduleId, userId }) =>
 			userId === null ? [] : [{ scheduleId, userId }],
 		)
 		const userIds = Arr.dedupe([...directUserIds, ...Arr.map(onCall, (entry) => entry.userId)])
-		const gapScheduleIds = Arr.flatMap(shifts, (entry) =>
-			entry.userId === null ? [entry.scheduleId] : [],
-		)
-		const base = { userIds, gapScheduleIds, onCall, missingUserIds: [] }
+		const gaps = Arr.filter(shifts, (entry) => entry.userId === null)
+		const base = {
+			userIds,
+			gapScheduleIds: Arr.map(gaps, (entry) => entry.scheduleId),
+			gapScheduleNames: Arr.map(gaps, (entry) => entry.name),
+			onCall,
+			missingUserIds: [],
+		}
 		if (userIds.length === 0) return { ...base, recipients: [] } satisfies StepRecipients
 		const [identities, workspaces] = yield* Effect.all(
 			[
@@ -410,8 +429,8 @@ export const loadStepRecipients = (
 	})
 
 /**
- * Drops users the member directory no longer lists; a schedule whose on-call person left counts
- * as a gap. `members` null (no directory, or it could not be read) keeps everyone.
+ * Drops users the member directory no longer lists: a step's own user targets, since a schedule
+ * already resolved past anyone who left. `members` null (no directory, or unreadable) keeps everyone.
  */
 export const withoutDepartedMembers = (
 	paged: StepRecipients,
@@ -422,16 +441,19 @@ export const withoutDepartedMembers = (
 	const departed = Arr.filter(paged.userIds, (userId) => !isMember(userId))
 	if (departed.length === 0) return paged
 	return {
+		...paged,
 		recipients: Arr.filter(paged.recipients, (recipient) => isMember(recipient.userId)),
 		userIds: Arr.filter(paged.userIds, isMember),
-		gapScheduleIds: [
-			...paged.gapScheduleIds,
-			...Arr.flatMap(paged.onCall, (entry) => (isMember(entry.userId) ? [] : [entry.scheduleId])),
-		],
 		onCall: Arr.filter(paged.onCall, (entry) => isMember(entry.userId)),
 		missingUserIds: departed,
 	}
 }
+
+type SendPlan = Extract<EscalationAdvancePlan, { kind: "send" }>
+
+/** Whether the step after `plan`'s is in the same pass: a repeat is a wait, never skipped. */
+export const continuesPass = (plan: SendPlan): boolean =>
+	plan.next.kind === "step" && plan.next.passIndex === plan.passIndex
 
 /** One row per person, channel and step; a chat row is also keyed by its identity. */
 export const memberNotificationDedupeKey = (
@@ -444,7 +466,16 @@ export const memberNotificationDedupeKey = (
 		? `${runId}:${pass}:${step}:${recipient.userId}:${recipient.channel}:${recipient.identityId}`
 		: `${runId}:${pass}:${step}:${recipient.userId}:email`
 
-export type EscalationApplyOutcome = "sent" | "ended" | "paused" | "resumed" | "deferred" | "lost" | "idle"
+export type EscalationApplyOutcome =
+	| "sent"
+	/** The step reached nobody. Within a pass the run is already on its next step, due now. */
+	| "skipped"
+	| "ended"
+	| "paused"
+	| "resumed"
+	| "deferred"
+	| "lost"
+	| "idle"
 
 type RunUpdate = Partial<Omit<EscalationRunInsert, "id" | "orgId" | "incidentId" | "createdAt">>
 type EscalationRunInsert = PG.InsertRowOf<typeof AlertEscalationRuns>
@@ -470,6 +501,10 @@ export interface ApplyEscalationPlanInput {
 	readonly enabled: ReadonlySet<AlertDestinationId>
 	/** The people the step pages, one entry per channel; only needed for a `send`. */
 	readonly recipients?: ReadonlyArray<MemberRecipient>
+	/** Names of the step's schedules that had nobody on call, recorded on the incident. */
+	readonly gapScheduleNames?: ReadonlyArray<string>
+	/** `recipients` are the org's admins, paged because the chain reached nobody else. */
+	readonly lastResort?: boolean
 	readonly makeDeliveryId: () => string
 }
 
@@ -505,24 +540,54 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 						.forUpdate(),
 				)
 				if (firing.length === 0) return "lost" satisfies EscalationApplyOutcome
+				const enabledIds = Arr.filter(stepDestinationIds(plan.step), (id) => input.enabled.has(id))
+				const recipients = input.recipients ?? []
+				// A step that reaches nobody is not counted as sent, and the pass moves straight on.
+				const nobody = enabledIds.length === 0 && recipients.length === 0
+				const sent = nobody ? undefined : { stepsSent: row.stepsSent + 1, lastStepAt: nowMs }
+				const movesOnNow = nobody && continuesPass(plan)
 				const moved = yield* write(
 					plan.next.kind === "exhausted"
-						? {
-								status: "exhausted",
-								endedAt: nowMs,
-								stepsSent: row.stepsSent + 1,
-								lastStepAt: nowMs,
-							}
+						? { status: "exhausted", endedAt: nowMs, ...sent }
 						: {
 								status: "active",
 								stepIndex: plan.next.stepIndex,
 								passIndex: plan.next.passIndex,
-								nextStepAt: plan.next.nextStepAt,
-								stepsSent: row.stepsSent + 1,
-								lastStepAt: nowMs,
+								nextStepAt: movesOnNow ? nowMs : plan.next.nextStepAt,
+								...sent,
 							},
 				)
 				if (!moved) return "lost" satisfies EscalationApplyOutcome
+				const gapScheduleNames = input.gapScheduleNames ?? []
+				if (Arr.isReadonlyArrayNonEmpty(gapScheduleNames)) {
+					yield* db.run(
+						PG.insertInto(AlertIncidentEvents).values({
+							id: decodeIncidentEventId(input.makeDeliveryId()),
+							orgId: row.orgId,
+							incidentId: row.incidentId,
+							type: "on_call_gap",
+							actorUserId: null,
+							actorName: null,
+							source: null,
+							detail: Arr.join(Arr.dedupe(gapScheduleNames), ", "),
+							createdAt: nowMs,
+						}),
+					)
+				}
+				if (nobody) {
+					yield* Effect.logWarning(
+						"Escalation step has no enabled destination or person to page; nobody was notified",
+					).pipe(
+						Effect.annotateLogs({
+							runId: row.id,
+							incidentId: row.incidentId,
+							step: plan.stepIndex + 1,
+							chainEnded: plan.next.kind === "exhausted",
+						}),
+					)
+					const reachedNobody: EscalationApplyOutcome = plan.next.kind === "exhausted" ? "ended" : "skipped"
+					return reachedNobody
+				}
 				const payload = {
 					...row.payloadJson,
 					sentAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
@@ -535,7 +600,6 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 						passCount: row.repeatCount + 1,
 					},
 				}
-				const enabledIds = Arr.filter(stepDestinationIds(plan.step), (id) => input.enabled.has(id))
 				// A silence's catch-up at this step's due time may have gone out as a renotify, which the
 				// step's trigger key would not dedupe against; those destinations are already paged.
 				const renotified =
@@ -563,18 +627,7 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 					enabledIds,
 					(id) => !Arr.some(renotified, (delivery) => delivery.destinationId === id),
 				)
-				const recipients = input.recipients ?? []
-				if (enabledIds.length === 0 && recipients.length === 0) {
-					yield* Effect.logWarning(
-						"Escalation step has no enabled destination or person to page; nobody was notified",
-					).pipe(
-						Effect.annotateLogs({
-							runId: row.id,
-							incidentId: row.incidentId,
-							step: plan.stepIndex + 1,
-						}),
-					)
-				}
+
 				yield* Effect.forEach(
 					destinationIds,
 					(destinationId) =>
@@ -624,7 +677,10 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 									scheduledAt: nowMs,
 									claimedAt: null,
 									claimExpiresAt: null,
-									payloadJson: { ...payload, recipient },
+									payloadJson: {
+										...payload,
+										recipient: input.lastResort === true ? { ...recipient, lastResort: true } : recipient,
+									},
 									dedupeKey: memberNotificationDedupeKey(
 										row.id,
 										plan.passIndex + 1,

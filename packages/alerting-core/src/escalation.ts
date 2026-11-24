@@ -9,6 +9,12 @@ import type { AlertEscalationRunStatus, EscalationStep, EscalationSteps } from "
 /** How long a silenced run waits before the scheduler looks at it again. */
 export const ESCALATION_SILENCE_RECHECK_MS = 60_000
 
+/**
+ * A step sent within this of its due time waits from the due time, so the scheduler's own
+ * lateness does not add up across steps. Later than that (a silence, an ack), it waits from now.
+ */
+export const ESCALATION_LATENESS_TOLERANCE_MS = 120_000
+
 export interface EscalationRunPosition {
 	readonly status: AlertEscalationRunStatus
 	readonly steps: EscalationSteps
@@ -56,7 +62,8 @@ const nextPosition = (
 	step: EscalationStep,
 	nowMs: number,
 ): Extract<EscalationAdvancePlan, { kind: "send" }>["next"] => {
-	const nextStepAt = nowMs + step.waitMinutes * 60_000
+	const sentFor = nowMs - run.nextStepAt <= ESCALATION_LATENESS_TOLERANCE_MS ? run.nextStepAt : nowMs
+	const nextStepAt = sentFor + step.waitMinutes * 60_000
 	if (run.stepIndex + 1 < run.steps.length) {
 		return { kind: "step", stepIndex: run.stepIndex + 1, passIndex: run.passIndex, nextStepAt }
 	}

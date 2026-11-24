@@ -72,7 +72,7 @@ import {
 	type QueryEngineValidationError,
 	RoleName,
 	WarehouseUpstreamError,
-	type UserId,
+	UserId,
 	isManagedSignalType,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -97,6 +97,7 @@ import {
 	Cause,
 	Chunk,
 	Duration,
+	Cache,
 	Effect,
 	Exit,
 	Fiber,
@@ -146,15 +147,25 @@ import {
 } from "./alert-evaluation-errors"
 import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import * as Policy from "@maple/domain/policy"
 import { formatComparator, signalCarriesDetail } from "./alert-formatting"
-import { escalationChainFor, ruleAtSeverity, tierRoutedUpTo } from "./alert-thresholds"
+import {
+	escalationChainFor,
+	escalationChainTierFor,
+	ruleAtSeverity,
+	tierRoutedUpTo,
+	type EscalationChainTier,
+} from "./alert-thresholds"
 import {
 	applyEscalationPlan,
+	continuesPass,
 	enabledDestinationIds,
 	loadStepRecipients,
 	stepDestinationIds,
 	withoutDepartedMembers,
+	type EscalationApplyOutcome,
 	type EscalationWorkRow,
+	type MemberRecipient,
 	alignDueEscalationStep,
 	endEscalationRunsAbove,
 	loadEscalationChain,
@@ -315,6 +326,14 @@ const FenceResultRow = Schema.Struct({ fenced: Schema.Number })
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
 
 const STALE_PAGE_MESSAGE = "Not sent: the incident resolved before this page went out"
+
+/** Who can still be paged in an org, and who is told when a chain reaches nobody. */
+interface MemberDirectory {
+	readonly memberIds: ReadonlySet<string>
+	readonly adminIds: ReadonlyArray<UserId>
+}
+
+const decodeUserIdOption = Schema.decodeUnknownOption(UserId)
 
 interface DeliveryAttemptFailure {
 	readonly message: string
@@ -1690,11 +1709,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				).pipe(Effect.map((notification) => notification.deliveries))
 
 			/**
-			 * `chainId`'s chain for an incident at `severity`, with the trigger payload its steps resend.
+			 * `tier`'s chain for an incident at `severity`, with the trigger payload its steps resend. The
+			 * run is labelled with the tier that names the chain, which a de-escalation stops by.
 			 * Null when there is no chain or it is gone. Read before the claim write.
 			 */
 			const prepareEscalationStart = Effect.fn("AlertsService.prepareEscalationStart")(function* (
-				chainId: EscalationChainId | null,
+				tier: EscalationChainTier | null,
 				orgId: OrgId,
 				rule: NormalizedRule,
 				severity: AlertSeverity,
@@ -1706,8 +1726,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					readonly payload: Record<string, unknown> | null
 				} | null,
 			) {
-				if (chainId === null) return null
-				const chain = yield* dbExecute((db) => loadEscalationChain(db, orgId, chainId))
+				if (tier === null) return null
+				const chain = yield* dbExecute((db) => loadEscalationChain(db, orgId, tier.chainId))
 				if (chain === null) return null
 				const payload =
 					prepared?.payload ??
@@ -1723,7 +1743,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)).payload
 				if (payload === null) return null
 				yield* Effect.annotateCurrentSpan({ "maple.escalation.chain_id": chain.id })
-				return { chain, payload, severity }
+				return { chain, payload, severity: tier.severity }
 			})
 
 			/** The silence in force over this rule's group at `atMs`, if any. */
@@ -3755,7 +3775,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const escalation =
 							announces || flapped
 								? yield* prepareEscalationStart(
-										escalationChainFor(normalized.thresholds, openedRule.severity),
+										escalationChainTierFor(normalized.thresholds, openedRule.severity),
 										row.orgId,
 										normalized,
 										openedRule.severity,
@@ -3928,9 +3948,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							heldSince: null,
 							updatedAt: timestamp,
 						}
-						// An escalation's trigger is prepared once: it pages the tier, starts the tier's own chain
-						// or, without one, refreshes the running chain's payload to the new severity (the
-						// chain carries on, and resumes, since the escalation clears the ack).
+						// An escalation's trigger is prepared once: it pages the tier and starts the tier's own
+						// chain. A chain it only inherits from a lower tier carries on with the new payload (and
+						// resumes, since the escalation clears the ack), or starts again when it had run out.
 						const escalatedNotification =
 							lifecycle.transition === "escalated" && lifecycle.eventType === "trigger"
 								? yield* prepareIncidentNotification(
@@ -3947,13 +3967,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const escalation =
 							escalatedNotification !== null
 								? yield* prepareEscalationStart(
-										escalationChainFor(
-											Arr.filter(
-												normalized.thresholds,
-												(tier) => tier.severity === severity,
-											),
-											severity,
-										),
+										escalationChainTierFor(normalized.thresholds, severity),
 										row.orgId,
 										normalized,
 										severity,
@@ -4069,19 +4083,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									})
 								}
 								if (lifecycle.transition !== "escalated") return result
-								if (escalation !== null) {
+								const inherited = escalation !== null && escalation.severity !== severity
+								const carriedOn =
+									(escalation === null || inherited) && escalatedNotification?.payload != null
+										? yield* refreshEscalationRunPayload(db, {
+												orgId: row.orgId,
+												incidentId: openIncident.id,
+												payload: escalatedNotification.payload,
+												nowMs: timestamp,
+											})
+										: []
+								if (escalation !== null && (!inherited || carriedOn.length === 0)) {
 									yield* startEscalationRun(db, {
 										id: decodeAlertEscalationRunIdSync(makeUuid()),
 										orgId: row.orgId,
 										incidentId: openIncident.id,
 										...escalation,
-										nowMs: timestamp,
-									})
-								} else if (escalatedNotification?.payload != null) {
-									yield* refreshEscalationRunPayload(db, {
-										orgId: row.orgId,
-										incidentId: openIncident.id,
-										payload: escalatedNotification.payload,
 										nowMs: timestamp,
 									})
 								}
@@ -6291,14 +6308,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			})
 
 			/**
-			 * The org's member ids, or null to page everyone resolved: no directory on this
+			 * The org's members and admins, or null to page everyone resolved: no directory on this
 			 * deployment, or one that could not be read (delivery then decides).
 			 */
-			const currentMemberIds = (orgId: OrgId) =>
+			const memberDirectory = (orgId: OrgId) =>
 				orgMembers.listMembers(orgId).pipe(
 					Effect.map(
-						(members): ReadonlySet<string> | null =>
-							new Set(Arr.map(members, (member) => member.userId)),
+						(members): MemberDirectory | null => ({
+							memberIds: new Set(Arr.map(members, (member) => member.userId)),
+							adminIds: Arr.getSomes(
+								Arr.map(
+									Arr.filter(
+										members,
+										(member) =>
+											member.role !== undefined &&
+											Policy.can([member.role], "members:manage"),
+									),
+									(member) => decodeUserIdOption(member.userId),
+								),
+							),
+						}),
 					),
 					Effect.catchTags({
 						"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () =>
@@ -6352,10 +6381,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				},
 			)
 
-			/** One run: plan from the row, then a conditional write that only one tick can win. */
-			const advanceEscalationRun = Effect.fn("AlertsService.advanceEscalationRun")(function* (
+			/** One step of a run: plan from the row, then a conditional write that only one tick can win. */
+			const advanceEscalationStep = Effect.fn("AlertsService.advanceEscalationStep")(function* (
 				row: EscalationWorkRow,
 				nowMs: number,
+				directoryOf: (orgId: OrgId) => Effect.Effect<MemberDirectory | null>,
 			) {
 				yield* Effect.annotateCurrentSpan({
 					orgId: row.orgId,
@@ -6372,27 +6402,45 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"maple.escalation.silenced": silence !== null,
 					...(silence === null ? undefined : { "maple.alert_silence.id": silence.id }),
 				})
-				if (plan.kind === "wait") return "idle" as const
-				const enabled =
-					plan.kind === "send"
-						? yield* dbExecute((db) =>
-								enabledDestinationIds(db, row.orgId, stepDestinationIds(plan.step)),
-							)
-						: new Set<AlertDestinationId>()
+				const done = (outcome: EscalationApplyOutcome) => ({
+					outcome,
+					next: Option.none<EscalationWorkRow>(),
+				})
+				if (plan.kind === "wait") return done("idle")
+				if (plan.kind !== "send") {
+					const settled = yield* dbExecute((db) =>
+						db.transaction(
+							applyEscalationPlan(db, {
+								row,
+								plan,
+								nowMs,
+								enabled: new Set<AlertDestinationId>(),
+								makeDeliveryId: makeUuid,
+							}),
+						),
+					)
+					yield* Effect.annotateCurrentSpan({
+						"maple.escalation.plan": plan.kind,
+						"maple.escalation.outcome": settled,
+					})
+					return done(settled)
+				}
+				const step = plan.step
+				const enabled = yield* dbExecute((db) =>
+					enabledDestinationIds(db, row.orgId, stepDestinationIds(step)),
+				)
+				// A pass ending with nothing sent so far: if this step reaches nobody either, admins are paged.
+				const isLastChance = row.stepsSent === 0 && !continuesPass(plan)
+				const pagesPeople = Arr.some(step.targets, (target) => target.type !== "destination")
+				const directory =
+					pagesPeople || (isLastChance && enabled.size === 0) ? yield* directoryOf(row.orgId) : null
+				const memberIds = directory?.memberIds ?? null
 				// Who is on call is read now, at step time, not when the chain was saved.
-				const resolved =
-					plan.kind === "send"
-						? yield* dbExecute((db) =>
-								loadStepRecipients(db, row.orgId, plan.step, nowMs, directMessageConnectors),
-							)
-						: null
-				const paged =
-					resolved === null || resolved.userIds.length === 0
-						? resolved
-						: yield* Effect.map(currentMemberIds(row.orgId), (members) =>
-								withoutDepartedMembers(resolved, members),
-							)
-				if (paged !== null && paged.missingUserIds.length > 0) {
+				const resolved = yield* dbExecute((db) =>
+					loadStepRecipients(db, row.orgId, step, nowMs, directMessageConnectors, memberIds),
+				)
+				const paged = withoutDepartedMembers(resolved, memberIds)
+				if (paged.missingUserIds.length > 0) {
 					yield* Effect.annotateCurrentSpan(
 						"maple.escalation.recipients_missing",
 						paged.missingUserIds.length,
@@ -6405,13 +6453,28 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}),
 					)
 				}
-				if (paged !== null && paged.gapScheduleIds.length > 0) {
+				if (paged.gapScheduleIds.length > 0) {
 					yield* Effect.annotateCurrentSpan("maple.escalation.oncall_gap", true)
 					yield* Effect.logWarning("Escalation step targets a schedule with nobody on call").pipe(
 						Effect.annotateLogs({
 							runId: row.id,
 							incidentId: row.incidentId,
 							scheduleIds: Arr.join(paged.gapScheduleIds, ","),
+						}),
+					)
+				}
+				const reachesNobody = enabled.size === 0 && paged.recipients.length === 0
+				const admins: ReadonlyArray<MemberRecipient> =
+					reachesNobody && isLastChance
+						? Arr.map(directory?.adminIds ?? [], (userId) => ({ userId, channel: "email" }))
+						: []
+				if (reachesNobody && isLastChance) {
+					yield* Effect.annotateCurrentSpan("maple.escalation.last_resort_admins", admins.length)
+					yield* Effect.logError("Escalation chain reached nobody; paging the org's admins").pipe(
+						Effect.annotateLogs({
+							runId: row.id,
+							incidentId: row.incidentId,
+							admins: admins.length,
 						}),
 					)
 				}
@@ -6422,7 +6485,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							plan,
 							nowMs,
 							enabled,
-							recipients: paged?.recipients ?? [],
+							recipients: admins.length > 0 ? admins : paged.recipients,
+							gapScheduleNames: paged.gapScheduleNames,
+							lastResort: admins.length > 0,
 							makeDeliveryId: makeUuid,
 						}),
 					),
@@ -6430,27 +6495,54 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* Effect.annotateCurrentSpan({
 					"maple.escalation.plan": plan.kind,
 					"maple.escalation.outcome": outcome,
-					...(plan.kind === "send"
-						? {
-								"maple.escalation.step": plan.stepIndex + 1,
-								"maple.escalation.pass": plan.passIndex + 1,
-								"maple.escalation.lateness_ms": nowMs - row.nextStepAt,
-								"maple.escalation.targets": enabled.size,
-								"maple.escalation.users_paged": paged?.userIds.length ?? 0,
-							}
-						: undefined),
+					"maple.escalation.step": plan.stepIndex + 1,
+					"maple.escalation.pass": plan.passIndex + 1,
+					"maple.escalation.lateness_ms": nowMs - row.nextStepAt,
+					"maple.escalation.targets": enabled.size,
+					"maple.escalation.users_paged": admins.length > 0 ? admins.length : paged.userIds.length,
 				})
-				return outcome
+				// A step that reached nobody mid-pass left the run on its next step, due now.
+				return outcome === "skipped" && plan.next.kind === "step" && continuesPass(plan)
+					? {
+							outcome,
+							next: Option.some<EscalationWorkRow>({
+								...row,
+								status: "active",
+								stepIndex: plan.next.stepIndex,
+								passIndex: plan.next.passIndex,
+								nextStepAt: nowMs,
+							}),
+						}
+					: done(outcome)
 			})
+
+			/** One run: its due step, then straight on through the steps of the pass that reach nobody. */
+			const advanceEscalationRun = (
+				row: EscalationWorkRow,
+				nowMs: number,
+				directoryOf: (orgId: OrgId) => Effect.Effect<MemberDirectory | null>,
+			): Effect.Effect<
+				EscalationApplyOutcome,
+				Effect.Error<ReturnType<typeof advanceEscalationStep>>
+			> =>
+				Effect.flatMap(advanceEscalationStep(row, nowMs, directoryOf), ({ outcome, next }) =>
+					Option.match(next, {
+						onNone: () => Effect.succeed(outcome),
+						onSome: (nextRow) => advanceEscalationRun(nextRow, nowMs, directoryOf),
+					}),
+				)
 
 			/** Sends every due escalation step, so the drain that follows delivers it this tick. */
 			const advanceEscalations = Effect.fn("AlertsService.advanceEscalations")(function* () {
 				const nowMs = yield* now
 				const work = yield* dbExecute((db) => selectEscalationWork(db, nowMs))
+				// One directory read per org and tick, however many of its runs are due.
+				const directories = yield* Cache.make({ lookup: memberDirectory, capacity: 256 })
+				const directoryOf = (orgId: OrgId) => Cache.get(directories, orgId)
 				const outcomes = yield* Effect.forEach(
 					work,
 					(row) =>
-						advanceEscalationRun(row, nowMs).pipe(
+						advanceEscalationRun(row, nowMs, directoryOf).pipe(
 							Effect.catchCause((cause) =>
 								Effect.logError("Escalation step failed").pipe(
 									Effect.annotateLogs({

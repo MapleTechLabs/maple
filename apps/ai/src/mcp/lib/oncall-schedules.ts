@@ -114,6 +114,8 @@ export const toScheduleRow = (schedule: OnCallScheduleDocument, names: MemberNam
 					startsAt: schedule.onCallNow.startsAt,
 					endsAt: schedule.onCallNow.endsAt,
 				},
+	coverageGaps: Arr.map(schedule.coverageGaps, (gap) => ({ startsAt: gap.startsAt, endsAt: gap.endsAt })),
+	departed: Arr.map(schedule.departedUserIds, (userId) => person(names, userId)),
 	chainIds: [...schedule.chainIds],
 	createdAt: schedule.createdAt,
 	updatedAt: schedule.updatedAt,
