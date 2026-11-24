@@ -201,7 +201,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 
 - `apps/web/src/page/kit/advanced-filter.ts` `advancedFilterButton`, `appliedWhereClause`, `advancedFilterDialog`, `whereClauseWarnings`: The pieces around a list page's advanced filter dialog (`/traces`, `/logs`).
 - `apps/web/src/page/kit/affected-chips.ts` `affectedChips`: The entities a setup-health check names, as chips with a "+N more" for the rest past the cap.
-- `apps/web/src/page/kit/agent-handoff-view.ts` `agentProgress`, `agentPrompt`: The coding-agent prompt with its handoff code masked, a Copy prompt that mints the code, and the agent's progress once a run exists.
+- `apps/web/src/page/kit/agent-handoff-view.ts` `agentProgress`, `missingKeyNote`, `agentPrompt`: The coding-agent prompt with its handoff code masked, a Copy prompt that mints the code, and the agent's progress once a run exists.
 - `apps/web/src/page/kit/agent-handoff.ts` `mintHandoff`, `isRunOpen`, `isPolling`, `shouldReadRun`, `shown` (stateful: Model, init, update): The coding-agent prompt's handoff: Copy mints a single-use code into the prompt (a new run), and the run's stages are read back while the connect step polls.
 - `apps/web/src/page/kit/alert-collections.ts` `ruleRows`, `ruleStateRows`, `incidentRows`, `destinationRows`: The alert rules, incidents and destinations as live streams.
 - `apps/web/src/page/kit/alert-links.ts` `ruleHref`, `incidentHref`, `alertsHref`, `createHref`: A rule's page.
@@ -342,7 +342,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/sheet-param.ts` `withSheetParam`, `sheetParamOf`, `dismissalOf`, `pushSheetUrl`, `dismissSheetUrl`: A side sheet held in the URL as `?sheet=<id>`.
 - `apps/web/src/page/kit/signal-empty-state.ts` `docsLink`, `signalEmptyState`: The dashboard's copy for a signal's empty state: where each signal comes from, and the setup page and guides it links.
 - `apps/web/src/page/kit/signal-presence.ts` `loadSignalPresences`: Signal presence: which telemetry signals the org has sent.
-- `apps/web/src/page/kit/stable-slice.ts` `stableSlice`: A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on it skips the renders that change nothing the view reads.
+- `apps/web/src/page/kit/stable-slice.ts` `stableSlice`, `stableValue`, `reuseUnchangedRows`: A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on it skips the renders that change nothing the view reads.
 - `apps/web/src/page/kit/stat-rail.ts` `statRail`, `metricGrid`, `statRailItem`, `statRailItemSkeleton`, `statRailLoading`: A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
 - `apps/web/src/page/kit/switch-row.ts` `switchRow`: A settings row whose control is a switch: the row is the switch's field, so a checked switch marks the row, label and description filled.
 - `apps/web/src/page/kit/table-sort.ts` `sortStateOf`, `nextSort`, `isNumericString`, `compareValues`, `urlSortPatch`, `sortRows`, `sortRowsByField`, `sortRowsBy`: The click-to-sort state as Model data, and the comparator.

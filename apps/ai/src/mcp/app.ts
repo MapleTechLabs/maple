@@ -1,6 +1,9 @@
 import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
 import { MAPLE_MCP_SERVER_INSTRUCTIONS, mcpServerInstructions } from "./server-instructions"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import {
+	OrganizationFeatureFlagsService,
+	type OrganizationFeatureFlagsRequirements,
+} from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { McpProtocol, McpServer } from "effect/ai"
 import { RpcSerialization } from "effect/rpc"
 import { Cause, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
@@ -233,7 +236,7 @@ type McpLiveLayer = Layer.Layer<
 	| HttpRouter.HttpRouter
 	| ApiKeysService
 	| AuthService
-	| Env
+	| OrganizationFeatureFlagsRequirements
 	| ErrorActorsService
 	| McpToolExecutorLoader
 	| McpToolRateLimiter
@@ -241,7 +244,7 @@ type McpLiveLayer = Layer.Layer<
 
 /** The transport over one reading of the org rollout flags, which decide what an org is shown. */
 export const mcpLiveWithFeatureFlags = (
-	featureFlags: Layer.Layer<OrganizationFeatureFlagsService, never, Env>,
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService, never, OrganizationFeatureFlagsRequirements>,
 ): McpLiveLayer =>
 	Layer.mergeAll(
 		McpHttpLive,

@@ -1,4 +1,4 @@
-import type { AlertDestinationDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import type { AlertDestinationDocument, AlertRuleDocument } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -15,7 +15,7 @@ import {
 } from "@maple/web-data/alerts/overview-derive"
 import { type DerivedRuleStatus, worstState } from "@maple/web-data/alerts/rule-status"
 import { groupByTag, type TagGroup, UNTAGGED_KEY } from "@maple/web-data/alerts/tag-grouping"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"
 import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
@@ -32,6 +32,7 @@ import { ruleHref } from "../../kit/alert-links"
 import { Message, type RuleBucket } from "./message"
 import { type Model } from "./model"
 import { ruleMenuId } from "./update"
+import { Equal } from "effect"
 import { searchInput } from "@maple/views/ui/search-input"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -82,7 +83,7 @@ export type RulesTabInputs = Readonly<{
 	emptyState: Html
 }>
 
-export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
+const rulesTabBody = (h: H, model: Model, inputs: RulesTabInputs, rendered: Set<string>): Html => {
 	const { data, destinations, status } = inputs
 	const { rules, derivedByRuleId, incidentsByRule, timelineRange } = data
 	const now = timelineRange.max
@@ -122,8 +123,10 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 	const destinationsById = new Map(Arr.map(destinations, (d) => [d.id, d]))
 	const ribbonRange = { min: now - RIBBON_DAYS * DAY_MS, max: now }
 
-	const rowOf = (rule: AlertRuleDocument, groupKey: string) =>
-		ruleRow(h, model, {
+	const rowOf = (rule: AlertRuleDocument, groupKey: string) => {
+		const menuId = ruleMenuId(rule.id, groupKey)
+		rendered.add(menuId)
+		const inputs = stableRowInputs(menuId, {
 			rule,
 			derived: derivedByRuleId.get(rule.id),
 			bucket: bucketByRuleId.get(rule.id) ?? "healthy",
@@ -135,15 +138,22 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 						(state) => state.last_status !== "skipped",
 					),
 				)?.last_value ?? null,
-			incidents: incidentsByRule.get(rule.id) ?? [],
-			ribbonRange,
+			ribbon: ruleRibbon(incidentsByRule.get(rule.id) ?? [], ribbonRange, RIBBON_CELLS),
 			destinations: Arr.flatMap(Arr.dedupe(rule.destinationIds), (id) => {
 				const destination = destinationsById.get(id)
 				return destination === undefined ? [] : [destination]
 			}),
 			fired: firedByRuleId.get(rule.id) ?? 0,
-			groupKey,
+			menuId,
+			menuEntries: gatedEntries(
+				model,
+				"alerts:manage",
+				ruleMenuEntries(rule, model.togglingRuleId !== null),
+				["open"],
+			),
 		})
+		return lazyRuleRow(menuId, ruleRow, [h, inputs, model.menus[menuId]])
+	}
 
 	return h.div(
 		[h.Class("space-y-4")],
@@ -301,32 +311,54 @@ type RowInputs = Readonly<{
 	derived: DerivedRuleStatus | undefined
 	bucket: RuleBucket
 	lastValue: number | null
-	incidents: ReadonlyArray<AlertIncidentDocument>
-	ribbonRange: Readonly<{ min: number; max: number }>
+	ribbon: ReadonlyArray<RibbonCell>
 	destinations: ReadonlyArray<AlertDestinationDocument>
 	fired: number
 	/** A rule with several tags is listed once per tag: its menu is one per row. */
-	groupKey: string
+	menuId: string
+	menuEntries: ReadonlyArray<MenuEntry>
 }>
 
-const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
-	const { rule } = row
-	const menuId = ruleMenuId(rule.id, row.groupKey)
-	const isDefault = isDefaultAnomalyRule(rule)
+// Live updates and the clock rebuild every row's inputs as new objects. A row whose inputs are
+// structurally unchanged keeps the previous object, so its keyed slot reuses the row's tree.
+// Holds only the rows of the latest render: `rulesTab` drops the rest after each pass.
+const lastRowInputs = new Map<string, RowInputs>()
+const stableRowInputs = (key: string, next: RowInputs): RowInputs => {
+	const previous = lastRowInputs.get(key)
+	if (previous !== undefined && Equal.equals(previous, next)) return previous
+	lastRowInputs.set(key, next)
+	return next
+}
+
+export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
+	const rendered = new Set<string>()
+	const tree = rulesTabBody(h, model, inputs, rendered)
+	Arr.forEach(Arr.fromIterable(lastRowInputs.keys()), (key) => {
+		if (!rendered.has(key)) lastRowInputs.delete(key)
+	})
+	return tree
+}
+const lazyRuleRow = createKeyedLazy()
+
+/** The row menu: open, and enable or disable unless it is the default anomaly rule. */
+const ruleMenuEntries = (rule: AlertRuleDocument, isToggling: boolean): ReadonlyArray<MenuEntry> => [
+	{ _tag: "Item", value: "open", label: "Open rule" },
 	// The default anomaly rule stays on: anomaly detection itself is what turns it off.
-	const entries: ReadonlyArray<MenuEntry> = [
-		{ _tag: "Item", value: "open", label: "Open rule" },
-		...(isDefault
-			? []
-			: [
-					{
-						_tag: "Item" as const,
-						value: "toggle",
-						label: rule.enabled ? "Disable rule" : "Enable rule",
-						isDisabled: model.togglingRuleId !== null,
-					},
-				]),
-	]
+	...(isDefaultAnomalyRule(rule)
+		? []
+		: [
+				{
+					_tag: "Item" as const,
+					value: "toggle",
+					label: rule.enabled ? "Disable rule" : "Enable rule",
+					isDisabled: isToggling,
+				},
+			]),
+]
+
+const ruleRow = (h: H, row: RowInputs, menu: Menu.Model | undefined): Html => {
+	const { rule, menuId } = row
+	const isDefault = isDefaultAnomalyRule(rule)
 	return gridListRow(h, { key: rule.id, grid: ROW_GRID }, [
 		statusDot(h, { tone: BUCKET_TONE.get(row.bucket) ?? "neutral", size: "lg" }),
 		h.div(
@@ -348,7 +380,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 			],
 		),
 		headroomMeter(h, rule, row.derived, row.lastValue),
-		stateRibbon(h, ruleRibbon(row.incidents, row.ribbonRange, RIBBON_CELLS)),
+		stateRibbon(h, row.ribbon),
 		routesTo(h, row.destinations, rule.enabled && !isDefault),
 		h.span(
 			[
@@ -371,8 +403,8 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 			[
 				rowActionsMenu(h, {
 					slotId: menuId,
-					model: model.menus[menuId] ?? Menu.init(menuId),
-					entries: gatedEntries(model, "alerts:manage", entries, ["open"]),
+					model: menu ?? Menu.init(menuId),
+					entries: row.menuEntries,
 					label: `Actions for ${rule.name}`,
 					toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
 				}),
