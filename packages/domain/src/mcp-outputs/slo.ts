@@ -53,7 +53,7 @@ export const ListSlosOutput = Schema.Struct({
 })
 
 export const SloBurnWindowRow = Schema.Struct({
-	/** `5m`, `30m`, `1h` or `6h`. */
+	/** `5m`, `30m`, `1h`, `2h`, `6h` or `24h`. */
 	window: Schema.String,
 	windowMinutes: Schema.Number,
 	total: Schema.Number,

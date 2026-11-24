@@ -233,7 +233,8 @@ export const V2SloStatus = Schema.Struct({
 		"Share of the window's error budget left: 1 untouched, 0 spent, negative when overspent.",
 	),
 	burn_windows: Schema.Array(V2SloBurnWindow).annotate({
-		description: "The windows the burn-rate alert reads: 5 minutes, 30 minutes, 1 hour and 6 hours.",
+		description:
+			"The windows the burn-rate alert reads: 5 minutes, 30 minutes, 1 hour, 2 hours, 6 hours and 24 hours.",
 	}),
 }).annotate({
 	identifier: "SloStatus",
