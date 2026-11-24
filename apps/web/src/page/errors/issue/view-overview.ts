@@ -13,7 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
 import { disclosureStrip, monospaceBlock } from "../../kit/disclosure-strip"
 import type { SymbolicatedStack } from "@maple/domain/errors/js-stack"
@@ -46,9 +46,11 @@ const COPY_CLASS =
 
 /** The first mapped in-app frame as `function (file:line:column)`, when the stack was source mapped. */
 const mappedTopFrame = (stack: SymbolicatedStack | null): string | undefined => {
-	const frame = stack?.frames.find((f) => f.resolved && f.in_app)
+	if (stack === null) return undefined
+	const frame = Option.getOrUndefined(Arr.findFirst(stack.frames, (f) => f.resolved && f.in_app))
 	if (frame === undefined || frame.file === null) return undefined
-	const position = frame.line === null ? "" : `:${frame.line}${frame.column === null ? "" : `:${frame.column}`}`
+	const position =
+		frame.line === null ? "" : `:${frame.line}${frame.column === null ? "" : `:${frame.column}`}`
 	return `${frame.function ?? "<anonymous>"} (${frame.file}${position})`
 }
 
