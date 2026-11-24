@@ -6,7 +6,6 @@ import { CostConnections, CostSources } from "@maple/db/tables"
 import type { OrgId, UserId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { randomUUID } from "node:crypto"
-import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -45,8 +44,6 @@ export interface CostConnectionInput {
 	/** The vendor's account the credential reads, as the vendor answered when it was checked. */
 	readonly accountId: string
 	readonly accountLabel: string
-	/** Runs in the save's transaction with the id of the row it wrote, e.g. to keep what the check read. */
-	readonly afterSave?: (db: MapleDb, connectionId: string) => Effect.Effect<void, MapleDbError>
 }
 
 export interface CostConnectionCredential {
@@ -67,6 +64,11 @@ export interface CostConnectionStoreApi {
 		orgId: OrgId,
 		provider: CostConnectionProvider,
 	) => Effect.Effect<void, CostConnectionStoreError>
+	/** The org's saved credential for `provider`, if any. */
+	readonly current: (
+		orgId: OrgId,
+		provider: CostConnectionProvider,
+	) => Effect.Effect<Option.Option<CostConnectionCredential>, CostConnectionStoreError>
 	/** The credential a source's pull reads with; none when the connection is gone or another org's. */
 	readonly load: (
 		provider: CostConnectionProvider,
@@ -132,7 +134,6 @@ export class CostConnectionStore extends Context.Service<CostConnectionStore, Co
 									.returning(($) => ({ id: $.id })),
 							)
 							if (row === undefined) return false
-							if (input.afterSave !== undefined) yield* input.afterSave(db, row.id)
 							// The source shows on the Cost page at once, not at the next sync tick.
 							yield* reconcileCostConnectionSources(db, now, provider, orgId)
 							// A source held for its old credential's failure is due again with the new one. A
@@ -181,9 +182,10 @@ export class CostConnectionStore extends Context.Service<CostConnectionStore, Co
 				)
 			})
 
-			const load = Effect.fn("CostConnectionStore.load")(function* (
+			const find = Effect.fnUntraced(function* (
+				orgId: OrgId,
 				provider: CostConnectionProvider,
-				source: CostPullSource,
+				connectionRef: string | undefined,
 			) {
 				// By org and provider as well as id: a source never reads another org's credential.
 				const [row] = yield* dbExecute((db) =>
@@ -191,9 +193,9 @@ export class CostConnectionStore extends Context.Service<CostConnectionStore, Co
 						PG.from(CostConnections)
 							.select()
 							.where(($) => [
-								$.orgId.eq(source.orgId),
+								$.orgId.eq(orgId),
 								$.provider.eq(provider),
-								$.id.eq(source.connectionRef),
+								...(connectionRef === undefined ? [] : [$.id.eq(connectionRef)]),
 							])
 							.limit(1),
 					),
@@ -213,7 +215,22 @@ export class CostConnectionStore extends Context.Service<CostConnectionStore, Co
 				})
 			})
 
-			return { save, remove, load } satisfies CostConnectionStoreApi
+			const current = Effect.fn("CostConnectionStore.current")(function* (
+				orgId: OrgId,
+				provider: CostConnectionProvider,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.cost.provider": provider })
+				return yield* find(orgId, provider, undefined)
+			})
+
+			const load = Effect.fn("CostConnectionStore.load")(function* (
+				provider: CostConnectionProvider,
+				source: CostPullSource,
+			) {
+				return yield* find(source.orgId, provider, source.connectionRef)
+			})
+
+			return { save, remove, current, load } satisfies CostConnectionStoreApi
 		}),
 	},
 ) {
