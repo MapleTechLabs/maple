@@ -41,6 +41,7 @@ const makeStub = (
 			patch: (path, body) => dispatch("PATCH", path, body),
 			put: (path, body) => dispatch("PUT", path, body),
 			delete: (path) => dispatch("DELETE", path),
+			upload: (path) => Effect.die(`unexpected upload ${path}`),
 		},
 	}
 }

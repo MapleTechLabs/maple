@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { noopSession } from "alchemy/Report"
 import { ConfigProvider, Effect, Layer, Redacted, Record as Rec } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
@@ -9,9 +10,11 @@ import { Providers, providers, providersWithDependencies } from "../src/Provider
 import { Stack } from "alchemy/Stack"
 import { Stage } from "alchemy/Stage"
 
+// What Alchemy supplies a stack's providers: its identity and the platform's files and paths.
 const stackLayer = Layer.mergeAll(
 	Layer.succeed(Stack, { name: "test", stage: "test", resources: {}, bindings: {}, actions: {} }),
 	Layer.succeed(Stage, "test"),
+	NodeServices.layer,
 )
 
 const session = noopSession
@@ -115,6 +118,7 @@ describe("Maple provider layers", () => {
 				"Maple.ApiKey",
 				"Maple.Dashboard",
 				"Maple.IngestKeys",
+				"Maple.SourceMaps",
 				"Maple.StatusPage",
 				"Maple.UptimeMonitor",
 			])

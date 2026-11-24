@@ -47,6 +47,7 @@ import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
+import { selfMapleProviders, uploadWebSourceMaps } from "@maple/infra/self-source-maps"
 import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
 import OrgEraser from "./apps/org-eraser/src/worker.ts"
@@ -62,6 +63,8 @@ import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
 import LocalUi from "./apps/local-ui/src/worker.ts"
 import Web from "./apps/web/src/worker.ts"
+import { WEB_SERVICE_NAME } from "./apps/web/src/platform/service-identity.ts"
+import { WEB_SOURCE_MAPS_DIR } from "./apps/web/source-maps-dir.ts"
 import { Array as Arr } from "effect"
 
 // Infisical defines CLOUDFLARE_DEFAULT_ACCOUNT_ID; alchemy reads CLOUDFLARE_ACCOUNT_ID.
@@ -324,6 +327,8 @@ const providers =
 		// Previews only; prd and dev deploys carry no NEON_API_KEY.
 		Layer.provideMerge(!isDevServer && process.env.NEON_API_KEY ? Neon.providers() : Layer.empty),
 		Layer.provideMerge(Portless.providers()),
+		// Uploads web's source maps; inert without the prd-only key.
+		Layer.provideMerge(selfMapleProviders),
 	)
 
 export default Alchemy.Stack(
@@ -429,6 +434,14 @@ export default Alchemy.Stack(
 		// A vite-source Worker: alchemy owns its build and dev server. Binds api as `API`.
 		const web = yield* Effect.provideService(Web, ApiWorker, api)
 		yield* serveWorker("web", web)
+		// Its source maps, moved out of the deployed assets by the Vite plugin (apps/web/vite.config.ts),
+		// uploaded after the build under the service and release its telemetry reports.
+		if (!isDevServer)
+			yield* uploadWebSourceMaps({
+				dir: path.resolve(import.meta.dirname, WEB_SOURCE_MAPS_DIR),
+				service: WEB_SERVICE_NAME,
+				after: web.hash,
+			})
 
 		// StaticSites run their production build even on `alchemy dev`, so dev uses
 		// `DEV_PROCESS_APPS` instead. Shared across instances: deployed by `us` alone.

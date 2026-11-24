@@ -234,7 +234,7 @@ const overview = (
 					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
 				]
 			: [
-					exceptionPanel(h, model, issue, detail.latestStacktrace),
+					exceptionPanel(h, model, issue, detail.latestStacktrace, detail.latestStack),
 					// How often and since when, over the window's bars: one panel, read top to bottom.
 					panel(h, { className: "shrink-0 overflow-hidden" }, [
 						issueStats(h, issue, statInputs, { isFlush: true }),
