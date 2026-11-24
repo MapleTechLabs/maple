@@ -1567,6 +1567,57 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("resolves an open incident by hand, records who, and refuses a second resolve", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		await createWebhookAndRule(harness, key.secret)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				created_at, updated_at
+			)
+			select '00000000-0000-4000-8000-0000000000d1', rules.org_id, rules.id, 'manual-resolve',
+				'Checkout error rate', '__total__', 'error_rate', 'critical', 'open', 'gt', 0.05, now(), now(),
+				null, 'manual-resolve', now(), now()
+			from alert_rules as rules where rules.org_id = 'org_alerts_e2e' limit 1`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		const openId: string = list.body.data[0]?.id ?? ""
+
+		const refused = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/resolve`,
+			readOnly.secret,
+		)
+		expect(refused.status).toBe(403)
+
+		const resolved = await harness.request("POST", `/v2/alerts/incidents/${openId}/resolve`, key.secret)
+		expect(resolved.status).toBe(200)
+		expect(resolved.body).toMatchObject({ id: openId, status: "resolved" })
+		expect(resolved.body.resolved_at).toEqual(expect.any(String))
+
+		const events = await harness.request("GET", `/v2/alerts/incidents/${openId}/events`, readOnly.secret)
+		expect(events.body.data).toMatchObject([
+			{ type: "resolved", actor: { user_id: null, name: "alerts-test" }, source: "api" },
+		])
+
+		const again = await harness.request("POST", `/v2/alerts/incidents/${openId}/resolve`, key.secret)
+		expect(again.status).toBe(409)
+		expect(again.body.error).toMatchObject({ code: "alert_incident_resolved" })
+
+		const missing = await harness.request(
+			"POST",
+			"/v2/alerts/incidents/inc_tC4d9V79DCDzgbGKhAnff9/resolve",
+			key.secret,
+		)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
 	it("reads an incident's latest escalation run on retrieve and list, and null without one", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])

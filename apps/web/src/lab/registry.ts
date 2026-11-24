@@ -126,6 +126,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/incident-actions",
+		title: "Incident actions",
+		description:
+			"The incident page open, acknowledged, asking before a resolve by hand, resolved and locked for an analyst, and a rule's History tab with time to acknowledge (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/slos",
 		title: "SLOs",
 		description:

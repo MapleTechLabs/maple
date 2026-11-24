@@ -1,19 +1,48 @@
 import type { AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
-import type { V2AlertDestinationUpdateParams, V2AlertIncident, V2ChatConnector } from "@maple/domain/http/v2"
+import type {
+	V2AlertDelivery,
+	V2AlertDestinationUpdateParams,
+	V2AlertIncident,
+	V2ChatConnector,
+} from "@maple/domain/http/v2"
 import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
 import { v2DeliveryToDocument } from "@maple/web-data/alerts/form-utils"
-import { Effect, Array as Arr } from "effect"
+import { Effect, Array as Arr, Ref } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
-/** `alertDeliveries.list({ limit: 100 })` (optionally one incident's), as documents. */
+const DELIVERY_PAGE_SIZE = 100
+/** Pages one incident's deliveries are read over: 2,000 notifications, far past a long incident. */
+export const MAX_INCIDENT_DELIVERY_PAGES = 20
+
+/**
+ * `alertDeliveries.list`, newest first, as documents: the org's newest 100, or every delivery of
+ * one incident (following `next_cursor`), so its timeline does not lose the first page it sent.
+ */
 export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
-		const response = yield* client.alertDeliveries.list({
-			query: incidentId === undefined ? { limit: 100 } : { incident_id: incidentId, limit: 100 },
+		const maxPages = incidentId === undefined ? 1 : MAX_INCIDENT_DELIVERY_PAGES
+		const progress = yield* Ref.make<{
+			readonly rows: ReadonlyArray<V2AlertDelivery>
+			readonly cursor: string | null
+			readonly pages: number
+		}>({ rows: [], cursor: null, pages: 0 })
+		const readPage = Effect.gen(function* () {
+			const { rows, cursor, pages } = yield* Ref.get(progress)
+			const response = yield* client.alertDeliveries.list({
+				query: {
+					limit: DELIVERY_PAGE_SIZE,
+					...(incidentId === undefined ? undefined : { incident_id: incidentId }),
+					...(cursor === null ? undefined : { cursor }),
+				},
+			})
+			const next = response.has_more ? response.next_cursor : null
+			yield* Ref.set(progress, { rows: [...rows, ...response.data], cursor: next, pages: pages + 1 })
+			return next !== null && pages + 1 < maxPages
 		})
-		return Arr.map(response.data, v2DeliveryToDocument)
+		yield* readPage.pipe(Effect.repeat({ while: (hasMore) => hasMore }))
+		return Arr.map((yield* Ref.get(progress)).rows, v2DeliveryToDocument)
 	})
 
 export const listDeliveries = (incidentId?: AlertIncidentId) =>
@@ -80,6 +109,13 @@ export const setIncidentAcknowledged = (incidentId: AlertIncidentId, acknowledge
 			: client.alertIncidents.unacknowledge(params)
 	}).pipe(Effect.mapError(toLoadFailure))
 
+/** Resolve an open incident by hand; the resolved incident comes back. */
+export const resolveIncident = (incidentId: AlertIncidentId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.alertIncidents.resolve({ params: { id: incidentId } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
 /** The incident's acknowledgement history, oldest first. */
 export const listIncidentActivity = (incidentId: AlertIncidentId) =>
 	Effect.gen(function* () {
@@ -114,3 +150,22 @@ export const listChatConnectors = Effect.gen(function* () {
 	const response = yield* client.chatIntegration.connectors()
 	return [...response.data].sort((a, b) => Number(b.id === "slack") - Number(a.id === "slack"))
 }).pipe(Effect.orElseSucceed((): ReadonlyArray<V2ChatConnector> => []))
+
+/** The synced row as a request just resolved it, so the page shows it before the sync catches up. */
+export const withResolution = <R extends AlertIncidentRow>(
+	rows: ReadonlyArray<R>,
+	incident: V2AlertIncident,
+) =>
+	Arr.map(rows, (row) =>
+		row.id === incident.id
+			? {
+					...row,
+					status: incident.status,
+					resolved_at: incident.resolved_at,
+					acknowledged_at: incident.acknowledged_at,
+					acknowledged_by_user_id: incident.acknowledged_by?.user_id ?? null,
+					acknowledged_by_name: incident.acknowledged_by?.name ?? null,
+					acknowledged_via: incident.acknowledged_via,
+				}
+			: row,
+	)

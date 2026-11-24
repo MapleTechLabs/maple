@@ -276,6 +276,7 @@ describe("alerts hub", () => {
 						acknowledged_at: new Date(NOW - 60_000).toISOString(),
 						acknowledged_by_name: "Dana Kim",
 						acknowledged_via: "slack",
+						first_acknowledged_at: new Date(NOW - 60_000).toISOString(),
 					}),
 				],
 			}),
@@ -285,7 +286,8 @@ describe("alerts hub", () => {
 			given(acknowledged),
 			expectView(text("0 firing")).toExist(),
 			expectView(text(/1 acknowledged/)).toExist(),
-			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
+			// Opened 110 minutes ago, acknowledged a minute ago.
+			expectView(text(/^Acknowledged by Dana Kim, 1h 49m after it opened ·/)).toExist(),
 			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s" })).toExist(),
 		)
 		const clicked = pageUpdate(
