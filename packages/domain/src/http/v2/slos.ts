@@ -212,6 +212,9 @@ export const V2SloBurnWindow = Schema.Struct({
 	),
 	total_events: ratioField("Sampling-weighted entry-point spans in the window."),
 	good_events: ratioField("The good ones among them."),
+	sample_count: ratioField(
+		"Spans actually recorded in the window, before sampling weights. A burn-rate tier needs 10 of them, 2 bad, in its long window before it fires.",
+	),
 }).annotate({ identifier: "SloBurnWindow", title: "SLO burn window" })
 
 export const V2SloStatus = Schema.Struct({

@@ -50,6 +50,7 @@ const toV2Status = (sloId: SloRecord["id"], status: SloStatus): V2SloStatus => (
 		burn_rate: window.burnRate,
 		total_events: window.total,
 		good_events: window.good,
+		sample_count: window.samples ?? window.total,
 	})),
 })
 

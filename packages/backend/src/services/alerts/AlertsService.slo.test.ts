@@ -53,6 +53,8 @@ interface Traffic {
 	badMinutes?: number
 	/** The SLO window's events, when a test sets the budget apart from the burn. */
 	window?: { total: number; good: number }
+	/** The weight each recorded span carries; 1 (unsampled) unless a test is about sampling. */
+	sampleWeight?: number
 }
 
 const SERVICES = ["checkout", "cart", "search"]
@@ -65,8 +67,15 @@ const eventsIn = (traffic: Traffic, minutes: number) => {
 	const silent = minutes - live
 	const badLive = Math.max(0, Math.min(minutes, traffic.badMinutes ?? minutes) - silent)
 	const total = live * perMinute
-	return { total, good: total - (badLive * perMinute * traffic.badPerMille) / 1000 }
+	return {
+		total,
+		good: total - (badLive * perMinute * traffic.badPerMille) / 1000,
+		samples: total / (traffic.sampleWeight ?? 1),
+	}
 }
+
+/** A tick time at which the budget is read: the alert source reads it every fifth minute. */
+const BUDGET_TICK_MS = Math.ceil(DEFAULT_CLOCK_EPOCH_MS / 300_000) * 300_000
 
 /** The two `'YYYY-MM-DD hh:mm:ss'` bounds of a compiled liveness probe, as a length in minutes. */
 const probeMinutes = (sql: string, nowMs: number) => {
@@ -97,12 +106,14 @@ const sloWarehouse = (traffic: Traffic, reads: Array<string> = []) =>
 							return [
 								[`total${minutes}`, events.total],
 								[`good${minutes}`, events.good],
+								[`samples${minutes}`, events.samples],
 							]
 						}),
 					),
 				})
 				// A full budget unless a test sets it: the burn tests are about the burn.
-				const window = traffic.window ?? { total: 1_000_000, good: 1_000_000 }
+				const totals = traffic.window ?? { total: 1_000_000, good: 1_000_000 }
+				const window = { ...totals, samples: totals.total }
 				const rows =
 					options?.context === "sloStatusBurn"
 						? Arr.map(SERVICES, burnRow)
@@ -352,7 +363,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 		const traffic: Traffic = { badPerMille: 0.5, window: { total: 1_000_000, good: 998_000 } }
 		const { layer } = harness(traffic)
 		return Effect.gen(function* () {
-			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			yield* TestClock.setTime(BUDGET_TICK_MS)
 			const alerts = yield* alertServices
 			yield* createSlo(undefined)
 			yield* alerts.runSchedulerTick()
@@ -361,9 +372,18 @@ describe("AlertsService SLO burn-rate rules", () => {
 			assert.strictEqual(opened[0]?.severity, "warning")
 			assert.strictEqual(opened[0]?.groupKey, SLO_BUDGET_GROUP_KEY)
 
-			// The budget is read every few minutes, not every check.
+			// Back to 99.5% used: inside the margin, so the warning holds rather than flapping.
+			traffic.window = { total: 1_000_000, good: 999_005 }
+			yield* TestClock.adjust(Duration.minutes(5))
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "open")
+
+			// The budget is read on every fifth check: the one in between changes nothing.
 			traffic.window = { total: 1_000_000, good: 999_500 }
-			yield* TestClock.adjust(Duration.minutes(6))
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "open")
+			yield* TestClock.adjust(Duration.minutes(4))
 			yield* alerts.runSchedulerTick()
 			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
 		}).pipe(Effect.provide(layer))
@@ -373,7 +393,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 		const traffic: Traffic = { badPerMille: 20, window: { total: 1_000_000, good: 990_000 } }
 		const { layer } = harness(traffic)
 		return Effect.gen(function* () {
-			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			yield* TestClock.setTime(BUDGET_TICK_MS)
 			const alerts = yield* alertServices
 			yield* createSlo(undefined)
 			yield* alerts.runSchedulerTick()
@@ -390,6 +410,58 @@ describe("AlertsService SLO burn-rate rules", () => {
 			assert.strictEqual(statusOf(SLO_BUDGET_GROUP_KEY), "warning open")
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect("one recorded failure opens nothing, however heavily it is sampled", () => {
+		// Each recorded span stands for ten: 12 recorded an hour, one of the last hour's failed.
+		const { layer } = harness({ badPerMille: 1000 / 12, perMinute: 2, badMinutes: 60, sampleWeight: 10 })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			yield* createSlo(undefined)
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect(
+		"brings a rule saved with the old tiers up to date, so its incidents show the real factor",
+		() => {
+			const { layer, testDb } = harness({ badPerMille: 0 })
+			const stored = (ruleId: string | null) =>
+				Effect.promise(() =>
+					queryFirstRow<{ warning: number; critical: number; window: number }>(
+						testDb,
+						`select (thresholds_json->0->>'value')::float8 as warning,
+					        (thresholds_json->1->>'value')::float8 as critical,
+					        window_minutes as window
+					   from alert_rules where id = $1`,
+						[ruleId],
+					),
+				)
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* alertServices
+				const slo = yield* createSlo(undefined, 90)
+				// As a rule written before the slow tier and the cap would be stored.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update alert_rules
+					    set threshold = 6, window_minutes = 360,
+					        thresholds_json = jsonb_set(jsonb_set(thresholds_json, '{0,value}', '6'), '{1,value}', '14.4')
+					  where id = $1`,
+						[slo.alertRuleId],
+					),
+				)
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(yield* stored(slo.alertRuleId), {
+					warning: 3,
+					critical: 8,
+					window: 1440,
+				})
+			}).pipe(Effect.provide(layer))
+		},
+	)
 
 	it.effect("checks every SLO of an org from one burn read a tick", () => {
 		const reads: Array<string> = []

@@ -451,6 +451,8 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 								ruleMissing ||
 								rule.name !== locked.name ||
 								rule.serviceName !== locked.serviceName ||
+								// The target sets the burn each tier is stored and shown at.
+								rule.targetPercent !== locked.targetPercent ||
 								!sameIds(rule.environments, locked.environments) ||
 								rule.enabled !== locked.alerting.enabled ||
 								!sameIds(

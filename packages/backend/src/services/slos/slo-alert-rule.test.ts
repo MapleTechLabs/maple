@@ -15,7 +15,7 @@ const windows = (rates: Record<number, number>): ReadonlyArray<SloBurnWindow> =>
 const check = (
 	burnWindows: ReadonlyArray<SloBurnWindow>,
 	overrides: Partial<SloBurnInput> = {},
-): SloBurnInput => ({ windows: burnWindows, targetPercent: 99.9, windowDays: 30, totals: null, ...overrides })
+): SloBurnInput => ({ windows: burnWindows, targetPercent: 99.9, ...overrides })
 
 const emptied = (burnWindows: ReadonlyArray<SloBurnWindow>, ...minutes: ReadonlyArray<number>) =>
 	Arr.map(burnWindows, (window) =>
@@ -121,8 +121,15 @@ describe("evaluateSloBurn", () => {
 })
 
 describe("evaluateSloBudget", () => {
+	const budget = (totals: { total: number; good: number } | "notDue" | "unread") =>
+		evaluateSloBudget({
+			targetPercent: 99.9,
+			windowDays: 30,
+			budget: typeof totals === "string" ? { _tag: totals } : { _tag: "read", totals },
+		})
+
 	it("is a warning while the window's budget is spent, with the share used as its value", () => {
-		const evaluation = evaluateSloBudget(check([], { totals: { total: 1_000_000, good: 998_000 } }))
+		const evaluation = budget({ total: 1_000_000, good: 998_000 })
 		expect(evaluation.status).toBe("breached")
 		expect(evaluation.value).toBeCloseTo(2)
 		expect(evaluation.levels).toEqual([
@@ -132,14 +139,22 @@ describe("evaluateSloBudget", () => {
 		expect(evaluation.reason).toBe("SLO error budget is spent: 200% of the 30-day budget used")
 	})
 
-	it("is healthy with budget left", () => {
-		const evaluation = evaluateSloBudget(check([], { totals: { total: 1_000_000, good: 999_500 } }))
+	it("holds just under the budget, so a warning neither opens nor clears at the line", () => {
+		const evaluation = budget({ total: 1_000_000, good: 999_005 })
 		expect(evaluation.status).toBe("healthy")
+		expect(evaluation.levels[0]).toEqual({ severity: "warning", status: "hold" })
+	})
+
+	it("is clear with budget left", () => {
+		const evaluation = budget({ total: 1_000_000, good: 999_500 })
+		expect(evaluation.status).toBe("healthy")
+		expect(evaluation.levels[0]).toEqual({ severity: "warning", status: "clear" })
 		expect(evaluation.reason).toBe("SLO error budget is back: 50% of the 30-day budget used")
 	})
 
-	it("judges nothing when the window could not be read", () => {
-		expect(evaluateSloBudget(check([]))).toMatchObject({ status: "skipped", levels: [] })
+	it("judges nothing on a check that did not read the window", () => {
+		expect(budget("notDue")).toMatchObject({ status: "skipped", levels: [] })
+		expect(budget("unread")).toMatchObject({ status: "skipped", levels: [] })
 	})
 })
 
