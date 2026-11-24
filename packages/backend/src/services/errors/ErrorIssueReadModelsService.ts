@@ -256,6 +256,10 @@ const make: Effect.Effect<
 			readonly timestamp: DateTime.Utc
 		},
 	) => {
+		// An occurrence recorded without a trace or span has no exception event to read.
+		if (occurrence.traceId === "" || occurrence.spanId === "") {
+			return Effect.succeed(new Map<string, string>())
+		}
 		const atMs = DateTime.toEpochMillis(occurrence.timestamp)
 		return warehouse
 			.compiledQuery(

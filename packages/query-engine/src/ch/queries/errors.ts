@@ -1467,8 +1467,9 @@ export function errorIssueLatestStacktraceQuery(opts: IssueFingerprintsOpts) {
 			// The span behind it, read for the exception event's debug ids, and the release a map can match.
 			serviceName: $.ServiceName,
 			serviceVersion: $.ServiceVersion,
-			traceId: $.TraceId,
-			spanId: $.SpanId,
+			// Plain strings: an occurrence can carry no trace or span, and ClickHouse returns ''.
+			traceId: CH.toString_($.TraceId),
+			spanId: CH.toString_($.SpanId),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

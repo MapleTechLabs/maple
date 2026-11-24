@@ -107,7 +107,10 @@ const missingUserId = (sql: string) =>
 const makeWarehouseStub = (
 	contexts: Array<string>,
 	sqls: Array<string>,
-	stubOptions: { withoutUserId?: boolean } = {},
+	stubOptions: {
+		withoutUserId?: boolean
+		rows?: ReadonlyMap<string, ReadonlyArray<Record<string, unknown>>>
+	} = {},
 ): WarehouseQueryServiceApi => ({
 	query: () => Effect.die(new Error("unexpected pipe query")),
 	rawSqlQuery: () => Effect.die(new Error("unexpected raw SQL query")),
@@ -127,7 +130,11 @@ const makeWarehouseStub = (
 			),
 			Effect.andThen(
 				compiledQueryOf(compiled)
-					.decodeRows(WAREHOUSE_ROWS.get(options?.context ?? "") ?? [])
+					.decodeRows(
+						stubOptions.rows?.get(options?.context ?? "") ??
+							WAREHOUSE_ROWS.get(options?.context ?? "") ??
+							[],
+					)
 					.pipe(Effect.orDie),
 			),
 		)
@@ -148,6 +155,7 @@ const makeLayer = (
 	stubOptions: {
 		withoutUserId?: boolean
 		symbolicator?: Layer.Layer<StackSymbolicator>
+		rows?: ReadonlyMap<string, ReadonlyArray<Record<string, unknown>>>
 	} = {},
 ) => {
 	const database = createTestDb(createdDbs).layer
@@ -530,6 +538,47 @@ describe("ErrorIssueReadModelsService", () => {
 			assert.deepStrictEqual(Array.from(request?.debugIds ?? []), [[BUNDLE_URL, DEBUG_ID]])
 			assert.include(contexts, "errorIssueLatestStackSpan")
 		}).pipe(Effect.provide(makeLayer(contexts, [], { symbolicator })))
+	})
+
+	it.effect("reads no span for a latest occurrence recorded without a trace or span", () => {
+		const contexts: Array<string> = []
+		const requests: Array<SymbolicateRequest> = []
+		const symbolicator = Layer.succeed(StackSymbolicator, {
+			symbolicate: (request) =>
+				Effect.sync(() => {
+					requests.push(request)
+					return { status: "missing_map" as const, frames: [], missing: [BUNDLE_URL] }
+				}),
+			symbolicateWithOutcome: () => Effect.die("symbolicateWithOutcome"),
+			hasSourceMaps: () => Effect.succeed(true),
+			sourceMapsKnown: () => Effect.succeedSome(true),
+		})
+		const rows = new Map([
+			[
+				"errorIssueLatestStacktrace",
+				[
+					{
+						timestamp: "2026-11-05 10:01:02",
+						stacktrace: `TypeError: boom\n    at a (${BUNDLE_URL}:1:1)`,
+						serviceName: "checkout-web",
+						serviceVersion: "2.4.0",
+						traceId: "",
+						spanId: "",
+					},
+				],
+			],
+		])
+		return Effect.gen(function* () {
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(ORG, issueId, now, { fingerprintHash: "fp-checkout" })
+
+			const detail = yield* readModels.getIssue(ORG, issueId, {})
+			assert.strictEqual(detail.latestStack?.status, "missing_map")
+			assert.notInclude(contexts, "errorIssueLatestStackSpan")
+			assert.deepStrictEqual(Array.from(requests[0]?.debugIds ?? []), [])
+		}).pipe(Effect.provide(makeLayer(contexts, [], { symbolicator, rows })))
 	})
 
 	it.effect("skips the span read for an org with no source maps, still returning the stack", () => {

@@ -120,44 +120,14 @@ const mappedFunction = (frame: StackFrame): string | undefined => {
 }
 
 /**
- * A source line with formatting whitespace collapsed to one space and trimmed; whitespace inside a
- * string literal (`'`, `"`, `` ` ``, with backslash escapes) is part of the code and kept as is.
- */
-export const collapseCodeWhitespace = (line: string): string =>
-	Str.trim(
-		Arr.reduce(
-			Arr.fromIterable(line),
-			{ out: "", quote: "", escaped: false, space: false },
-			(state, char) => {
-				if (state.quote !== "") {
-					const closes = !state.escaped && char === state.quote
-					return {
-						out: state.out + char,
-						quote: closes ? "" : state.quote,
-						escaped: !state.escaped && char === "\\",
-						space: false,
-					}
-				}
-				if (/\s/u.test(char)) return { ...state, space: true }
-				const out = `${state.out}${state.space ? " " : ""}${char}`
-				return {
-					out,
-					quote: char === "'" || char === '"' || char === "`" ? char : "",
-					escaped: false,
-					space: false,
-				}
-			},
-		).out,
-	)
-
-/**
  * A mapped frame as the key reads it, never a line or column: its original file and function, or,
  * with no function name, the file and its source line's text. `undefined` when it has neither.
  */
 const mappedFrameLine = (frame: StackFrame, file: string): string | undefined => {
 	const name = mappedFunction(frame)
 	if (name !== undefined) return `at ${name} (${file})`
-	const text = frame.context === null ? "" : collapseCodeWhitespace(frame.context.line)
+	// Only the ends are trimmed: inner whitespace can be code (a string or regex literal).
+	const text = frame.context === null ? "" : Str.trim(frame.context.line)
 	return text === "" ? undefined : `at ${file} | ${text}`
 }
 
@@ -172,6 +142,9 @@ const sourceMappedFrames = (
 ): { readonly frames: ReadonlyArray<string>; readonly skipped: ReadonlyArray<string> } | undefined => {
 	const stack = sample.symbolicatedStack
 	if (stack === undefined || (stack.status !== "resolved" && stack.status !== "partial")) return undefined
+	// An unmapped throw site leaves only its callers: two throw sites could share them, so raw key.
+	const throwSite = Arr.findFirst(stack.frames, (frame) => frame.in_app)
+	if (Option.isSome(throwSite) && !throwSite.value.resolved) return undefined
 	const mapped = Arr.dedupeAdjacentWith(
 		Arr.flatMap(stack.frames, (frame) => {
 			if (!frame.resolved || frame.file === null) return []

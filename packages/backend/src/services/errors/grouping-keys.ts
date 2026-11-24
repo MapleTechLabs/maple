@@ -11,13 +11,8 @@ import type { OrgId, TenantContext, WarehouseReadError } from "@maple/domain/htt
 import { CH } from "@maple/query-engine"
 import type { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { StackSymbolicatorApi } from "@maple/backend/services/sourcemaps/StackSymbolicator"
-import { couldHaveSourceMap } from "@maple/backend/services/sourcemaps/symbolicate"
-import {
-	DEBUG_IDS_ATTRIBUTE,
-	decodeDebugIds,
-	isSourceMappableUrl,
-	parseJsStack,
-} from "@maple/domain/errors/js-stack"
+import { isLookupUrl } from "@maple/backend/services/sourcemaps/source-map-files"
+import { DEBUG_IDS_ATTRIBUTE, decodeDebugIds, isInAppPath, parseJsStack } from "@maple/domain/errors/js-stack"
 import { resolveCustomFingerprint } from "@maple/domain/tinybird/fingerprint"
 import {
 	compileGroupingRules,
@@ -136,7 +131,12 @@ const withFirstMapPending = (entry: SampleInput, rules: CompiledGroupingRules | 
 	const rule = groupingParts(entry.input, rules).rule
 	if (rule !== "frames" && rule !== "type-function") return entry
 	const frames = parseJsStack(entry.input.exceptionStacktrace).frames
-	return Arr.some(frames, (frame) => couldHaveSourceMap(frame.url)) ? { ...entry, mapPending: true } : entry
+	return Arr.some(
+		frames,
+		(frame) => frame.url !== null && isInAppPath(frame.url) && isLookupUrl(frame.url, entry.debugIds),
+	)
+		? { ...entry, mapPending: true }
+		: entry
 }
 
 /**
@@ -166,7 +166,8 @@ export const withSourceMappedStacks = (
 									!readsFrames ||
 									!Arr.some(
 										frames,
-										(frame) => frame.url !== null && isSourceMappableUrl(frame.url),
+										(frame) =>
+											frame.url !== null && isLookupUrl(frame.url, entry.debugIds),
 									)
 								) {
 									return Effect.succeed(entry)
@@ -185,18 +186,31 @@ export const withSourceMappedStacks = (
 										Effect.map(({ stack, lookupFailed }) => {
 											// Decided on the raw frames: a vendor chunk whose frames map into
 											// `node_modules` is mapped, not waiting.
+											const candidate = (frame: (typeof frames)[number]) =>
+												frame.url !== null &&
+												isInAppPath(frame.url) &&
+												isLookupUrl(frame.url, entry.debugIds)
+											const unmapped = (i: number) => stack.frames[i]?.resolved !== true
+											// The throw site waits for its map even when a caller below it mapped:
+											// keyed on that caller alone, two throw sites would share a key.
+											const throwSiteWaits = Option.match(
+												Arr.findFirstIndex(frames, candidate),
+												{
+													onNone: () => false,
+													onSome: unmapped,
+												},
+											)
 											const mapPending =
+												throwSiteWaits ||
 												// A dependency frame that mapped says nothing about the app's own map.
-												!Arr.some(
+												(!Arr.some(
 													stack.frames,
 													(frame) => frame.resolved && frame.in_app,
 												) &&
-												Arr.some(
-													frames,
-													(frame, i) =>
-														couldHaveSourceMap(frame.url) &&
-														stack.frames[i]?.resolved !== true,
-												)
+													Arr.some(
+														frames,
+														(frame, i) => candidate(frame) && unmapped(i),
+													))
 											return stack.status === "resolved" || stack.status === "partial"
 												? {
 														...entry,
@@ -432,22 +446,29 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		// Hashes never keyed first (likely new issues), then stale keys after a rules change.
 		const storedHashes = new Set(Arr.map(stored, (row) => row.fingerprintHash))
 		const neverKeyed = Arr.filter(hashes, (hash) => !storedHashes.has(hash))
-		// Over the cap, the order decides who waits. Hashes held past their grace window go first (they
-		// key now, whatever their map), then first sightings, then hashes still held, in an order that
-		// rotates every minute so a ready one among them is not stuck behind the same held prefix.
+		// Over the cap, the order decides who waits. Hashes held past their grace window come first,
+		// up to half the slots (a hash whose span never turns up stays in that group, so it must not
+		// hold every slot); then first sightings; then hashes still held and the rest of the expired,
+		// each in an order that rotates every minute so none is stuck behind the same prefix.
 		// Under the cap everything fits and nothing more is read.
 		const overCap = neverKeyed.length > GROUPING_KEYS_PER_TICK
 		const earlierSeen = overCap
 			? yield* dbRun((tx) => firstSeenOf(tx, orgId, neverKeyed))
 			: new Map<string, number>()
 		const graceOver = (hash: string) => nowMs - (earlierSeen.get(hash) ?? nowMs) >= MAP_PENDING_GRACE_MS
-		const held = Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash) && !graceOver(hash))
-		const turn = held.length === 0 ? 0 : Math.floor(nowMs / 60_000) % held.length
+		const minute = Math.floor(nowMs / 60_000)
+		const rotate = (list: ReadonlyArray<string>) => {
+			const turn = list.length === 0 ? 0 : minute % list.length
+			return [...list.slice(turn), ...list.slice(0, turn)]
+		}
+		const expired = rotate(Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash) && graceOver(hash)))
+		const held = rotate(Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash) && !graceOver(hash)))
+		const expiredShare = Math.floor(GROUPING_KEYS_PER_TICK / 2)
 		const unkeyed = [
-			...Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash) && graceOver(hash)),
+			...expired.slice(0, expiredShare),
 			...Arr.filter(neverKeyed, (hash) => !earlierSeen.has(hash)),
-			...held.slice(turn),
-			...held.slice(0, turn),
+			...held,
+			...expired.slice(expiredShare),
 			...Arr.filter(hashes, (hash) => storedHashes.has(hash) && !current.has(hash)),
 		].slice(0, GROUPING_KEYS_PER_TICK)
 		const samples = unkeyed.length === 0 ? [] : yield* reads.samples(unkeyed)
@@ -475,12 +496,19 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 			pendingUnknown.length === 0
 				? earlierSeen
 				: new Map([...earlierSeen, ...(yield* dbRun((tx) => firstSeenOf(tx, orgId, pendingUnknown)))])
+		// The stack mapped, yet its frames gave no identity to key on (no name, no source text), so
+		// the key fell back to raw frames: a stored key, maybe a good mapped one, is not replaced by it.
+		const mappedUnusable = (entry: SampleInput) => {
+			if (entry.input.symbolicatedStack === undefined) return false
+			const rule = groupingParts(entry.input, input.grouping.rules).rule
+			return rule === "frames" || rule === "type-function"
+		}
 		const ready = Arr.filter(mapped, (entry) =>
 			waits(entry)
 				? nowMs - (pendingSeen.get(entry.fingerprintHash) ?? nowMs) >= MAP_PENDING_GRACE_MS
 				: !(
 						storedHashes.has(entry.fingerprintHash) &&
-						(entry.lookupFailed === true || entry.mapPending === true)
+						(entry.lookupFailed === true || entry.mapPending === true || mappedUnusable(entry))
 					),
 		)
 		const computed = computeGroupingKeys(ready, input.grouping.rules)

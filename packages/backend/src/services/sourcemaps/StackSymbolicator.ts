@@ -1,9 +1,10 @@
 import { TraceMap } from "@jridgewell/trace-mapping"
 import type { SourceMapFileRow } from "@maple/db/tables"
 import { SOURCE_MAP_MAX_BYTES } from "@maple/domain/http"
-import { isSourceMappableUrl, parseJsStack, type SymbolicatedStack } from "@maple/domain/errors/js-stack"
+import { parseJsStack, type SymbolicatedStack } from "@maple/domain/errors/js-stack"
 import type { OrgId, SourceMapFileId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Deferred, Duration, Effect, Exit, Layer, Option } from "effect"
+import { isLookupUrl } from "./source-map-files"
 import { SourceMapReader } from "./SourceMapReader"
 import { symbolicateStack } from "./symbolicate"
 
@@ -50,7 +51,7 @@ export interface SymbolicationOutcome {
 interface LoadedMap {
 	readonly map: Option.Option<TraceMap>
 	readonly cacheHit: boolean
-	/** The bucket read failed (a gone or unparseable map is not a failure). */
+	/** The bucket read failed or the object was gone (an unparseable map is not a failure). */
 	readonly failed: boolean
 }
 
@@ -207,6 +208,10 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 						Effect.option,
 					)
 					if (Option.isNone(json)) return { map: Option.none(), cacheHit: false, failed: true }
+					// A matched row whose object is gone was replaced or deleted mid-request: as unknown
+					// as a failed read, so a key is not recomputed from the stack's other frames.
+					if (Option.isNone(json.value))
+						return { map: Option.none(), cacheHit: false, failed: true }
 					const parsed = Option.flatMap(json.value, parseTraceMap)
 					if (Option.isSome(json.value) && Option.isNone(parsed)) {
 						yield* Effect.logWarning("Source map could not be parsed").pipe(
@@ -290,7 +295,7 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 				const urls = Arr.dedupe(
 					Arr.filter(
 						Arr.getSomes(Arr.map(parsed.frames, (frame) => Option.fromNullishOr(frame.url))),
-						isSourceMappableUrl,
+						(url) => isLookupUrl(url, request.debugIds),
 					),
 				)
 				yield* Effect.annotateCurrentSpan({
