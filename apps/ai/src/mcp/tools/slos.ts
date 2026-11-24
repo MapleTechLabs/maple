@@ -259,7 +259,8 @@ export function registerSloTools(server: McpToolRegistrar) {
 									row.worstBurnWindow === null
 										? "-"
 										: `${burn(row.worstBurnRate)} (${row.worstBurnWindow})`,
-									row.burning ?? (row.holding ? "holding (no recent events)" : "-"),
+									row.burning ??
+										(row.holding ? "holding (no events, or too few to judge)" : "-"),
 								]),
 							),
 						],

@@ -547,6 +547,81 @@ describe("AlertsService rule deletion with pages in other states", () => {
 		)
 	})
 
+	const linksOf = (body: string | undefined) => {
+		const links: { readonly linkUrl?: string; readonly chatUrl?: string } = JSON.parse(body ?? "{}")
+		return links
+	}
+
+	it.effect(
+		"relinks an all-clear that was on its way out when its rule went, for whoever takes it over",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) }
+			const sent: Array<Sent> = []
+			const failing = { resolves: true }
+			return Effect.gen(function* () {
+				const { alerts, orgId, rule } = yield* openIncidentWith(testDb, ["team"])
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* ticks(alerts, 2)
+				// The retry is claimed by a worker that then dies: in flight, its claim about to run out.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update alert_delivery_events
+					    set status = 'processing', claimed_at = scheduled_at, claim_expires_at = scheduled_at
+					  where rule_id = $1 and event_type = 'resolve' and status = 'queued'`,
+						[rule.id],
+					),
+				)
+
+				yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+				failing.resolves = false
+				yield* ticks(alerts, 30)
+
+				const resolve = Arr.findFirst(sent, (request) => request.event === "resolve")
+				const links = linksOf(Option.getOrUndefined(resolve)?.body)
+				assert.match(links.linkUrl ?? "", /\/alerts$/)
+				assert.strictEqual(links.chatUrl, links.linkUrl)
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: capturingFetch(sent, failing) }),
+				),
+			)
+		},
+	)
+
+	it.effect("relinks the retry of an all-clear whose rule was deleted while it was being sent", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const resolves: Array<string> = []
+		/** Run once each, while an all-clear is on the wire; that all-clear then fails. */
+		const duringResolve: Array<() => Promise<void>> = []
+		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			if (new Headers(init?.headers).get("x-maple-event-type") !== "resolve") {
+				return new Response("ok", { status: 200 })
+			}
+			const run = duringResolve.shift()
+			if (run !== undefined) {
+				await run()
+				return new Response("down", { status: 503 })
+			}
+			resolves.push(requestBodyText(init?.body))
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+		return Effect.gen(function* () {
+			const { alerts, orgId, rule } = yield* openIncidentWith(testDb, ["team"])
+			const run = Effect.runPromiseWith(yield* Effect.context())
+			duringResolve.push(() => run(Effect.asVoid(alerts.deleteRule(orgId, adminRoles, rule.id))))
+			state.tracesAggregateRows = errorRateRows(0.5)
+			yield* ticks(alerts, 40)
+
+			assert.isAbove(resolves.length, 0)
+			const links = linksOf(resolves[0])
+			assert.match(links.linkUrl ?? "", /\/alerts$/)
+			assert.strictEqual(links.chatUrl, links.linkUrl)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+	})
+
 	it.effect("links the all-clear to the alerts list, not to what was deleted", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<Sent> = []
