@@ -99,8 +99,10 @@ const parseUrlLocation = (location: string): Option.Option<Location> =>
 
 /** `eval at fn (url:1:2), <anonymous>:3:4`: the eval call site, else no location. */
 const parseEvalOrigin = (location: string): Location => {
-	const origin = Option.flatMap(splitAt(location, "("), ({ after }) =>
-		Option.map(splitAt(after, ")"), ({ before }) => before),
+	// The innermost origin: nested evals read `eval at a (eval at b (url:1:2)), ...`, so the text
+	// between the first `)` and the last `(` before it is the concrete call site.
+	const origin = Option.flatMap(splitAt(location, ")"), ({ before }) =>
+		Option.map(splitAt(before, "(", true), ({ after }) => after),
 	)
 	const located = Option.flatMap(
 		Option.filter(origin, (text) => !/\s/u.test(text)),

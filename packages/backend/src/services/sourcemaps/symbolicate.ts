@@ -4,11 +4,11 @@ import {
 	type StackFrameContext,
 	type SymbolicatedStack,
 	isInAppPath,
-	isSourceMappableUrl,
 	parseJsStack,
 } from "@maple/domain/errors/js-stack"
 import { type TraceMap, isIgnored, originalPositionFor, sourceContentFor } from "@jridgewell/trace-mapping"
 import { Array as Arr, Predicate, String as Str } from "effect"
+import { isLookupUrl } from "./source-map-files"
 
 const CONTEXT_LINES = 5
 
@@ -76,9 +76,16 @@ const resolveFrame = (frame: ParsedFrame, map: TraceMap): MappedFrame => {
 	}
 }
 
-/** A frame whose map the org could have uploaded: an in-app JS file or served URL. */
-export const couldHaveSourceMap = (url: string | null): url is string =>
-	url !== null && isSourceMappableUrl(url) && isInAppPath(url)
+/**
+ * A frame whose map the org could have uploaded: an in-app JS file or served URL, or any in-app
+ * URL its SDK recorded a debug id for (a `blob:` script).
+ */
+export const couldHaveSourceMap = (
+	url: string | null,
+	debugIds: ReadonlyMap<string, string> = NO_DEBUG_IDS,
+): url is string => url !== null && isLookupUrl(url, debugIds) && isInAppPath(url)
+
+const NO_DEBUG_IDS: ReadonlyMap<string, string> = new Map()
 
 /**
  * Maps a JS stack trace through source maps. `lookup` returns the pre-loaded map for a frame,
@@ -89,13 +96,14 @@ export const couldHaveSourceMap = (url: string | null): url is string =>
 export const symbolicateStack = (
 	stacktrace: string,
 	lookup: (frame: ParsedFrame) => TraceMap | undefined,
+	debugIds: ReadonlyMap<string, string> = NO_DEBUG_IDS,
 ): SymbolicatedStack => {
 	const { frames: parsed } = parseJsStack(stacktrace)
 	const results = Arr.map(parsed, (frame) => {
 		const map = frame.url === null ? undefined : lookup(frame)
 		return {
 			mapped: map === undefined ? { frame: unresolved(frame), callee: null } : resolveFrame(frame, map),
-			candidate: couldHaveSourceMap(frame.url),
+			candidate: couldHaveSourceMap(frame.url, debugIds),
 		}
 	})
 	// A frame's own position names what it calls, so a resolved frame takes its name from the
@@ -108,7 +116,7 @@ export const symbolicateStack = (
 	})
 	const unresolvedCandidates = Arr.filter(
 		parsed,
-		(frame, i) => couldHaveSourceMap(frame.url) && frames[i]?.resolved !== true,
+		(frame, i) => couldHaveSourceMap(frame.url, debugIds) && frames[i]?.resolved !== true,
 	)
 	const missing = Arr.dedupe(
 		Arr.filter(

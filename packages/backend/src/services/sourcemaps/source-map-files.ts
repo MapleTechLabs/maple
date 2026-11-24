@@ -200,7 +200,10 @@ export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload"
  * the SDK recorded a valid debug id for.
  */
 export const isLookupUrl = (url: string, debugIds: ReadonlyMap<string, string>): boolean =>
-	isSourceMappableUrl(url) ||
+	isSourceMappableUrl(url) || hasDebugIdFor(url, debugIds)
+
+/** Whether the SDK recorded a valid debug id for this frame URL. */
+export const hasDebugIdFor = (url: string, debugIds: ReadonlyMap<string, string>): boolean =>
 	Option.isSome(Option.flatMap(Option.fromNullishOr(debugIds.get(url)), normalizeDebugId))
 
 /** The stored files a lookup can match: a debug id or a release (service + version) path. */

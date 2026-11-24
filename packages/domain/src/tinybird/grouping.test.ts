@@ -425,6 +425,26 @@ describe("source-mapped frames", () => {
 		expect(groupingKey(site("one"))).not.toBe(groupingKey(site("two")))
 	})
 
+	it("treats an unmapped frame an app rule claims as the throw site", () => {
+		const generated = compileGroupingRules(
+			new GroupingConfig({
+				rules: [
+					new OrgGroupingRule({ id: "ours", kind: "app-frames", frame: "*node_modules/@acme/*" }),
+				],
+			}),
+		)
+		const site = (bundle: string) => {
+			const top = `t (https://app.example/node_modules/@acme/ui/${bundle}.js:1:1)`
+			const caller = "a (https://app.example/assets/index-1.js:1:9)"
+			return withStack(node("TypeError", "boom", [top, caller]), [
+				{ ...unresolvedFrame(`at ${top}`), in_app: false },
+				mappedFrame(`at ${caller}`, "dispatch", "src/dispatch.ts"),
+			])
+		}
+		expect(groupingParts(site("one"), generated).rule).toBe("frames")
+		expect(groupingKey(site("one"), generated)).not.toBe(groupingKey(site("two"), generated))
+	})
+
 	it("keeps a map-supplied name that happens to equal the generated one", () => {
 		const release = (bundle: string, generated: string) =>
 			withStack(node("TypeError", "boom", [`${generated} (https://app.example/${bundle}.js:1:9)`]), [
