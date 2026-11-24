@@ -28,6 +28,7 @@ import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
 import { isolateColoCache, lookupColo } from "./worker-colo.ts"
 import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
+import { isAnticipatedAlertingFailure } from "@maple/backend/services/alerts/expected-failures"
 
 /**
  * Runtime env, imported type-only by `./scheduled.ts`. Config vars stay `unknown` since they are
@@ -241,6 +242,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 			WorkerTelemetry({
 				serviceName: "alerting",
 				anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+				isAnticipatedError: isAnticipatedAlertingFailure,
 			}),
 		]),
 	),

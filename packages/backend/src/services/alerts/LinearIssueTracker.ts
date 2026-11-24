@@ -5,6 +5,7 @@
 import {
 	AlertDeliveryAuthError,
 	AlertDeliveryError,
+	AlertDeliveryRejectedError,
 	AlertDeliveryTargetMissingError,
 	type AlertDeliveryFailure,
 	type IntegrationsNotConnectedError,
@@ -26,11 +27,15 @@ import {
 	type LinearGraphqlError,
 } from "@maple/backend/services/integrations/linear/LinearGraphql"
 import { linearEntityId } from "./delivery/transports/linear"
+import { DELIVERY_USAGE_LIMIT_CODE } from "./expected-failures"
 import type { LinearDeliveryPort, LinearThread } from "./delivery/Transport"
 
 /** Linear's answer to a create whose caller-chosen id is taken. */
 const isDuplicate = (error: LinearGraphqlError) =>
 	/already exists|duplicate|unique constraint/i.test(error.message)
+
+/** Linear refusing a create because the workspace is at its plan's issue limit. */
+const isUsageLimit = (error: LinearGraphqlError) => /free issue limit|usage limit/i.test(error.message)
 
 const toDeliveryFailure = (
 	error:
@@ -109,6 +114,14 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 					}
 					if (options.duplicateIsSuccess === true && Arr.some(result.errors, isDuplicate))
 						return null
+					if (Arr.some(result.errors, isUsageLimit)) {
+						return yield* new AlertDeliveryRejectedError({
+							message:
+								"The Linear workspace is at its plan's issue limit. Upgrade it in Linear or archive issues to resume delivery.",
+							destinationType: "linear",
+							providerErrorCode: DELIVERY_USAGE_LIMIT_CODE,
+						})
+					}
 					if (result.errors.length > 0) {
 						return yield* new AlertDeliveryError({
 							message: `Linear ${operation.name} failed: ${Arr.join(
