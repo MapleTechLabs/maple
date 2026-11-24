@@ -83,8 +83,8 @@ interface CachedMap {
 const parseTraceMap = Option.liftThrowable((json: string) => new TraceMap(json))
 
 /** The stack with every frame unresolved, for when nothing could be looked up. */
-const unresolvedStack = (stacktrace: string): SymbolicatedStack =>
-	symbolicateStack(stacktrace, () => undefined)
+const unresolvedStack = (stacktrace: string, debugIds?: ReadonlyMap<string, string>): SymbolicatedStack =>
+	symbolicateStack(stacktrace, () => undefined, debugIds)
 
 const notApplicable = (stacktrace: string): SymbolicatedStack => ({
 	...unresolvedStack(stacktrace),
@@ -324,7 +324,7 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 				}
 
 				if (!(yield* hasSourceMaps(orgId))) {
-					const result = unresolvedStack(stacktrace)
+					const result = unresolvedStack(stacktrace, request.debugIds)
 					yield* Effect.annotateCurrentSpan({
 						"maple.stack.status": result.status,
 						"maple.stack.org_has_maps": false,
@@ -442,8 +442,10 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 				}
 
 				const symbolicated = Option.liftThrowable(() =>
-					symbolicateStack(stacktrace, (frame) =>
-						frame.url === null ? undefined : lookup(frame.url),
+					symbolicateStack(
+						stacktrace,
+						(frame) => (frame.url === null ? undefined : lookup(frame.url)),
+						request.debugIds,
 					),
 				)()
 				if (Option.isNone(symbolicated)) {
@@ -451,7 +453,9 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 						Effect.annotateLogs({ orgId }),
 					)
 				}
-				const result = Option.getOrElse(symbolicated, () => unresolvedStack(stacktrace))
+				const result = Option.getOrElse(symbolicated, () =>
+					unresolvedStack(stacktrace, request.debugIds),
+				)
 
 				// Only a map that resolved a frame counts as used; frames line up with the parsed ones.
 				const usedIds = Arr.dedupe(

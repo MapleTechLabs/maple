@@ -142,23 +142,21 @@ const sourceMappedFrames = (
 ): { readonly frames: ReadonlyArray<string>; readonly skipped: ReadonlyArray<string> } | undefined => {
 	const stack = sample.symbolicatedStack
 	if (stack === undefined || (stack.status !== "resolved" && stack.status !== "partial")) return undefined
+	// Rules read both the generated frame and its mapped location, as they did before the map
+	// came: a frame either side marks a library stays out of the key, one marked app is in.
+	const isApp = (frame: StackFrame, shown: string) => {
+		const kinds = [rules.frameKind(shown, sample), rules.frameKind(frame.raw, sample)]
+		return Arr.contains(kinds, "library") ? false : Arr.contains(kinds, "app") ? true : frame.in_app
+	}
 	// An unmapped throw site leaves only its callers: two throw sites could share them, so raw key.
-	const throwSite = Arr.findFirst(stack.frames, (frame) => frame.in_app)
+	const throwSite = Arr.findFirst(stack.frames, (frame) => isApp(frame, frame.raw))
 	if (Option.isSome(throwSite) && !throwSite.value.resolved) return undefined
 	const mapped = Arr.dedupeAdjacentWith(
 		Arr.flatMap(stack.frames, (frame) => {
 			if (!frame.resolved || frame.file === null) return []
 			const line = mappedFrameLine(frame, frame.file)
 			const shown = line ?? `at ${frame.file}`
-			// Rules read both the generated frame and its mapped location, as they did before the
-			// map came: a frame either side marks a library stays out of the key.
-			const kinds = [rules.frameKind(shown, sample), rules.frameKind(frame.raw, sample)]
-			const app = Arr.contains(kinds, "library")
-				? false
-				: Arr.contains(kinds, "app")
-					? true
-					: frame.in_app
-			return [{ line, shown, app }]
+			return [{ line, shown, app: isApp(frame, shown) }]
 		}),
 		(a, b) => a.line !== undefined && a.line === b.line,
 	)

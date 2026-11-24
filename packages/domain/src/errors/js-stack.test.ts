@@ -73,22 +73,38 @@ describe("parseJsStack", () => {
 	})
 
 	it("parses hostile lines in linear time", () => {
-		const attackLines = (length: number) => [
-			`at ${Str.repeat(length)(" ")}`,
-			`at  (${Str.repeat(length / 3)(" (a")}`,
-			`@a${Str.repeat(length)(" ")}`,
-			`at a (${Str.repeat(length / 2)(":1")}`,
-			`x@${Str.repeat(length / 7)(" line 1")}`,
-			`at eval (eval at ${Str.repeat(length / 2)("((")}`,
-		]
-		// 100k-char lines are past the frame cap; 1,999-char ones are parsed in full.
-		Arr.forEach([100_000, 1_998], (length) =>
+		// Each line is its prefix plus a repeated unit, filled to `length` characters.
+		const attackLines = (length: number) =>
+			Arr.map(
+				[
+					["at ", " "],
+					["at  (", " (a"],
+					["@a", " "],
+					["at a (", ":1"],
+					["x@", " line 1"],
+					["at eval (eval at ", "(("],
+				] as const,
+				([prefix, unit]) =>
+					`${prefix}${Str.repeat(Math.floor((length - prefix.length) / unit.length))(unit)}`,
+			)
+		// 100k-char lines are past the frame cap; ones just under it go through the whole parser.
+		Arr.forEach(attackLines(1_999), (line) => expect(line.length).toBeLessThanOrEqual(2_000))
+		Arr.forEach([100_000, 1_999], (length) =>
 			Arr.forEach(attackLines(length), (line) => {
 				const started = performance.now()
 				parseJsStack(`Error: x\n${line}\n${line}`)
 				expect(performance.now() - started).toBeLessThan(50)
 			}),
 		)
+	})
+
+	it("reads the concrete location of a nested eval origin", () => {
+		const { frames } = parseJsStack(
+			"Error\n    at eval (eval at a (eval at b (https://cdn.test/app.js:10:3)), <anonymous>:1:1)",
+		)
+		expect(Arr.map(frames, (frame) => [frame.function, frame.url, frame.line, frame.column])).toEqual([
+			["eval", "https://cdn.test/app.js", 10, 3],
+		])
 	})
 
 	it("skips caused by lines and returns no frames for a non-JS stack", () => {

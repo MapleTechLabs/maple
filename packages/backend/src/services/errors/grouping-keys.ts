@@ -12,7 +12,7 @@ import { CH } from "@maple/query-engine"
 import type { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { StackSymbolicatorApi } from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import type { SourceMapFileRow } from "@maple/db/tables"
-import { isLookupUrl } from "@maple/backend/services/sourcemaps/source-map-files"
+import { hasDebugIdFor, isLookupUrl } from "@maple/backend/services/sourcemaps/source-map-files"
 import { DEBUG_IDS_ATTRIBUTE, decodeDebugIds, isInAppPath, parseJsStack } from "@maple/domain/errors/js-stack"
 import { resolveCustomFingerprint } from "@maple/domain/tinybird/fingerprint"
 import {
@@ -29,7 +29,7 @@ import {
 	type GroupingRule,
 	type GroupingSample,
 } from "@maple/domain/tinybird/grouping"
-import { Array as Arr, DateTime, Effect, Option, Order } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Order, String as Str } from "effect"
 
 import { describeCause } from "./error-persistence"
 import { exceptionEventAttribute } from "./exception-event"
@@ -132,12 +132,26 @@ const withFirstMapPending = (entry: SampleInput, rules: CompiledGroupingRules | 
 	const rule = groupingParts(entry.input, rules).rule
 	if (rule !== "frames" && rule !== "type-function") return entry
 	const frames = parseJsStack(entry.input.exceptionStacktrace).frames
+	// Only a debug id recorded for one of this stack's own app frames says a map is coming.
 	return Arr.some(
 		frames,
-		(frame) => frame.url !== null && isInAppPath(frame.url) && isLookupUrl(frame.url, entry.debugIds),
+		(frame) =>
+			frame.url !== null &&
+			hasDebugIdFor(frame.url, entry.debugIds) &&
+			isAppFrame(frame, entry.input, rules),
 	)
 		? { ...entry, mapPending: true }
 		: entry
+}
+
+/** An app frame by the org's frame rules (on the generated frame) first, else by its path. */
+const isAppFrame = (
+	frame: { readonly raw: string; readonly url: string | null },
+	sample: GroupingSample,
+	rules: CompiledGroupingRules | undefined,
+): boolean => {
+	const kind = rules?.frameKind(frame.raw, sample)
+	return kind === undefined ? frame.url !== null && isInAppPath(frame.url) : kind === "app"
 }
 
 /**
@@ -198,8 +212,8 @@ export const withSourceMappedStacks = (
 												// `node_modules` is mapped, not waiting.
 												const candidate = (frame: (typeof frames)[number]) =>
 													frame.url !== null &&
-													isInAppPath(frame.url) &&
-													isLookupUrl(frame.url, entry.debugIds)
+													isLookupUrl(frame.url, entry.debugIds) &&
+													isAppFrame(frame, entry.input, rules)
 												const unmapped = (i: number) =>
 													stack.frames[i]?.resolved !== true
 												// The throw site waits for its map even when a caller below it mapped:
@@ -379,7 +393,7 @@ const storedKeys = (db: MapleDb, orgId: OrgId, hashes: ReadonlyArray<string>) =>
 	Effect.forEach(Arr.chunksOf(hashes, CHUNK), (chunk) =>
 		db.run(
 			PG.from(ErrorGroupingKeys)
-				.select("fingerprintHash", "groupingKey", "keyVersion", "configDigest", "pinned")
+				.select("fingerprintHash", "groupingKey", "keyVersion", "configDigest", "pinned", "rule")
 				.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...chunk)]),
 		),
 	).pipe(Effect.map(Arr.flatten))
@@ -518,13 +532,25 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 			const rule = groupingParts(entry.input, input.grouping.rules).rule
 			return rule === "frames" || rule === "type-function"
 		}
+		// The vetoes protect a stored key from a worse one, never a rules change: a stored mapped key
+		// is kept against an unmapped or identity-less sample; a raw key only waits for a pending or
+		// failed lookup when the org's rules are unchanged (the maps bit alone made it stale).
+		const storedOf = new Map(Arr.map(stored, (row) => [row.fingerprintHash, row] as const))
+		const rulesChanged = (row: { readonly keyVersion: number; readonly configDigest: string }) =>
+			row.keyVersion !== GROUPING_KEY_VERSION ||
+			Str.replace(/\+source-maps$/u, "")(row.configDigest) !== input.grouping.digest
+		const keepsStored = (entry: SampleInput) => {
+			const row = storedOf.get(entry.fingerprintHash)
+			if (row === undefined) return false
+			const unsure = entry.lookupFailed === true || entry.mapPending === true
+			return row.rule === "source-mapped"
+				? unsure || mappedUnusable(entry)
+				: unsure && !rulesChanged(row)
+		}
 		const ready = Arr.filter(mapped, (entry) =>
 			waits(entry)
 				? nowMs - (pendingSeen.get(entry.fingerprintHash) ?? nowMs) >= MAP_PENDING_GRACE_MS
-				: !(
-						storedHashes.has(entry.fingerprintHash) &&
-						(entry.lookupFailed === true || entry.mapPending === true || mappedUnusable(entry))
-					),
+				: !keepsStored(entry),
 		)
 		const computed = computeGroupingKeys(ready, input.grouping.rules)
 		if (computed.length > 0) {
