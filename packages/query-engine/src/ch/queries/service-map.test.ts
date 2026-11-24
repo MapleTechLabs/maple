@@ -765,6 +765,38 @@ describe("servicePlatformsSQL", () => {
 		}),
 	)
 
+	it.effect("reads platforms without identity columns on a cluster before migration 0074", () =>
+		Effect.gen(function* () {
+			const compiled = yield* servicePlatformsSQL({ identity: false }, baseParams)
+			expect(compiled.sql).not.toMatch(/ScopeNames|ServerSpanCount|TelemetrySdkName/)
+
+			const rows = yield* compiled.decodeRows([
+				{
+					serviceName: "artifacts-api",
+					k8sCluster: "",
+					k8sPodName: "",
+					k8sDeploymentName: "",
+					cloudPlatform: "",
+					cloudProvider: "",
+					faasName: "",
+					mapleSdkType: "",
+					processRuntimeName: "nodejs",
+					scopeNames: [],
+					telemetrySdkName: "",
+					telemetrySdkLanguage: "",
+					osName: "",
+					classifiedSpanCount: "0",
+					serverSpanCount: "0",
+					consumerSpanCount: "0",
+					rootSpanCount: "0",
+				},
+			])
+			expect(rows[0]).toMatchObject({ scopeNames: [], classifiedSpanCount: 0, serverSpanCount: 0 })
+			// No signals were read, so no identity is claimed.
+			expect(servicePlatformIdentity(rows[0]!)).toBeUndefined()
+		}),
+	)
+
 	it.effect("fails decoding when a platform string column is missing", () =>
 		Effect.gen(function* () {
 			const compiled = yield* servicePlatformsSQL({}, baseParams)

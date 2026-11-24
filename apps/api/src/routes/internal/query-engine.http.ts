@@ -318,7 +318,7 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 							: mapleSdkType === "client"
 								? "web"
 								: "unknown"
-	return {
+	const platformRow = {
 		serviceName: decodeServiceName(row.serviceName),
 		platform,
 		k8sCluster,
@@ -327,8 +327,9 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 		faasName,
 		mapleSdkType,
 		processRuntimeName,
-		identity: CH.servicePlatformIdentity(row),
 	}
+	const identity = CH.servicePlatformIdentity(row)
+	return identity === undefined ? platformRow : { ...platformRow, identity }
 }
 
 const toReleaseRow = (row: CH.ReleasesListOutput): ReleaseRow => {

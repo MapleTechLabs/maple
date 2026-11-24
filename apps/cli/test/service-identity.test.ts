@@ -123,8 +123,8 @@ describeWithChdb("service identity", () => {
 			const row = rowOf(service)
 			const identity = CH.servicePlatformIdentity(row)
 			return {
-				kind: identity.kind,
-				framework: identity.framework,
+				kind: identity?.kind,
+				framework: identity?.framework,
 				scopes: Arr.sort(row.scopeNames, Str.Order),
 			}
 		}

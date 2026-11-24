@@ -37,7 +37,10 @@ export const fetchServiceMap = (bounds: TimeBounds, durationSeconds: number, api
 			),
 		)
 		const identities = new Map(
-			Arr.map(platformRows, (row) => [row.serviceName, CH.servicePlatformIdentity(row)] as const),
+			Arr.flatMap(platformRows, (row) => {
+				const identity = CH.servicePlatformIdentity(row)
+				return identity === undefined ? [] : [[row.serviceName, identity] as const]
+			}),
 		)
 		const data: LocalServiceMapData = {
 			edges: aggregateEdges(edgeRows, durationSeconds),

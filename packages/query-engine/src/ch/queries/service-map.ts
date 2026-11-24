@@ -1433,20 +1433,26 @@ export function servicePlatformsSQL(
 	)
 }
 
-/** The service's kind and framework from its platforms row; shared by the API and Maple Local. */
-export const servicePlatformIdentity = (row: ServicePlatformsOutput): ServiceIdentity =>
-	classifyServiceIdentity({
-		scopeNames: row.scopeNames,
-		sdkName: row.telemetrySdkName,
-		sdkLanguage: row.telemetrySdkLanguage,
-		mapleSdkType: row.mapleSdkType,
-		runtimeName: row.processRuntimeName,
-		osName: row.osName,
-		serverSpans: row.serverSpanCount,
-		consumerSpans: row.consumerSpanCount,
-		rootSpans: row.rootSpanCount,
-		classifiedSpans: row.classifiedSpanCount,
-	})
+/**
+ * The service's kind and framework from its platforms row; shared by the API and Maple Local.
+ * Undefined when the row carries no identity signals (a cluster or window before migration 0074),
+ * so nothing claims the telemetry named no framework when it was never read.
+ */
+export const servicePlatformIdentity = (row: ServicePlatformsOutput): ServiceIdentity | undefined =>
+	row.classifiedSpanCount === 0 && row.scopeNames.length === 0
+		? undefined
+		: classifyServiceIdentity({
+				scopeNames: row.scopeNames,
+				sdkName: row.telemetrySdkName,
+				sdkLanguage: row.telemetrySdkLanguage,
+				mapleSdkType: row.mapleSdkType,
+				runtimeName: row.processRuntimeName,
+				osName: row.osName,
+				serverSpans: row.serverSpanCount,
+				consumerSpans: row.consumerSpanCount,
+				rootSpans: row.rootSpanCount,
+				classifiedSpans: row.classifiedSpanCount,
+			})
 
 // Query shapes across every service and database, not one db system's detail
 // panel: the same sealed-rollup + raw-edge splice as `serviceDbTopQueriesSQL`,
