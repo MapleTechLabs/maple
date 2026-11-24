@@ -111,7 +111,9 @@ describe("on-call schedule page", () => {
 			{ update: pageUpdate, view },
 			given(loaded(ONCALL_NOW, ENGINEER, [memberId(0), formerMemberId])),
 			expectView(text("Ben Brook and a former member left the org")).toExist(),
-			expectView(text(/Their shifts pass to the next person in the rotation/u)).toExist(),
+			expectView(
+				text(/Their shifts pass to the next person in the rotation who is still in the org/u),
+			).toExist(),
 			expectView(role("link", { name: "Edit the schedule" })).toHaveAttr(
 				"href",
 				editScheduleHref(Schema.decodeSync(OnCallScheduleId)(scheduleUuid(1))),

@@ -223,6 +223,7 @@ import {
 	SLO_BUDGET_GROUP_LABEL,
 	evaluateSloBudget,
 	evaluateSloBurn,
+	sloBurnTierThresholds,
 	sloRuleThresholds,
 } from "@maple/backend/services/slos/slo-alert-rule"
 import { SLO_BUDGET_GROUP_KEY, SLO_LIVENESS_WINDOW_MINUTES } from "@maple/domain/slo"
@@ -265,6 +266,11 @@ type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation & {
 	readonly groupLabel?: string
 	/** Why it resolved when no check said so; notifications show it for every signal. */
 	readonly resolutionNote?: string
+	/**
+	 * What each severity of this check was judged against, when that is not the rule's stored
+	 * tier: an SLO's firing tier has its own factor, and its budget group breaches at the whole budget.
+	 */
+	readonly tierThresholds?: Partial<Record<AlertSeverity, number>>
 }
 
 /** A flap that opened without a page told nobody, so its resolve tells nobody either. */
@@ -359,6 +365,8 @@ const FenceResultRow = Schema.Struct({ fenced: Schema.Number })
 
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
 
+/** How a chat post that was deliberately not made reads in a delivery's provider message. */
+const SKIPPED_POST_PREFIX = "Skipped:"
 const STALE_PAGE_MESSAGE = "Not sent: the incident resolved before this page went out"
 const STALE_STEP_RESOLVED_MESSAGE = "Not sent: the incident resolved before this escalation step went out"
 const STALE_STEP_ACKNOWLEDGED_MESSAGE =
@@ -724,6 +732,35 @@ const reminderMinutesFor = (
 	groupKey: string,
 ): number =>
 	isStandingWarning(rule, groupKey) ? STANDING_WARNING_RENOTIFY_MINUTES : rule.renotifyIntervalMinutes
+
+/**
+ * How recent an earlier incident's notification must be for a reopen to be a flap. A spent budget
+ * is reminded once a day, but a budget that came back and is spent again within that day is news:
+ * the last thing anyone read was that it was back.
+ */
+const flapWindowMinutesFor = (
+	rule: Pick<NormalizedRule, "signalType" | "renotifyIntervalMinutes">,
+	groupKey: string,
+): number =>
+	rule.signalType === "slo_burn_rate" && groupKey === SLO_BUDGET_GROUP_KEY
+		? rule.renotifyIntervalMinutes
+		: reminderMinutesFor(rule, groupKey)
+
+/** `rule` with the given severities' thresholds replaced; the rule itself when there are none. */
+const withTierThresholds = (
+	rule: NormalizedRule,
+	tierThresholds: Partial<Record<AlertSeverity, number>> | undefined,
+): NormalizedRule =>
+	tierThresholds === undefined
+		? rule
+		: {
+				...rule,
+				threshold: tierThresholds[rule.severity] ?? rule.threshold,
+				thresholds: Arr.map(rule.thresholds, (tier) => ({
+					...tier,
+					value: tierThresholds[tier.severity] ?? tier.value,
+				})),
+			}
 
 /** Longest an uptime incident's status-page write may delay the alert tick. */
 const STATUS_PAGE_SYNC_TIMEOUT = "3 seconds"
@@ -1301,11 +1338,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						onSome: (
 							observed,
 						): ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }> => [
-							{ evaluation: evaluateSloBurn(observed), groupKey: UNGROUPED_GROUP_KEY },
+							{
+								evaluation: {
+									...evaluateSloBurn(observed),
+									tierThresholds: sloBurnTierThresholds(observed),
+								},
+								groupKey: UNGROUPED_GROUP_KEY,
+							},
 							{
 								evaluation: {
 									...evaluateSloBudget(observed),
 									groupLabel: SLO_BUDGET_GROUP_LABEL,
+									// The budget group observes the share of the budget used: all of it is the line.
+									tierThresholds: { warning: 1, critical: 1 },
 								},
 								groupKey: SLO_BUDGET_GROUP_KEY,
 							},
@@ -3118,8 +3163,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						(row.eventType === "trigger" || row.eventType === "renotify")
 					) {
 						// The page is recorded as sent and nothing queues this again, so a transient
-						// failure is retried here. The insert is keyed: a repeat adds nothing.
-						yield* acknowledgeLatePage(row, claimTime).pipe(Effect.retry({ times: 2 }))
+						// failure is retried here. It never fails the delivery: that would send the page again.
+						yield* acknowledgeLatePage(row, claimTime).pipe(
+							Effect.retry({ times: 2 }),
+							isolate("A late page could not be acknowledged at the pager", {
+								deliveryKey: row.deliveryKey,
+							}),
+						)
 					}
 
 					// An acknowledgement is not a notification: it must not restart the reminder clock.
@@ -3361,7 +3411,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								finalizeDigest(destinationRow, sendable, claimTime, {
 									providerMessage:
 										posted.messageId === null
-											? `Skipped: alert notifications are off for this ${posted.connectorName} workspace`
+											? `${SKIPPED_POST_PREFIX} alert notifications are off for this ${posted.connectorName} workspace`
 											: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${sendable.length}`,
 									providerReference: posted.messageId,
 								}),
@@ -3528,7 +3578,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
 				row: StoredAlertRuleRow,
-				normalized: NormalizedRule,
+				storedRule: NormalizedRule,
 				evaluation: EvaluatedRule,
 				groupKey: string,
 				timestamp: number,
@@ -3540,6 +3590,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				stateWrites: RuleStateWrites,
 				windowEndMs: number,
 			) {
+				// The incident and its notifications name the threshold this check was judged against.
+				const normalized = withTierThresholds(storedRule, evaluation.tierThresholds)
 				// `timestamp` is the tick's claim on the rule. The claim can expire while
 				// this runs (slow notification enrichment, a late warehouse result), so
 				// every state and incident write goes through `writeUnderClaim`: once a
@@ -3735,7 +3787,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											$.firstTriggeredAt.gte(flapsSince),
 											$.lastNotifiedAt.isNotNull(),
 											$.lastNotifiedAt.gte(
-												timestamp - reminderMinutesFor(normalized, groupKey) * 60_000,
+												timestamp -
+													flapWindowMinutesFor(normalized, groupKey) * 60_000,
 											),
 										])
 										.orderBy(["lastNotifiedAt", "desc"])
@@ -3750,7 +3803,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								: yield* dbExecute((db) =>
 										db.run(
 											PG.from(AlertDeliveryEvents)
-												.select("status")
+												.select("status", "providerMessage")
 												.where(($) => [
 													$.orgId.eq(row.orgId),
 													$.incidentId.eq(priorNotified.id),
@@ -3758,7 +3811,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												]),
 										),
 									)
-						const isUnheard = !Arr.some(priorPages, (page) => page.status === "success")
+						// A chat post skipped because the workspace has notifications off is stored as a
+						// success with nothing posted: nobody heard that one either.
+						const isUnheard = !Arr.some(
+							priorPages,
+							(page) =>
+								page.status === "success" &&
+								!Str.startsWith(SKIPPED_POST_PREFIX)(page.providerMessage ?? ""),
+						)
 						// A chain that pages people leaves no delivery row: its pages are read too.
 						const priorPeoplePaged =
 							priorNotified === null || !isUnheard
@@ -3778,6 +3838,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const neverPaged = isUnheard && priorPeoplePaged.length === 0
 						lifecycle = yield* planAlertLifecycle({
 							...lifecycleInput,
+							flapWindowMinutes: flapWindowMinutesFor(normalized, groupKey),
 							previousNotificationAtMs: neverPaged
 								? null
 								: (priorNotified?.lastNotifiedAt ?? null),
@@ -5435,6 +5496,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					ruleId: AlertRuleId,
 					groupKey: string,
 				) => ReadonlyArray<AlertIncidentRow["id"]>
+				/** Every group of the rule that is quiet after a resolve by hand, with those incidents. */
+				readonly quietGroupsForRule: (
+					orgId: OrgId,
+					ruleId: AlertRuleId,
+				) => ReadonlyArray<{ readonly id: AlertIncidentRow["id"]; readonly groupKey: string }>
 			}
 
 			const EMPTY_INCIDENTS: ReadonlyArray<AlertIncidentRow> = []
@@ -5460,6 +5526,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						openIncidentsForRule: () => EMPTY_INCIDENTS,
 						stateKeysForRule: () => [],
 						quietFor: () => [],
+						quietGroupsForRule: () => [],
 					} satisfies TickPrefetch
 				}
 
@@ -5540,6 +5607,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const quietByGroup = Arr.groupBy(quiet, (row) =>
 					groupCacheKey(row.orgId, row.ruleId, row.groupKey ?? UNGROUPED_GROUP_KEY),
 				)
+				const quietByRule = Arr.groupBy(quiet, (row) => ruleCacheKey(row.orgId, row.ruleId))
 				const incidentsByRule = Arr.groupBy(incidentRows, (incident) =>
 					ruleCacheKey(incident.orgId, incident.ruleId),
 				)
@@ -5573,6 +5641,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								Option.getOrElse((): typeof quiet => []),
 							),
 							(row) => row.id,
+						),
+					quietGroupsForRule: (orgId, ruleId) =>
+						Arr.map(
+							Record.get(quietByRule, ruleCacheKey(orgId, ruleId)).pipe(
+								Option.getOrElse((): typeof quiet => []),
+							),
+							(row) => ({ id: row.id, groupKey: row.groupKey ?? UNGROUPED_GROUP_KEY }),
 						),
 				} satisfies TickPrefetch
 			})
@@ -6301,6 +6376,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						).pipe(flushingStates)
 
 						const evaluatedGroups = HashSet.fromIterable(Arr.map(eligible, (r) => r.groupKey))
+						// A group resolved by hand that left the results has nothing left to measure,
+						// which ends its quiet as a check that read no data does. Back, it opens again.
+						const departedQuietIds = Arr.filterMap(
+							prefetch.quietGroupsForRule(row.orgId, row.id),
+							(quiet) =>
+								HashSet.has(evaluatedGroups, quiet.groupKey)
+									? Result.failVoid
+									: Result.succeed(quiet.id),
+						)
+						if (Arr.isReadonlyArrayNonEmpty(departedQuietIds)) {
+							yield* writeUnderClaim(
+								{ ruleId: row.id, claimedAt: timestamp, ruleUpdatedAt: row.updatedAt },
+								(db) =>
+									db.run(
+										PG.update(AlertIncidents)
+											.set({ quietSince: null })
+											.where(($) => [
+												$.orgId.eq(row.orgId),
+												$.id.in_(...departedQuietIds),
+											]),
+									),
+							)
+						}
 						// An anomaly rule's source reports every open incident it still owns, so a missing
 						// group was closed elsewhere; never probe the warehouse for it.
 						if (normalized.signalType !== "anomaly") {
