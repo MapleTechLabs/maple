@@ -19,6 +19,7 @@ import { update } from "./commands/update"
 import { changelog } from "./commands/changelog"
 import { onboarding } from "./commands/onboarding"
 import { users, user, events } from "./commands/users"
+import { sourcemaps } from "./commands/sourcemaps"
 import { OutputFormatSetting } from "./lib/output"
 
 // One CLI, two backends. Local mode runs the query-engine helpers against the
@@ -91,5 +92,6 @@ export const cli = Command.make("maple").pipe(
 		post,
 		put,
 		patch,
+		sourcemaps,
 	]),
 )
