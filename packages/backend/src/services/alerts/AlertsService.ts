@@ -218,6 +218,7 @@ import {
 	SLO_BUDGET_GROUP_LABEL,
 	evaluateSloBudget,
 	evaluateSloBurn,
+	sloBurnTierThresholds,
 	sloRuleThresholds,
 } from "@maple/backend/services/slos/slo-alert-rule"
 import { SLO_BUDGET_GROUP_KEY, SLO_LIVENESS_WINDOW_MINUTES } from "@maple/domain/slo"
@@ -258,6 +259,11 @@ export type { AlertSchedulerLane } from "./AlertRuleModel"
 type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation & {
 	readonly anomaly?: AnomalyAlertObservation
 	readonly groupLabel?: string
+	/**
+	 * What each severity of this check was judged against, when that is not the rule's stored
+	 * tier: an SLO's firing tier has its own factor, and its budget group breaches at the whole budget.
+	 */
+	readonly tierThresholds?: Partial<Record<AlertSeverity, number>>
 }
 
 /** The service and environment an anomaly is about; null when it names neither. */
@@ -686,6 +692,35 @@ const reminderMinutesFor = (
 	groupKey: string,
 ): number =>
 	isStandingWarning(rule, groupKey) ? STANDING_WARNING_RENOTIFY_MINUTES : rule.renotifyIntervalMinutes
+
+/**
+ * How recent an earlier incident's notification must be for a reopen to be a flap. A spent budget
+ * is reminded once a day, but a budget that came back and is spent again within that day is news:
+ * the last thing anyone read was that it was back.
+ */
+const flapWindowMinutesFor = (
+	rule: Pick<NormalizedRule, "signalType" | "renotifyIntervalMinutes">,
+	groupKey: string,
+): number =>
+	rule.signalType === "slo_burn_rate" && groupKey === SLO_BUDGET_GROUP_KEY
+		? rule.renotifyIntervalMinutes
+		: reminderMinutesFor(rule, groupKey)
+
+/** `rule` with the given severities' thresholds replaced; the rule itself when there are none. */
+const withTierThresholds = (
+	rule: NormalizedRule,
+	tierThresholds: Partial<Record<AlertSeverity, number>> | undefined,
+): NormalizedRule =>
+	tierThresholds === undefined
+		? rule
+		: {
+				...rule,
+				threshold: tierThresholds[rule.severity] ?? rule.threshold,
+				thresholds: Arr.map(rule.thresholds, (tier) => ({
+					...tier,
+					value: tierThresholds[tier.severity] ?? tier.value,
+				})),
+			}
 
 /** Longest an uptime incident's status-page write may delay the alert tick. */
 const STATUS_PAGE_SYNC_TIMEOUT = "3 seconds"
@@ -1263,11 +1298,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						onSome: (
 							observed,
 						): ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }> => [
-							{ evaluation: evaluateSloBurn(observed), groupKey: UNGROUPED_GROUP_KEY },
+							{
+								evaluation: {
+									...evaluateSloBurn(observed),
+									tierThresholds: sloBurnTierThresholds(observed),
+								},
+								groupKey: UNGROUPED_GROUP_KEY,
+							},
 							{
 								evaluation: {
 									...evaluateSloBudget(observed),
 									groupLabel: SLO_BUDGET_GROUP_LABEL,
+									// The budget group observes the share of the budget used: all of it is the line.
+									tierThresholds: { warning: 1, critical: 1 },
 								},
 								groupKey: SLO_BUDGET_GROUP_KEY,
 							},
@@ -3481,7 +3524,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
 				row: StoredAlertRuleRow,
-				normalized: NormalizedRule,
+				storedRule: NormalizedRule,
 				evaluation: EvaluatedRule,
 				groupKey: string,
 				timestamp: number,
@@ -3493,6 +3536,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				stateWrites: RuleStateWrites,
 				windowEndMs: number,
 			) {
+				// The incident and its notifications name the threshold this check was judged against.
+				const normalized = withTierThresholds(storedRule, evaluation.tierThresholds)
 				// `timestamp` is the tick's claim on the rule. The claim can expire while
 				// this runs (slow notification enrichment, a late warehouse result), so
 				// every state and incident write goes through `writeUnderClaim`: once a
@@ -3662,7 +3707,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											$.firstTriggeredAt.gte(flapsSince),
 											$.lastNotifiedAt.isNotNull(),
 											$.lastNotifiedAt.gte(
-												timestamp - reminderMinutesFor(normalized, groupKey) * 60_000,
+												timestamp -
+													flapWindowMinutesFor(normalized, groupKey) * 60_000,
 											),
 										])
 										.orderBy(["lastNotifiedAt", "desc"])
@@ -3712,6 +3758,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const neverPaged = isUnheard && priorPeoplePaged.length === 0
 						lifecycle = yield* planAlertLifecycle({
 							...lifecycleInput,
+							flapWindowMinutes: flapWindowMinutesFor(normalized, groupKey),
 							previousNotificationAtMs: neverPaged
 								? null
 								: (priorNotified?.lastNotifiedAt ?? null),

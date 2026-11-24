@@ -223,6 +223,9 @@ export const V2SloStatus = Schema.Struct({
 	as_of: Timestamp.annotate({ description: "When the status was read, to the minute." }),
 	total_events: ratioField("Sampling-weighted entry-point spans over the SLO window."),
 	good_events: ratioField("The good ones among them."),
+	sample_count: ratioField(
+		"Spans actually recorded over the SLO window, before sampling weights. The budget counts as spent only on 10 of them, 2 bad.",
+	),
 	sli: Schema.NullOr(Schema.Number).annotate({
 		description: "Share of good events over the SLO window (0 to 1), `null` when there were none.",
 	}),

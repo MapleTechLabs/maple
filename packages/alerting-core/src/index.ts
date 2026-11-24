@@ -294,6 +294,11 @@ export interface AlertLifecycleInput {
 	readonly previousNotificationAtMs?: number | null
 	/** The highest severity the incident behind that notification reached; null when unknown. */
 	readonly previousNotificationSeverity?: AlertSeverity | null
+	/**
+	 * How recent that notification must be for a reopen to count as a flap. Defaults to the
+	 * reminder interval; a group reminded rarely (once a day) names a shorter one.
+	 */
+	readonly flapWindowMinutes?: number
 	/** Set after the host's liveness gate permits recovery, including an expired hold ceiling. */
 	readonly allowNoDataResolution?: boolean
 }
@@ -440,7 +445,8 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 			const flapSuppressed =
 				!worsened &&
 				previousNotificationAtMs != null &&
-				previousNotificationAtMs >= nowMs - policy.renotifyIntervalMinutes * 60_000
+				previousNotificationAtMs >=
+					nowMs - (input.flapWindowMinutes ?? policy.renotifyIntervalMinutes) * 60_000
 			return {
 				state,
 				transition: "opened",

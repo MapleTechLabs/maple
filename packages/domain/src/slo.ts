@@ -196,16 +196,26 @@ export const firingTier = (
  * failure in a handful of requests overspends any budget.
  */
 export const budgetSpent = (counts: SloCounts, targetPercent: number): boolean =>
-	isEnoughEvidence(counts) && budgetRemaining(counts, targetPercent) <= 0
+	isEnoughEvidence(counts) && budgetRemaining(counts, targetPercent) <= BUDGET_SPENT_EPSILON
+
+/**
+ * Float slack around zero: ten failures in 100,000 at 99.99% spend the budget exactly, and the
+ * division leaves a remainder of 1e-15 that must not read as budget left.
+ */
+const BUDGET_SPENT_EPSILON = 1e-9
 
 /** Budget a spent SLO must win back before its warning clears, so it does not flap at zero. */
 export const SLO_BUDGET_RECOVERY = 0.02
 
-/** How the budget reads: spent, just back and holding its state, or clear. */
+/**
+ * How the budget reads: spent, holding, or clear. It holds while less than the recovery margin is
+ * back, with or without enough events to judge: a window whose failures aged out down to one that
+ * still overspends has not recovered, so an open warning stays open and nothing new opens.
+ */
 export const budgetState = (counts: SloCounts, targetPercent: number): SloTierState =>
 	budgetSpent(counts, targetPercent)
 		? "breach"
-		: isEnoughEvidence(counts) && budgetRemaining(counts, targetPercent) < SLO_BUDGET_RECOVERY
+		: counts.total > 0 && budgetRemaining(counts, targetPercent) < SLO_BUDGET_RECOVERY
 			? "hold"
 			: "clear"
 

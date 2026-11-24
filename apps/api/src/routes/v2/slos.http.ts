@@ -43,6 +43,7 @@ const toV2Status = (sloId: SloRecord["id"], status: SloStatus): V2SloStatus => (
 	as_of: isoTimestamp(status.asOfMs),
 	total_events: status.total,
 	good_events: status.good,
+	sample_count: status.samples,
 	sli: status.sli,
 	budget_remaining: status.budgetRemaining,
 	burn_windows: Arr.map(status.burnWindows, (window) => ({

@@ -228,6 +228,10 @@ describe("budgetState", () => {
 		// 99.5% used: back above zero, not yet by 2%.
 		expect(budgetState({ total: 1_000_000, good: 999_005 }, 99.9)).toBe("hold")
 		expect(budgetState({ total: 1_000_000, good: 999_500 }, 99.9)).toBe("clear")
+		// The failures that spent it aged out down to one, which still overspends: not recovered,
+		// so an open warning stays open, and one failure alone still opens nothing.
+		expect(budgetState({ total: 500, good: 499 }, 99.9)).toBe("hold")
+		expect(budgetState({ total: 0, good: 0 }, 99.9)).toBe("clear")
 	})
 })
 
@@ -235,6 +239,8 @@ describe("budgetSpent", () => {
 	it("is spent at or past the whole budget, on enough events to judge", () => {
 		expect(budgetSpent({ total: 10_000, good: 9_990 }, 99.9)).toBe(true)
 		expect(budgetSpent({ total: 10_000, good: 9_995 }, 99.9)).toBe(false)
+		// Exactly the budget: ten failures in 100,000 at 99.99%, whatever the division leaves over.
+		expect(budgetSpent({ total: 100_000, good: 99_990 }, 99.99)).toBe(true)
 		// One failure overspends any small window's budget and proves nothing.
 		expect(budgetSpent({ total: 5, good: 4 }, 99.9)).toBe(false)
 		expect(budgetSpent({ total: 500, good: 499 }, 99.9)).toBe(false)

@@ -179,6 +179,19 @@ export const evaluateSloBurn = (input: SloBurnInput): AlertEvaluation => {
 	}
 }
 
+/**
+ * The burn each severity is held to on this check: the factor of the tier that fires, so a warning
+ * from the 6h tier reads 6x and not the slower tier's 3x, and the severity's lowest otherwise.
+ */
+export const sloBurnTierThresholds = (input: SloBurnInput): Record<SloSeverity, number> => {
+	const factorOf = (severity: SloSeverity) =>
+		Option.match(firingTier(severity, input.windows, input.targetPercent), {
+			onNone: () => severityFactor(severity, input.targetPercent),
+			onSome: (tier) => tierFactor(tier, input.targetPercent),
+		})
+	return { warning: factorOf("warning"), critical: factorOf("critical") }
+}
+
 /** What the budget group's check knows of the SLO window, as the alert source read it. */
 export type SloBudgetInput =
 	| { readonly _tag: "read"; readonly totals: SloCounts }

@@ -147,6 +147,7 @@ export const sloStatus = (
 			...head,
 			total_events: 0,
 			good_events: 0,
+			sample_count: 0,
 			sli: null,
 			budget_remaining: 1,
 			burn_windows: Arr.map(WINDOWS, (minutes) => ({
@@ -163,6 +164,7 @@ export const sloStatus = (
 			...head,
 			total_events: SPARSE.total,
 			good_events: SPARSE.total - SPARSE.bad,
+			sample_count: SPARSE.total,
 			sli: 1 - badShare,
 			budget_remaining: 1 - badShare / budgetRatio,
 			burn_windows: Arr.map(WINDOWS, (minutes, index) => {
@@ -183,6 +185,7 @@ export const sloStatus = (
 		...head,
 		total_events: TOTAL,
 		good_events: TOTAL * (1 - badShare),
+		sample_count: TOTAL,
 		sli: 1 - badShare,
 		budget_remaining: budget,
 		burn_windows: Arr.map(WINDOWS, (minutes, index) => {
