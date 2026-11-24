@@ -54,7 +54,7 @@ export const V2SourceMap = Schema.Struct({
 	}),
 	minified_path: Schema.String.annotate({
 		description:
-			"Path of the JavaScript file the map belongs to, relative to the deploy root. A stack frame URL matches it when the URL's path ends with it.",
+			"Path of the JavaScript file the map belongs to, relative to the deploy root. A stack frame URL matches it when the URL's path equals it or ends with `/` followed by it, so `assets/app.js` matches `https://cdn.example.com/static/assets/app.js` but `app.js` does not match `assets/myapp.js`.",
 		examples: ["assets/index-Bx81.js"],
 	}),
 	size_bytes: Schema.Number.annotate({
@@ -149,7 +149,7 @@ export class V2SourceMapsApiGroup extends HttpApiGroup.make("sourceMaps")
 				identifier: "uploadSourceMap",
 				summary: "Upload a source map",
 				description:
-					"Stores one source map (the raw JSON as the request body, at most 15 MiB). A map with the same `debug_id`, or else the same `service`, `version` and `minified_path`, is replaced. Requires an engineer or admin role and the `source_maps:write` scope.",
+					"Stores one source map (the raw JSON as the request body, at most 10 MiB, the largest map Maple can symbolicate with; larger is a 413). With a `debug_id`, only the map with that `debug_id` is replaced, so builds sharing a release path keep their own maps. Without one, the map without a debug id at the same `service`, `version` and `minified_path` is replaced. Requires an engineer or admin role and the `source_maps:write` scope.",
 			}),
 		),
 	)

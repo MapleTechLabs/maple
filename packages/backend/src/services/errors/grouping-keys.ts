@@ -186,7 +186,11 @@ export const withSourceMappedStacks = (
 											// Decided on the raw frames: a vendor chunk whose frames map into
 											// `node_modules` is mapped, not waiting.
 											const mapPending =
-												!Arr.some(stack.frames, (frame) => frame.resolved) &&
+												// A dependency frame that mapped says nothing about the app's own map.
+												!Arr.some(
+													stack.frames,
+													(frame) => frame.resolved && frame.in_app,
+												) &&
 												Arr.some(
 													frames,
 													(frame, i) =>
@@ -450,7 +454,7 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		// A never-keyed hash whose frames found no map yet (or whose lookup failed) waits, up to the
 		// grace window from its first sighting: keyed now on its raw frames, it would never be keyed
 		// again. Past the window it keys on what it has. A hash with no row yet is a first sighting.
-		// A hash with a stored key whose lookup failed keeps that key this tick: re-keying it on
+		// A hash with a stored key whose lookup failed or whose map is pending keeps that key this tick: re-keying it on
 		// raw frames could overwrite a good mapped key.
 		const neverKeyedSet = new Set(neverKeyed)
 		const waits = (entry: SampleInput) =>
@@ -468,7 +472,10 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		const ready = Arr.filter(mapped, (entry) =>
 			waits(entry)
 				? nowMs - (pendingSeen.get(entry.fingerprintHash) ?? nowMs) >= MAP_PENDING_GRACE_MS
-				: !(entry.lookupFailed === true && storedHashes.has(entry.fingerprintHash)),
+				: !(
+						storedHashes.has(entry.fingerprintHash) &&
+						(entry.lookupFailed === true || entry.mapPending === true)
+					),
 		)
 		const computed = computeGroupingKeys(ready, input.grouping.rules)
 		if (computed.length > 0) {

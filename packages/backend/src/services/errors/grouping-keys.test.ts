@@ -369,9 +369,9 @@ describe("keys that wait for a source map", () => {
 		).toEqual(["p1", "p2"])
 	})
 
-	it("keeps a stored key whose re-key lookup failed, however old the hash", async () => {
-		const { api } = symbolicator({ lookupFails: true })
-		const keys = await Effect.runPromise(
+	/** A stored mapped key for `p2`, under rules since changed, after one tick re-keys it from `sample`. */
+	const storedAfterRekey = (api: StackSymbolicatorApi, sample: GroupingSampleRow) =>
+		Effect.runPromise(
 			Effect.gen(function* () {
 				const database = yield* Database
 				// First seen long ago, keyed on mapped frames under rules since changed: the tick re-keys it.
@@ -408,7 +408,7 @@ describe("keys that wait for a source map", () => {
 				yield* resolveGroupingSiblings(
 					(run) => database.execute(run),
 					{
-						samples: () => Effect.succeed([mapped]),
+						samples: () => Effect.succeed([{ ...sample, fingerprintHash: "p2" }]),
 						spans: (rows) => Effect.succeed(Arr.map(rows, (row) => spanRow(row.fingerprintHash))),
 						sourceMapped: (entries, rules) =>
 							withSourceMappedStacks(Option.some(api), ORG, entries, rules),
@@ -430,7 +430,32 @@ describe("keys that wait for a source map", () => {
 				)
 			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
 		)
-		expect(keys).toEqual([{ groupingKey: "mapped-key", configDigest: "rules-before" }])
+
+	it("keeps a stored key whose re-key lookup failed, however old the hash", async () => {
+		const { api } = symbolicator({ lookupFails: true })
+		expect(await storedAfterRekey(api, mapped)).toEqual([
+			{ groupingKey: "mapped-key", configDigest: "rules-before" },
+		])
+	})
+
+	it("keeps a stored key whose map is pending instead of re-keying it on minified frames", async () => {
+		const { api } = symbolicator()
+		expect(await storedAfterRekey(api, unmapped)).toEqual([
+			{ groupingKey: "mapped-key", configDigest: "rules-before" },
+		])
+		// A sample that maps does re-key.
+		expect(await storedAfterRekey(api, mapped)).not.toEqual([
+			{ groupingKey: "mapped-key", configDigest: "rules-before" },
+		])
+	})
+
+	it("holds a first sighting whose app frames did not map, even when a dependency frame did", async () => {
+		const mixed = sampleRow("p4", "TypeError", MESSAGE, [
+			"a (https://app.example.com/assets/index-unknown.js:1:1)",
+			V1.lib("t"),
+		])
+		const { api } = symbolicator()
+		expect(await keyedBy([mixed, vendor], api)).toEqual(["p3"])
 	})
 
 	it("reads no first sightings for an org without maps, even past the per-tick cap", async () => {

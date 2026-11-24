@@ -2,8 +2,11 @@ import { Schema } from "effect"
 import { SourceMapFileId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
-/** Largest source map one upload may carry. */
-export const SOURCE_MAP_MAX_BYTES = 15 * 1024 * 1024
+/**
+ * Largest source map one upload may carry: also the largest symbolication loads, so an upload that
+ * succeeds can always be used.
+ */
+export const SOURCE_MAP_MAX_BYTES = 10 * 1024 * 1024
 
 /** The upload is not a usable source map, or its parameters do not identify one. */
 export class SourceMapInvalidError extends HttpTaggedError<SourceMapInvalidError>()(
@@ -33,7 +36,7 @@ export class SourceMapTooLargeError extends HttpTaggedError<SourceMapTooLargeErr
 		status: 413,
 		code: "source_map_too_large",
 		title: "Source map is too large",
-		message: "Source maps are limited to 15 MiB each.",
+		message: "Source maps are limited to 10 MiB each, the largest Maple can symbolicate with.",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "redacted",

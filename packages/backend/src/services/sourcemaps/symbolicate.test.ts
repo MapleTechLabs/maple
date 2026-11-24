@@ -209,4 +209,43 @@ describe("symbolicateStack", () => {
 		const python = symbolicateStack('Traceback (most recent call last):\n  File "a.py", line 1', lookup)
 		expect(python).toEqual({ status: "not_applicable", frames: [], missing: [] })
 	})
+
+	it("keeps a mapped position whose source text the map leaves out", () => {
+		const short = new TraceMap({
+			version: 3,
+			sources: ["src/app.ts"],
+			sourcesContent: [],
+			names: [],
+			mappings: "AAAA",
+		})
+		const result = symbolicateStack(`Error\n    at a (${APP_URL}:1:1)`, () => short)
+		expect(Arr.map(result.frames, (frame) => [frame.file, frame.line, frame.context])).toEqual([
+			["src/app.ts", 1, null],
+		])
+	})
+
+	it("leaves a zero-line frame raw and still maps the rest", () => {
+		const result = symbolicateStack(`Error\n    at a (${APP_URL}:1:1)\n    at b (${APP_URL}:0:1)`, lookup)
+		expect(Arr.map(result.frames, (frame) => frame.resolved)).toEqual([true, false])
+	})
+
+	it("counts a locationless engine frame out of app", () => {
+		const result = symbolicateStack(
+			`Error\n    at a (${APP_URL}:1:1)\n    at processTick (native)`,
+			lookup,
+		)
+		expect(Arr.map(result.frames, (frame) => frame.in_app)).toEqual([true, false])
+	})
+
+	it("counts a source in the map's ignoreList out of app, still resolved", () => {
+		const ignoring = new TraceMap({
+			version: 3,
+			sources: ["src/framework.js"],
+			names: [],
+			mappings: "AAAA",
+			ignoreList: [0],
+		})
+		const [frame] = symbolicateStack(`Error\n    at a (${APP_URL}:1:1)`, () => ignoring).frames
+		expect([frame?.file, frame?.resolved, frame?.in_app]).toEqual(["src/framework.js", true, false])
+	})
 })

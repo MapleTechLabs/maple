@@ -5,7 +5,7 @@
  */
 import { Array as Arr, Option, Schema, String as Str } from "effect"
 
-import { parseJsFrame, type StackFrame, type SymbolicatedStack } from "../errors/js-stack"
+import type { StackFrame, SymbolicatedStack } from "../errors/js-stack"
 import {
 	computeFingerprintInputs,
 	currentFrameCandidates,
@@ -113,14 +113,10 @@ export const frameFunction = (frame: string): string | undefined => {
 	return name === undefined || plumbingRe.test(name) ? undefined : name
 }
 
-/** A mapped frame's function, unless the map named none (the minified name stayed) or it is plumbing. */
+/** A mapped frame's function when the source map supplied it, unless it is plumbing. */
 const mappedFunction = (frame: StackFrame): string | undefined => {
-	const minified = Option.match(parseJsFrame(frame.raw), {
-		onNone: () => null,
-		onSome: (parsed) => parsed.function,
-	})
 	const name = frame.function
-	return name === null || name === minified || plumbingRe.test(name) ? undefined : name
+	return frame.function_from_map !== true || name === null || plumbingRe.test(name) ? undefined : name
 }
 
 /**

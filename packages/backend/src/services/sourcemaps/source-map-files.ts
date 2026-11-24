@@ -10,6 +10,8 @@ import { Array as Arr, Effect, Option, Order, Predicate, Schema, String as Str }
 
 const MAX_PATH_LENGTH = 1024
 const MAX_LABEL_LENGTH = 256
+/** The release-path index entry must fit a B-tree page (~2.7 kB); multibyte text can exceed it. */
+const MAX_RELEASE_KEY_BYTES = 2000
 
 /** Where a file's bytes live in the bucket; the org prefix is what org erasure deletes. */
 export const sourceMapObjectKey = (orgId: OrgId, id: SourceMapFileId): string => `v1/${orgId}/${id}`
@@ -135,7 +137,7 @@ const hasContent = (fields: JsonObject): boolean => {
 }
 
 /**
- * Checks an upload against the contract: at most 15 MiB, a version 3 map with a `mappings` string
+ * Checks an upload against the contract: at most 10 MiB (what symbolication can load), a version 3 map with a `mappings` string
  * and sources (or an index map of such maps), and a debug id or a service and version to find it by. A debug id the map itself carries
  * (`debugId` / `debug_id`) is used when none is passed.
  */
@@ -145,7 +147,7 @@ export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload"
 	const sizeBytes = upload.bytes.byteLength
 	if (sizeBytes > SOURCE_MAP_MAX_BYTES) {
 		return yield* new SourceMapTooLargeError({
-			message: `Source map is ${sizeBytes} bytes; the limit is ${SOURCE_MAP_MAX_BYTES}.`,
+			message: `Source map is ${sizeBytes} bytes; the limit is ${SOURCE_MAP_MAX_BYTES} (10 MiB), the largest map Maple can symbolicate with.`,
 			sizeBytes,
 		})
 	}
@@ -164,6 +166,15 @@ export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload"
 	}
 	const serviceName = yield* optionalLabel(upload.serviceName, "service")
 	const version = yield* optionalLabel(upload.version, "version")
+	const keyBytes = new TextEncoder().encode(
+		`${serviceName ?? ""}${version ?? ""}${minifiedPath}`,
+	).byteLength
+	if (keyBytes > MAX_RELEASE_KEY_BYTES) {
+		return yield* invalid(
+			`\`service\`, \`version\` and \`minified_path\` together must be at most ${MAX_RELEASE_KEY_BYTES} bytes.`,
+			"minified_path",
+		)
+	}
 
 	const fields = yield* Effect.fromOption(parseJsonObject(upload.bytes), () =>
 		invalid("The body is not a JSON object."),

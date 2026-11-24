@@ -316,6 +316,15 @@ describe("SourceMapService.upload", () => {
 			expect(
 				yield* reject({ bytes: mapBytes(), minifiedPath: "assets/a.js", serviceName: "web" }),
 			).toEqual(["@maple/http/sourcemaps/SourceMapInvalidError", "debug_id"])
+			// 1,000 three-byte characters: under the length limit, over the index entry's bytes.
+			expect(
+				yield* reject({
+					bytes: mapBytes(),
+					minifiedPath: `assets/${Str.repeat(1000)("\u20ac")}.js`,
+					serviceName: "web",
+					version: "1",
+				}),
+			).toEqual(["@maple/http/sourcemaps/SourceMapInvalidError", "minified_path"])
 			expect(yield* reject({ ...base, bytes: mapBytes(), minifiedPath: " / " })).toEqual([
 				"@maple/http/sourcemaps/SourceMapInvalidError",
 				"minified_path",
@@ -425,6 +434,74 @@ describe("SourceMapReader.findForFrames", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("finds a release's map however many other maps the release has", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const reader = yield* SourceMapReader
+			const database = yield* Database
+			const release = { serviceName: "web", version: "9.0.0" }
+			// 2,100 maps of the same release for other files, stored first.
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(SourceMapFiles).values(
+						Arr.makeBy(2100, (i) => ({
+							id: Schema.decodeSync(SourceMapFileId)(
+								`00000000-0000-4000-8000-${Str.padStart(12, "0")(String(i))}`,
+							),
+							orgId: ORG,
+							debugId: null,
+							serviceName: "web",
+							version: "9.0.0",
+							minifiedPath: `assets/chunk-${i}.js`,
+							sizeBytes: 1,
+							hasSourcesContent: false,
+							objectKey: `v1/${ORG}/chunk-${i}`,
+							createdAt: 0,
+							lastUsedAt: null,
+						})),
+					),
+				),
+			)
+			const target = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/zz-last.js",
+				...release,
+			})
+			const url = "https://cdn.test/static/assets/zz-last.js"
+			const matches = yield* reader.findForFrames({
+				orgId: ORG,
+				debugIds: new Map(),
+				...release,
+				urls: [url],
+			})
+			expect(matches.get(url)?.id).toBe(target.id)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("matches a stored path whose file name holds an encoded `#`", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const reader = yield* SourceMapReader
+			const release = { serviceName: "web", version: "1.2.0" }
+			const stored = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "https://cdn.test/assets/a%23b.js",
+				...release,
+			})
+			expect(stored.minifiedPath).toBe("assets/a#b.js")
+			const url = "https://cdn.test/assets/a%23b.js"
+			const matches = yield* reader.findForFrames({
+				orgId: ORG,
+				debugIds: new Map(),
+				...release,
+				urls: [url],
+			})
+			expect(matches.get(url)?.id).toBe(stored.id)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("matches percent-encoded frame URLs to the decoded stored path", () => {
 		const { layer } = makeHarness()
 		return Effect.gen(function* () {
@@ -496,8 +573,10 @@ describe("SourceMapService.sweepExpired", () => {
 			).toEqual(Arr.sort([used.id, fresh.id], Order.String))
 			expect(objects.has(stale.objectKey)).toBe(false)
 
-			const later = Duration.toMillis(Duration.days(60)) + Duration.toMillis(SOURCE_MAP_RETENTION) + 1
-			expect(yield* service.sweepExpired(later)).toBe(1)
+			// A recorded use may be a day stale, so the used file gets that day too.
+			const used90 = Duration.toMillis(Duration.days(60)) + Duration.toMillis(SOURCE_MAP_RETENTION)
+			expect(yield* service.sweepExpired(used90 + Duration.toMillis(Duration.hours(12)))).toBe(0)
+			expect(yield* service.sweepExpired(used90 + Duration.toMillis(Duration.days(1)) + 1)).toBe(1)
 		}).pipe(Effect.provide(layer))
 	})
 })

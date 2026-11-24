@@ -7,8 +7,8 @@ import {
 	isSourceMappableUrl,
 	parseJsStack,
 } from "@maple/domain/errors/js-stack"
-import { type TraceMap, originalPositionFor, sourceContentFor } from "@jridgewell/trace-mapping"
-import { Array as Arr, String as Str } from "effect"
+import { type TraceMap, isIgnored, originalPositionFor, sourceContentFor } from "@jridgewell/trace-mapping"
+import { Array as Arr, Predicate, String as Str } from "effect"
 
 const CONTEXT_LINES = 5
 
@@ -17,8 +17,9 @@ export const displaySourcePath = (source: string): string =>
 	Str.replace(/^(?:\.{1,2}\/)+/u, "")(Str.replace(/^webpack:\/\/[^/]*\//u, "")(source))
 
 const contextFor = (map: TraceMap, source: string, line: number): StackFrameContext | null => {
-	const content = sourceContentFor(map, source)
-	if (content === null) return null
+	// A short `sourcesContent` array leaves `undefined` where the type says string or null.
+	const content: unknown = sourceContentFor(map, source)
+	if (!Predicate.isString(content)) return null
 	const lines = Str.split(content, /\r?\n/u)
 	const index = line - 1
 	const current = lines[index]
@@ -36,7 +37,8 @@ const unresolved = (frame: ParsedFrame): StackFrame => ({
 	file: frame.url,
 	line: frame.line,
 	column: frame.column,
-	in_app: isInAppPath(frame.url ?? frame.raw),
+	// A frame with no location (`native`, `<anonymous>`) is the engine's, never the app's.
+	in_app: frame.url !== null && isInAppPath(frame.url),
 	resolved: false,
 	context: null,
 })
@@ -48,7 +50,9 @@ interface MappedFrame {
 }
 
 const resolveFrame = (frame: ParsedFrame, map: TraceMap): MappedFrame => {
-	if (frame.line === null) return { frame: unresolved(frame), callee: null }
+	// trace-mapping throws below line 1; such a frame stays raw and the rest still map.
+	if (frame.line === null || !Number.isFinite(frame.line) || frame.line < 1)
+		return { frame: unresolved(frame), callee: null }
 	// Stack columns are 1-based, trace-mapping columns 0-based (lines are 1-based in both).
 	const position = originalPositionFor(map, {
 		line: frame.line,
@@ -63,7 +67,8 @@ const resolveFrame = (frame: ParsedFrame, map: TraceMap): MappedFrame => {
 			file,
 			line: position.line,
 			column: position.column + 1,
-			in_app: isInAppPath(file),
+			// The map's `ignoreList` marks framework and vendor sources out of app.
+			in_app: isInAppPath(file) && !isIgnored(map, position.source),
 			resolved: true,
 			context: contextFor(map, position.source, position.line),
 		},
@@ -98,7 +103,7 @@ export const symbolicateStack = (
 	const frames = Arr.map(results, (result, i) => {
 		const callerName = results[i + 1]?.mapped.callee ?? null
 		return result.mapped.frame.resolved && callerName !== null
-			? { ...result.mapped.frame, function: callerName }
+			? { ...result.mapped.frame, function: callerName, function_from_map: true }
 			: result.mapped.frame
 	})
 	const unresolvedCandidates = Arr.filter(
