@@ -105,8 +105,25 @@ const insertBeforeTrailer = (code: string, block: string): string =>
  * Whether the snippet can go on a new first line: not above a shebang, and not above a directive
  * prologue (`"use strict"` and the like), which only counts as one at the top.
  */
-export const canPrepend = (code: string): boolean =>
-	!Str.startsWith("#!")(code) && !/^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*["']/.test(code)
+export const canPrepend = (code: string): boolean => !Str.startsWith("#!")(code) && !startsWithString(code)
+
+/** Whether the first token after whitespace and comments is a string literal; one linear pass. */
+const startsWithString = (code: string): boolean => {
+	const rest = Str.trimStart(code)
+	if (Str.startsWith("//")(rest)) {
+		return Option.match(Str.indexOf("\n")(rest), {
+			onNone: () => false,
+			onSome: (end) => startsWithString(Str.slice(end + 1)(rest)),
+		})
+	}
+	if (Str.startsWith("/*")(rest)) {
+		return Option.match(Str.indexOf("*/")(Str.slice(2)(rest)), {
+			onNone: () => false,
+			onSome: (end) => startsWithString(Str.slice(end + 4)(rest)),
+		})
+	}
+	return Str.startsWith('"')(rest) || Str.startsWith("'")(rest)
+}
 
 /**
  * `prepend`: the snippet on a new first line, so the id is registered before the module's own code

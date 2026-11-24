@@ -1669,14 +1669,14 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:errors:errorIssueLatestStacktraceQuery:default  [bd645f8b]
+-- builder:errors:errorIssueLatestStacktraceQuery:default  [6cb41cd5]
 SELECT
           error_events.Timestamp AS timestamp,
           error_events.ExceptionStacktrace AS stacktrace,
           error_events.ServiceName AS serviceName,
           error_events.ServiceVersion AS serviceVersion,
-          error_events.TraceId AS traceId,
-          error_events.SpanId AS spanId
+          toString(error_events.TraceId) AS traceId,
+          toString(error_events.SpanId) AS spanId
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
           AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))

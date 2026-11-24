@@ -1,4 +1,4 @@
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Schema, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	SymbolicatedStack,
@@ -59,6 +59,36 @@ describe("parseJsStack", () => {
 			["global code", "https://app.example.com/assets/main.js", 3, 9],
 			["lazy", "https://cdn.example.com/node_modules/@scope/pkg/index.js", 4, 2],
 		])
+	})
+
+	it("keeps a Promise combinator frame, with no location, between two app frames", () => {
+		const { frames } = parseJsStack(
+			"Error: boom\n    at child (https://a.test/app.js:1:5)\n    at async Promise.all (index 0)\n    at async parent (https://a.test/app.js:1:40)",
+		)
+		expect(Arr.map(frames, (frame) => [frame.function, frame.url])).toEqual([
+			["child", "https://a.test/app.js"],
+			["Promise.all", null],
+			["parent", "https://a.test/app.js"],
+		])
+	})
+
+	it("parses hostile lines in linear time", () => {
+		const attackLines = (length: number) => [
+			`at ${Str.repeat(length)(" ")}`,
+			`at  (${Str.repeat(length / 3)(" (a")}`,
+			`@a${Str.repeat(length)(" ")}`,
+			`at a (${Str.repeat(length / 2)(":1")}`,
+			`x@${Str.repeat(length / 7)(" line 1")}`,
+			`at eval (eval at ${Str.repeat(length / 2)("((")}`,
+		]
+		// 100k-char lines are past the frame cap; 1,999-char ones are parsed in full.
+		Arr.forEach([100_000, 1_998], (length) =>
+			Arr.forEach(attackLines(length), (line) => {
+				const started = performance.now()
+				parseJsStack(`Error: x\n${line}\n${line}`)
+				expect(performance.now() - started).toBeLessThan(50)
+			}),
+		)
 	})
 
 	it("skips caused by lines and returns no frames for a non-JS stack", () => {

@@ -121,7 +121,7 @@ const makeHarness = () => {
 		),
 	).pipe(Layer.provideMerge(createTestDb(createdDbs).layer), Layer.provide(sourceMapBucketLayer(bucket)))
 	const layer = Layer.effect(StackSymbolicator, StackSymbolicator.make).pipe(Layer.provideMerge(sourceMaps))
-	return { state, layer }
+	return { state, layer, objects }
 }
 
 /**
@@ -547,6 +547,45 @@ describe("StackSymbolicator", () => {
 				[true, false],
 			)
 			assert.strictEqual(state.reads, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("counts a matched map whose object is gone as a failed read", () => {
+		const { objects, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			const row = yield* sourceMaps.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/index-Bx81.js",
+				debugId: DEBUG_ID,
+			})
+			// Replaced or deleted between the lookup and the read: the row is there, its bytes are not.
+			objects.delete(row.objectKey)
+			const outcome = yield* symbolicator.symbolicateWithOutcome(
+				request({ debugIds: new Map([[BUNDLE_URL, DEBUG_ID]]) }),
+			)
+			assert.deepStrictEqual([outcome.stack.status, outcome.lookupFailed], ["missing_map", true])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("looks up a URL with no JS extension when the SDK recorded its debug id", () => {
+		const { layer } = makeHarness()
+		const BLOB_URL = "blob:https://shop.example.com/0f3a9c1e-6b2d-4e8f-9a7c-1d2e3f4a5b6c"
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			yield* sourceMaps.upload(ORG, { bytes: mapBytes(), minifiedPath: "worker.js", debugId: DEBUG_ID })
+			const stacktrace = `TypeError: boom\n    at a (${BLOB_URL}:1:1)`
+			const withId = yield* symbolicator.symbolicate(
+				request({ stacktrace, debugIds: new Map([[BLOB_URL, DEBUG_ID]]) }),
+			)
+			assert.deepStrictEqual(
+				Arr.map(withId.frames, (frame) => [frame.file, frame.line]),
+				[["src/app.ts", 7]],
+			)
+			const without = yield* symbolicator.symbolicate(request({ stacktrace }))
+			assert.isFalse(without.frames[0]?.resolved ?? true)
 		}).pipe(Effect.provide(layer))
 	})
 })
