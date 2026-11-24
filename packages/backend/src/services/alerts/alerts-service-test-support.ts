@@ -214,6 +214,8 @@ export interface TestOverrides extends Partial<AlertRuntimeApi> {
 	readonly memberPagesFail?: boolean
 	/** The deployment has no push credentials: a page reports that nothing was tried. */
 	readonly memberPagesUnconfigured?: boolean
+	/** Read on every page: while `down`, Apple cannot be reached and the send fails. */
+	readonly memberPagesApple?: { down: boolean }
 }
 
 export const DEFAULT_CLOCK_EPOCH_MS = 1_700_000_000_000
@@ -276,6 +278,7 @@ export const makeLayer = (
 		memberPages,
 		memberPagesFail,
 		memberPagesUnconfigured,
+		memberPagesApple,
 		...runtimeOverrides
 	} = overrides
 	const noPushes = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
@@ -298,7 +301,8 @@ export const makeLayer = (
 						Effect.sync(() => memberPages?.push(page)).pipe(
 							Effect.as({
 								...noPushes,
-								sent: memberPagesFail === true ? 0 : 1,
+								...(memberPagesApple?.down === true ? { failed: 1 } : undefined),
+								sent: memberPagesFail === true || memberPagesApple?.down === true ? 0 : 1,
 								unregistered:
 									memberPagesFail === true && memberPagesUnconfigured !== true ? 1 : 0,
 								configured: memberPagesUnconfigured !== true,

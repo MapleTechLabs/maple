@@ -129,7 +129,10 @@ const makeLayer = (
 					register: () => Effect.die("unused"),
 					unregister: () => Effect.die("unused"),
 					find: () => Effect.die("unused"),
-					listForUser: () => Effect.die("unused"),
+					listForUser: (_orgId, userId) =>
+						devices === null
+							? Effect.fail(new MobileDevicePersistenceError({ message: "database is down" }))
+							: Effect.succeed(Arr.filter(devices, (one) => one.userId === userId)),
 					listForOrg: () =>
 						devices === null
 							? Effect.fail(new MobileDevicePersistenceError({ message: "database is down" }))

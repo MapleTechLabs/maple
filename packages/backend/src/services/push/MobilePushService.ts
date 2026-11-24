@@ -584,7 +584,8 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				}
 				if (!apns.isConfigured) return { ...empty, configured: false }
 				// A read that failed is not "no phone": the page counts as failed, so it is tried again.
-				const registered = yield* devices.listForOrg(page.orgId).pipe(
+				// The member's own devices only: a page is one person's, whatever the org's size.
+				const registered = yield* devices.listForUser(page.orgId, page.userId).pipe(
 					Effect.map((listed): ReadonlyArray<MobileDevice> | null => listed),
 					Effect.catch((error) =>
 						Effect.logWarning("Mobile push: could not list devices for a page").pipe(
@@ -597,10 +598,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					yield* Effect.annotateCurrentSpan({ "maple.push.devices_unreadable": true })
 					return { ...empty, failed: 1 }
 				}
-				const targets = Arr.filter(
-					registered,
-					(device) => device.userId === page.userId && device.enabled,
-				)
+				const targets = Arr.filter(registered, (device) => device.enabled)
 				yield* Effect.annotateCurrentSpan({ "maple.push.devices": targets.length })
 				if (targets.length === 0) return empty
 				const results = yield* Effect.forEach(

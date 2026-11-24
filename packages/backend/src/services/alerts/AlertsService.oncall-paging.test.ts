@@ -211,6 +211,7 @@ const layerFor = (
 		readonly memberPages?: Array<MemberPagePush>
 		readonly memberPagesFail?: boolean
 		readonly memberPagesUnconfigured?: boolean
+		readonly memberPagesApple?: { down: boolean }
 	} = {},
 ) => {
 	const directory = options.directory ?? [...MEMBERS]
@@ -230,6 +231,9 @@ const layerFor = (
 				...(options.memberPagesUnconfigured === undefined
 					? undefined
 					: { memberPagesUnconfigured: options.memberPagesUnconfigured }),
+				...(options.memberPagesApple === undefined
+					? undefined
+					: { memberPagesApple: options.memberPagesApple }),
 			},
 			options.email ?? stubEmailService(emails),
 			ChatAlertPoster.layer.pipe(
@@ -832,6 +836,39 @@ describe("escalation pages the on-call", () => {
 				)
 			}).pipe(
 				Effect.provide(layerFor(testDb, state, emails, chat, { memberPages, memberPagesFail: true })),
+			)
+		})
+	})
+
+	it.effect("retries a phone page Apple could not take, and sends it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const memberPages: Array<MemberPagePush> = []
+		const apple = { down: true }
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_phone_retry", testDb, {
+					secondStep: [{ type: "user", userId: ben }],
+				})
+				yield* registerPhone(testDb, orgId, ben)
+				yield* ticks(alerts, 10)
+				const push = Effect.map(pageRows(testDb, orgId), (rows) =>
+					Arr.map(
+						Arr.filter(rows, (row) => row.channel === "push"),
+						(row) => [row.status, row.attempt_number, row.error_message],
+					),
+				)
+				assert.deepStrictEqual(yield* push, [["queued", 1, "The push could not be sent"]])
+				apple.down = false
+				yield* ticks(alerts, 2)
+				assert.deepStrictEqual(yield* push, [["sent", 2, null]])
+			}).pipe(
+				Effect.provide(
+					layerFor(testDb, state, emails, chat, { memberPages, memberPagesApple: apple }),
+				),
 			)
 		})
 	})
