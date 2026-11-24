@@ -7,8 +7,8 @@ import { Path } from "effect/Path"
 
 export const JS_EXTENSIONS: ReadonlyArray<string> = [".js", ".mjs", ".cjs"]
 
-/** Maps above this are refused by the server, so they are skipped before the upload. */
-export const MAX_MAP_BYTES = 15 * 1024 * 1024
+/** Maps above this are refused by the server (the largest it can symbolicate with), so they are skipped before the upload. */
+export const MAX_MAP_BYTES = 10 * 1024 * 1024
 
 /** Reading or writing the build output failed. */
 export class SourceMapsFileError extends Schema.TaggedError<SourceMapsFileError>()(

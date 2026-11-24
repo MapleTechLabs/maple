@@ -182,7 +182,7 @@ describe("v2 source_maps over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("refuses a body over 15 MiB by its Content-Length, and one that runs over while read", async () => {
+	it("refuses a body over 10 MiB by its Content-Length, and one that runs over while read", async () => {
 		const harness = makeHarness()
 		const key = await harness.createKey({ scopes: ["source_maps:write"] })
 		const path = `/v2/source_maps?minified_path=assets/a.js&debug_id=${DEBUG_ID}`
@@ -190,13 +190,13 @@ describe("v2 source_maps over HTTP", () => {
 		// The header alone decides: the small body behind it is never read.
 		const declared = await harness.request("POST", path, key.secret, {
 			...mapBody(),
-			contentLength: 15 * 1024 * 1024 + 1,
+			contentLength: 10 * 1024 * 1024 + 1,
 		})
 		expect(declared.status).toBe(413)
 		expect(declared.body.error._tag).toBe("@maple/http/sourcemaps/SourceMapTooLargeError")
 
 		const oversized = await harness.request("POST", path, key.secret, {
-			bytes: new Uint8Array(15 * 1024 * 1024 + 1),
+			bytes: new Uint8Array(10 * 1024 * 1024 + 1),
 			contentType: "application/octet-stream",
 		})
 		expect(oversized.status).toBe(413)

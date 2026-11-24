@@ -227,6 +227,7 @@ describe("source-mapped frames", () => {
 	const mappedFrame = (raw: string, fn: string | null, file: string): StackFrame => ({
 		raw,
 		function: fn,
+		function_from_map: fn !== null,
 		file,
 		line: 12,
 		column: 4,
@@ -348,6 +349,7 @@ describe("source-mapped frames", () => {
 			return withStack(sample, [
 				{
 					...mappedFrame(raw, minified, "src/checkout.ts"),
+					function_from_map: false,
 					line,
 					context: text === null ? null : { pre: [], line: text, post: [] },
 				},
@@ -366,6 +368,22 @@ describe("source-mapped frames", () => {
 		const bare = site("index-Bx81", "a", 40, null)
 		expect(groupingKey(bare)).toBe(groupingKey(stripStack(bare)))
 		expect(groupingParts(bare).rule).toBe("frames")
+	})
+
+	it("keeps a map-supplied name that happens to equal the generated one", () => {
+		const release = (bundle: string, generated: string) =>
+			withStack(node("TypeError", "boom", [`${generated} (https://app.example/${bundle}.js:1:9)`]), [
+				mappedFrame(
+					`at ${generated} (https://app.example/${bundle}.js:1:9)`,
+					"renderInvoice",
+					"src/invoice.ts",
+				),
+			])
+		// An unminified build keeps the original name; a minified one renames it. Both map to it.
+		expect(groupingKey(release("plain", "renderInvoice"))).toBe(groupingKey(release("min", "a")))
+		expect(explainGrouping(release("plain", "renderInvoice")).frames).toEqual([
+			"at renderInvoice (src/invoice.ts)",
+		])
 	})
 
 	it("keys a tagged error with no message on the original function", () => {
