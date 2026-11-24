@@ -328,18 +328,19 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 /**
  * What this page did to the feed, against a later read of the schedule. A link someone else made
  * since (a time that is neither ours nor the one we ended) wins: ours is dead, or our "off" is no
- * longer true. A read that says off, or still shows the link we ended, left before our change landed.
+ * longer true. A read that still shows the link we ended left before our change landed. So did one
+ * that says off, until a read has shown our link: after that, off means someone turned it off.
  */
 const reconcileCalendarFeed = (
 	local: Model["calendarFeed"],
 	schedule: V2OnCallSchedule,
-): Model["calendarFeed"] =>
-	local === null ||
-	schedule.calendar_feed_created_at === null ||
-	schedule.calendar_feed_created_at === local.createdAt ||
-	schedule.calendar_feed_created_at === local.ended
-		? local
-		: null
+): Model["calendarFeed"] => {
+	if (local === null) return null
+	const read = schedule.calendar_feed_created_at
+	if (read === local.createdAt) return read === null ? local : { ...local, isConfirmed: true }
+	if (read === null) return local.isConfirmed ? null : local
+	return read === local.ended ? local : null
+}
 
 /** When the feed's current link was made, as this page knows it: its own change over the read. */
 const calendarFeedSince = (model: Model): string | null =>
@@ -532,6 +533,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								url: feed.url,
 								createdAt: feed.created_at,
 								ended: calendarFeedSince(model),
+								isConfirmed: false,
 							},
 							calendarCopy: CopyButton.init(),
 						},
@@ -567,7 +569,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					const closed = updateCalendarDialog(
 						{
 							...settled,
-							calendarFeed: { url: null, createdAt: null, ended: calendarFeedSince(model) },
+							calendarFeed: {
+								url: null,
+								createdAt: null,
+								ended: calendarFeedSince(model),
+								isConfirmed: false,
+							},
 						},
 						Dialog.close(settled.calendarFeedDialog),
 					)

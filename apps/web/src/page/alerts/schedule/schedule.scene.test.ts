@@ -705,6 +705,17 @@ describe("on-call schedule page, calendar feed", () => {
 		expect(reread(feed.created_at).calendarFeed?.url).toBe(feed.url)
 		// A read that left before the link was made still says off: the link stays.
 		expect(reread(undefined).calendarFeed?.url).toBe(feed.url)
+		// Once a read has shown the link, a read that says off means someone turned it off.
+		const confirmed = reread(feed.created_at)
+		const turnedOffElsewhere = pageUpdate(
+			confirmed,
+			Message.CompletedFetchSchedule({
+				key: confirmed.schedule.key ?? "",
+				readAtMs: ONCALL_NOW,
+				result: Result.succeed(checkoutSchedule(ONCALL_NOW, [], undefined)),
+			}),
+		).model
+		expect(turnedOffElsewhere.calendarFeed).toBeNull()
 		// Someone replaced it a minute later: this page's link is dead and no longer shown.
 		expect(reread(msIso(ONCALL_NOW + 60_000)).calendarFeed).toBeNull()
 	})

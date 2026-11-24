@@ -53,12 +53,14 @@ export const Model = Schema.Struct({
 	 * What this page did to the calendar feed since the schedule was read: the link just made
 	 * (shown once, never read back) and when, or `createdAt: null` once turned off. `ended` is
 	 * when the link that change ended was made, so a read that still shows it is known to be old.
+	 * `isConfirmed`: a read has shown this link, so a later read without it means it was turned off.
 	 */
 	calendarFeed: Schema.NullOr(
 		Schema.Struct({
 			url: Schema.NullOr(Schema.String),
 			createdAt: Schema.NullOr(Schema.String),
 			ended: Schema.NullOr(Schema.String),
+			isConfirmed: Schema.Boolean,
 		}),
 	),
 	calendarCopy: CopyButton.Model,
