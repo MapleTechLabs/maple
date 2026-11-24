@@ -169,8 +169,9 @@ export const deleteRuleRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId) =
 				PG.or($.eventType.neq("resolve"), $.status.in_("success", "failed", "silenced")),
 			]),
 		)
-		// A kept all-clear still waiting was written for an incident and a rule that now go: its
-		// links move to the alerts list, as the rebuilt ones' do.
+		// A kept all-clear was written for an incident and a rule that now go: its links move to
+		// the alerts list, as the rebuilt ones' do. One on its way out is rewritten too, for the
+		// worker that takes it over if its claim runs out.
 		const kept = yield* db.run(
 			PG.from(AlertDeliveryEvents)
 				.select("id", "payloadJson")
@@ -178,7 +179,7 @@ export const deleteRuleRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId) =
 					$.orgId.eq(orgId),
 					$.ruleId.eq(ruleId),
 					$.eventType.eq("resolve"),
-					$.status.eq("queued"),
+					$.status.in_("queued", "processing"),
 				]),
 		)
 		yield* Effect.forEach(

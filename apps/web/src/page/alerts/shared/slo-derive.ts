@@ -196,7 +196,7 @@ export const holdingTier = (slo: SloTarget, status: SloStatus): Option.Option<Sl
 				(reading) => reading.tier,
 			)
 
-/** Why a tier holds: its short window is empty, or it burns on too few events to judge. */
+/** Why a tier holds: its short window is empty, or it burns on too few events or failures to judge. */
 export type HoldReason = "no-events" | "few-events"
 
 export const holdReason = (status: SloStatus, tier: SloTier): HoldReason =>
@@ -208,11 +208,11 @@ export const holdReason = (status: SloStatus, tier: SloTier): HoldReason =>
 		},
 	)
 
-/** "Holding: no events in 5m, an open incident stays open", or too few events in the long window. */
+/** "Holding: no events in 5m, an open incident stays open", or too little in the long window. */
 export const holdingLine = (tier: SloTier, reason: HoldReason): string =>
 	reason === "no-events"
 		? `Holding: no events in ${windowLabel(tier.shortWindowMinutes)}, an open incident stays open`
-		: `Holding: too few events in ${windowLabel(tier.longWindowMinutes)} to judge, an open incident stays open`
+		: `Holding: too few events or failures in ${windowLabel(tier.longWindowMinutes)} to judge, an open incident stays open`
 
 export const fastestBurn = (status: SloStatus): number =>
 	Arr.reduce(status.burn_windows, 0, (fastest, window) => Math.max(fastest, window.burn_rate))
