@@ -15,7 +15,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { viewsExplorer } from "./saved-views"
-import { filtersRail } from "./view-filters"
+import { filtersRail, type RailModel } from "./view-filters"
 import { tracesTable } from "./view-table"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Struct } from "effect"
@@ -90,6 +90,15 @@ const chipBar = (h: HtmlBuilder<Message>, search: Model["search"], pinnedNamespa
 // Scrolling the table, the peek sheet and the advanced editor send messages that change none of
 // these, so each keeps its tree instead of rebuilding with the page.
 const railSlot = createLazy()
+// Below `lg` the shell lifts the rail into a sheet; above it the rail is inline. A cached tree
+// shared across that move loses its listeners when snabbdom tears down the old place, so the
+// position is a cache argument and each place gets its own tree.
+const railAt = (
+	h: HtmlBuilder<Message>,
+	rail: RailModel,
+	pinnedNamespace: string | null,
+	_isBelowLg: boolean,
+): Html => filtersRail(h, rail, pinnedNamespace)
 const railOf = stableSlice((model: Model) =>
 	Struct.pick(model, ["search", "facets", "filterSections", "firstPage", "durationDraft"]),
 )
@@ -107,7 +116,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Traces",
 			width: "full",
-			filters: railSlot(filtersRail, [h, railOf(model), pinnedNamespace]),
+			filters: railSlot(railAt, [h, railOf(model), pinnedNamespace, inputs.isBelowLg === true]),
 			actions: actionsSlot(actions, [h, actionsOf(model)]),
 		},
 		[
