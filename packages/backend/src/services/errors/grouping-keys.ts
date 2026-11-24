@@ -493,12 +493,17 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		const expired = rotate(Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash) && graceOver(hash)))
 		const held = rotate(Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash) && !graceOver(hash)))
 		const expiredShare = Math.floor(GROUPING_KEYS_PER_TICK / 2)
+		// Stale keys (a rules change, a first upload) get up to a quarter, so a storm of new hashes
+		// cannot stall re-keying; any share a group leaves unused goes to the groups after it.
+		const staleShare = Math.floor(GROUPING_KEYS_PER_TICK / 4)
+		const stale = rotate(Arr.filter(hashes, (hash) => storedHashes.has(hash) && !current.has(hash)))
 		const unkeyed = [
+			...stale.slice(0, staleShare),
 			...expired.slice(0, expiredShare),
-			...Arr.filter(neverKeyed, (hash) => !earlierSeen.has(hash)),
+			...rotate(Arr.filter(neverKeyed, (hash) => !earlierSeen.has(hash))),
 			...held,
 			...expired.slice(expiredShare),
-			...Arr.filter(hashes, (hash) => storedHashes.has(hash) && !current.has(hash)),
+			...stale.slice(staleShare),
 		].slice(0, GROUPING_KEYS_PER_TICK)
 		const samples = unkeyed.length === 0 ? [] : yield* reads.samples(unkeyed)
 		const spans = samples.length === 0 ? [] : yield* reads.spans(samples)

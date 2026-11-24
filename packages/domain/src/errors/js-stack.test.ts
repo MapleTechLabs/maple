@@ -107,6 +107,17 @@ describe("parseJsStack", () => {
 		])
 	})
 
+	it("keeps a header with an `@` in its message as the message, not a frame", () => {
+		const parsed = parseJsStack(
+			"Error: invalid token for user@api:401\n    at a (https://a.test/app.js:1:5)\nrender@https://a.test/app.js:2:3",
+		)
+		expect(parsed.message).toBe("Error: invalid token for user@api:401")
+		expect(Arr.map(parsed.frames, (frame) => [frame.function, frame.url])).toEqual([
+			["a", "https://a.test/app.js"],
+			["render", "https://a.test/app.js"],
+		])
+	})
+
 	it("skips caused by lines and returns no frames for a non-JS stack", () => {
 		expect(parseJsStack("Error: boom\ncaused by: Error: inner").frames).toEqual([])
 		expect(parseJsStack('Traceback (most recent call last):\n  File "a.py", line 1').frames).toEqual([])
