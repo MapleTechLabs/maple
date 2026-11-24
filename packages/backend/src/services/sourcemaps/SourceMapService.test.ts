@@ -208,6 +208,19 @@ describe("SourceMapService.upload", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("accepts a map whose ignore list is an array of source indexes", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const row = yield* service.upload(ORG, {
+				bytes: mapBytes({ ignoreList: [0], x_google_ignoreList: [0] }),
+				minifiedPath: "assets/a.js",
+				debugId: DEBUG_ID,
+			})
+			expect(row.debugId).toBe(DEBUG_ID)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("adopts the debug id the map itself carries", () => {
 		const { layer } = makeHarness()
 		return Effect.gen(function* () {
@@ -253,6 +266,8 @@ describe("SourceMapService.upload", () => {
 				mapBytes({ sources: undefined }),
 				mapBytes({ sources: [] }),
 				mapBytes({ sources: [1] }),
+				mapBytes({ ignoreList: {} }),
+				mapBytes({ x_google_ignoreList: [-1] }),
 				mapBytes({ mappings: undefined, sections: [{ offset: { line: 0 }, map: {} }] }),
 			]
 			const errors = yield* Effect.forEach(unusable, (bytes) =>

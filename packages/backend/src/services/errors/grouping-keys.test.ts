@@ -60,6 +60,7 @@ const release = (opts: {
 	readonly appColumn: number
 	readonly libColumn: number
 	readonly libFunction?: string
+	readonly noSourceText?: boolean
 }) => ({
 	url: `https://app.example.com/assets/${opts.bundle}.js`,
 	map: new TraceMap({
@@ -71,10 +72,14 @@ const release = (opts: {
 		],
 		// The throw site's own text, wherever the release put it: what an unnamed frame keys on.
 		sourcesContent: [
-			Arr.join(
-				Arr.makeBy(opts.appLine + 1, (i) => (i === opts.appLine ? "  return invoice.total" : "")),
-				"\n",
-			),
+			opts.noSourceText === true
+				? null
+				: Arr.join(
+						Arr.makeBy(opts.appLine + 1, (i) =>
+							i === opts.appLine ? "  return invoice.total" : "",
+						),
+						"\n",
+					),
 			null,
 		],
 		names: [opts.appFunction, opts.libFunction ?? "request"],
@@ -112,7 +117,16 @@ const CART = release({
 	appColumn: 7,
 	libColumn: 60,
 })
-const MAPS = new Map(Arr.map([V1, V2, CART], (r) => [r.url, r.map] as const))
+// No embedded source: a throw site with no caller maps, but has no identity to key on.
+const BARE = release({
+	bundle: "index-bare",
+	appFunction: "renderInvoice",
+	appLine: 6,
+	appColumn: 0,
+	libColumn: 40,
+	noSourceText: true,
+})
+const MAPS = new Map(Arr.map([V1, V2, CART, BARE], (r) => [r.url, r.map] as const))
 
 /** The symbolicator, over in-memory maps; counts its lookups and can fail them. */
 const symbolicator = (options: { readonly lookupFails?: boolean } = {}) => {
@@ -438,6 +452,14 @@ describe("keys that wait for a source map", () => {
 		])
 	})
 
+	it("keeps a stored key when the stack maps but gives nothing to key on", async () => {
+		const { api } = symbolicator()
+		const bare = sampleRow("p2", "TypeError", MESSAGE, [BARE.app("a")])
+		expect(await storedAfterRekey(api, bare)).toEqual([
+			{ groupingKey: "mapped-key", configDigest: "rules-before" },
+		])
+	})
+
 	it("keeps a stored key whose map is pending instead of re-keying it on minified frames", async () => {
 		const { api } = symbolicator()
 		expect(await storedAfterRekey(api, unmapped)).toEqual([
@@ -447,6 +469,18 @@ describe("keys that wait for a source map", () => {
 		expect(await storedAfterRekey(api, mapped)).not.toEqual([
 			{ groupingKey: "mapped-key", configDigest: "rules-before" },
 		])
+	})
+
+	it("holds a first sighting whose throw site did not map, even when its app caller did", async () => {
+		const throwSite = (hash: string, bundle: string) =>
+			sampleRow(hash, "TypeError", MESSAGE, [
+				`t (https://app.example.com/assets/${bundle}.js:1:1)`,
+				V1.app("a"),
+			])
+		const { api } = symbolicator()
+		expect(
+			await keyedBy([throwSite("p5", "index-one"), throwSite("p6", "index-two"), mapped], api),
+		).toEqual(["p2"])
 	})
 
 	it("holds a first sighting whose app frames did not map, even when a dependency frame did", async () => {
@@ -651,6 +685,41 @@ describe("an org's first source map upload", () => {
 		expect(keyed).toEqual(["zz-ready"])
 	})
 
+	it("keeps expired hashes that never find a span from taking every slot", async () => {
+		const noSpan = Arr.makeBy(200, (i) => `y${Str.padStart(3, "0")(String(i))}`)
+		const fresh = sampleRow("new-one", "TypeError", MESSAGE, [V1.app("a")])
+		const keyed = await Effect.runPromise(
+			Effect.gen(function* () {
+				const database = yield* Database
+				yield* seedSeen(
+					database,
+					Arr.map(noSpan, (hash) => [hash, NOW - 2 * MAP_PENDING_GRACE_MS] as const),
+				)
+				// Only `new-one` has a sample and span; the 200 old hashes come back with nothing.
+				yield* resolveGroupingSiblings(
+					(run) => database.execute(run),
+					{
+						samples: (hashes) =>
+							Effect.succeed(
+								Arr.filter([fresh], (s) => Arr.contains(hashes, s.fingerprintHash)),
+							),
+						spans: (rows) => Effect.succeed(Arr.map(rows, (row) => spanRow(row.fingerprintHash))),
+						mapsInPlay: Effect.succeedSome(false),
+					},
+					{
+						orgId: ORG,
+						hashes: [...noSpan, "new-one"],
+						nowMs: NOW,
+						grouping: DEFAULT_ORG_GROUPING,
+						lineage: new Map(),
+					},
+				)
+				return Arr.map(yield* storedKeys(database), (row) => row.fingerprintHash)
+			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+		)
+		expect(keyed).toEqual(["new-one"])
+	})
+
 	it("keys a hash held past its grace window even behind 200 first sightings", async () => {
 		const fresh = Arr.makeBy(200, (i) =>
 			sampleRow(`x${Str.padStart(3, "0")(String(i))}`, "TypeError", MESSAGE, [V1.app("a")]),
@@ -667,6 +736,54 @@ describe("an org's first source map upload", () => {
 			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
 		)
 		expect(keyed).toContain("old")
+	})
+
+	it("keeps a raw key stored past the grace window when its map comes later (known limit)", async () => {
+		// The release's map arrives only after the hash keyed on raw frames: the stored key stays.
+		const late = sampleRow("late", "TypeError", MESSAGE, [
+			"a (https://app.example.com/assets/index-late.js:1:1)",
+		])
+		const phase = { mapped: false }
+		const lateStacks: StackSymbolicatorApi = {
+			...symbolicator().api,
+			symbolicateWithOutcome: (request) =>
+				Effect.sync(() => ({
+					stack: symbolicateStack(request.stacktrace, () => (phase.mapped ? V1.map : undefined)),
+					lookupFailed: false,
+				})),
+		}
+		const keys = await Effect.runPromise(
+			Effect.gen(function* () {
+				const database = yield* Database
+				yield* seedSeen(database, [["late", NOW - MAP_PENDING_GRACE_MS]])
+				const once = () =>
+					resolveGroupingSiblings(
+						(run) => database.execute(run),
+						{
+							samples: () => Effect.succeed([late]),
+							spans: (rows) =>
+								Effect.succeed(Arr.map(rows, (row) => spanRow(row.fingerprintHash))),
+							sourceMapped: (entries, rules) =>
+								withSourceMappedStacks(Option.some(lateStacks), ORG, entries, rules),
+							mapsInPlay: Effect.succeedSome(true),
+						},
+						{
+							orgId: ORG,
+							hashes: ["late"],
+							nowMs: NOW,
+							grouping: DEFAULT_ORG_GROUPING,
+							lineage: new Map(),
+						},
+					)
+				yield* once()
+				const before = yield* storedKeys(database)
+				phase.mapped = true
+				yield* once()
+				return { before, after: yield* storedKeys(database) }
+			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+		)
+		expect(keys.before).toHaveLength(1)
+		expect(keys.after).toEqual(keys.before)
 	})
 
 	it("holds a young sample that registered debug ids before the org has any map", async () => {

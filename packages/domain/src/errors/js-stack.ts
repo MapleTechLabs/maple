@@ -50,12 +50,14 @@ export const SymbolicatedStack = Schema.Struct({
 })
 export type SymbolicatedStack = typeof SymbolicatedStack.Type
 
-const V8_WITH_LOCATION = /^\s*at\s+(?:async\s+)?(?:new\s+)?(.*?)\s+\((.*)\)\s*$/u
-const V8_BARE = /^\s*at\s+(?:async\s+)?(.+?)\s*$/u
-const GECKO = /^\s*([^@]*)@(.+?)\s*$/u
-const LOCATION = /^(.*?):(\d+)(?::(\d+))?$/u
-const GECKO_EVAL = /^(.*?) line (\d+) > (?:eval|Function)(?::\d+:\d+)?$/u
-const EVAL_ORIGIN = /\((\S+?:\d+:\d+)\)/u
+/**
+ * Stack text is customer data, so lines are parsed with index splits and tail checks, never one
+ * backtracking pattern, and overlong lines are not frames at all.
+ */
+const MAX_FRAME_LINE = 2000
+const DIGITS = /^\d+$/u
+const GECKO_EVAL_TAIL = /^ line (\d+) > (?:eval|Function)(?::\d+:\d+)?$/u
+const PROMISE_INDEX = /^index \d+$/u
 const NO_LOCATION = new Set(["native", "<anonymous>", "[native code]", "unknown location"])
 
 interface Location {
@@ -64,27 +66,67 @@ interface Location {
 	readonly column: number | null
 }
 
+const NOWHERE: Location = { url: null, line: null, column: null }
+
+/** The text before and after the first (or last) `separator`, when it occurs. */
+const splitAt = (text: string, separator: string, last = false) =>
+	Option.map((last ? Str.lastIndexOf(separator) : Str.indexOf(separator))(text), (index) => ({
+		before: Str.slice(0, index)(text),
+		after: Str.slice(index + separator.length)(text),
+	}))
+
+/** `url:line:column` or `url:line`, split at the last colons; the url must not be empty. */
+const parseUrlLocation = (location: string): Option.Option<Location> =>
+	Option.flatMap(
+		Option.filter(
+			splitAt(location, ":", true),
+			({ before, after }) => before !== "" && DIGITS.test(after),
+		),
+		({ before, after }) =>
+			Option.match(
+				Option.filter(
+					splitAt(before, ":", true),
+					(inner) => inner.before !== "" && DIGITS.test(inner.after),
+				),
+				{
+					onNone: (): Option.Option<Location> =>
+						Option.some({ url: before, line: Number(after), column: null }),
+					onSome: (inner): Option.Option<Location> =>
+						Option.some({ url: inner.before, line: Number(inner.after), column: Number(after) }),
+				},
+			),
+	)
+
+/** `eval at fn (url:1:2), <anonymous>:3:4`: the eval call site, else no location. */
+const parseEvalOrigin = (location: string): Location => {
+	const origin = Option.flatMap(splitAt(location, "("), ({ after }) =>
+		Option.map(splitAt(after, ")"), ({ before }) => before),
+	)
+	const located = Option.flatMap(
+		Option.filter(origin, (text) => !/\s/u.test(text)),
+		parseUrlLocation,
+	)
+	return Option.isSome(located) && located.value.column !== null ? located.value : NOWHERE
+}
+
 const parseLocation = (location: string): Option.Option<Location> => {
 	const trimmed = Str.trim(location)
-	if (NO_LOCATION.has(trimmed)) return Option.some({ url: null, line: null, column: null })
-	// V8 eval frames point at the eval call site: `eval at fn (url:1:2), <anonymous>:3:4`.
-	if (Str.startsWith("eval at ")(trimmed)) {
-		const origin = EVAL_ORIGIN.exec(trimmed)?.[1]
-		return origin === undefined
-			? Option.some({ url: null, line: null, column: null })
-			: parseLocation(origin)
-	}
-	const geckoEval = GECKO_EVAL.exec(trimmed)
-	if (geckoEval !== null) {
-		return Option.some({ url: geckoEval[1] ?? null, line: Number(geckoEval[2]), column: null })
-	}
-	const match = LOCATION.exec(trimmed)
-	if (match === null || match[1] === undefined || match[1] === "") return Option.none()
-	return Option.some({
-		url: match[1],
-		line: Number(match[2]),
-		column: match[3] === undefined ? null : Number(match[3]),
-	})
+	if (NO_LOCATION.has(trimmed)) return Option.some(NOWHERE)
+	// `at async Promise.all (index 0)`: a combinator between two app frames, kept so the frame
+	// below it is not taken for the direct caller of the one above.
+	if (PROMISE_INDEX.test(trimmed)) return Option.some(NOWHERE)
+	if (Str.startsWith("eval at ")(trimmed)) return Option.some(parseEvalOrigin(trimmed))
+	// Firefox eval frames: `url line 3 > eval:1:1`.
+	const geckoEval = Option.flatMap(
+		Option.filter(splitAt(trimmed, " line "), ({ before }) => before !== ""),
+		({ before, after }) =>
+			Option.map(Option.fromNullishOr(GECKO_EVAL_TAIL.exec(` line ${after}`)?.[1]), (line) => ({
+				url: before,
+				line: Number(line),
+				column: null,
+			})),
+	)
+	return Option.isSome(geckoEval) ? geckoEval : parseUrlLocation(trimmed)
 }
 
 const nonEmpty = (value: string | undefined): string | null => {
@@ -100,31 +142,43 @@ const frameOf = (raw: string, fn: string | null, location: Location): ParsedFram
 	column: location.column,
 })
 
+/** `rest` without a leading `word ` and the whitespace after it. */
+const dropWord = (rest: string, word: string): string =>
+	Str.startsWith(`${word} `)(rest) || Str.startsWith(`${word}\t`)(rest)
+		? Str.trimStart(Str.slice(word.length)(rest))
+		: rest
+
+/** A V8 frame after its `at `: `fn (location)`, or a bare location. */
+const parseV8Frame = (raw: string, rest: string): Option.Option<ParsedFrame> => {
+	const body = dropWord(dropWord(rest, "async"), "new")
+	// The function ends at the first ` (`; the location runs to the final `)`.
+	const call = Option.filter(splitAt(body, " ("), () => Str.endsWith(")")(body))
+	if (Option.isSome(call)) {
+		return Option.map(parseLocation(Str.slice(0, -1)(call.value.after)), (location) =>
+			frameOf(raw, nonEmpty(call.value.before), location),
+		)
+	}
+	// `at spanName` alone is an Effect span, not a code location.
+	return Option.flatMap(parseLocation(body), (loc) =>
+		loc.url === null && !NO_LOCATION.has(Str.trim(body))
+			? Option.none()
+			: Option.some(frameOf(raw, null, loc)),
+	)
+}
+
 /** A frame from one stack line; none for headers, `caused by` lines and Effect span lines with no location. */
 export const parseJsFrame = (raw: string): Option.Option<ParsedFrame> => {
-	const withLocation = V8_WITH_LOCATION.exec(raw)
-	if (withLocation !== null) {
-		return Option.map(parseLocation(withLocation[2] ?? ""), (location) =>
-			frameOf(raw, nonEmpty(withLocation[1]), location),
-		)
+	if (raw.length > MAX_FRAME_LINE) return Option.none()
+	const line = Str.trim(raw)
+	if (Str.startsWith("at ")(line) || Str.startsWith("at\t")(line)) {
+		const rest = Str.trim(Str.slice(3)(line))
+		return rest === "" ? Option.none() : parseV8Frame(raw, rest)
 	}
-	const bare = V8_BARE.exec(raw)
-	if (bare !== null) {
-		const location = parseLocation(bare[1] ?? "")
-		// `at spanName` alone is an Effect span, not a code location.
-		return Option.flatMap(location, (loc) =>
-			loc.url === null && !NO_LOCATION.has(Str.trim(bare[1] ?? ""))
-				? Option.none()
-				: Option.some(frameOf(raw, null, loc)),
-		)
-	}
-	const gecko = GECKO.exec(raw)
-	if (gecko !== null) {
-		return Option.map(parseLocation(gecko[2] ?? ""), (location) =>
-			frameOf(raw, nonEmpty(gecko[1]), location),
-		)
-	}
-	return Option.none()
+	// Firefox and Safari: `fn@location`, the function never holding an `@`.
+	return Option.flatMap(
+		Option.filter(splitAt(line, "@"), ({ after }) => Str.trim(after) !== ""),
+		({ before, after }) => Option.map(parseLocation(after), (loc) => frameOf(raw, nonEmpty(before), loc)),
+	)
 }
 
 /** Parses V8, Firefox and Safari stack traces, top of stack first. */

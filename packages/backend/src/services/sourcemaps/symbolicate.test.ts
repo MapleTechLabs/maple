@@ -248,4 +248,17 @@ describe("symbolicateStack", () => {
 		const [frame] = symbolicateStack(`Error\n    at a (${APP_URL}:1:1)`, () => ignoring).frames
 		expect([frame?.file, frame?.resolved, frame?.in_app]).toEqual(["src/framework.js", true, false])
 	})
+
+	it("does not name a frame after the frame below a Promise combinator", () => {
+		// b's position maps to a call of handleClick, but b called Promise.all, not a: a keeps its name.
+		const result = symbolicateStack(
+			`Error\n    at a (${APP_URL}:1:1)\n    at async Promise.all (index 0)\n    at async b (${APP_URL}:1:1)`,
+			lookup,
+		)
+		expect(Arr.map(result.frames, (frame) => [frame.function, frame.in_app])).toEqual([
+			["a", true],
+			["Promise.all", false],
+			["b", true],
+		])
+	})
 })

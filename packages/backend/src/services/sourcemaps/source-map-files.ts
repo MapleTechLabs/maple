@@ -1,6 +1,6 @@
 import { SOURCE_MAP_MAX_BYTES, SourceMapInvalidError, SourceMapTooLargeError } from "@maple/domain/http"
 import type { OrgId, SourceMapFileId } from "@maple/primitives"
-import { frameUrlPath, urlMatchesMinifiedPath } from "@maple/domain/errors/js-stack"
+import { frameUrlPath, isSourceMappableUrl, urlMatchesMinifiedPath } from "@maple/domain/errors/js-stack"
 import { Array as Arr, Effect, Option, Order, Predicate, Schema, String as Str } from "effect"
 
 /**
@@ -87,10 +87,18 @@ const stringField = (fields: JsonObject, key: string): string | undefined => {
 
 type JsonObject = { readonly [x: PropertyKey]: unknown }
 
+/** An ignore list, when present, must be source indexes: the decoder calls array methods on it. */
+const isIgnoreList = (value: unknown): boolean =>
+	value === undefined ||
+	(Arr.isArray(value) &&
+		Arr.every(value, (index) => Predicate.isNumber(index) && Number.isInteger(index) && index >= 0))
+
 /** A plain map symbolication can read: a `mappings` string and at least one source (string or null). */
 const isRegularMap = (fields: JsonObject): boolean => {
 	const sources = fields["sources"]
 	return (
+		isIgnoreList(fields["ignoreList"]) &&
+		isIgnoreList(fields["x_google_ignoreList"]) &&
 		Predicate.isString(fields["mappings"]) &&
 		Arr.isArray(sources) &&
 		sources.length > 0 &&
@@ -157,7 +165,9 @@ export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload"
 		return yield* invalid("Index source maps are not supported; emit a regular map.")
 	}
 	if (!isRegularMap(fields)) {
-		return yield* invalid("The source map needs a `mappings` string and a non-empty `sources` array.")
+		return yield* invalid(
+			"The source map needs a `mappings` string, a non-empty `sources` array and, if present, an `ignoreList` array of source indexes.",
+		)
 	}
 	const hasSourcesContent = hasContent(fields)
 
@@ -184,6 +194,14 @@ export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload"
 		hasSourcesContent,
 	} satisfies ValidatedSourceMap
 })
+
+/**
+ * Whether a frame URL can have a stored map: a JS file or served URL, or any URL (a `blob:` one)
+ * the SDK recorded a valid debug id for.
+ */
+export const isLookupUrl = (url: string, debugIds: ReadonlyMap<string, string>): boolean =>
+	isSourceMappableUrl(url) ||
+	Option.isSome(Option.flatMap(Option.fromNullishOr(debugIds.get(url)), normalizeDebugId))
 
 /** The stored files a lookup can match: a debug id or a release (service + version) path. */
 export interface MatchableFile {

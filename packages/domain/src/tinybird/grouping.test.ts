@@ -2,13 +2,7 @@ import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 
 import type { StackFrame, SymbolicatedStack } from "../errors/js-stack"
-import {
-	collapseCodeWhitespace,
-	explainGrouping,
-	groupingKey,
-	groupingParts,
-	type GroupingSample,
-} from "./grouping"
+import { explainGrouping, groupingKey, groupingParts, type GroupingSample } from "./grouping"
 import { compileGroupingRules, GroupingConfig, groupingConfigDigest, OrgGroupingRule } from "./grouping-rules"
 
 const node = (
@@ -367,7 +361,7 @@ describe("source-mapped frames", () => {
 		expect(explainGrouping(invoice).frames).toEqual(["at src/checkout.ts | return invoice.total"])
 
 		// The same throw site after a deploy: new bundle, new minified name, lines moved.
-		const invoiceNext = site("index-Qz07", "xe", 52, "\treturn   invoice.total ")
+		const invoiceNext = site("index-Qz07", "xe", 52, "\treturn invoice.total ")
 		expect(groupingKey(invoiceNext)).toBe(groupingKey(invoice))
 
 		// With neither a name nor source text, the mapped key would be the file alone: raw key instead.
@@ -376,11 +370,7 @@ describe("source-mapped frames", () => {
 		expect(groupingParts(bare).rule).toBe("frames")
 	})
 
-	it("collapses formatting whitespace in a source line, never inside a string literal", () => {
-		expect(collapseCodeWhitespace('\t  return   totals["tax  rate"].total ')).toBe(
-			'return totals["tax  rate"].total',
-		)
-		expect(collapseCodeWhitespace("x = 'a\\'  b'   +  `c  d`")).toBe("x = 'a\\'  b' + `c  d`")
+	it("keys a source line on its text with only the ends trimmed", () => {
 		const site = (text: string) =>
 			withStack(node("TypeError", "boom", ["a (https://app.example/assets/x.js:1:9)"]), [
 				{
@@ -392,10 +382,10 @@ describe("source-mapped frames", () => {
 		expect(groupingKey(site('  totals["tax  rate"].total'))).not.toBe(
 			groupingKey(site('totals["tax rate"].total')),
 		)
-		expect(groupingKey(site('\ttotals[ "tax rate" ].total'))).toBe(
-			groupingKey(site('totals[ "tax rate" ].total')),
+		expect(groupingKey(site("x.split(/a  b/)"))).not.toBe(groupingKey(site("x.split(/a b/)")))
+		expect(groupingKey(site('\ttotals["tax rate"].total  '))).toBe(
+			groupingKey(site('totals["tax rate"].total')),
 		)
-		expect(groupingKey(site("totals.tax   .total"))).toBe(groupingKey(site("totals.tax .total")))
 	})
 
 	it("applies a frame rule on the generated file to the frame after its map resolves it", () => {
@@ -419,6 +409,20 @@ describe("source-mapped frames", () => {
 		const why = explainGrouping(mapped, vendor)
 		expect(why.frames).toEqual(["at renderInvoice (src/invoice.ts)"])
 		expect(why.skippedFrames).toEqual(["at wrap (src/wrapper.ts)"])
+	})
+
+	it("keeps the raw key when the throw site did not map, though its caller did", () => {
+		const site = (bundle: string) => {
+			const top = `t (https://app.example/assets/${bundle}.js:1:1)`
+			const caller = "a (https://app.example/assets/index-1.js:1:9)"
+			return withStack(node("TypeError", "boom", [top, caller]), [
+				{ ...unresolvedFrame(`at ${top}`), file: `https://app.example/assets/${bundle}.js` },
+				mappedFrame(`at ${caller}`, "dispatch", "src/dispatch.ts"),
+			])
+		}
+		expect(groupingParts(site("one")).rule).toBe("frames")
+		expect(groupingKey(site("one"))).toBe(groupingKey(stripStack(site("one"))))
+		expect(groupingKey(site("one"))).not.toBe(groupingKey(site("two")))
 	})
 
 	it("keeps a map-supplied name that happens to equal the generated one", () => {
