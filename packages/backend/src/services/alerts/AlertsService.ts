@@ -174,7 +174,11 @@ import {
 	selectEscalationWork,
 	startEscalationRun,
 } from "./alert-escalation-runs"
-import { acknowledgeDeliveryEventRow, queuedDeliveryEventRow } from "./alert-delivery-rows"
+import {
+	acknowledgeDeliveryEventRow,
+	queuedDeliveryEventRow,
+	SKIPPED_POST_PREFIX,
+} from "./alert-delivery-rows"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -337,8 +341,6 @@ const FenceResultRow = Schema.Struct({ fenced: Schema.Number })
 
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
 
-/** How a chat post that was deliberately not made reads in a delivery's provider message. */
-const SKIPPED_POST_PREFIX = "Skipped:"
 const STALE_PAGE_MESSAGE = "Not sent: the incident resolved before this page went out"
 const STALE_STEP_RESOLVED_MESSAGE = "Not sent: the incident resolved before this escalation step went out"
 const STALE_STEP_ACKNOWLEDGED_MESSAGE =
@@ -2967,6 +2969,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const filesLateTickets =
 						destinationRow.type === "linear" &&
 						!Predicate.hasProperty(row.payloadJson, "escalation")
+					// The claim batch's incident can be a drain old: a late ticket is filed as resolved.
+					const incidentStatusNow =
+						staleReason !== undefined ? "resolved" : (incidentRow?.status ?? "resolved")
 					if (staleReason !== undefined && !filesLateTickets) {
 						yield* recordDeliveryFailure(row, claimTime, {
 							message: staleReason,
@@ -3045,7 +3050,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							severity: decodeAlertSeveritySync(
 								payloadRule?.severity ?? incidentRow?.severity ?? "warning",
 							),
-							...(incidentRow?.status === "open"
+							...(incidentRow !== null && incidentStatusNow === "open"
 								? { incidentSeverity: decodeAlertSeveritySync(incidentRow.severity) }
 								: undefined),
 							...dispatchTierFields(
@@ -3063,7 +3068,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							windowMinutes: ruleRow?.windowMinutes ?? payloadRule?.windowMinutes ?? 5,
 							eventType: decodeAlertEventTypeSync(row.eventType),
 							incidentId: row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
-							incidentStatus: decodeAlertIncidentStatusSync(incidentRow?.status ?? "resolved"),
+							incidentStatus: decodeAlertIncidentStatusSync(incidentStatusNow),
 							incidentAcknowledgedBy: incidentAcknowledgedBy(incidentRow),
 							dedupeKey: incidentRow?.dedupeKey ?? String(payload.dedupeKey ?? row.deliveryKey),
 							value: payload.observed?.value ?? null,

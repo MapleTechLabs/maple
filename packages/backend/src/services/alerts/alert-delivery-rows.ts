@@ -13,6 +13,9 @@ import { Schema } from "effect"
 
 const decodeDeliveryEventId = Schema.decodeUnknownSync(AlertDeliveryEventDocument.fields.id)
 
+/** How a chat post that was deliberately not made reads in a delivery's provider message. */
+export const SKIPPED_POST_PREFIX = "Skipped:"
+
 export interface QueuedDeliveryEvent {
 	readonly id: string
 	readonly orgId: OrgId

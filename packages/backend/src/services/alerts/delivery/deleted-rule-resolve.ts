@@ -9,7 +9,7 @@ import type { MapleDb } from "@maple/db/client"
 import { AlertDeliveryEvents, AlertIncidents, type AlertDeliveryEventRow } from "@maple/db/tables"
 import { Array as Arr, DateTime, Effect, Option, Result, Schema, Struct } from "effect"
 import { randomUUID } from "node:crypto"
-import { queuedDeliveryEventRow } from "../alert-delivery-rows"
+import { queuedDeliveryEventRow, SKIPPED_POST_PREFIX } from "../alert-delivery-rows"
 import { StoredDeliveryPayloadSchema } from "./stored-payload"
 
 export const DELETED_RULE_RESOLVE_DETAIL = "Resolved: the alert was deleted"
@@ -107,7 +107,8 @@ export const deletedRuleResolveRows = (db: MapleDb, orgId: OrgId, ruleId: AlertR
 		const incidentIds = Arr.map(open, (incident) => incident.id)
 		if (!Arr.isArrayNonEmpty(incidentIds)) return []
 		// The newest page per incident and destination, picked in SQL: a long run of reminders to
-		// one destination cannot crowd out the single page another one got.
+		// one destination cannot crowd out the single page another one got. A post that was
+		// deliberately not made told nobody, so it is no page: an older one that went out still counts.
 		const latest: ReadonlyArray<PageRow> = yield* db.run(
 			PG.from(AlertDeliveryEvents)
 				.select("incidentId", "destinationId", "payloadJson")
@@ -117,6 +118,10 @@ export const deletedRuleResolveRows = (db: MapleDb, orgId: OrgId, ruleId: AlertR
 					$.incidentId.in_(...incidentIds),
 					$.eventType.in_("trigger", "renotify"),
 					$.status.in_("success", "failed", "processing"),
+					PG.or(
+						$.providerMessage.isNull(),
+						PG.not($.providerMessage.startsWith(SKIPPED_POST_PREFIX)),
+					),
 				])
 				.orderBy(($) => [
 					[$.incidentId, "asc"],
