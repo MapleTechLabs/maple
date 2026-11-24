@@ -30,9 +30,11 @@ describe("migration 0074 degrade detector", () => {
 	})
 
 	it("surfaces every other drift", () => {
-		expect(isMissingServiceIdentityColumns(drift("Unknown expression identifier `K8sCluster`"))).toBe(
-			false,
-		)
+		expect(
+			isMissingServiceIdentityColumns(
+				drift("Unknown expression identifier `K8sCluster` in scope SELECT max(ScopeNames) ..."),
+			),
+		).toBe(false)
 	})
 })
 
