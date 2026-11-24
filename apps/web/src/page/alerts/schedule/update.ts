@@ -10,7 +10,7 @@ import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { DEFAULT_RANGE_DAYS, FocusGap } from "../shared/coverage-preview"
-import { scheduleIdFromUrl } from "../shared/oncall-schedules"
+import { CALENDAR_FEED_EXISTS_CODE, scheduleIdFromUrl } from "../shared/oncall-schedules"
 import { localInputMs, localInputOf } from "../schedule-form/form"
 import {
 	CreateCalendarFeed,
@@ -100,6 +100,7 @@ export const init = (route: ScheduleRoute, context: PageContext): Return => {
 		confirmDeleteOverrideId: null,
 		deleteOverrideDialog: Dialog.init(DELETE_OVERRIDE_DIALOG_ID, "alert-dialog"),
 		calendarFeed: null,
+		calendarFeedChange: null,
 		calendarCopy: CopyButton.init(),
 		isChangingCalendarFeed: false,
 		calendarFeedAction: null,
@@ -326,8 +327,8 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 
 /**
  * What this page did to the feed, against a later read of the schedule. A link someone else made
- * since (a different time than ours) wins: ours is dead, or our "off" is no longer true. A read
- * that still says off while we hold a link is taken as one that left before our change landed.
+ * since (a time that is neither ours nor the one we ended) wins: ours is dead, or our "off" is no
+ * longer true. A read that says off, or still shows the link we ended, left before our change landed.
  */
 const reconcileCalendarFeed = (
 	local: Model["calendarFeed"],
@@ -335,9 +336,19 @@ const reconcileCalendarFeed = (
 ): Model["calendarFeed"] =>
 	local === null ||
 	schedule.calendar_feed_created_at === null ||
-	schedule.calendar_feed_created_at === local.createdAt
+	schedule.calendar_feed_created_at === local.createdAt ||
+	schedule.calendar_feed_created_at === local.ended
 		? local
 		: null
+
+/** When the feed's current link was made, as this page knows it: its own change over the read. */
+const calendarFeedSince = (model: Model): string | null =>
+	model.calendarFeed !== null
+		? model.calendarFeed.createdAt
+		: Option.match(scheduleOf(model), {
+				onNone: () => null,
+				onSome: (schedule) => schedule.calendar_feed_created_at,
+			})
 
 const updateCalendarDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
@@ -350,16 +361,22 @@ const updateCalendarDialog = (model: Model, step: ReturnType<typeof Dialog.updat
 	),
 })
 
-/** Sends the change the feed section or its dialog asked for, once. */
-const changeCalendarFeed = (model: Model, action: "create" | "off"): Return =>
+/**
+ * Sends the change the feed section or its dialog asked for, once. A plain create never replaces:
+ * the server refuses it when someone else made a link since this page read the schedule.
+ */
+const changeCalendarFeed = (model: Model, action: "create" | "replace" | "off"): Return =>
 	model.isChangingCalendarFeed || model.scheduleId === null
 		? { model }
 		: {
-				model: { ...model, isChangingCalendarFeed: true },
+				model: { ...model, isChangingCalendarFeed: true, calendarFeedChange: action },
 				commands: [
 					action === "off"
 						? DeleteCalendarFeed({ scheduleId: model.scheduleId })
-						: CreateCalendarFeed({ scheduleId: model.scheduleId }),
+						: CreateCalendarFeed({
+								scheduleId: model.scheduleId,
+								replace: action === "replace",
+							}),
 				],
 			}
 
@@ -377,10 +394,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{
 					...model,
 					schedule: Keyed.accept(model.schedule, key, result, readAtMs),
-					calendarFeed: Result.match(result, {
-						onFailure: () => model.calendarFeed,
-						onSuccess: (schedule) => reconcileCalendarFeed(model.calendarFeed, schedule),
-					}),
+					// Only a read this page is waiting for says anything about the feed.
+					calendarFeed:
+						model.schedule.key !== key
+							? model.calendarFeed
+							: Result.match(result, {
+									onFailure: () => model.calendarFeed,
+									onSuccess: (schedule) =>
+										reconcileCalendarFeed(model.calendarFeed, schedule),
+								}),
 				},
 				context,
 				"Load",
@@ -498,33 +520,55 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedConfirmCalendarFeed: () =>
 			model.calendarFeedAction === null
 				? { model }
-				: changeCalendarFeed(model, model.calendarFeedAction === "off" ? "off" : "create"),
+				: changeCalendarFeed(model, model.calendarFeedAction),
 		CompletedCreateCalendarFeed: ({ result }) => {
-			const settled = { ...model, isChangingCalendarFeed: false }
+			const settled = { ...model, isChangingCalendarFeed: false, calendarFeedChange: null }
 			return Result.match(result, {
 				onSuccess: (feed): Return => {
 					const closed = updateCalendarDialog(
 						{
 							...settled,
-							calendarFeed: { url: feed.url, createdAt: feed.created_at },
+							calendarFeed: {
+								url: feed.url,
+								createdAt: feed.created_at,
+								ended: calendarFeedSince(model),
+							},
 							calendarCopy: CopyButton.init(),
 						},
 						Dialog.close(settled.calendarFeedDialog),
 					)
 					return { ...closed, outMessage: toast("success", "Calendar link created") }
 				},
-				onFailure: (failure): Return => ({
-					model: settled,
-					outMessage: toast("error", "Couldn't create the calendar link", failure.message),
-				}),
+				onFailure: (failure): Return => {
+					if (failure.code !== CALENDAR_FEED_EXISTS_CODE) {
+						return {
+							model: settled,
+							outMessage: toast("error", "Couldn't create the calendar link", failure.message),
+						}
+					}
+					// Someone else made a link since this page read the schedule: show theirs, and
+					// leave replacing it (which ends it) to a deliberate click.
+					const refreshed = refreshSchedule({ ...settled, calendarFeed: null }, context)
+					return {
+						...refreshed,
+						outMessage: toast(
+							"error",
+							"This schedule already has a calendar link",
+							"Someone made one since you opened this page. Replace it only if you need a new link: that ends theirs.",
+						),
+					}
+				},
 			})
 		},
 		CompletedDeleteCalendarFeed: ({ result }) => {
-			const settled = { ...model, isChangingCalendarFeed: false }
+			const settled = { ...model, isChangingCalendarFeed: false, calendarFeedChange: null }
 			return Result.match(result, {
 				onSuccess: (): Return => {
 					const closed = updateCalendarDialog(
-						{ ...settled, calendarFeed: { url: null, createdAt: null } },
+						{
+							...settled,
+							calendarFeed: { url: null, createdAt: null, ended: calendarFeedSince(model) },
+						},
 						Dialog.close(settled.calendarFeedDialog),
 					)
 					return { ...closed, outMessage: toast("success", "Calendar link turned off") }

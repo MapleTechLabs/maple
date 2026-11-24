@@ -52,6 +52,11 @@ export interface OnCallOptions {
 	 * pass to the next participant who can, and their overrides are ignored. Default: everyone.
 	 */
 	readonly isPresent?: (userId: UserId) => boolean
+	/**
+	 * The longest range rendered, for a caller that sets its own bounds and needs more than
+	 * MAX_ONCALL_RENDER_RANGE_MS. Each layer is still capped at MAX_ONCALL_SHIFTS_PER_LAYER shifts.
+	 */
+	readonly rangeLimitMs?: number
 }
 
 const everyonePresent = (): boolean => true
@@ -309,7 +314,7 @@ const renderPieces = (
 	toMs: number,
 	options: OnCallOptions,
 ): { readonly layers: ReadonlyArray<ReadonlyArray<Piece>>; readonly effective: Array<Piece> } => {
-	const endMs = Math.min(toMs, fromMs + MAX_ONCALL_RENDER_RANGE_MS)
+	const endMs = Math.min(toMs, fromMs + (options.rangeLimitMs ?? MAX_ONCALL_RENDER_RANGE_MS))
 	if (endMs <= fromMs) return { layers: Arr.map(config.layers, () => []), effective: [] }
 	const zone = resolveZone(config)
 	const isPresent = options.isPresent ?? everyonePresent

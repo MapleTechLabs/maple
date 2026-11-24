@@ -17,6 +17,7 @@ import {
 	OnCallOverridesListResponse,
 	OnCallScheduleDocument,
 	OnCallScheduleId as OnCallScheduleIdSchema,
+	OnCallCalendarFeedExistsError,
 	OnCallScheduleInUseError,
 	OnCallScheduleNotFoundError,
 	OnCallSchedulesListResponse,
@@ -144,14 +145,18 @@ export interface OnCallSchedulesServiceApi {
 	) => Effect.Effect<OnCallShiftsResponse, ScheduleReadError | AlertValidationError>
 	/** Display names by user id; empty when the member directory cannot be read. */
 	readonly memberNames: (orgId: OrgId) => Effect.Effect<ReadonlyMap<string, string>>
-	/** Turns the calendar feed on or replaces its link. The token is returned once and never stored. */
+	/**
+	 * Turns the calendar feed on. The token is returned once and never stored. A feed that already
+	 * has a link keeps it unless `replace` is set: replacing ends the link calendars subscribe to.
+	 */
 	readonly createCalendarFeed: (
 		orgId: OrgId,
 		roles: ReadonlyArray<RoleName>,
 		scheduleId: OnCallScheduleId,
+		options: { readonly replace: boolean },
 	) => Effect.Effect<
 		{ readonly token: string; readonly createdAt: string },
-		AlertForbiddenError | ScheduleReadError
+		AlertForbiddenError | ScheduleReadError | OnCallCalendarFeedExistsError
 	>
 	readonly deleteCalendarFeed: (
 		orgId: OrgId,
@@ -184,7 +189,8 @@ export const ONCALL_CALENDAR_PAST_MS = 7 * DAY_MS
 export const ONCALL_CALENDAR_AHEAD_MS = 60 * DAY_MS
 /**
  * Shifts are rendered this far past each end of the feed's window, so one that straddles an end
- * keeps its real start and end (and so its event id) instead of the window's.
+ * keeps its real start and end (and so its event id) instead of the window's. It is the longest a
+ * rotation shift can be; an override can be longer, and the range grows to hold the ones shown.
  */
 const ONCALL_CALENDAR_MARGIN_MS = 14 * DAY_MS
 
@@ -865,13 +871,15 @@ export class OnCallSchedulesService extends Context.Service<
 			})
 		})
 
-		/** Turns the feed on, or replaces its link: the old one stops working at once. */
+		/** Turns the feed on, or with `replace` swaps its link: the old one stops working at once. */
 		const createCalendarFeed = Effect.fn("OnCallSchedulesService.createCalendarFeed")(function* (
 			orgId: OrgId,
 			roles: ReadonlyArray<RoleName>,
 			scheduleId: OnCallScheduleId,
+			options: { readonly replace: boolean },
 		) {
 			yield* annotate(scheduleId)
+			yield* Effect.annotateCurrentSpan("maple.oncall.calendar_feed_replace", options.replace)
 			yield* requireManage(roles)
 			const nowMs = yield* runtime.now
 			const token = newCalendarFeedToken()
@@ -882,11 +890,32 @@ export class OnCallSchedulesService extends Context.Service<
 							calendarFeedTokenHash: calendarFeedTokenHash(token),
 							calendarFeedCreatedAt: nowMs,
 						})
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(scheduleId)])
+						// Decided in the write itself, so two people creating at once cannot both win.
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.id.eq(scheduleId),
+							...(options.replace ? [] : [$.calendarFeedTokenHash.isNull()]),
+						])
 						.returning("id"),
 				),
 			)
-			if (updated.length === 0) return yield* scheduleNotFound(scheduleId)
+			if (updated.length === 0) {
+				if (options.replace) return yield* scheduleNotFound(scheduleId)
+				// Nothing changed: the schedule is gone, or its feed already has a link.
+				const existing = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OnCallSchedules)
+							.select("id")
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(scheduleId)])
+							.limit(1),
+					),
+				)
+				if (existing.length === 0) return yield* scheduleNotFound(scheduleId)
+				return yield* new OnCallCalendarFeedExistsError({
+					message: "The calendar feed already has a link. Replace it to make a new one.",
+					scheduleId,
+				})
+			}
 			return { token, createdAt: iso(nowMs) }
 		})
 
@@ -940,22 +969,41 @@ export class OnCallSchedulesService extends Context.Service<
 			// Whole UTC days, so the window's own ends move once a day and not on every fetch.
 			const fromMs = Math.floor((nowMs - ONCALL_CALENDAR_PAST_MS) / DAY_MS) * DAY_MS
 			const toMs = Math.ceil((nowMs + ONCALL_CALENDAR_AHEAD_MS) / DAY_MS) * DAY_MS
-			const renderFromMs = fromMs - ONCALL_CALENDAR_MARGIN_MS
-			const renderToMs = toMs + ONCALL_CALENDAR_MARGIN_MS
+			// Every override that could decide who holds a moment of an override the window shows.
 			const overrides = yield* dbExecute((db) =>
-				overlappingOverrides(db, schedule.orgId, renderFromMs, renderToMs, schedule.id),
+				overlappingOverrides(
+					db,
+					schedule.orgId,
+					fromMs - MAX_ONCALL_OVERRIDE_MS,
+					toMs + MAX_ONCALL_OVERRIDE_MS,
+					schedule.id,
+				),
+			)
+			const shown = Arr.filter(overrides, (row) => row.endsAt > fromMs && row.startsAt < toMs)
+			const renderFromMs = Math.max(
+				fromMs - MAX_ONCALL_OVERRIDE_MS,
+				Math.min(fromMs - ONCALL_CALENDAR_MARGIN_MS, ...Arr.map(shown, (row) => row.startsAt)),
+			)
+			const renderToMs = Math.min(
+				toMs + MAX_ONCALL_OVERRIDE_MS,
+				Math.max(toMs + ONCALL_CALENDAR_MARGIN_MS, ...Arr.map(shown, (row) => row.endsAt)),
 			)
 			const render = renderOnCall(
 				configOf(schedule),
 				Arr.map(overrides, toOverride),
 				renderFromMs,
 				renderToMs,
-				presenceOf(directory.ids),
+				{ ...presenceOf(directory.ids), rangeLimitMs: renderToMs - renderFromMs },
 			)
 			return Option.some(
 				renderOnCallCalendar({
 					scheduleName: schedule.name,
-					shifts: Arr.filter(render.final, (shift) => shift.endMs > fromMs && shift.startMs < toMs),
+					// One event per handoff, never merged: a rotation of one person is still a
+					// shift a week, each with a start that no later fetch moves.
+					shifts: Arr.filter(
+						render.effective,
+						(shift) => shift.endMs > fromMs && shift.startMs < toMs,
+					),
 					nameOf: (userId) => directory.names.get(userId) ?? null,
 					uidOf: (shift) => calendarShiftUid(schedule.id, shift),
 					nowMs,

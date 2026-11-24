@@ -227,3 +227,20 @@ export class OnCallScheduleInUseError extends HttpTaggedError<OnCallScheduleInUs
 		exposure: "redacted",
 	},
 ) {}
+
+export class OnCallCalendarFeedExistsError extends HttpTaggedError<OnCallCalendarFeedExistsError>()(
+	"@maple/http/errors/OnCallCalendarFeedExistsError",
+	{
+		message: Schema.String,
+		scheduleId: OnCallScheduleId,
+	},
+	{
+		status: 409,
+		code: "oncall_calendar_feed_exists",
+		title: "Calendar feed already has a link",
+		message: "The schedule's calendar feed already has a link. Replacing it ends the old one.",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "redacted",
+	},
+) {}

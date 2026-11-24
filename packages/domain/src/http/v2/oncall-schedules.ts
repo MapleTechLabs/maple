@@ -17,6 +17,7 @@ import {
 	OnCallLocalTime,
 	OnCallOverrideNotFoundError,
 	OnCallScheduleDescription,
+	OnCallCalendarFeedExistsError,
 	OnCallScheduleInUseError,
 	OnCallScheduleName,
 	OnCallScheduleNotFoundError,
@@ -358,6 +359,16 @@ export const V2OnCallCalendarFeed = Schema.Struct({
 })
 export type V2OnCallCalendarFeed = Schema.Schema.Type<typeof V2OnCallCalendarFeed>
 
+export const V2OnCallCalendarFeedCreateQuery = Schema.Struct({
+	replace: Schema.optional(
+		Schema.Literals(["true", "false"]).annotate({
+			description:
+				"`true` to replace a link the feed already has. Left out or `false`, the request fails when one exists, so a link in use is never ended by accident.",
+			examples: ["true"],
+		}),
+	),
+}).annotate({ identifier: "OnCallCalendarFeedCreateQuery", title: "On-call calendar feed create query" })
+
 export const V2OnCallCalendarFeedDeleteResponse = Schema.Struct({
 	object: Schema.Literal("oncall_calendar_feed").annotate({
 		description: 'The object type, always `"oncall_calendar_feed"`.',
@@ -560,6 +571,7 @@ const [
 	scheduleNotFound,
 	overrideNotFound,
 	scheduleInUse,
+	calendarFeedExists,
 ] = publicErrors(
 	AlertForbiddenError,
 	AlertValidationError,
@@ -569,6 +581,7 @@ const [
 	OnCallScheduleNotFoundError,
 	OnCallOverrideNotFoundError,
 	OnCallScheduleInUseError,
+	OnCallCalendarFeedExistsError,
 )
 
 const scheduleId = { id: OnCallSchedulePublicId }
@@ -660,14 +673,15 @@ export class V2OnCallSchedulesApiGroup extends HttpApiGroup.make("oncallSchedule
 	.add(
 		HttpApiEndpoint.post("createCalendarFeed", "/:id/calendar_feed", {
 			params: scheduleId,
+			query: V2OnCallCalendarFeedCreateQuery,
 			success: V2OnCallCalendarFeed,
-			error: [alertForbidden, alertPersistence, scheduleNotFound],
+			error: [alertForbidden, alertPersistence, scheduleNotFound, calendarFeedExists],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createOnCallCalendarFeed",
 				summary: "Create or replace a schedule's calendar feed",
 				description:
-					"Turns on the schedule's private iCalendar feed and returns its link. Calling it again replaces the link: the old one stops working at once. Requires the `alerts:write` scope.",
+					"Turns on the schedule's private iCalendar feed and returns its link. Fails with a `conflict_error` when the feed already has a link, unless `replace=true`: replacing ends the old link at once, for every calendar subscribed to it. Requires the `alerts:write` scope.",
 			}),
 		),
 	)

@@ -1967,7 +1967,10 @@ describe("v2 alerts over HTTP", () => {
 		expect(read.body.calendar_feed_created_at).toBe(feed.body.created_at)
 		expect(JSON.stringify(read.body)).not.toContain("mcal_")
 
-		const replaced = await harness.request("POST", `${base}/calendar_feed`, key.secret)
+		// A second create is refused, so a link calendars use is not ended by accident.
+		const again = await harness.request("POST", `${base}/calendar_feed`, key.secret)
+		expect([again.status, again.body.error.code]).toEqual([409, "oncall_calendar_feed_exists"])
+		const replaced = await harness.request("POST", `${base}/calendar_feed?replace=true`, key.secret)
 		expect(replaced.body.url).not.toBe(feed.body.url)
 
 		const off = await harness.request("DELETE", `${base}/calendar_feed`, key.secret)
