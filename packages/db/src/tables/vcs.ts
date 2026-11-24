@@ -140,6 +140,8 @@ export const VcsRepositories = PG.table("vcs_repositories", {
 		prReviewConfig: PG.column(PG.nullable(PG.jsonb(PrReviewRepositoryConfig)), {
 			name: "pr_review_config",
 		}),
+		/** When the newest refused push the audit log read for this repository happened; null before the first read. */
+		ruleSuitesReadUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "rule_suites_read_until" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},

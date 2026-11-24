@@ -5,6 +5,7 @@ import {
 	type VcsRepoPersistenceError,
 	type VcsSyncJob,
 } from "@maple/domain/http"
+import { githubAuditCategoryEnabled } from "@maple/domain/github-audit"
 import { Context, Effect, Layer, Array as Arr } from "effect"
 import { VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
@@ -29,6 +30,14 @@ interface VcsScheduledSyncResult {
 export interface VcsScheduledSyncServiceApi {
 	readonly runScheduledSync: Effect.Effect<
 		VcsScheduledSyncResult,
+		VcsRepoPersistenceError | VcsRepoDecodeError | VcsQueueError
+	>
+	/**
+	 * Every 15 minutes: one `rule-suite-scan` job per GitHub installation that collects refused
+	 * pushes. Returns how many it enqueued.
+	 */
+	readonly runRuleSuiteScan: Effect.Effect<
+		number,
 		VcsRepoPersistenceError | VcsRepoDecodeError | VcsQueueError
 	>
 }
@@ -73,7 +82,32 @@ export class VcsScheduledSyncService extends Context.Service<
 			Effect.withSpan("VcsScheduledSyncService.runScheduledSync"),
 		)
 
-		return { runScheduledSync } satisfies VcsScheduledSyncServiceApi
+		const runRuleSuiteScan = Effect.gen(function* () {
+			const installations = yield* repo.listAllInstallations()
+			const jobs = Arr.map(
+				Arr.filter(
+					installations,
+					(installation) =>
+						installation.provider === "github" &&
+						isInstallationProcessable(installation) &&
+						installation.auditLogEnabled &&
+						githubAuditCategoryEnabled(installation.auditCategories, "refusedPushes"),
+				),
+				(installation): VcsSyncJob => ({
+					kind: "rule-suite-scan",
+					provider: installation.provider,
+					externalInstallationId: installation.externalInstallationId,
+				}),
+			)
+			yield* queue.sendBatch(jobs)
+			yield* Effect.annotateCurrentSpan({
+				"vcs.rule_suites.installations_total": installations.length,
+				"vcs.rule_suites.enqueued": jobs.length,
+			})
+			return jobs.length
+		}).pipe(Effect.withSpan("VcsScheduledSyncService.runRuleSuiteScan"))
+
+		return { runScheduledSync, runRuleSuiteScan } satisfies VcsScheduledSyncServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

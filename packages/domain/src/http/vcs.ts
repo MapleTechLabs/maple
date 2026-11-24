@@ -784,8 +784,21 @@ export const AuditEventJob = Schema.Struct({
 })
 export type AuditEventJob = Schema.Schema.Type<typeof AuditEventJob>
 
+/**
+ * Read the pushes an installation's rulesets refused since each repository's last read, for the
+ * audit log. A scan stops after a bounded number of repositories and continues after the last one.
+ */
+export const RuleSuiteScanJob = Schema.Struct({
+	kind: Schema.Literal("rule-suite-scan"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	afterRepositoryId: Schema.optionalKey(VcsRepositoryId),
+})
+export type RuleSuiteScanJob = Schema.Schema.Type<typeof RuleSuiteScanJob>
+
 export const VcsSyncJob = Schema.Union([
 	AuditEventJob,
+	RuleSuiteScanJob,
 	InstallationSyncJob,
 	SyncCommitsJob,
 	PushJob,
