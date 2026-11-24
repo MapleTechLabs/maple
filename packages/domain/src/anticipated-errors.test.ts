@@ -15,6 +15,8 @@ describe("ANTICIPATED_ERROR_IDENTIFIERS", () => {
 			"@maple/http/v2/InvalidRequestError",
 			"@maple/http/v2/InvalidCredentialsError",
 			"@maple/http/v2/RateLimitError",
+			"@maple/http/errors/OnboardingAgentRunNotFoundError",
+			"@maple/http/errors/OnboardingAgentRunClosedError",
 		]) {
 			expect(isAnticipatedErrorIdentifier(identifier), identifier).toBe(true)
 		}
@@ -26,6 +28,7 @@ describe("ANTICIPATED_ERROR_IDENTIFIERS", () => {
 			"@maple/http/errors/QueryEngineTimeoutError",
 			"@maple/http/v2/UnexpectedError",
 			"@maple/http/v2/WorkerUnavailableError",
+			"@maple/http/errors/OnboardingAgentRunUnavailableError",
 		]) {
 			expect(isAnticipatedErrorIdentifier(identifier), identifier).toBe(false)
 		}

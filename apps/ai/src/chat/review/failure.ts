@@ -66,6 +66,9 @@ const reasonOf = (error: unknown, context: ReviewFailureContext): PrReviewFailur
 	// An error part inside a 200 stream (an upstream 500 mid-response): the provider's outage, not ours.
 	if (Schema.is(ModelProtocolError)(error) && Str.startsWith(MODEL_RESPONSE_FAILED)(error.message))
 		return "provider_unavailable"
+	// Any other protocol break is one malformed response (a tool call cut short, a part that does not
+	// encode): the model's, and the next response is usually whole.
+	if (Schema.is(ModelProtocolError)(error)) return "model_error"
 	if (isAiError(error)) return providerReason(error, context)
 	return undefined
 }

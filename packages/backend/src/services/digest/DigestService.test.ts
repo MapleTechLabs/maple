@@ -1020,6 +1020,29 @@ describe("DigestService.reconcileSubscriptions", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("stops every digest of an org Clerk no longer lists", () => {
+		const { layer } = makeHarness()
+		const deletedOrg = OrgId.make("org_digest_deleted")
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const digest = yield* DigestService
+			yield* digest.reconcileSubscriptions([
+				{ orgId: deletedOrg, userId: UserId.make("user-gone"), email: "gone@example.com" },
+				{ orgId: ORG_ID, userId: UserId.make("user-kept"), email: "kept@example.com" },
+			])
+
+			// The org is deleted: Clerk lists only the other one now.
+			yield* digest.reconcileSubscriptions([
+				{ orgId: ORG_ID, userId: UserId.make("user-kept"), email: "kept@example.com" },
+			])
+
+			const [gone] = yield* subsOf(deletedOrg)
+			assert.strictEqual(gone?.enabled, false)
+			assert.strictEqual(gone?.webAnalyticsEnabled, false)
+			assert.isTrue(Arr.every(yield* subsOf(ORG_ID), (row) => row.enabled))
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("updates a stored email and keeps one row for a member Clerk lists twice", () => {
 		const { layer } = makeHarness()
 		return Effect.gen(function* () {

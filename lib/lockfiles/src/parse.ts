@@ -1,6 +1,7 @@
 import { Effect, String as Str } from "effect"
 import { LockfileParseError, LockfileUnsupportedError } from "./errors.ts"
 import { dedupePackages } from "./internal/collect.ts"
+import { parseSpan } from "./internal/span.ts"
 import { parseBunLock } from "./parsers/bun.ts"
 import { parseCargoLock } from "./parsers/cargo.ts"
 import { parseGoMod, parseGoSum } from "./parsers/go.ts"
@@ -22,7 +23,7 @@ const PARSERS = {
 	"cargo-lock": parseCargoLock,
 } satisfies Record<Exclude<LockfileKind, "bun-lockb">, Parser>
 
-export const parseLockfile = Effect.fn("lockfiles.parseLockfile")(function* (
+export const parseLockfile = Effect.fn(function* (
 	input: LockfileInput,
 ): Effect.fn.Return<ParsedLockfile, LockfileParseError | LockfileUnsupportedError> {
 	const kind = lockfileKindOf(input.path)
@@ -44,4 +45,4 @@ export const parseLockfile = Effect.fn("lockfiles.parseLockfile")(function* (
 		packages: dedupePackages(output.packages),
 		warnings: output.warnings,
 	}
-})
+}, parseSpan("lockfiles.parseLockfile"))

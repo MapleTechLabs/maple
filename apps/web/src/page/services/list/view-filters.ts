@@ -2,7 +2,7 @@ import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import { filterSection } from "@maple/views/ui/filters/filter-section"
+import { filterSection, type FilterSectionConfig } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -12,7 +12,16 @@ import {
 	filterSidebarLoading,
 } from "@maple/views/ui/filters/filter-sidebar"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
-import { HEALTH_LEVELS, hasActiveServiceFilters, type HealthSummary } from "./derive"
+import {
+	HEALTH_LEVELS,
+	hasActiveServiceFilters,
+	commitSummariesOf,
+	type HealthSummary,
+	releaseDescription,
+	releaseIcon,
+	releaseLabeler,
+	releaseOptions,
+} from "./derive"
 import { type Facet, Message } from "./message"
 import type { Model, ServicesFacets } from "./model"
 
@@ -26,6 +35,10 @@ const facetSection = (
 	options: ServicesFacets[Facet],
 	excluded: ReadonlyArray<string> | undefined,
 	isSearchable = false,
+	labels: Pick<
+		FilterSectionConfig<Message>,
+		"getOptionLabel" | "getOptionDescription" | "getOptionIcon"
+	> = {},
 ) =>
 	filterSection(h, {
 		title,
@@ -33,12 +46,33 @@ const facetSection = (
 		selected: model.search[facet] ?? [],
 		excluded: excluded ?? [],
 		isSearchable,
+		...labels,
 		sections: model.filterSections,
 		toSectionsMessage: toSections,
 		onToggle: (name) => Message.ToggledFacetOption({ facet, name }),
 		onOnly: (name) => Message.ClickedOnlyFacetOption({ facet, name }),
 		onExclude: (name) => Message.ClickedExcludeFacetOption({ facet, name }),
 	})
+
+/** The deploy commits by subject, newest first once resolved; the full sha stays the filter value. */
+const releaseSection = (h: HtmlBuilder<Message>, model: Model, facets: ServicesFacets) => {
+	const summaries = commitSummariesOf(model)
+	const isLookupSettled = AsyncData.isSuccess(model.commitSummaries.data)
+	return facetSection(
+		h,
+		model,
+		"Release",
+		"commitShas",
+		releaseOptions(facets.commitShas, summaries),
+		model.search.excludedCommitShas,
+		true,
+		{
+			getOptionLabel: releaseLabeler(summaries),
+			getOptionIcon: (value) => releaseIcon(value, summaries),
+			getOptionDescription: (value) => releaseDescription(value, summaries, isLookupSettled),
+		},
+	)
+}
 
 const loadedRail = (
 	h: HtmlBuilder<Message>,
@@ -97,7 +131,7 @@ const loadedRail = (
 							true,
 						)
 					: null,
-			facetSection(h, model, "Commit SHA", "commitShas", facets.commitShas, search.excludedCommitShas),
+			releaseSection(h, model, facets),
 		]),
 	])
 }

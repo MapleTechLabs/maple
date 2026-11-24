@@ -4,7 +4,7 @@ import { Effect, Exit, Option, Array as Arr } from "effect"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { EXIT_START_REFUSED } from "../src/core/outcomes"
+import { EXIT_START_REFUSED, isExpectedFailure, recoverExpected } from "../src/core/outcomes"
 import {
 	clearStartFailures,
 	decideStartFailure,
@@ -224,6 +224,15 @@ describe("guardStartFailures", () => {
 		expect(Exit.isFailure(await run(option))).toBe(true)
 		expect(process.exitCode).toBe(EXIT_START_REFUSED)
 		expect(Exit.isSuccess(await run(option))).toBe(true)
+	})
+
+	it("closes a rejected option as an expected outcome that still exits 78", async () => {
+		const option = new ServerOptionError({ source: "--host", message: "--host must be a hostname" })
+		expect(Exit.isFailure(await run(option))).toBe(true)
+		// bin.ts recovers it inside the root span, which stays Ok.
+		expect(isExpectedFailure(option)).toBe(true)
+		await Effect.runPromise(recoverExpected(option))
+		expect(process.exitCode).toBe(EXIT_START_REFUSED)
 	})
 
 	it("passes other failures through untouched", async () => {
