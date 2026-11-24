@@ -47,6 +47,7 @@
 		"./dashboard-shares": "./src/dashboard-shares.ts",
 		"./electric-shapes": "./src/electric-shapes.ts",
 		"./error-issues": "./src/error-issues.ts",
+		"./errors/js-stack": "./src/errors/js-stack.ts",
 		"./escalation-chains": "./src/escalation-chains.ts",
 		"./fix-verification": "./src/fix-verification.ts",
 		"./investigations": "./src/investigations.ts",

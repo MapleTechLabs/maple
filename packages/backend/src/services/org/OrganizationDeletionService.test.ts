@@ -351,6 +351,7 @@ describe("OrganizationDeletionService.delete", () => {
 				assert.deepStrictEqual(Arr.dedupe(Arr.map(queued, (row) => row.kind)), [
 					"chat_session",
 					"replay_blobs",
+					"source_maps",
 					"warehouse",
 				])
 				assert.strictEqual(yield* countOrgRows(testDb, "investigations", "org_id", ORG_A), 0)

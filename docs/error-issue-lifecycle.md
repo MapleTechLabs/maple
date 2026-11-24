@@ -279,6 +279,12 @@ loop in verification without a human ever seeing it.
   two weeks of production errors from 32 orgs, blind-labelled: issues fell 9.7% and 8.9%, and 91%
   of the merges it adds are one bug. Keying on a cause chain's root type and keeping the first named
   caller for every error were measured too and lowered F1, so they are not in it.
+  A minified browser bundle renames functions and content-hashed files every deploy, so where the
+  host binds the source map bucket, a key that reads frames (`frames`, `type-function`) is computed
+  from the stack mapped through the org's source maps instead: the in-app frames' original file and
+  function, never a line or column (rule `source-mapped`). A stack that maps nothing keys exactly as
+  before, and every rule above frames (custom keys, org rules, chunk loads, type and message) keeps
+  its priority.
 - **Org grouping rules and detaching.** An org can add rules without a deploy
   (`packages/domain/src/tinybird/grouping-rules.ts`, `PUT /grouping-rules`, needs
   `error_policy:manage`): `merge` joins every error matching its globs into one issue per service,

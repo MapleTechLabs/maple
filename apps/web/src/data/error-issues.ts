@@ -145,4 +145,6 @@ export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDe
 			(env) => new ErrorIssueEnvironment({ name: env.name, count: env.count }),
 		),
 		latestStacktrace: detail.latest_stacktrace ?? null,
+		// Absent from an API deployed before source maps.
+		latestStack: detail.latest_stack ?? null,
 	})

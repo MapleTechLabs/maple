@@ -184,6 +184,7 @@ describe("ErrorGroupingService.explainIssue", () => {
 		const sample = (fingerprintHash: string, chunk: string) => ({
 			fingerprintHash,
 			serviceName: "checkout-api",
+			serviceVersion: "",
 			timestamp,
 			traceId: `t-${fingerprintHash}`,
 			spanId: `s-${fingerprintHash}`,

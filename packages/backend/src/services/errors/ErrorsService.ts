@@ -80,6 +80,7 @@ import {
 	type NotificationRequest,
 } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { StackSymbolicator } from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { EdgeCacheService } from "@maple/cache"
 import {
@@ -297,6 +298,8 @@ const make: Effect.Effect<
 	const earlyPromotionsPerDay = yield* EarlyPromotionsPerDay
 	// Starts the investigation agent when an incident opens (org opt-in).
 	const starter = yield* InvestigationStarter
+	// Grouping keys read source-mapped frames where the host binds the source map bucket.
+	const symbolicator = yield* Effect.serviceOption(StackSymbolicator)
 
 	const newErrorIssueId = () => decodeErrorIssueIdSync(randomUUID())
 	const newErrorIncidentId = () => decodeErrorIncidentIdSync(randomUUID())
@@ -1419,6 +1422,7 @@ const make: Effect.Effect<
 						orgId,
 						{ startMs: windowStartMs, endMs: windowEndMs },
 						"errorGrouping",
+						symbolicator,
 					),
 					{
 						orgId,

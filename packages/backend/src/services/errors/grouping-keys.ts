@@ -1,9 +1,23 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
-import { ErrorGroupingConfigs, ErrorGroupingKeys } from "@maple/db/tables"
+import {
+	ErrorFingerprintCandidates,
+	ErrorGroupingConfigs,
+	ErrorGroupingKeys,
+	ErrorIssueFingerprints,
+	ErrorIssues,
+} from "@maple/db/tables"
 import type { OrgId, TenantContext, WarehouseReadError } from "@maple/domain/http"
 import { CH } from "@maple/query-engine"
 import type { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import type { StackSymbolicatorApi } from "@maple/backend/services/sourcemaps/StackSymbolicator"
+import { couldHaveSourceMap } from "@maple/backend/services/sourcemaps/symbolicate"
+import {
+	DEBUG_IDS_ATTRIBUTE,
+	decodeDebugIds,
+	isSourceMappableUrl,
+	parseJsStack,
+} from "@maple/domain/errors/js-stack"
 import { resolveCustomFingerprint } from "@maple/domain/tinybird/fingerprint"
 import {
 	compileGroupingRules,
@@ -19,19 +33,25 @@ import {
 	type GroupingRule,
 	type GroupingSample,
 } from "@maple/domain/tinybird/grouping"
-import { Array as Arr, DateTime, Effect, Option, Order, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Order } from "effect"
 
 import { describeCause } from "./error-persistence"
+import { exceptionEventAttribute } from "./exception-event"
 
 /** Hashes keyed per tick at most; the rest wait for their next occurrence. */
 const GROUPING_KEYS_PER_TICK = 200
 /** Siblings handed to one hash at most: enough to fold a group, bounded for a storm. */
 const MAX_SIBLINGS = 50
 const CHUNK = 500
+/** How long a sample whose app frames found no map waits for one: the deploy-then-upload gap. */
+export const MAP_PENDING_GRACE_MS = 60 * 60_000
+/** Source map lookups run at once per tick; each is cached per isolate by the symbolicator. */
+const SYMBOLICATE_CONCURRENCY = 4
 
 export interface GroupingSampleRow {
 	readonly fingerprintHash: string
 	readonly serviceName: string
+	readonly serviceVersion: string
 	readonly timestamp: DateTime.Utc
 	readonly traceId: string
 	readonly spanId: string
@@ -56,21 +76,19 @@ export interface ComputedKey {
 	readonly rule: GroupingRule
 }
 
-const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
-const decodeNames = Schema.decodeUnknownOption(Schema.Array(Schema.String))
-const decodeAttributes = Schema.decodeUnknownOption(Schema.Array(Schema.Record(Schema.String, Schema.String)))
-
-/** The first exception event's `maple.fingerprint`, as the error-events view reads it. */
-const eventFingerprint = (span: GroupingSpanRow): string | undefined => {
-	const names = Option.getOrElse(Option.flatMap(decodeJson(span.eventsName), decodeNames), () => [])
-	const attributes = Option.getOrElse(
-		Option.flatMap(decodeJson(span.eventsAttributes), decodeAttributes),
-		() => [],
-	)
-	const index = Arr.findFirstIndex(names, (name) => name === "exception")
-	return Option.getOrUndefined(
-		Option.flatMap(index, (i) => Option.fromNullishOr(attributes[i]?.["maple.fingerprint"])),
-	)
+export interface SampleInput {
+	readonly fingerprintHash: string
+	readonly input: GroupingSample
+	/** What a source map lookup needs beyond the sample. */
+	readonly serviceVersion: string
+	readonly debugIds: ReadonlyMap<string, string>
+	/**
+	 * The org has maps, yet the stack has frames one could map and none of its frames mapped:
+	 * its map may still be on its way, so a young hash is not keyed yet.
+	 */
+	readonly mapPending?: boolean
+	/** A map lookup or read failed: a key from this sample may be missing frames that do map. */
+	readonly lookupFailed?: boolean
 }
 
 /**
@@ -81,13 +99,13 @@ const eventFingerprint = (span: GroupingSpanRow): string | undefined => {
 export const computeSampleInputs = (
 	samples: ReadonlyArray<GroupingSampleRow>,
 	spans: ReadonlyArray<GroupingSpanRow>,
-): Array<{ readonly fingerprintHash: string; readonly input: GroupingSample }> => {
+): Array<SampleInput> => {
 	const spanOf = new Map(Arr.map(spans, (span) => [`${span.traceId}:${span.spanId}`, span] as const))
 	return Arr.flatMap(samples, (sample) => {
 		const span = spanOf.get(`${sample.traceId}:${sample.spanId}`)
 		if (span === undefined) return []
 		const customFingerprint = resolveCustomFingerprint(
-			eventFingerprint(span),
+			exceptionEventAttribute(span, "maple.fingerprint"),
 			span.spanFingerprint === "" ? undefined : span.spanFingerprint,
 		)
 		const base: GroupingSample = {
@@ -98,16 +116,92 @@ export const computeSampleInputs = (
 			span: { kind: span.spanKind, name: span.spanName },
 		}
 		const input: GroupingSample = customFingerprint === undefined ? base : { ...base, customFingerprint }
-		return [{ fingerprintHash: sample.fingerprintHash, input }]
+		return [
+			{
+				fingerprintHash: sample.fingerprintHash,
+				input,
+				serviceVersion: sample.serviceVersion,
+				debugIds: decodeDebugIds(exceptionEventAttribute(span, DEBUG_IDS_ATTRIBUTE)),
+			},
+		]
 	})
 }
 
+/**
+ * Samples whose key reads frames, with their stack mapped through the org's source maps,
+ * so a deploy's renamed bundle keeps its key. Only a JS stack with frame URLs is looked up;
+ * every other sample, and every host without the symbolicator, keys as before.
+ */
+export const withSourceMappedStacks = (
+	symbolicator: Option.Option<StackSymbolicatorApi>,
+	orgId: OrgId,
+	entries: ReadonlyArray<SampleInput>,
+	rules?: CompiledGroupingRules,
+): Effect.Effect<ReadonlyArray<SampleInput>> =>
+	Option.match(symbolicator, {
+		onNone: () => Effect.succeed(entries),
+		onSome: (stacks) =>
+			Effect.flatMap(stacks.hasSourceMaps(orgId), (hasMaps) =>
+				!hasMaps
+					? Effect.succeed(entries)
+					: Effect.forEach(
+							entries,
+							(entry) => {
+								const rule = groupingParts(entry.input, rules).rule
+								const readsFrames = rule === "frames" || rule === "type-function"
+								const frames = parseJsStack(entry.input.exceptionStacktrace).frames
+								if (
+									!readsFrames ||
+									!Arr.some(
+										frames,
+										(frame) => frame.url !== null && isSourceMappableUrl(frame.url),
+									)
+								) {
+									return Effect.succeed(entry)
+								}
+								return stacks
+									.symbolicateWithOutcome({
+										orgId,
+										stacktrace: entry.input.exceptionStacktrace,
+										serviceName:
+											entry.input.serviceName === "" ? null : entry.input.serviceName,
+										serviceVersion:
+											entry.serviceVersion === "" ? null : entry.serviceVersion,
+										debugIds: entry.debugIds,
+									})
+									.pipe(
+										Effect.map(({ stack, lookupFailed }) => {
+											// Decided on the raw frames: a vendor chunk whose frames map into
+											// `node_modules` is mapped, not waiting.
+											const mapPending =
+												!Arr.some(stack.frames, (frame) => frame.resolved) &&
+												Arr.some(
+													frames,
+													(frame, i) =>
+														couldHaveSourceMap(frame.url) &&
+														stack.frames[i]?.resolved !== true,
+												)
+											return stack.status === "resolved" || stack.status === "partial"
+												? {
+														...entry,
+														input: { ...entry.input, symbolicatedStack: stack },
+														mapPending,
+														lookupFailed,
+													}
+												: { ...entry, mapPending, lookupFailed }
+										}),
+									)
+							},
+							{ concurrency: SYMBOLICATE_CONCURRENCY },
+						),
+			),
+	})
+
 const computeGroupingKeys = (
-	samples: ReadonlyArray<GroupingSampleRow>,
-	spans: ReadonlyArray<GroupingSpanRow>,
+	entries: ReadonlyArray<SampleInput>,
 	rules?: CompiledGroupingRules,
 ): Array<ComputedKey> =>
-	Arr.map(computeSampleInputs(samples, spans), ({ fingerprintHash, input }) => {
+	Arr.map(entries, ({ fingerprintHash, input }) => {
 		const parts = groupingParts(input, rules)
 		return { fingerprintHash, groupingKey: keyOfParts(input.serviceName, parts), rule: parts.rule }
 	})
@@ -162,7 +256,13 @@ export const warehouseGroupingReads = (
 	orgId: OrgId,
 	window: { readonly startMs: number; readonly endMs: number },
 	context: string,
+	symbolicator: Option.Option<StackSymbolicatorApi> = Option.none(),
 ): GroupingKeyReads<WarehouseReadError> => ({
+	sourceMapped: (entries, rules) => withSourceMappedStacks(symbolicator, orgId, entries, rules),
+	mapsInPlay: Option.match(symbolicator, {
+		onNone: () => Effect.succeed(false),
+		onSome: (stacks) => stacks.hasSourceMaps(orgId),
+	}),
 	samples: (hashes) =>
 		warehouse.compiledQuery(
 			tenant,
@@ -221,6 +321,13 @@ export interface GroupingKeyReads<E> {
 	readonly spans: (
 		samples: ReadonlyArray<GroupingSampleRow>,
 	) => Effect.Effect<ReadonlyArray<GroupingSpanRow>, E>
+	/** The samples with their stacks source-mapped; absent, every sample keys on its raw stack. */
+	readonly sourceMapped?: (
+		entries: ReadonlyArray<SampleInput>,
+		rules: CompiledGroupingRules,
+	) => Effect.Effect<ReadonlyArray<SampleInput>>
+	/** Whether the org has source maps; absent, it has none. */
+	readonly mapsInPlay?: Effect.Effect<boolean>
 }
 
 const storedKeys = (db: MapleDb, orgId: OrgId, hashes: ReadonlyArray<string>) =>
@@ -231,6 +338,44 @@ const storedKeys = (db: MapleDb, orgId: OrgId, hashes: ReadonlyArray<string>) =>
 				.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...chunk)]),
 		),
 	).pipe(Effect.map(Arr.flatten))
+
+/**
+ * When each hash was first seen, from the rows the tick keeps for it: its candidate, its issue,
+ * or its alias on another issue. A hash with none is being seen for the first time.
+ */
+const firstSeenOf = (
+	db: MapleDb,
+	orgId: OrgId,
+	hashes: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyMap<string, number>, MapleDbError> =>
+	Effect.forEach(Arr.chunksOf(hashes, CHUNK), (chunk) =>
+		Effect.all([
+			db.run(
+				PG.from(ErrorFingerprintCandidates)
+					.select("fingerprintHash", "firstSeenAt")
+					.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...chunk)]),
+			),
+			db.run(
+				PG.from(ErrorIssues)
+					.select("fingerprintHash", "firstSeenAt")
+					.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...chunk)]),
+			),
+			db.run(
+				PG.from(ErrorIssueFingerprints)
+					.select(($) => ({ fingerprintHash: $.fingerprintHash, firstSeenAt: $.createdAt }))
+					.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...chunk)]),
+			),
+		]),
+	).pipe(
+		Effect.map((chunks) =>
+			Arr.reduce(Arr.flatten(Arr.flatten(chunks)), new Map<string, number>(), (seen, row) =>
+				seen.set(
+					row.fingerprintHash,
+					Math.min(seen.get(row.fingerprintHash) ?? row.firstSeenAt, row.firstSeenAt),
+				),
+			),
+		),
+	)
 
 /**
  * Key the hashes that have no current key yet, then return, for each hash, the other
@@ -263,13 +408,53 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		const current = new Set(Arr.map(Arr.filter(stored, isCurrent), (row) => row.fingerprintHash))
 		// Hashes never keyed first (likely new issues), then stale keys after a rules change.
 		const storedHashes = new Set(Arr.map(stored, (row) => row.fingerprintHash))
+		const neverKeyed = Arr.filter(hashes, (hash) => !storedHashes.has(hash))
+		// Over the cap with source maps in play, first sightings go before hashes seen in an earlier
+		// tick (those held for a map among them), so held hashes cannot crowd out new ones. An org
+		// without maps keeps the plain order and reads nothing more.
+		const reorder =
+			neverKeyed.length > GROUPING_KEYS_PER_TICK &&
+			reads.mapsInPlay !== undefined &&
+			(yield* reads.mapsInPlay)
+		const earlierSeen = reorder
+			? yield* dbRun((tx) => firstSeenOf(tx, orgId, neverKeyed))
+			: new Map<string, number>()
 		const unkeyed = [
-			...Arr.filter(hashes, (hash) => !storedHashes.has(hash)),
+			...Arr.filter(neverKeyed, (hash) => !earlierSeen.has(hash)),
+			...Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash)),
 			...Arr.filter(hashes, (hash) => storedHashes.has(hash) && !current.has(hash)),
 		].slice(0, GROUPING_KEYS_PER_TICK)
 		const samples = unkeyed.length === 0 ? [] : yield* reads.samples(unkeyed)
 		const spans = samples.length === 0 ? [] : yield* reads.spans(samples)
-		const computed = computeGroupingKeys(samples, spans, input.grouping.rules)
+		const entries = computeSampleInputs(samples, spans)
+		const mapped =
+			reads.sourceMapped === undefined || entries.length === 0
+				? entries
+				: yield* reads.sourceMapped(entries, input.grouping.rules)
+		// A never-keyed hash whose frames found no map yet (or whose lookup failed) waits, up to the
+		// grace window from its first sighting: keyed now on its raw frames, it would never be keyed
+		// again. Past the window it keys on what it has. A hash with no row yet is a first sighting.
+		// A hash with a stored key whose lookup failed keeps that key this tick: re-keying it on
+		// raw frames could overwrite a good mapped key.
+		const neverKeyedSet = new Set(neverKeyed)
+		const waits = (entry: SampleInput) =>
+			neverKeyedSet.has(entry.fingerprintHash) &&
+			(entry.mapPending === true || entry.lookupFailed === true)
+		const pending = Arr.filter(mapped, waits)
+		const pendingUnknown = Arr.filter(
+			Arr.map(pending, (entry) => entry.fingerprintHash),
+			(hash) => !earlierSeen.has(hash),
+		)
+		const pendingSeen =
+			pendingUnknown.length === 0
+				? earlierSeen
+				: new Map([...earlierSeen, ...(yield* dbRun((tx) => firstSeenOf(tx, orgId, pendingUnknown)))])
+		const ready = Arr.filter(mapped, (entry) =>
+			waits(entry)
+				? nowMs - (pendingSeen.get(entry.fingerprintHash) ?? nowMs) >= MAP_PENDING_GRACE_MS
+				: !(entry.lookupFailed === true && storedHashes.has(entry.fingerprintHash)),
+		)
+		const computed = computeGroupingKeys(ready, input.grouping.rules)
 		if (computed.length > 0) {
 			yield* dbRun((tx) =>
 				Effect.forEach(

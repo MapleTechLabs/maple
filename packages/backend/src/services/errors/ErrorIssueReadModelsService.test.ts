@@ -15,6 +15,10 @@ import {
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
+import {
+	type SymbolicateRequest,
+	StackSymbolicator,
+} from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { WarehouseSchemaDriftError } from "@maple/domain/http"
 
@@ -35,6 +39,9 @@ const OTHER_ORG = asOrgId("org_error_read_models_other")
 const createdDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(createdDbs))
+
+const BUNDLE_URL = "https://shop.example.com/assets/index-Bx81.js"
+const DEBUG_ID = "6c5e2b1a-1f2e-4d3c-8b7a-0123456789ab"
 
 /** What the warehouse holds for the issue detail reads, by query context. */
 const WAREHOUSE_ROWS = new Map<string, ReadonlyArray<Record<string, unknown>>>([
@@ -57,6 +64,36 @@ const WAREHOUSE_ROWS = new Map<string, ReadonlyArray<Record<string, unknown>>>([
 		],
 	],
 	["errorIssueEnvironments", [{ name: "production", count: 4 }]],
+	[
+		"errorIssueLatestStacktrace",
+		[
+			{
+				timestamp: "2026-11-05 10:01:02",
+				stacktrace: `TypeError: boom\n    at a (${BUNDLE_URL}:1:1)`,
+				serviceName: "checkout-web",
+				serviceVersion: "2.4.0",
+				traceId: "0af7651916cd43dd8448eb211c80319c",
+				spanId: "b7ad6b7169203331",
+			},
+		],
+	],
+	[
+		"errorIssueLatestStackSpan",
+		[
+			{
+				traceId: "0af7651916cd43dd8448eb211c80319c",
+				spanId: "b7ad6b7169203331",
+				spanName: "click",
+				spanKind: "Internal",
+				spanFingerprint: "",
+				eventsName: JSON.stringify(["log", "exception"]),
+				eventsAttributes: JSON.stringify([
+					{ "maple.exception.debug_ids": "{}" },
+					{ "maple.exception.debug_ids": JSON.stringify({ [BUNDLE_URL]: DEBUG_ID }) },
+				]),
+			},
+		],
+	],
 ])
 
 /** A cluster that has not applied migration 0057 rejects any read naming `UserId`. */
@@ -108,7 +145,10 @@ const makeWarehouseStub = (
 const makeLayer = (
 	contexts: Array<string>,
 	sqls: Array<string> = [],
-	stubOptions: { withoutUserId?: boolean } = {},
+	stubOptions: {
+		withoutUserId?: boolean
+		symbolicator?: Layer.Layer<StackSymbolicator>
+	} = {},
 ) => {
 	const database = createTestDb(createdDbs).layer
 	const actors = ErrorActorsService.layer.pipe(Layer.provide(database))
@@ -119,6 +159,7 @@ const makeLayer = (
 	)
 	const warehouse = Layer.succeed(WarehouseQueryService, makeWarehouseStub(contexts, sqls, stubOptions))
 	const readModels = readRequirements.pipe(
+		Layer.provide(stubOptions.symbolicator ?? Layer.empty),
 		Layer.provide(database),
 		Layer.provide(warehouse),
 		Layer.provide(workflow),
@@ -454,5 +495,79 @@ describe("ErrorIssueReadModelsService", () => {
 			assert.isFalse(none.attributed)
 			assert.lengthOf(contexts, 2)
 		}).pipe(Effect.provide(makeLayer(contexts, sqls)))
+	})
+
+	it.effect("symbolicates the latest stack with the debug ids on its exception event", () => {
+		const contexts: Array<string> = []
+		const requests: Array<SymbolicateRequest> = []
+		const symbolicator = Layer.succeed(StackSymbolicator, {
+			symbolicate: (request) =>
+				Effect.sync(() => {
+					requests.push(request)
+					return { status: "missing_map" as const, frames: [], missing: [BUNDLE_URL] }
+				}),
+			symbolicateWithOutcome: () => Effect.die("symbolicateWithOutcome"),
+			hasSourceMaps: () => Effect.succeed(true),
+		})
+		return Effect.gen(function* () {
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(ORG, issueId, now, { fingerprintHash: "fp-checkout" })
+
+			const detail = yield* readModels.getIssue(ORG, issueId, {})
+			assert.deepStrictEqual(detail.latestStack, {
+				status: "missing_map",
+				frames: [],
+				missing: [BUNDLE_URL],
+			})
+			assert.strictEqual(detail.latestStacktrace, `TypeError: boom\n    at a (${BUNDLE_URL}:1:1)`)
+			assert.lengthOf(requests, 1)
+			const request = requests[0]
+			assert.strictEqual(request?.serviceName, "checkout-web")
+			assert.strictEqual(request?.serviceVersion, "2.4.0")
+			assert.deepStrictEqual(Array.from(request?.debugIds ?? []), [[BUNDLE_URL, DEBUG_ID]])
+			assert.include(contexts, "errorIssueLatestStackSpan")
+		}).pipe(Effect.provide(makeLayer(contexts, [], { symbolicator })))
+	})
+
+	it.effect("skips the span read for an org with no source maps, still returning the stack", () => {
+		const contexts: Array<string> = []
+		const requests: Array<SymbolicateRequest> = []
+		const symbolicator = Layer.succeed(StackSymbolicator, {
+			symbolicate: (request) =>
+				Effect.sync(() => {
+					requests.push(request)
+					return { status: "missing_map" as const, frames: [], missing: [BUNDLE_URL] }
+				}),
+			symbolicateWithOutcome: () => Effect.die("symbolicateWithOutcome"),
+			hasSourceMaps: () => Effect.succeed(false),
+		})
+		return Effect.gen(function* () {
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(ORG, issueId, now, { fingerprintHash: "fp-checkout" })
+
+			const detail = yield* readModels.getIssue(ORG, issueId, {})
+			assert.strictEqual(detail.latestStack?.status, "missing_map")
+			assert.notInclude(contexts, "errorIssueLatestStackSpan")
+			assert.deepStrictEqual(Array.from(requests[0]?.debugIds ?? []), [])
+		}).pipe(Effect.provide(makeLayer(contexts, [], { symbolicator })))
+	})
+
+	it.effect("leaves the latest stack null where no symbolicator is bound", () => {
+		const contexts: Array<string> = []
+		return Effect.gen(function* () {
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(ORG, issueId, now, { fingerprintHash: "fp-checkout" })
+
+			const detail = yield* readModels.getIssue(ORG, issueId, {})
+			assert.isNotNull(detail.latestStacktrace)
+			assert.isNull(detail.latestStack)
+			assert.notInclude(contexts, "errorIssueLatestStackSpan")
+		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 })

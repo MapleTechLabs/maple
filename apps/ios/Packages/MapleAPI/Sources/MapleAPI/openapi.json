@@ -4651,6 +4651,9 @@
           "last_seen_at": {
             "type": "string"
           },
+          "latest_stack": {
+            "$ref": "#/components/schemas/SymbolicatedStack"
+          },
           "latest_stacktrace": {
             "type": "string"
           },
@@ -6268,6 +6271,95 @@
           "resource_attributes"
         ],
         "title": "Span",
+        "type": "object"
+      },
+      "SymbolicatedStack": {
+        "additionalProperties": false,
+        "description": "A JavaScript stack trace mapped through uploaded source maps, top of stack first. `status` is `resolved` when every frame with a file mapped, `partial` when some did, `missing_map` when none did (`missing` lists the files with no map) and `not_applicable` when the trace has no JavaScript frames.",
+        "properties": {
+          "frames": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "column": {
+                  "type": "number"
+                },
+                "context": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "line": {
+                      "type": "string"
+                    },
+                    "post": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "pre": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "pre",
+                    "line",
+                    "post"
+                  ],
+                  "type": "object"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "function": {
+                  "type": "string"
+                },
+                "in_app": {
+                  "type": "boolean"
+                },
+                "line": {
+                  "type": "number"
+                },
+                "raw": {
+                  "type": "string"
+                },
+                "resolved": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "raw",
+                "in_app",
+                "resolved"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "resolved",
+              "partial",
+              "missing_map",
+              "not_applicable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "frames",
+          "missing"
+        ],
+        "title": "Symbolicated stack",
         "type": "object"
       },
       "TimeseriesSeries": {
@@ -14223,6 +14315,10 @@
     {
       "description": "Ingest-time attribute rewrite rules. Move or copy span/resource attribute values to new keys as telemetry arrives, normalizing naming across services without redeploying them.",
       "name": "Attribute Mappings"
+    },
+    {
+      "description": "JavaScript source maps for symbolicating browser errors. Upload one per built file from CI (`maple sourcemaps upload`), list them, or delete them. Any member may list; uploading and deleting take an engineer or admin.",
+      "name": "Source Maps"
     },
     {
       "description": "Databases and APIs your organization connects so Maple and its agents can query them in place. Nothing is imported. Members can read sources and catalogs; connecting, editing, testing and curating take an admin.",

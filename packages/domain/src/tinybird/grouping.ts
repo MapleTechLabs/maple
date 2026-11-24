@@ -3,14 +3,16 @@
  * from one sample. Keys only merge hashes, never split one; why and how it was measured is
  * in `docs/error-issue-lifecycle.md` ("The grouping key").
  */
-import { Array as Arr, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
+import { parseJsFrame, type StackFrame, type SymbolicatedStack } from "../errors/js-stack"
 import {
 	computeFingerprintInputs,
 	currentFrameCandidates,
 	CUSTOM_FINGERPRINT_ATTRIBUTE,
 	type FingerprintInputs,
 	isLibraryFrame,
+	MAX_FINGERPRINT_FRAMES,
 	SPAN_SIGNATURE_PREFIX,
 } from "./fingerprint"
 import {
@@ -65,6 +67,8 @@ const framePathRe = /(\(|@|^[ \t]*at |^[ \t]*File ")(?:[^ ()"]*\/)?([^/ ()"]+\/[
  * - `type-message`: a specific error type with a message; the two are the identity.
  * - `type-function`: a specific error type with no message; the first named function.
  * - `frames`: a generic type; frames (install roots trimmed) and message, as the hash.
+ * - `source-mapped`: `frames` or `type-function` read through source maps: original files and
+ *   functions, so a deploy's renamed bundle keeps its key.
  */
 export const GroupingRule = Schema.Literals([
 	"custom",
@@ -74,6 +78,7 @@ export const GroupingRule = Schema.Literals([
 	"type-message",
 	"type-function",
 	"frames",
+	"source-mapped",
 ]).annotate({ identifier: "@maple/GroupingRule", title: "Grouping Rule" })
 export type GroupingRule = Schema.Schema.Type<typeof GroupingRule>
 
@@ -90,6 +95,8 @@ export interface GroupingSample {
 	readonly statusMessage: string
 	readonly customFingerprint?: string
 	readonly span?: { readonly kind: string; readonly name: string }
+	/** The stack mapped through the org's source maps, when the tick could look it up. */
+	readonly symbolicatedStack?: SymbolicatedStack
 }
 
 /** A frame's file, cut to its last two path segments: install roots and worktrees vary. */
@@ -104,6 +111,52 @@ const trimFramePath = (frame: string): string => {
 export const frameFunction = (frame: string): string | undefined => {
 	const name = namedFrameRe.exec(frame)?.[1]
 	return name === undefined || plumbingRe.test(name) ? undefined : name
+}
+
+/** A mapped frame's function, unless the map named none (the minified name stayed) or it is plumbing. */
+const mappedFunction = (frame: StackFrame): string | undefined => {
+	const minified = Option.match(parseJsFrame(frame.raw), {
+		onNone: () => null,
+		onSome: (parsed) => parsed.function,
+	})
+	const name = frame.function
+	return name === null || name === minified || plumbingRe.test(name) ? undefined : name
+}
+
+/** A mapped frame as the key reads it: original file and function, never a line or column. */
+const mappedFrameLine = (frame: StackFrame, file: string): string => {
+	const name = mappedFunction(frame)
+	return name === undefined ? `at ${file}` : `at ${name} (${file})`
+}
+
+/**
+ * The app's source-mapped frames, top first, when the stack resolved at least one. Unmapped
+ * frames are left out: their names and hashed files change with every deploy.
+ */
+const sourceMappedFrames = (
+	sample: GroupingSample,
+	rules: CompiledGroupingRules,
+): { readonly frames: ReadonlyArray<string>; readonly skipped: ReadonlyArray<string> } | undefined => {
+	const stack = sample.symbolicatedStack
+	if (stack === undefined || (stack.status !== "resolved" && stack.status !== "partial")) return undefined
+	const mapped = Arr.dedupeAdjacentWith(
+		Arr.flatMap(stack.frames, (frame) => {
+			if (!frame.resolved || frame.file === null) return []
+			const line = mappedFrameLine(frame, frame.file)
+			const kind = rules.frameKind(line, sample)
+			return [{ line, app: kind === undefined ? frame.in_app : kind === "app" }]
+		}),
+		(a, b) => a.line === b.line,
+	)
+	const app = Arr.filter(mapped, (frame) => frame.app)
+	if (app.length === 0) return undefined
+	return {
+		frames: Arr.map(app, (frame) => frame.line).slice(0, MAX_FINGERPRINT_FRAMES),
+		skipped: Arr.map(
+			Arr.filter(mapped, (frame) => !frame.app),
+			(frame) => frame.line,
+		),
+	}
 }
 
 /** A key's inputs, and what the "why grouped" view shows of them. */
@@ -150,10 +203,15 @@ export const explainGrouping = (
 		sample.customFingerprint === undefined || Str.trim(sample.customFingerprint) === ""
 			? undefined
 			: Str.trim(sample.customFingerprint)
-	const explained = (parts: GroupingParts, read: ReadonlyArray<string>, orgRule?: OrgGroupingRule) => ({
+	const explained = (
+		parts: GroupingParts,
+		read: ReadonlyArray<string>,
+		orgRule?: OrgGroupingRule,
+		passedOver: ReadonlyArray<string> = skipped,
+	) => ({
 		...parts,
 		frames: read,
-		skippedFrames: read.length === 0 ? [] : skipped,
+		skippedFrames: read.length === 0 ? [] : passedOver,
 		messageSignature: inputs.msgSignature,
 		customKey,
 		orgRule,
@@ -180,11 +238,36 @@ export const explainGrouping = (
 	}
 	const message = inputs.msgSignature
 	const trimmed = Arr.join(Arr.map(frames, trimFramePath), "\n")
+	// Only the frame parts read source maps; every rule above keeps its priority.
+	const mapped = sourceMappedFrames(sample, rules)
 	const byFrames = () =>
-		explained(extend({ rule: "frames", parts: [sample.exceptionType, trimmed, message] }), frames)
+		mapped === undefined
+			? explained(extend({ rule: "frames", parts: [sample.exceptionType, trimmed, message] }), frames)
+			: explained(
+					extend({
+						rule: "source-mapped",
+						parts: [sample.exceptionType, Arr.join(mapped.frames, "\n"), message],
+					}),
+					mapped.frames,
+					undefined,
+					mapped.skipped,
+				)
 	if (genericTypeRe.test(sample.exceptionType)) return byFrames()
 	if (message !== "")
 		return explained(extend({ rule: "type-message", parts: [sample.exceptionType, message] }), [])
+	if (mapped !== undefined) {
+		const mappedNamed = Arr.findFirst(mapped.frames, (frame) => frameFunction(frame) !== undefined)
+		if (mappedNamed._tag === "None") return byFrames()
+		return explained(
+			extend({
+				rule: "source-mapped",
+				parts: [sample.exceptionType, frameFunction(mappedNamed.value) ?? ""],
+			}),
+			[mappedNamed.value],
+			undefined,
+			mapped.skipped,
+		)
+	}
 	const named = Arr.findFirst(frames, (frame) => frameFunction(frame) !== undefined)
 	if (named._tag === "None") return byFrames()
 	return explained(

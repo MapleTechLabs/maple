@@ -14,6 +14,7 @@ import {
 } from "../errors"
 import { SpanId, TraceId, UserId } from "@maple/primitives"
 import { AuditedRead } from "../audit-log"
+import { SymbolicatedStack } from "../../errors/js-stack"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
 import { defineV2Error, V2CursorInvalid, V2CursorSortMismatch, V2ParameterInvalid } from "./errors"
@@ -136,6 +137,13 @@ export const V2ErrorIncident = Schema.Struct({
 }).annotate({ identifier: "ErrorIncident", title: "Error incident" })
 export type V2ErrorIncident = Schema.Schema.Type<typeof V2ErrorIncident>
 
+export const V2SymbolicatedStack = SymbolicatedStack.annotate({
+	identifier: "SymbolicatedStack",
+	title: "Symbolicated stack",
+	description:
+		"A JavaScript stack trace mapped through uploaded source maps, top of stack first. `status` is `resolved` when every frame with a file mapped, `partial` when some did, `missing_map` when none did (`missing` lists the files with no map) and `not_applicable` when the trace has no JavaScript frames.",
+})
+
 export const V2ErrorIssueDetail = Schema.Struct({
 	...V2ErrorIssue.fields,
 	timeseries: Schema.Array(V2ErrorIssueTimeseriesPoint),
@@ -144,6 +152,8 @@ export const V2ErrorIssueDetail = Schema.Struct({
 	environments: Schema.Array(V2ErrorIssueEnvironment),
 	/** The newest stack trace in the window; null when no occurrence there carried one. */
 	latest_stacktrace: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** `latest_stacktrace` mapped through the uploaded source maps; null when there is no stack. */
+	latest_stack: Schema.optionalKey(Schema.NullOr(V2SymbolicatedStack)),
 }).annotate({
 	identifier: "ErrorIssueDetail",
 	title: "Error issue detail",

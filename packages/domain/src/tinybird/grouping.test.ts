@@ -1,6 +1,7 @@
 import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 
+import type { StackFrame, SymbolicatedStack } from "../errors/js-stack"
 import { explainGrouping, groupingKey, groupingParts, type GroupingSample } from "./grouping"
 import { compileGroupingRules, GroupingConfig, groupingConfigDigest, OrgGroupingRule } from "./grouping-rules"
 
@@ -211,3 +212,147 @@ describe("org grouping rules", () => {
 		expect(groupingConfigDigest(new GroupingConfig({ rules: [] }))).toBe("")
 	})
 })
+
+describe("source-mapped frames", () => {
+	const unresolvedFrame = (raw: string): StackFrame => ({
+		raw,
+		function: null,
+		file: null,
+		line: null,
+		column: null,
+		in_app: true,
+		resolved: false,
+		context: null,
+	})
+	const mappedFrame = (raw: string, fn: string | null, file: string): StackFrame => ({
+		raw,
+		function: fn,
+		file,
+		line: 12,
+		column: 4,
+		in_app: !Str.includes("node_modules/")(file),
+		resolved: true,
+		context: null,
+	})
+	const stackOf = (frames: ReadonlyArray<StackFrame>): SymbolicatedStack => {
+		const resolved = Arr.filter(frames, (frame) => frame.resolved).length
+		return {
+			status: resolved === 0 ? "missing_map" : resolved === frames.length ? "resolved" : "partial",
+			frames,
+			missing: [],
+		}
+	}
+	const withStack = (sample: GroupingSample, frames: ReadonlyArray<StackFrame>): GroupingSample => ({
+		...sample,
+		symbolicatedStack: stackOf(frames),
+	})
+
+	it("keeps today's key when the lookup resolves nothing", () => {
+		const fixtures: ReadonlyArray<GroupingSample> = [
+			node("TypeError", "Cannot read properties of undefined", [
+				"a (https://app.example/assets/index-Bx81.js:1:4410)",
+			]),
+			node("StoreVaultError", "", [
+				"credentialsVault.forwardStore (worker-app-sOddjqIe.js:2465:204564)",
+			]),
+			node("SiteUnavailable", "Site is unavailable under current access", [
+				"Hr (dist/ssr/assets/portal-native-resource-projection-VejMLjva.js:1104:1732)",
+			]),
+			{
+				serviceName: "api",
+				exceptionType: "Error",
+				statusMessage: "",
+				exceptionStacktrace: "Error\n    at handle (/app/backend/src/server.ts:41:9)",
+			},
+		]
+		Arr.forEach(fixtures, (sample) => {
+			const frames = Arr.map(
+				Arr.filter(Str.split("\n")(sample.exceptionStacktrace), (line) => Str.includes(" at ")(line)),
+				unresolvedFrame,
+			)
+			const missing = withStack(sample, frames)
+			const notApplicable: GroupingSample = {
+				...sample,
+				symbolicatedStack: { status: "not_applicable", frames, missing: [] },
+			}
+			// Mapped, but only into a dependency: no app frame to key on.
+			const libraryOnly = withStack(
+				sample,
+				Arr.map(frames, (frame) => mappedFrame(frame.raw, "request", "node_modules/ky/index.js")),
+			)
+			expect(groupingKey(missing)).toBe(groupingKey(sample))
+			expect(groupingKey(notApplicable)).toBe(groupingKey(sample))
+			expect(groupingKey(libraryOnly)).toBe(groupingKey(sample))
+			expect(groupingParts(missing).rule).toBe(groupingParts(sample).rule)
+		})
+	})
+
+	it("keys a generic error on original files and functions, never lines", () => {
+		const release = (bundle: string, minified: string, line: number) => {
+			const raw = `at ${minified} (https://app.example/assets/${bundle}.js:1:${line})`
+			const sample = node("TypeError", "Cannot read properties of undefined", [
+				`${minified} (https://app.example/assets/${bundle}.js:1:${line})`,
+			])
+			return withStack(sample, [
+				{ ...mappedFrame(raw, "renderInvoice", "src/invoice.ts"), line, column: line },
+			])
+		}
+		const v1 = release("index-Bx81", "a", 100)
+		const v2 = release("index-Qz07", "xe", 2000)
+		expect(groupingKey(stripStack(v1))).not.toBe(groupingKey(stripStack(v2)))
+		expect(groupingKey(v1)).toBe(groupingKey(v2))
+		const why = explainGrouping(v1)
+		expect(why.rule).toBe("source-mapped")
+		expect(why.frames).toEqual(["at renderInvoice (src/invoice.ts)"])
+	})
+
+	it("keeps the rules above frames in front: custom keys, org merges, chunk loads, type and message", () => {
+		const frames = [
+			mappedFrame("at a (https://app.example/a-1.js:1:1)", "renderInvoice", "src/invoice.ts"),
+		]
+		const custom = withStack(node("TypeError", "boom", ["a (https://app.example/a-1.js:1:1)"]), frames)
+		const keyed = { ...custom, customFingerprint: "invoice" }
+		expect(groupingParts(keyed).rule).toBe("custom")
+		const extended = { ...custom, customFingerprint: "{{default}} tenant-a" }
+		expect(groupingParts(extended).parts).toContain("tenant-a")
+		expect(groupingParts(extended).rule).toBe("source-mapped")
+
+		const merge = compileGroupingRules(
+			new GroupingConfig({
+				rules: [new OrgGroupingRule({ id: "booms", kind: "merge", message: "boom" })],
+			}),
+		)
+		expect(groupingParts(custom, merge).rule).toBe("org-rule")
+
+		const chunk = withStack(
+			node("TypeError", "Failed to fetch dynamically imported module: https://app.example/a-1.js", []),
+			frames,
+		)
+		expect(groupingParts(chunk).rule).toBe("chunk-load")
+
+		const tagged = withStack(
+			node("InvoiceMissing", "no invoice", ["a (https://app.example/a-1.js:1:1)"]),
+			frames,
+		)
+		expect(groupingParts(tagged).rule).toBe("type-message")
+		expect(groupingKey(tagged)).toBe(groupingKey(stripStack(tagged)))
+	})
+
+	it("keys a tagged error with no message on the original function", () => {
+		const raw = (name: string, bundle: string) => `at ${name} (https://app.example/${bundle}.js:1:9)`
+		const v1 = withStack(node("StoreVaultError", "", [`Hr (https://app.example/w-1.js:1:9)`]), [
+			mappedFrame(raw("Hr", "w-1"), "forwardStore", "src/vault.ts"),
+		])
+		const v2 = withStack(node("StoreVaultError", "", [`Tq (https://app.example/w-2.js:1:9)`]), [
+			mappedFrame(raw("Tq", "w-2"), "forwardStore", "src/vault.ts"),
+		])
+		const other = withStack(node("StoreVaultError", "", [`Tq (https://app.example/w-2.js:1:9)`]), [
+			mappedFrame(raw("Tq", "w-2"), "readStore", "src/vault.ts"),
+		])
+		expect(groupingParts(v1).rule).toBe("source-mapped")
+		expect(groupingKey(v1)).toBe(groupingKey(v2))
+		expect(groupingKey(v1)).not.toBe(groupingKey(other))
+	})
+})
+
+const stripStack = ({ symbolicatedStack: _stack, ...sample }: GroupingSample): GroupingSample => sample

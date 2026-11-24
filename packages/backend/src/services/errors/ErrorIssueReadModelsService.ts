@@ -19,6 +19,7 @@ import {
 	type IssueKind,
 	type IssueSeverity,
 	type OrgId,
+	type TenantContext,
 	UserId as UserIdSchema,
 	type WorkflowState,
 	type WarehouseReadError,
@@ -35,6 +36,9 @@ import { makeErrorDatabaseExecute } from "./error-persistence"
 import { issueFingerprintHashes } from "./issue-fingerprints"
 import { severityRank } from "./issue-severity"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
+import { StackSymbolicator } from "@maple/backend/services/sourcemaps/StackSymbolicator"
+import { DEBUG_IDS_ATTRIBUTE, decodeDebugIds, parseJsStack } from "@maple/domain/errors/js-stack"
+import { exceptionEventAttribute } from "./exception-event"
 
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
 const encodeIssueListCursor = Schema.encodeSync(IssueListCursor)
@@ -46,6 +50,8 @@ const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 const SYSTEM_USER_ID = decodeUserIdSync("system-errors")
 
 const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
+/** error_events keeps whole seconds; the span behind an occurrence starts within its second. */
+const LATEST_SPAN_WINDOW_MS = 60_000
 /** Fallback fingerprint-scan window for the issue list's env filter when the
  * caller provides no time range (30d ≈ the issue-list retention horizon). */
 const ENV_FINGERPRINT_DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
@@ -235,7 +241,102 @@ const make: Effect.Effect<
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
 	const workflow = yield* ErrorIssueWorkflowService
+	// Hosts without the source map bucket (the MCP runtime) leave `latestStack` null.
+	const symbolicator = yield* Effect.serviceOption(StackSymbolicator)
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorIssueReadModelsService")
+
+	/** The debug ids the SDK put on the occurrence's exception event; empty when its span cannot be read. */
+	const occurrenceDebugIds = (
+		tenant: TenantContext,
+		orgId: OrgId,
+		occurrence: {
+			readonly serviceName: string
+			readonly traceId: string
+			readonly spanId: string
+			readonly timestamp: DateTime.Utc
+		},
+	) => {
+		const atMs = DateTime.toEpochMillis(occurrence.timestamp)
+		return warehouse
+			.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.errorGroupingSpansQuery({
+						serviceNames: [occurrence.serviceName],
+						traceIds: [occurrence.traceId],
+						spanIds: [occurrence.spanId],
+					}),
+					{
+						orgId,
+						startTime: DateTime.makeUnsafe(atMs - LATEST_SPAN_WINDOW_MS),
+						endTime: DateTime.makeUnsafe(atMs + LATEST_SPAN_WINDOW_MS),
+					},
+				),
+				{ profile: "list", context: "errorIssueLatestStackSpan" },
+			)
+			.pipe(
+				Effect.map((spans) =>
+					decodeDebugIds(
+						Option.getOrUndefined(
+							Option.flatMapNullishOr(Arr.head(spans), (span) =>
+								exceptionEventAttribute(span, DEBUG_IDS_ATTRIBUTE),
+							),
+						),
+					),
+				),
+				Effect.catch((error) =>
+					Effect.logWarning("Latest occurrence span could not be read for debug ids").pipe(
+						Effect.annotateLogs({ orgId, message: error.message }),
+						Effect.as(new Map<string, string>()),
+					),
+				),
+			)
+	}
+
+	/** Whether the org has any source map; false on a host with no symbolicator. */
+	const orgHasSourceMaps = (orgId: OrgId) =>
+		Option.match(symbolicator, {
+			onNone: () => Effect.succeed(false),
+			onSome: (stacks) => stacks.hasSourceMaps(orgId),
+		})
+
+	/**
+	 * The occurrence's stack mapped through the org's source maps; null on a host with no
+	 * symbolicator. An org without maps skips the span read: there is nothing to look its ids up in.
+	 */
+	const latestStackOf = (
+		tenant: TenantContext,
+		orgId: OrgId,
+		occurrence: Parameters<typeof occurrenceDebugIds>[2] & {
+			readonly stacktrace: string
+			readonly serviceVersion: string
+		},
+		hasMaps: boolean,
+	) =>
+		Option.match(symbolicator, {
+			onNone: () => Effect.succeed(null),
+			onSome: (stacks) => {
+				const hasFileFrames =
+					hasMaps &&
+					Arr.some(parseJsStack(occurrence.stacktrace).frames, (frame) => frame.url !== null)
+				return (
+					hasFileFrames
+						? occurrenceDebugIds(tenant, orgId, occurrence)
+						: Effect.succeed(new Map<string, string>())
+				).pipe(
+					Effect.flatMap((debugIds) =>
+						stacks.symbolicate({
+							orgId,
+							stacktrace: occurrence.stacktrace,
+							serviceName: occurrence.serviceName === "" ? null : occurrence.serviceName,
+							serviceVersion:
+								occurrence.serviceVersion === "" ? null : occurrence.serviceVersion,
+							debugIds,
+						}),
+					),
+				)
+			},
+		})
 
 	const rowToIncident = (row: ErrorIncidentRow) =>
 		new ErrorIncidentDocument({
@@ -541,12 +642,30 @@ const make: Effect.Effect<
 			),
 		)
 
-		const [timeseriesRows, sampleRows, environmentRows, stacktraceRows, incidentRows] = yield* Effect.all(
-			[timeseriesEffect, samplesEffect, environmentsEffect, stacktraceEffect, incidentsEffect],
-			{ concurrency: 5 },
+		const [timeseriesRows, sampleRows, environmentRows, stacktraceRows, incidentRows, hasMaps] =
+			yield* Effect.all(
+				[
+					timeseriesEffect,
+					samplesEffect,
+					environmentsEffect,
+					stacktraceEffect,
+					incidentsEffect,
+					isErrorKind ? orgHasSourceMaps(orgId) : Effect.succeed(false),
+				],
+				{ concurrency: 6 },
+			)
+		const latestOccurrence = stacktraceRows[0]
+		const latestStacktrace = latestOccurrence?.stacktrace ?? null
+		// The span read needs the latest occurrence, so it runs beside the issue hydration instead.
+		const [latestStack, issue] = yield* Effect.all(
+			[
+				latestOccurrence === undefined
+					? Effect.succeed(null)
+					: latestStackOf(tenant, orgId, latestOccurrence, hasMaps),
+				workflow.hydrateIssue(orgId, issueRow),
+			],
+			{ concurrency: 2 },
 		)
-		const latestStacktrace = stacktraceRows[0]?.stacktrace ?? null
-		const issue = yield* workflow.hydrateIssue(orgId, issueRow)
 		const timeseries = Arr.map(
 			timeseriesRows,
 			(row) =>
@@ -583,6 +702,7 @@ const make: Effect.Effect<
 			incidents: Arr.map(incidentRows, rowToIncident),
 			environments,
 			latestStacktrace,
+			latestStack,
 		})
 	})
 

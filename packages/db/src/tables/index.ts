@@ -92,6 +92,7 @@ import { SavedViews } from "./saved-views"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
 import { SearchConsoleSites } from "./search-console-sites"
 import { ServiceMapWorldEntities } from "./service-map-world"
+import { SourceMapFiles } from "./source-maps"
 import {
 	SecurityAuditEvents,
 	SecurityAuditFindings,
@@ -194,6 +195,7 @@ export * from "./scrape-targets"
 export * from "./search-console-sites"
 export * from "./security-audit"
 export * from "./service-map-world"
+export * from "./source-maps"
 export * from "./sources"
 export * from "./status-pages"
 export * from "./supabase"
@@ -313,6 +315,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	ServiceMapWorldEntities,
 	ScrapeTargetChecks,
 	SearchConsoleSites,
+	SourceMapFiles,
 	SecurityAuditTargets,
 	SecurityAuditRuns,
 	SecurityAuditUnits,

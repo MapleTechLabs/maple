@@ -42,6 +42,8 @@ export const AuditResources = {
 		verbs: ["created", "updated", "deleted"],
 	},
 	ingest_rule: { prefix: PublicIdPrefixes.ingestRule, verbs: ["created", "updated", "deleted"] },
+	/** An uploaded JavaScript source map; its path and release are in `metadata`. */
+	source_map: { prefix: PublicIdPrefixes.sourceMap, verbs: ["uploaded", "deleted"] },
 	/** External data sources; `metadata` says whether a secret changed, never its value. */
 	data_source: {
 		prefix: PublicIdPrefixes.dataSource,
@@ -288,6 +290,7 @@ export const AuditResourceLabels = {
 	api_key: "API key",
 	attribute_mapping: "Attribute mapping",
 	ingest_rule: "Ingest rule",
+	source_map: "Source map",
 	data_source: "Data source",
 	dashboard: "Dashboard",
 	chat_integration: "Chat integration",
@@ -382,6 +385,8 @@ export const AuditActionLabels = {
 	"attribute_mapping.updated": "Updated attribute mapping",
 	"attribute_mapping.deleted": "Deleted attribute mapping",
 	"ingest_rule.created": "Created ingest rule",
+	"source_map.uploaded": "Uploaded source map",
+	"source_map.deleted": "Deleted source map",
 	"ingest_rule.updated": "Updated ingest rule",
 	"ingest_rule.deleted": "Deleted ingest rule",
 	"data_source.created": "Connected data source",

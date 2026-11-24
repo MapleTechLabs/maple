@@ -67,6 +67,7 @@ const VERB_ICONS = {
 	cancelled: "SquareIcon",
 	ended: "SquareIcon",
 	rolled: "ArrowRotateClockwiseIcon",
+	uploaded: "UploadIcon",
 	rotated: "ArrowRotateClockwiseIcon",
 	break_glass_rotated: "ArrowRotateClockwiseIcon",
 	custom_domain_set: "GlobeIcon",
