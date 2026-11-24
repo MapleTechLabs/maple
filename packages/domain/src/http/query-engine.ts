@@ -1,4 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { ServiceIdentity } from "../service-identity"
 import { Effect, Schema, String as Str } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { CostCurrency, CostDimension, CostFilters, CostMetric, CostProvider } from "../cost"
@@ -1841,6 +1842,8 @@ const ServicePlatformRow = Schema.Struct({
 	faasName: Schema.String,
 	mapleSdkType: Schema.String,
 	processRuntimeName: Schema.String,
+	/** Absent from an API older than service identities. */
+	identity: Schema.optionalKey(ServiceIdentity),
 })
 
 export class ServicePlatformsResponse extends Schema.Class<ServicePlatformsResponse>(

@@ -1,4 +1,4 @@
-import { Effect, Array as Arr, Record as Rec } from "effect"
+import { Effect, Option, Tracer, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { isIgnoredLockfilePath, lockfileKindOf, parseLockfile, type ParsedLockfile } from "./index.ts"
 
@@ -348,6 +348,67 @@ describe("pnpm 11 multi-document lockfiles", () => {
 		)
 		expect(summary(await parse("pnpm-lock.yaml", lock))).toEqual(
 			expect.arrayContaining(["lodash@4.17.15:direct", "pnpm@11.0.0:transitive"]),
+		)
+	})
+
+	it("reads snapshot keys past 1024 chars and a snapshot a merge left twice", async () => {
+		const longKey = `zep@1.0.7${Str.repeat(120)("(peer@1.0.0)")}`
+		const lock = Arr.join(
+			[
+				"lockfileVersion: '9.0'",
+				"snapshots:",
+				`  ${longKey}:`,
+				"    dependencies: {}",
+				"  vitest@5.0.3(@types/node@24.13.2):",
+				"    dev: true",
+				"  vitest@5.0.3(@types/node@24.13.2):",
+				"    dev: true",
+				"",
+			],
+			"\n",
+		)
+		expect(summary(await parse("pnpm-lock.yaml", lock))).toEqual([
+			"vitest@5.0.3:dev",
+			"zep@1.0.7:transitive",
+		])
+	})
+})
+
+describe("parse spans", () => {
+	const recordSpans = (effect: Effect.Effect<unknown, unknown>) => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		return Effect.runPromise(
+			effect.pipe(Effect.exit, Effect.provideService(Tracer.Tracer, tracer), Effect.as(spans)),
+		)
+	}
+
+	it("ends Ok on an unreadable lockfile, naming the reason, and still fails the parse", async () => {
+		const spans = await recordSpans(
+			parseLockfile({ path: "bun.lock", content: '{"lockfileVersion": 1,' }),
+		)
+		const statuses = Arr.map(spans, (span) => [span.name, span.status._tag])
+		expect(statuses).toEqual(
+			expect.arrayContaining([
+				["lockfiles.parseLockfile", "Ended"],
+				["lockfiles.parseBunLock", "Ended"],
+			]),
+		)
+		expect(Arr.map(spans, (span) => span.status._tag === "Ended" && span.status.exit._tag)).not.toContain(
+			"Failure",
+		)
+		const bunSpan = Arr.findFirst(spans, (span) => span.name === "lockfiles.parseBunLock")
+		expect(Option.map(bunSpan, (span) => span.attributes.get("lockfiles.unreadable"))).toEqual(
+			Option.some("@maple/lockfiles/LockfileParseError"),
+		)
+		expect((await failure("bun.lock", '{"lockfileVersion": 1,'))._tag).toBe(
+			"@maple/lockfiles/LockfileParseError",
 		)
 	})
 })

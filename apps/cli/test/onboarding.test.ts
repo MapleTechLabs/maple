@@ -5,6 +5,7 @@ import { Array as Arr, Console, Duration, Effect, Exit, Option, Ref, Schema, Str
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { encodeJson } from "@maple/local-server/json"
 import { HANDOFF_SPENT_MESSAGE, handoffLogin } from "../src/commands/auth"
+import { isExpectedFailure } from "../src/core/outcomes"
 import {
 	describeReport,
 	isTransientSearchFailure,
@@ -176,6 +177,8 @@ describe("handoff login", () => {
 		assert.ok(Exit.hasFails(exit))
 		const error = Option.getOrUndefined(Arr.findFirst(exit.cause.reasons, (r) => r._tag === "Fail"))
 		assert.equal(error?._tag === "Fail" ? error.error.message : undefined, HANDOFF_SPENT_MESSAGE)
+		// A spent code is the person's to replace, so the run closes `Ok`.
+		assert.ok(error?._tag === "Fail" && isExpectedFailure(error.error))
 		assert.ok(!Arr.some(printed, Str.includes(HANDOFF)))
 		assert.deepEqual(saved, [])
 	})

@@ -5,6 +5,7 @@ import { readPackageJsons, type ManifestDeps } from "../internal/manifests.ts"
 import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
 import { LockfileParseError } from "../errors.ts"
 import type { ParserOutput } from "./types.ts"
+import { parseSpan } from "../internal/span.ts"
 import { replaceWith } from "@maple/strings"
 
 interface Specifier {
@@ -146,7 +147,7 @@ const v1Result = Effect.fn(function* (input: LockfileInput, manifest: ManifestDe
 
 const isBerry = (content: string): boolean => /^__metadata:/m.test(content)
 
-export const parseYarnLock = Effect.fn("lockfiles.parseYarnLock")(function* (input: LockfileInput) {
+export const parseYarnLock = Effect.fn(function* (input: LockfileInput) {
 	const manifest = yield* readPackageJsons(input.manifests)
 	const berry = isBerry(input.content)
 	const result = berry ? yield* berryResult(input, manifest) : yield* v1Result(input, manifest)
@@ -163,4 +164,4 @@ export const parseYarnLock = Effect.fn("lockfiles.parseYarnLock")(function* (inp
 		warnings,
 	}
 	return output
-})
+}, parseSpan("lockfiles.parseYarnLock"))

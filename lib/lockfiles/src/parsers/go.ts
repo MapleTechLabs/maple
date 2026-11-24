@@ -3,6 +3,7 @@ import { LockfileParseError } from "../errors.ts"
 import { pkg } from "../internal/collect.ts"
 import type { LockedPackage, LockfileInput } from "../types.ts"
 import type { ParserOutput } from "./types.ts"
+import { parseSpan } from "../internal/span.ts"
 
 interface Require {
 	readonly path: string
@@ -110,7 +111,7 @@ const resolve = (req: Require, replaces: ReadonlyArray<Replace>): Require | unde
 		: { ...req, path: match.newPath, version: match.newVersion }
 }
 
-export const parseGoMod = Effect.fn("lockfiles.parseGoMod")(function* (input: LockfileInput) {
+export const parseGoMod = Effect.fn(function* (input: LockfileInput) {
 	const initial: GoModState = { block: undefined, requires: [], replaces: [], errors: [] }
 	const state = Arr.reduce(Str.split(/\r?\n/)(input.content), initial, step)
 	const errors =
@@ -129,9 +130,9 @@ export const parseGoMod = Effect.fn("lockfiles.parseGoMod")(function* (input: Lo
 	)
 	const output: ParserOutput = { kind: "go-mod", packages, warnings }
 	return output
-})
+}, parseSpan("lockfiles.parseGoMod"))
 
-export const parseGoSum = Effect.fn("lockfiles.parseGoSum")(function* (input: LockfileInput) {
+export const parseGoSum = Effect.fn(function* (input: LockfileInput) {
 	const lines = Arr.filter(
 		Arr.map(Str.split(/\r?\n/)(input.content), (line) => Str.trim(line)),
 		(line) => line !== "",
@@ -152,4 +153,4 @@ export const parseGoSum = Effect.fn("lockfiles.parseGoSum")(function* (input: Lo
 		warnings: ["go.sum lists more module versions than the build uses; prefer go.mod when both exist"],
 	}
 	return output
-})
+}, parseSpan("lockfiles.parseGoSum"))

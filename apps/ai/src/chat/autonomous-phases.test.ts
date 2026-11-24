@@ -11,11 +11,17 @@ const PROVIDER_500 = ModelProtocolError.make({
 	message: "Model response failed: The server had an error while processing your request.",
 })
 
+/** What the engine raises when the provider streams a tool call before its parameters end. */
+const CUT_SHORT_CALL = ModelProtocolError.make({
+	message: "Model response declared Tool Call call-1 before its parameters completed",
+})
+
 /** Runs the phases over a scripted run: each phase files when `files` says so, and ends on `stop`. */
 const phasesOf = (
 	mode: RowMode,
 	files: (turn: PhaseTurn, index: number) => boolean,
 	fails: (index: number) => boolean = () => false,
+	failure: ModelProtocolError = PROVIDER_500,
 ) => {
 	const outcome = makeAutonomousOutcome()
 	const turns: Array<PhaseTurn> = []
@@ -23,7 +29,7 @@ const phasesOf = (
 		Effect.suspend(() => {
 			turns.push(turn)
 			const index = turns.length - 1
-			if (fails(index)) return Effect.fail(PROVIDER_500)
+			if (fails(index)) return Effect.fail(failure)
 			outcome.hold("stop")
 			return Effect.succeed({ submitted: files(turn, index), compactions: 0 })
 		})
@@ -105,6 +111,20 @@ describe("runAutonomousPhases", () => {
 		)
 		assert.include(turns[1]?.text ?? "", "kickoff")
 		assert.isDefined(turns[1]?.agent, "a resume runs on what is left of the pass's clock")
+		assert.isTrue(outcome.submitted())
+	})
+
+	it("resumes a review a malformed tool call cut short, which then files", async () => {
+		const { outcome, turns } = await phasesOf(
+			"pr-review",
+			(_, index) => index === 1,
+			(index) => index === 0,
+			CUT_SHORT_CALL,
+		)
+		assert.lengthOf(turns, 2)
+		assert.isTrue(
+			Str.startsWith(AGENTS["pr-review"].completion.resumePrompt ?? "-")(turns[1]?.text ?? ""),
+		)
 		assert.isTrue(outcome.submitted())
 	})
 

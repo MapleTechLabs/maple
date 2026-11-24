@@ -1,3 +1,4 @@
+import { ServiceIdentity } from "@maple/domain/service-identity"
 import type { ServiceOverview } from "@maple/query-engine"
 import type {
 	ServiceMapDbEdgeRow,
@@ -80,6 +81,7 @@ export const LocalServiceMapData = Schema.Struct({
 	platforms: Schema.ReadonlyMap(Schema.String, Platform),
 	/** `process.runtime.name` per service. */
 	runtimes: Schema.ReadonlyMap(Schema.String, Schema.String),
+	identities: Schema.ReadonlyMap(Schema.String, ServiceIdentity),
 })
 export type LocalServiceMapData = typeof LocalServiceMapData.Type
 
@@ -92,6 +94,7 @@ export const graphRowsOf = (
 	serviceOverviews: Array<ServiceOverview>
 	platforms: Map<string, ServicePlatform>
 	runtimes: Map<string, string>
+	identities: Map<string, ServiceIdentity>
 }> => ({
 	edges: Arr.map(data.edges, (row) => ({ ...row })),
 	dbEdges: Arr.map(data.dbEdges, (row) => ({ ...row })),
@@ -101,6 +104,7 @@ export const graphRowsOf = (
 	})),
 	platforms: new Map(data.platforms),
 	runtimes: new Map(data.runtimes),
+	identities: new Map(data.identities),
 })
 
 /** The saved map as this build reads it, or none for an older build's shape. */
