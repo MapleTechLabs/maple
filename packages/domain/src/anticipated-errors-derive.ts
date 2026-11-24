@@ -7,6 +7,11 @@
 // `generated/anticipated-error-identifiers.ts`.
 import * as Http from "./http/index"
 import * as HttpV2 from "./http/v2/index"
+// Wire contracts whose errors live outside `http/` but are answered by the same routes.
+import * as OnboardingAgentRun from "./onboarding-agent-run"
+import * as OnboardingChecklist from "./onboarding-checklist"
+import * as SetupAudit from "./setup-audit"
+import * as SupportChannel from "./support-channel"
 import { Record as Rec } from "effect"
 
 /** Read `obj[key]` when `obj` is an object/function that has it; `undefined` otherwise. */
@@ -46,7 +51,14 @@ const exportedValues = <Namespace extends object>(namespace: Namespace): Readonl
 /** Derive the full 4xx identifier set from the authoritative domain contracts. */
 export const deriveAnticipatedIdentifiers = (): ReadonlySet<string> => {
 	const identifiers = new Set<string>(EXTERNAL_ANTICIPATED_IDENTIFIERS)
-	for (const value of [...exportedValues(Http), ...exportedValues(HttpV2)]) {
+	for (const value of [
+		...exportedValues(Http),
+		...exportedValues(HttpV2),
+		...exportedValues(OnboardingAgentRun),
+		...exportedValues(OnboardingChecklist),
+		...exportedValues(SetupAudit),
+		...exportedValues(SupportChannel),
+	]) {
 		const identifier = readIdentifier(value)
 		if (identifier === undefined) continue
 		const status = readHttpStatus(value)
