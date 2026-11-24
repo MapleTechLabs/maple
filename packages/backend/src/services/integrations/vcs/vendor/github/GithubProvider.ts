@@ -1404,7 +1404,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 											Arr.map(
 												Arr.filter(
 													detail.rule_evaluations ?? [],
-													(rule) => rule.result === "fail",
+													// A rule in evaluate (dry-run) mode failed but did not block the push.
+													(rule) =>
+														rule.result === "fail" &&
+														(rule.enforcement === undefined ||
+															rule.enforcement === "active"),
 												),
 												(rule) => rule.rule_type,
 											),

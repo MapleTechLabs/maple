@@ -2723,6 +2723,38 @@ describe("VcsSyncService orchestrator", () => {
 			)
 		})
 
+		it.effect("turned off and on again, reads only from when it was turned back on", () => {
+			const testDb = createTestDb(trackedDbs)
+			const refusedPushReads: Array<{ repo: string; sinceMs: number }> = []
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				const orgId = asOrgId("org_rule_suites_toggle")
+				const installation = yield* seedInstallation(repo, orgId)
+				yield* repo.upsertRepositories(installation, [repoNamed("api", "7")])
+				const scan = svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
+				yield* scan
+				yield* repo.setAuditCategories(orgId, installation.id, { refusedPushes: false })
+				yield* TestClock.adjust("2 hours")
+				yield* repo.setAuditCategories(orgId, installation.id, { refusedPushes: true })
+				yield* scan
+				const twoHours = 2 * 60 * 60 * 1000
+				assert.deepStrictEqual(
+					Arr.map(refusedPushReads, (read) => read.sinceMs),
+					[-60 * 60 * 1000, twoHours],
+				)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent: [],
+						forwardedAudit: [],
+						refusedPushReads,
+						refusedPushes,
+					}),
+				),
+			)
+		})
+
 		it.effect("skips an installation that never granted rule insights", () => {
 			const testDb = createTestDb(trackedDbs)
 			const refusedPushReads: Array<{ repo: string; sinceMs: number }> = []
@@ -2784,42 +2816,49 @@ describe("VcsSyncService orchestrator", () => {
 			)
 		})
 
-		it.effect("after a failed write, reads on from the last refusal it wrote", () => {
-			const testDb = createTestDb(trackedDbs)
-			const forwardedAudit: Array<{ orgId: string; action: string }> = []
-			const refusedPushReads: Array<{ repo: string; sinceMs: number }> = []
-			const second = { ...refusal, providerEventId: "rule-suite-12", occurredAtMs: REFUSED_AT + 60_000 }
-			return Effect.gen(function* () {
-				const svc = yield* VcsSyncService
-				const repo = yield* VcsRepository
-				const installation = yield* seedInstallation(repo, asOrgId("org_rule_suites_write"))
-				yield* repo.upsertRepositories(installation, [repoNamed("api", "7")])
-				const scan = svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
-				// The job itself succeeds: the failed write is that repository's alone.
-				yield* scan
-				assert.strictEqual(forwardedAudit.length, 1)
-				yield* scan
-				assert.deepStrictEqual(
-					Arr.map(refusedPushReads, (read) => read.sinceMs),
-					[-60 * 60 * 1000, REFUSED_AT],
+		it.effect(
+			"after a failed write, reads on from just before the first refusal it did not write",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const forwardedAudit: Array<{ orgId: string; action: string }> = []
+				const refusedPushReads: Array<{ repo: string; sinceMs: number }> = []
+				const second = {
+					...refusal,
+					providerEventId: "rule-suite-12",
+					occurredAtMs: REFUSED_AT + 60_000,
+				}
+				return Effect.gen(function* () {
+					const svc = yield* VcsSyncService
+					const repo = yield* VcsRepository
+					const installation = yield* seedInstallation(repo, asOrgId("org_rule_suites_write"))
+					yield* repo.upsertRepositories(installation, [repoNamed("api", "7")])
+					const scan = svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
+					// The job itself succeeds: the failed write is that repository's alone.
+					yield* scan
+					assert.strictEqual(forwardedAudit.length, 1)
+					yield* scan
+					assert.deepStrictEqual(
+						Arr.map(refusedPushReads, (read) => read.sinceMs),
+						[-60 * 60 * 1000, REFUSED_AT + 59_999],
+					)
+				}).pipe(
+					Effect.provide(
+						orchestratorLayer(testDb, {
+							sent: [],
+							forwardedAudit,
+							refusedPushReads,
+							auditWriteFailsOn: "rule-suite-12",
+							refusedPushes: () =>
+								Effect.succeed({
+									events: [refusal, second],
+									newestMs: second.occurredAtMs,
+									truncated: false,
+								}),
+						}),
+					),
 				)
-			}).pipe(
-				Effect.provide(
-					orchestratorLayer(testDb, {
-						sent: [],
-						forwardedAudit,
-						refusedPushReads,
-						auditWriteFailsOn: "rule-suite-12",
-						refusedPushes: () =>
-							Effect.succeed({
-								events: [refusal, second],
-								newestMs: second.occurredAtMs,
-								truncated: false,
-							}),
-					}),
-				),
-			)
-		})
+			},
+		)
 
 		it.effect(
 			"hands the repositories past one batch to a follow-up scan, after the last one read",

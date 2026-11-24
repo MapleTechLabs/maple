@@ -1280,7 +1280,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* Effect.logWarning(
 						"[VCS] More refused pushes than one read takes; the oldest were skipped",
 					).pipe(Effect.annotateLogs({ "vcs.repository.id": target.id }))
-				// Events go out oldest first, so after a failed write the cursor stops at the last one written.
+				// Events go out oldest first, so after a failed write the cursor stops before the first one left.
 				const written = yield* Ref.make<{ readonly at: number | undefined; readonly count: number }>({
 					at: undefined,
 					count: 0,
@@ -1288,16 +1288,14 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				const failed = yield* Effect.forEach(
 					read.events,
 					(event) =>
-						auditSink
-							.onAuditEvent(installation.orgId, event)
-							.pipe(
-								Effect.andThen(
-									Ref.update(written, (sofar) => ({
-										at: event.occurredAtMs,
-										count: sofar.count + 1,
-									})),
-								),
+						auditSink.onAuditEvent(installation.orgId, event).pipe(
+							Effect.andThen(
+								Ref.update(written, (sofar) => ({
+									at: event.occurredAtMs,
+									count: sofar.count + 1,
+								})),
 							),
+						),
 					{ discard: true },
 				).pipe(
 					Effect.as(false),
@@ -1306,7 +1304,14 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					),
 				)
 				const done = yield* Ref.get(written)
-				const readUntil = failed ? done.at : read.newestMs
+				// Just before the first refusal not written: one in the same second as the last written
+				// one is read again rather than skipped, and the written one collapses on its id.
+				const readUntil = failed
+					? Option.match(Arr.get(read.events, done.count), {
+							onNone: () => done.at,
+							onSome: (unwritten) => unwritten.occurredAtMs - 1,
+						})
+					: read.newestMs
 				if (readUntil !== undefined) yield* repo.advanceRuleSuitesReadUntil(target.id, readUntil)
 				if (failed)
 					yield* Effect.logError("[VCS] Refused pushes could not be written to the audit log").pipe(

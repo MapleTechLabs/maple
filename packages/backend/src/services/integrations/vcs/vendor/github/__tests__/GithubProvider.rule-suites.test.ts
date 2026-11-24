@@ -50,7 +50,9 @@ const suite = (id: number, pushedAt: string, overrides: Record<string, unknown> 
 const github = (opts: {
 	readonly pages: ReadonlyArray<ReadonlyArray<unknown>>
 	readonly listStatus?: number
-	readonly rules?: Readonly<Record<number, ReadonlyArray<{ rule_type: string; result: string }>>>
+	readonly rules?: Readonly<
+		Record<number, ReadonlyArray<{ rule_type: string; result: string; enforcement?: string }>>
+	>
 	readonly requests?: Array<string>
 }) =>
 	registryOverHttp(
@@ -139,7 +141,13 @@ describe("GithubProvider refused pushes", () => {
 							],
 							12: [
 								{ rule_type: "required_signatures", result: "fail" },
-								{ rule_type: "pull_request", result: "fail" },
+								{ rule_type: "pull_request", result: "fail", enforcement: "active" },
+								// A dry-run rule failed too, but did not block the push.
+								{
+									rule_type: "commit_message_pattern",
+									result: "fail",
+									enforcement: "evaluate",
+								},
 							],
 						},
 					}),
