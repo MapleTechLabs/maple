@@ -4,6 +4,7 @@ import { Command } from "foldkit"
 import { load } from "foldkit/navigation"
 import { clearSessionToken } from "../platform/auth-api"
 import { Message, Theme } from "./message"
+import { SAVE_SHORTCUT_ATTRIBUTE } from "../page/kit/save-bar"
 
 /** `maple.global-namespace.<orgId>`. */
 export const NAMESPACE_STORAGE_PREFIX = "maple.global-namespace."
@@ -161,6 +162,16 @@ export const LogOut = Command.define("LogOut", {
  * A page tags its primary search with `data-shortcut-focus="search"`. A field is
  * focused and selected; anything else (an Advanced Filter trigger) is clicked.
  */
+/** Presses the save bar's Save, unless it is disabled or already saving. */
+export const PressSaveBar = Command.define("PressSaveBar", {
+	messages: [Message.CompletedSaveShortcut],
+	execute: Effect.sync(() => {
+		const target = document.querySelector(`[data-${SAVE_SHORTCUT_ATTRIBUTE}]`)
+		if (target instanceof HTMLButtonElement && !target.disabled) target.click()
+		return Message.CompletedSaveShortcut()
+	}),
+})
+
 export const FocusShortcutSearch = Command.define("FocusShortcutSearch", {
 	messages: [Message.CompletedFocusShortcutSearch],
 	execute: Effect.sync(() => {
