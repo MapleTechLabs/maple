@@ -128,6 +128,18 @@ export const computeSampleInputs = (
 }
 
 /**
+ * In an org with no maps yet, a sample whose build registered debug ids is waiting for its first
+ * upload: its frames could map, so a young hash is not keyed on raw frames.
+ */
+const withFirstMapPending = (entry: SampleInput, rules: CompiledGroupingRules | undefined): SampleInput => {
+	if (entry.debugIds.size === 0) return entry
+	const rule = groupingParts(entry.input, rules).rule
+	if (rule !== "frames" && rule !== "type-function") return entry
+	const frames = parseJsStack(entry.input.exceptionStacktrace).frames
+	return Arr.some(frames, (frame) => couldHaveSourceMap(frame.url)) ? { ...entry, mapPending: true } : entry
+}
+
+/**
  * Samples whose key reads frames, with their stack mapped through the org's source maps,
  * so a deploy's renamed bundle keeps its key. Only a JS stack with frame URLs is looked up;
  * every other sample, and every host without the symbolicator, keys as before.
@@ -143,7 +155,7 @@ export const withSourceMappedStacks = (
 		onSome: (stacks) =>
 			Effect.flatMap(stacks.hasSourceMaps(orgId), (hasMaps) =>
 				!hasMaps
-					? Effect.succeed(entries)
+					? Effect.succeed(Arr.map(entries, (entry) => withFirstMapPending(entry, rules)))
 					: Effect.forEach(
 							entries,
 							(entry) => {
@@ -399,11 +411,14 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 ): Effect.Effect<ReadonlyMap<string, ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
 		const { orgId, nowMs } = input
-		const configDigest = input.grouping.digest
-		const isCurrent = (row: { readonly keyVersion: number; readonly configDigest: string }) =>
-			row.keyVersion === GROUPING_KEY_VERSION && row.configDigest === configDigest
 		const hashes = Arr.dedupe(input.hashes)
 		if (hashes.length === 0) return new Map()
+		const mapsInPlay = reads.mapsInPlay === undefined ? false : yield* reads.mapsInPlay
+		// Whether the org has maps is part of the digest, so a first upload re-keys its keys once.
+		// An org without maps keeps the rules digest as it was.
+		const configDigest = mapsInPlay ? `${input.grouping.digest}+source-maps` : input.grouping.digest
+		const isCurrent = (row: { readonly keyVersion: number; readonly configDigest: string }) =>
+			row.keyVersion === GROUPING_KEY_VERSION && row.configDigest === configDigest
 		const stored = yield* dbRun((tx) => storedKeys(tx, orgId, hashes))
 		const current = new Set(Arr.map(Arr.filter(stored, isCurrent), (row) => row.fingerprintHash))
 		// Hashes never keyed first (likely new issues), then stale keys after a rules change.
@@ -412,10 +427,7 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		// Over the cap with source maps in play, first sightings go before hashes seen in an earlier
 		// tick (those held for a map among them), so held hashes cannot crowd out new ones. An org
 		// without maps keeps the plain order and reads nothing more.
-		const reorder =
-			neverKeyed.length > GROUPING_KEYS_PER_TICK &&
-			reads.mapsInPlay !== undefined &&
-			(yield* reads.mapsInPlay)
+		const reorder = neverKeyed.length > GROUPING_KEYS_PER_TICK && mapsInPlay
 		const earlierSeen = reorder
 			? yield* dbRun((tx) => firstSeenOf(tx, orgId, neverKeyed))
 			: new Map<string, number>()

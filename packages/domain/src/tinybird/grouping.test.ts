@@ -338,6 +338,36 @@ describe("source-mapped frames", () => {
 		expect(groupingKey(tagged)).toBe(groupingKey(stripStack(tagged)))
 	})
 
+	it("tells unnamed throw sites in one file apart by their source line, not its number", () => {
+		const site = (bundle: string, minified: string, line: number, text: string | null) => {
+			const raw = `at ${minified} (https://app.example/assets/${bundle}.js:1:${line})`
+			const sample = node("TypeError", "Cannot read properties of undefined (reading 'total')", [
+				`${minified} (https://app.example/assets/${bundle}.js:1:${line})`,
+			])
+			// No caller names the frame, so it keeps its minified name.
+			return withStack(sample, [
+				{
+					...mappedFrame(raw, minified, "src/checkout.ts"),
+					line,
+					context: text === null ? null : { pre: [], line: text, post: [] },
+				},
+			])
+		}
+		const invoice = site("index-Bx81", "a", 40, "  return invoice.total")
+		const payment = site("index-Bx81", "b", 90, "  return payment.total")
+		expect(groupingKey(invoice)).not.toBe(groupingKey(payment))
+		expect(explainGrouping(invoice).frames).toEqual(["at src/checkout.ts | return invoice.total"])
+
+		// The same throw site after a deploy: new bundle, new minified name, lines moved.
+		const invoiceNext = site("index-Qz07", "xe", 52, "\treturn   invoice.total ")
+		expect(groupingKey(invoiceNext)).toBe(groupingKey(invoice))
+
+		// With neither a name nor source text, the mapped key would be the file alone: raw key instead.
+		const bare = site("index-Bx81", "a", 40, null)
+		expect(groupingKey(bare)).toBe(groupingKey(stripStack(bare)))
+		expect(groupingParts(bare).rule).toBe("frames")
+	})
+
 	it("keys a tagged error with no message on the original function", () => {
 		const raw = (name: string, bundle: string) => `at ${name} (https://app.example/${bundle}.js:1:9)`
 		const v1 = withStack(node("StoreVaultError", "", [`Hr (https://app.example/w-1.js:1:9)`]), [

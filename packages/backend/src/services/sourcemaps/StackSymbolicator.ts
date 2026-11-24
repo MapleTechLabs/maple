@@ -1,4 +1,4 @@
-import { TraceMap } from "@jridgewell/trace-mapping"
+import { FlattenMap, type TraceMap } from "@jridgewell/trace-mapping"
 import type { SourceMapFileRow } from "@maple/db/tables"
 import { isSourceMappableUrl, parseJsStack, type SymbolicatedStack } from "@maple/domain/errors/js-stack"
 import type { OrgId, SourceMapFileId } from "@maple/primitives"
@@ -62,7 +62,8 @@ interface CachedMap {
 	readonly bytes: number
 }
 
-const parseTraceMap = Option.liftThrowable((json: string) => new TraceMap(json))
+/** Plain and index (`sections`) maps both parse to one flat map. */
+const parseTraceMap = Option.liftThrowable((json: string) => FlattenMap(json))
 
 /** The stack with every frame unresolved, for when nothing could be looked up. */
 const unresolvedStack = (stacktrace: string): SymbolicatedStack =>
@@ -363,7 +364,15 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 				}
 				const result = Option.getOrElse(symbolicated, () => unresolvedStack(stacktrace))
 
-				yield* touchUsed(orgId, Array.from(mapByFile.keys()), now)
+				// Only a map that resolved a frame counts as used; frames line up with the parsed ones.
+				const usedIds = Arr.dedupe(
+					Arr.flatMap(result.frames, (frame, i) => {
+						const url = parsed.frames[i]?.url ?? null
+						const row = frame.resolved && url !== null ? rowsByUrl.get(url) : undefined
+						return row !== undefined && mapByFile.has(row.id) ? [row.id] : []
+					}),
+				)
+				yield* touchUsed(orgId, usedIds, now)
 				yield* Effect.annotateCurrentSpan({
 					"maple.stack.status": result.status,
 					"maple.stack.resolved_frames": Arr.filter(result.frames, (frame) => frame.resolved)

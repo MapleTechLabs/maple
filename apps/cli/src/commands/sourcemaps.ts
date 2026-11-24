@@ -5,7 +5,7 @@ import { Array as Arr, Console, Effect, Option, Redacted, Stream, String as Str 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { MapleConfig } from "../core/config"
-import { injectDirectory } from "../core/sourcemaps"
+import { injectDirectory, type InjectResult } from "../core/sourcemaps"
 import { uploadDirectory, type UploadOutcome } from "../core/sourcemaps-upload"
 import { ApiResponseError, ApiTransportError } from "./api"
 import { CliUsageError } from "../lib/errors"
@@ -28,42 +28,55 @@ const inject = Command.make("inject", {
 		Effect.gen(function* () {
 			const results = yield* injectDirectory(dir, { dryRun })
 			const verb = dryRun ? "would inject" : "injected"
-			yield* Effect.forEach(
-				Arr.filter(results, (r) => r.status === "injected" || r.status === "invalid_map"),
-				(r) =>
-					r.status === "invalid_map"
-						? Console.error(`skipped ${r.file}: its source map is not a JSON object`)
-						: Console.log(`${verb} ${r.file} (${Option.getOrElse(r.debugId, () => "")})`),
-			)
+			const mapOf = (r: InjectResult) => Option.getOrElse(r.mapPath, () => "")
+			yield* Effect.forEach(results, (r) => {
+				switch (r.status) {
+					case "invalid_map":
+						return Console.error(
+							`warning: skipped ${r.file}: its source map ${mapOf(r)} is not a version 3 JSON object`,
+						)
+					case "unsafe_map":
+						return Console.error(
+							`warning: skipped ${r.file}: its source map ${mapOf(r)} is outside ${dir}`,
+						)
+					case "injected":
+						return Console.log(`${verb} ${r.file} (${Option.getOrElse(r.debugId, () => "")})`)
+					default:
+						return Effect.void
+				}
+			})
 			const count = (status: string) => Arr.filter(results, (r) => r.status === status).length
 			yield* Console.log(
 				`${dryRun ? "Would inject" : "Injected"} ${count("injected")} file(s); skipped ${count("already_injected")} already injected, ${count("no_map")} without a source map` +
-					(count("invalid_map") > 0 ? `, ${count("invalid_map")} with an unreadable map` : ""),
+					(count("invalid_map") > 0 ? `, ${count("invalid_map")} with an unreadable map` : "") +
+					(count("unsafe_map") > 0 ? `, ${count("unsafe_map")} with a map outside ${dir}` : ""),
 			)
 		}),
 	),
 )
 
-/** The checked-out commit, when `dir` is inside a git work tree. */
-const gitHead = Effect.gen(function* () {
-	const spawner = yield* ChildProcessSpawner
-	const handle = yield* spawner.spawn(
-		ChildProcess.make("git", ["rev-parse", "HEAD"], {
-			stdin: "ignore",
-			stdout: "pipe",
-			stderr: "ignore",
-		}),
+/** The commit checked out where `dir` is, when it is inside a git work tree. */
+export const gitHead = (dir: string) =>
+	Effect.gen(function* () {
+		const spawner = yield* ChildProcessSpawner
+		const handle = yield* spawner.spawn(
+			ChildProcess.make("git", ["rev-parse", "HEAD"], {
+				cwd: dir,
+				stdin: "ignore",
+				stdout: "pipe",
+				stderr: "ignore",
+			}),
+		)
+		const [exitCode, stdout] = yield* Effect.all(
+			[handle.exitCode, Stream.mkString(Stream.decodeText(handle.stdout))],
+			{ concurrency: "unbounded" },
+		)
+		const sha = Str.trim(stdout)
+		return exitCode === 0 && /^[0-9a-f]{40,64}$/.test(sha) ? Option.some(sha) : Option.none<string>()
+	}).pipe(
+		Effect.scoped,
+		Effect.orElseSucceed(() => Option.none<string>()),
 	)
-	const [exitCode, stdout] = yield* Effect.all(
-		[handle.exitCode, Stream.mkString(Stream.decodeText(handle.stdout))],
-		{ concurrency: "unbounded" },
-	)
-	const sha = Str.trim(stdout)
-	return exitCode === 0 && /^[0-9a-f]{40,64}$/.test(sha) ? Option.some(sha) : Option.none<string>()
-}).pipe(
-	Effect.scoped,
-	Effect.orElseSucceed(() => Option.none<string>()),
-)
 
 const remoteTarget = Effect.gen(function* () {
 	const config = yield* MapleConfig
@@ -91,6 +104,35 @@ const reportOutcome = (outcome: UploadOutcome): Effect.Effect<void> => {
 			return Console.error(`failed ${outcome.minifiedPath}: ${outcome.error.message}`)
 	}
 }
+
+/** Fails the command when nothing was uploaded or an upload failed, so CI stops there. */
+export const checkUploadOutcomes = (
+	dir: string,
+	outcomes: ReadonlyArray<UploadOutcome>,
+): Effect.Effect<void, CliUsageError | ApiResponseError | ApiTransportError> =>
+	Effect.gen(function* () {
+		const count = (tag: UploadOutcome["_tag"]) => Arr.filter(outcomes, (o) => o._tag === tag).length
+		if (outcomes.length === 0)
+			return yield* new CliUsageError({
+				message: `no source maps with a matching JS file found under ${dir}`,
+				hint: "build with source maps enabled, then run `maple sourcemaps inject` on the output",
+			})
+		if (count("skipped") === outcomes.length)
+			return yield* new CliUsageError({
+				message: "no source maps were uploaded; every matching map was skipped",
+				hint: "check the skip warnings above",
+			})
+		const firstFailure = Arr.findFirst(outcomes, (o) => o._tag === "failed")
+		if (Option.isSome(firstFailure) && firstFailure.value._tag === "failed") {
+			// Reported as the raw API errors so a 4xx reads as the request to fix, not a CLI fault.
+			const failed = firstFailure.value.error
+			const message = `${count("failed")} source map upload(s) failed; first: ${failed.minifiedPath}: ${failed.message}`
+			if (failed.status === undefined) return yield* new ApiTransportError({ message })
+			return yield* failed.status === 401
+				? new ApiResponseError({ status: 401, message, hint: "run `maple login` again" })
+				: new ApiResponseError({ status: failed.status, message })
+		}
+	})
 
 const upload = Command.make("upload", {
 	dir: dirArg,
@@ -120,7 +162,7 @@ const upload = Command.make("upload", {
 	Command.withHandler(({ dir, service, release, urlPrefix }) =>
 		Effect.gen(function* () {
 			const { apiUrl, token } = yield* remoteTarget
-			const version = Option.isSome(release) || Option.isNone(service) ? release : yield* gitHead
+			const version = Option.isSome(release) || Option.isNone(service) ? release : yield* gitHead(dir)
 			const outcomes = yield* uploadDirectory(
 				dir,
 				{ apiUrl, token, service, version, urlPrefix, concurrency: 4 },
@@ -133,21 +175,7 @@ const upload = Command.make("upload", {
 			yield* Console.log(
 				`Uploaded ${count("uploaded")} source map(s) (${formatBytes(bytes)}); ${count("skipped")} skipped, ${count("failed")} failed`,
 			)
-			if (outcomes.length === 0)
-				return yield* new CliUsageError({
-					message: `no source maps with a matching JS file found under ${dir}`,
-					hint: "build with source maps enabled, then run `maple sourcemaps inject` on the output",
-				})
-			const firstFailure = Arr.findFirst(outcomes, (o) => o._tag === "failed")
-			if (Option.isSome(firstFailure) && firstFailure.value._tag === "failed") {
-				// Reported as the raw API errors so a 4xx reads as the request to fix, not a CLI fault.
-				const failed = firstFailure.value.error
-				const message = `${count("failed")} source map upload(s) failed; first: ${failed.minifiedPath}: ${failed.message}`
-				if (failed.status === undefined) return yield* new ApiTransportError({ message })
-				return yield* failed.status === 401
-					? new ApiResponseError({ status: 401, message, hint: "run `maple login` again" })
-					: new ApiResponseError({ status: failed.status, message })
-			}
+			return yield* checkUploadOutcomes(dir, outcomes)
 		}),
 	),
 )

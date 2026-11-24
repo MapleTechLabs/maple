@@ -24,19 +24,29 @@ export class SourceMapsFileError extends Schema.TaggedError<SourceMapsFileError>
 const DEBUG_ID_COMMENT = /^\/\/# debugId=([0-9a-fA-F-]{36})[ \t]*\r?$/m
 const SOURCE_MAPPING_URL = /^\/\/[#@] sourceMappingURL=(\S+)[ \t]*\r?$/gm
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const REGISTERED_ID = /_(?:maple|sentry)DebugIds\[[^\]]*\]\s*=\s*["']([0-9a-fA-F-]{36})["']/
 
-const hex = (bytes: Uint8Array | string): string => {
-	const hasher = new Bun.CryptoHasher("sha256")
-	hasher.update(bytes)
-	return hasher.digest("hex")
-}
+const MapObject = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+const decodeMap = Schema.decodeUnknownResult(MapObject)
+
+/** The map as JSON without its `debugId` / `debug_id`, so writing an id never changes the hash. */
+const canonicalMap = (mapText: string): string =>
+	Result.match(decodeMap(mapText), {
+		onFailure: () => mapText,
+		onSuccess: ({ debugId: _a, debug_id: _b, ...rest }) => JSON.stringify(rest),
+	})
 
 /**
- * sha256 of the content as a lowercase UUID. The version (4) and variant nibbles are set so the id
- * passes strict UUID validators; the rest is the hash, so the same file always gets the same id.
+ * sha256 of the JS file and its map as a lowercase UUID. The version (4) and variant nibbles are set
+ * so the id passes strict UUID validators; the rest is the hash, so the same build always gets the
+ * same id, and identical JS with another map (comments moved, sources changed) gets another.
  */
-export const debugIdFor = (content: Uint8Array | string): string => {
-	const h = hex(content)
+export const debugIdFor = (code: Uint8Array | string, mapText: string): string => {
+	const hasher = new Bun.CryptoHasher("sha256")
+	hasher.update(code)
+	hasher.update("\u0000")
+	hasher.update(canonicalMap(mapText))
+	const h = hasher.digest("hex")
 	const part = (start: number, end: number) => Str.slice(start, end)(h)
 	const variant = ((Number.parseInt(part(16, 17), 16) & 0x3) | 0x8).toString(16)
 	return `${part(0, 8)}-${part(8, 12)}-4${part(13, 16)}-${variant}${part(17, 20)}-${part(20, 32)}`
@@ -45,9 +55,15 @@ export const debugIdFor = (content: Uint8Array | string): string => {
 export const debugIdSnippet = (id: string): string =>
 	`;!function(){try{var g="undefined"!=typeof globalThis?globalThis:"undefined"!=typeof window?window:"undefined"!=typeof self?self:{},s=(new g.Error).stack;s&&(g._mapleDebugIds=g._mapleDebugIds||{},g._mapleDebugIds[s]="${id}")}catch(e){}}();`
 
-/** The id in an existing `//# debugId=` comment. */
+/** The id in an existing `//# debugId=` comment, else the one a runtime registration assigns. */
 export const existingDebugId = (code: string): Option.Option<string> =>
-	Option.fromNullishOr(DEBUG_ID_COMMENT.exec(code)?.[1]).pipe(Option.map(Str.toLowerCase))
+	Option.firstSomeOf([
+		Option.fromNullishOr(DEBUG_ID_COMMENT.exec(code)?.[1]),
+		Option.fromNullishOr(REGISTERED_ID.exec(code)?.[1]),
+	]).pipe(
+		Option.map(Str.toLowerCase),
+		Option.filter((id) => UUID.test(id)),
+	)
 
 /** The last `//# sourceMappingURL=` comment: its value and where its line starts. */
 export const sourceMappingUrl = (
@@ -67,33 +83,52 @@ export const sourceMappingUrl = (
 export const hasRuntimeRegistration = (code: string, id: string): boolean =>
 	new RegExp(`_(?:maple|sentry)DebugIds\\[[^\\]]*\\]\\s*=\\s*["']${id}["']`, "i").test(code)
 
-/**
- * Append the snippet, and the `//# debugId=` comment unless the file has one, after the code: before
- * the trailing debugId / sourceMappingURL comments. Nothing above that point moves, so the map's
- * mappings stay valid as they are.
- */
-export const injectCode = (code: string, id: string): string => {
-	const existingComment = Option.fromNullishOr(DEBUG_ID_COMMENT.exec(code)?.index)
-	const block = Option.isSome(existingComment)
-		? `${debugIdSnippet(id)}\n`
-		: `${debugIdSnippet(id)}\n//# debugId=${id}\n`
-	const insertAt = Arr.head(
+/** Where trailing comments start: the first of an existing debugId and the last sourceMappingURL. */
+const trailerIndex = (code: string): Option.Option<number> =>
+	Arr.head(
 		Arr.sort(
 			[
-				...Option.toArray(existingComment),
+				...Option.toArray(Option.fromNullishOr(DEBUG_ID_COMMENT.exec(code)?.index)),
 				...Option.toArray(Option.map(sourceMappingUrl(code), (url) => url.index)),
 			],
 			Order.Number,
 		),
 	)
-	return Option.match(insertAt, {
+
+const insertBeforeTrailer = (code: string, block: string): string =>
+	Option.match(trailerIndex(code), {
 		onSome: (index) => `${Str.slice(0, index)(code)}${block}${Str.slice(index)(code)}`,
 		onNone: () => `${code}${code === "" || Str.endsWith("\n")(code) ? "" : "\n"}${block}`,
 	})
+
+/**
+ * Whether the snippet can go on a new first line: not above a shebang, and not above a directive
+ * prologue (`"use strict"` and the like), which only counts as one at the top.
+ */
+export const canPrepend = (code: string): boolean =>
+	!Str.startsWith("#!")(code) && !/^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*["']/.test(code)
+
+/**
+ * `prepend`: the snippet on a new first line, so the id is registered before the module's own code
+ * runs (a throw while it loads still reports it); every line moves down one, which the map's
+ * mappings must follow (`shiftMappings`). `append`: the snippet after the code, before the trailing
+ * debugId / sourceMappingURL comments, so nothing moves. Either way the `//# debugId=` comment is
+ * added near the end unless the file has one.
+ */
+export const injectCode = (code: string, id: string, mode: "prepend" | "append"): string => {
+	const hasComment = DEBUG_ID_COMMENT.test(code)
+	if (mode === "prepend") {
+		const tagged = hasComment ? code : insertBeforeTrailer(code, `//# debugId=${id}\n`)
+		return `${debugIdSnippet(id)}\n${tagged}`
+	}
+	return insertBeforeTrailer(
+		code,
+		hasComment ? `${debugIdSnippet(id)}\n` : `${debugIdSnippet(id)}\n//# debugId=${id}\n`,
+	)
 }
 
-const MapObject = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
-const decodeMap = Schema.decodeUnknownResult(MapObject)
+/** Mappings for code one line lower: an empty first generated line. */
+export const shiftMappings = (mappings: string): string => `;${mappings}`
 
 /** The map's own debug id (`debugId`, else `debug_id`), or `None` when it has none or is not JSON. */
 export const mapDebugId = (mapText: string): Option.Option<string> =>
@@ -108,18 +143,9 @@ export const mapDebugId = (mapText: string): Option.Option<string> =>
 		Option.filter((id) => UUID.test(id)),
 	)
 
-/** Whether the map carries `id` under both `debugId` and `debug_id`. */
-const mapHasDebugId = (mapText: string, id: string): boolean =>
-	Result.match(decodeMap(mapText), {
-		onFailure: () => false,
-		onSuccess: (map) => map["debugId"] === id && map["debug_id"] === id,
-	})
-
-/** The map with `debugId` and `debug_id` set, or `None` when the map is not a JSON object. */
-export const injectMap = (mapText: string, id: string): Option.Option<string> =>
-	Result.getSuccess(decodeMap(mapText)).pipe(
-		Option.map((map) => JSON.stringify({ ...map, debugId: id, debug_id: id })),
-	)
+/** A version 3 source map as a JSON object; anything else is never rewritten. */
+const decodeV3Map = (mapText: string) =>
+	Option.filter(Result.getSuccess(decodeMap(mapText)), (map) => map["version"] === 3)
 
 const isJsFile = (file: string): boolean => Arr.some(JS_EXTENSIONS, (ext) => Str.endsWith(ext)(file))
 
@@ -157,10 +183,28 @@ export interface JsWithMap {
 	readonly code: string
 	readonly bytes: Uint8Array
 	readonly mapPath: Option.Option<string>
+	/** The map the file names, refused because it lies outside the build directory. */
+	readonly refusedMap: Option.Option<string>
 }
 
-/** The JS file's map: the local file its sourceMappingURL names, else `<file>.map`, if it exists. */
-const resolveMap = (jsPath: string, code: string) =>
+/** Whether `target` lies below `root`, both lexically and once symlinks are followed. */
+const isInside = (root: string, target: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem
+		const path = yield* Path
+		const within = (base: string, file: string) =>
+			Option.isSome(path.resolveWithin(base, path.relative(base, file))) &&
+			path.resolve(base) !== path.resolve(file)
+		if (!within(root, target)) return false
+		const real = yield* Effect.all([fs.realPath(root), fs.realPath(target)]).pipe(Effect.option)
+		return Option.isSome(real) && within(real.value[0], real.value[1])
+	})
+
+/**
+ * The JS file's map: the local file its sourceMappingURL names, else `<file>.map`, if it exists. A
+ * named map outside `root` (a `..` escape, an absolute path, a symlink) is refused, never read.
+ */
+const resolveMap = (root: string, jsPath: string, code: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
 		const path = yield* Path
@@ -169,11 +213,18 @@ const resolveMap = (jsPath: string, code: string) =>
 				path.resolve(path.dirname(jsPath), decodeUrlPath(Str.replace(/[?#].*$/, "")(url))),
 			),
 		)
-		const candidates = Arr.dedupe([...Option.toArray(referenced), `${jsPath}.map`])
-		const found = yield* Effect.filter(candidates, (candidate) =>
-			fs.exists(candidate).pipe(Effect.orElseSucceed(() => false)),
-		)
-		return Arr.head(found)
+		const exists = (candidate: string) => fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))
+		if (Option.isSome(referenced) && (yield* exists(referenced.value))) {
+			return (yield* isInside(root, referenced.value))
+				? { mapPath: referenced, refusedMap: Option.none<string>() }
+				: { mapPath: Option.none<string>(), refusedMap: referenced }
+		}
+		const sibling = `${jsPath}.map`
+		if (!(yield* exists(sibling)))
+			return { mapPath: Option.none<string>(), refusedMap: Option.none<string>() }
+		return (yield* isInside(root, sibling))
+			? { mapPath: Option.some(sibling), refusedMap: Option.none<string>() }
+			: { mapPath: Option.none<string>(), refusedMap: Option.some(sibling) }
 	})
 
 /** Every `*.js`/`*.mjs`/`*.cjs` file below `dir`, read, with the map it points at (if any). */
@@ -187,17 +238,25 @@ export const findJsFiles = (dir: string) =>
 				const jsPath = path.join(dir, file)
 				const bytes = yield* fs.readFile(jsPath).pipe(Effect.mapError(fileError(jsPath, "read")))
 				const code = new TextDecoder().decode(bytes)
-				const mapPath = yield* resolveMap(jsPath, code)
-				return { file, jsPath, code, bytes, mapPath } satisfies JsWithMap
+				const { mapPath, refusedMap } = yield* resolveMap(dir, jsPath, code)
+				return { file, jsPath, code, bytes, mapPath, refusedMap } satisfies JsWithMap
 			}),
 		)
 	})
+
+/** How many JS files name each map: a map two files share cannot carry either file's id. */
+export const mapUsers = (files: ReadonlyArray<JsWithMap>): ReadonlyMap<string, number> =>
+	Arr.reduce(
+		Arr.getSomes(Arr.map(files, (js) => js.mapPath)),
+		new Map<string, number>(),
+		(users, mapPath) => users.set(mapPath, (users.get(mapPath) ?? 0) + 1),
+	)
 
 // ---------------------------------------------------------------------------
 // inject
 // ---------------------------------------------------------------------------
 
-export type InjectStatus = "injected" | "already_injected" | "no_map" | "invalid_map"
+export type InjectStatus = "injected" | "already_injected" | "no_map" | "invalid_map" | "unsafe_map"
 
 export interface InjectResult {
 	readonly file: string
@@ -205,43 +264,59 @@ export interface InjectResult {
 	readonly debugId: Option.Option<string>
 	/** True when the map gained `debugId`/`debug_id` (or would, under --dry-run). */
 	readonly mapUpdated: boolean
+	/** The map the file names, when it was refused or is not a version 3 JSON object. */
+	readonly mapPath: Option.Option<string>
 }
 
-const injectOne = (js: JsWithMap, dryRun: boolean) =>
+/** The map carrying `id`, its mappings one line lower when `shift`. */
+const taggedMap = (map: { readonly [key: string]: unknown }, id: string, shift: boolean): string => {
+	const mappings = map["mappings"]
+	const tagged = { ...map, debugId: id, debug_id: id }
+	return JSON.stringify(
+		shift && Predicate.isString(mappings) ? { ...tagged, mappings: shiftMappings(mappings) } : tagged,
+	)
+}
+
+const injectOne = (js: JsWithMap, shared: boolean, dryRun: boolean) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
-		if (Option.isNone(js.mapPath))
-			return {
-				file: js.file,
-				status: "no_map",
-				debugId: Option.none(),
-				mapUpdated: false,
-			} satisfies InjectResult
+		const skip = (status: InjectStatus, mapPath: Option.Option<string>): InjectResult => ({
+			file: js.file,
+			status,
+			debugId: Option.none(),
+			mapUpdated: false,
+			mapPath,
+		})
+		if (Option.isSome(js.refusedMap)) return skip("unsafe_map", js.refusedMap)
+		if (Option.isNone(js.mapPath)) return skip("no_map", Option.none())
 		const mapPath = js.mapPath.value
 		const mapText = yield* fs.readFileString(mapPath).pipe(Effect.mapError(fileError(mapPath, "read")))
+		const map = decodeV3Map(mapText)
+		if (Option.isNone(map)) return skip("invalid_map", js.mapPath)
 
 		const previous = existingDebugId(js.code)
-		const id = Option.getOrElse(previous, () => debugIdFor(js.bytes))
-		const nextMap = injectMap(mapText, id)
-		if (Option.isNone(nextMap))
-			return {
-				file: js.file,
-				status: "invalid_map",
-				debugId: Option.none(),
-				mapUpdated: false,
-			} satisfies InjectResult
-
-		const mapUpdated = !mapHasDebugId(mapText, id)
+		const id = Option.getOrElse(previous, () => debugIdFor(js.bytes, mapText))
 		// Rollup/Vite `sourcemapDebugIds` write the comment but nothing that reports the id at runtime.
 		const codeUpdated = Option.isNone(previous) || !hasRuntimeRegistration(js.code, id)
+		const mappings = map.value["mappings"]
+		// The snippet goes first unless the lines cannot move: a shared or index map, a shebang, a directive.
+		const prepend =
+			codeUpdated &&
+			!shared &&
+			Predicate.isString(mappings) &&
+			map.value["sections"] === undefined &&
+			canPrepend(js.code)
+		const hasId = map.value["debugId"] === id && map.value["debug_id"] === id
+		// A shared map keeps no id: each file sharing it is uploaded with its own.
+		const mapUpdated = !shared && (prepend || !hasId)
 		if (!dryRun) {
 			if (codeUpdated)
 				yield* fs
-					.writeFileString(js.jsPath, injectCode(js.code, id))
+					.writeFileString(js.jsPath, injectCode(js.code, id, prepend ? "prepend" : "append"))
 					.pipe(Effect.mapError(fileError(js.jsPath, "write")))
 			if (mapUpdated)
 				yield* fs
-					.writeFileString(mapPath, nextMap.value)
+					.writeFileString(mapPath, taggedMap(map.value, id, prepend))
 					.pipe(Effect.mapError(fileError(mapPath, "write")))
 		}
 		return {
@@ -249,9 +324,22 @@ const injectOne = (js: JsWithMap, dryRun: boolean) =>
 			status: codeUpdated ? "injected" : "already_injected",
 			debugId: Option.some(id),
 			mapUpdated,
+			mapPath: Option.none(),
 		} satisfies InjectResult
 	})
 
 /** Inject debug ids into every JS file below `dir` that has a map. Re-running changes nothing. */
 export const injectDirectory = (dir: string, options: { readonly dryRun: boolean }) =>
-	Effect.flatMap(findJsFiles(dir), (files) => Effect.forEach(files, (js) => injectOne(js, options.dryRun)))
+	Effect.flatMap(findJsFiles(dir), (files) => {
+		const users = mapUsers(files)
+		return Effect.forEach(files, (js) =>
+			injectOne(
+				js,
+				Option.match(js.mapPath, {
+					onNone: () => false,
+					onSome: (path) => (users.get(path) ?? 0) > 1,
+				}),
+				options.dryRun,
+			),
+		)
+	})

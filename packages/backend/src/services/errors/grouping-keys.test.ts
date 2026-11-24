@@ -69,6 +69,14 @@ const release = (opts: {
 			`webpack://web/./${opts.appSource ?? "src/invoice.ts"}`,
 			"webpack://web/./node_modules/ky/index.js",
 		],
+		// The throw site's own text, wherever the release put it: what an unnamed frame keys on.
+		sourcesContent: [
+			Arr.join(
+				Arr.makeBy(opts.appLine + 1, (i) => (i === opts.appLine ? "  return invoice.total" : "")),
+				"\n",
+			),
+			null,
+		],
 		names: [opts.appFunction, opts.libFunction ?? "request"],
 		mappings: encodeLine([
 			[opts.appColumn, 0, opts.appLine, 2, 0],
@@ -196,8 +204,8 @@ describe("grouping keys over source maps", () => {
 		const [a, b] = keysOf([v1, v2], { stacks: api })
 		expect(a?.key).toBe(b?.key)
 		expect(a?.why.rule).toBe("source-mapped")
-		// The throw site has no caller to name it, so its minified name is dropped.
-		expect(a?.why.frames).toEqual(["at src/invoice.ts"])
+		// The throw site has no caller to name it, so it keys on its source line's text.
+		expect(a?.why.frames).toEqual(["at src/invoice.ts | return invoice.total"])
 	})
 
 	it("keeps a different original function apart", () => {
@@ -457,5 +465,127 @@ describe("keys that wait for a source map", () => {
 		// Only the stored-key read without maps; with maps, one first-sighting read more.
 		expect(await statementsWith(false)).toBe(1)
 		expect(await statementsWith(true)).toBe(2)
+	})
+})
+
+describe("an org's first source map upload", () => {
+	const NOW = 1_700_000_000_000
+	const DEBUG_ID = "6c5e2b1a-1f2e-4d3c-8b7a-0123456789ab"
+	const v1 = sampleRow("f1", "TypeError", MESSAGE, [V1.app("a")])
+	const v2 = sampleRow("f2", "TypeError", MESSAGE, [V2.app("xe")])
+
+	/** One tick over `samples`, with or without maps; spans carry the debug ids given per hash. */
+	const tick = (
+		database: (typeof Database)["Service"],
+		samples: ReadonlyArray<GroupingSampleRow>,
+		hasMaps: boolean,
+		debugIds: Readonly<Record<string, Record<string, string>>> = {},
+	) => {
+		const { api } = symbolicator()
+		const stacks: StackSymbolicatorApi = { ...api, hasSourceMaps: () => Effect.succeed(hasMaps) }
+		return resolveGroupingSiblings(
+			(run) => database.execute(run),
+			{
+				samples: () => Effect.succeed(samples),
+				spans: (rows) =>
+					Effect.succeed(
+						Arr.map(rows, (row) => {
+							const ids = debugIds[row.fingerprintHash]
+							return ids === undefined
+								? spanRow(row.fingerprintHash)
+								: {
+										...spanRow(row.fingerprintHash),
+										eventsAttributes: JSON.stringify([
+											{ "maple.exception.debug_ids": JSON.stringify(ids) },
+										]),
+									}
+						}),
+					),
+				sourceMapped: (entries, rules) =>
+					withSourceMappedStacks(Option.some(stacks), ORG, entries, rules),
+				mapsInPlay: stacks.hasSourceMaps(ORG),
+			},
+			{
+				orgId: ORG,
+				hashes: Arr.map(samples, (sample) => sample.fingerprintHash),
+				nowMs: NOW,
+				grouping: DEFAULT_ORG_GROUPING,
+				lineage: new Map(),
+			},
+		)
+	}
+
+	const storedKeys = (database: (typeof Database)["Service"]) =>
+		database.execute((db) =>
+			db.run(
+				PG.from(ErrorGroupingKeys)
+					.select("fingerprintHash", "groupingKey", "configDigest")
+					.where(($) => [$.orgId.eq(ORG)])
+					.orderBy(($) => [[$.fingerprintHash, "asc"]]),
+			),
+		)
+
+	it("re-keys a raw key once maps exist, so the next release joins it", async () => {
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const database = yield* Database
+				yield* tick(database, [v1], false)
+				const before = yield* storedKeys(database)
+				// The org uploads its first maps; v1 recurs and the next release throws.
+				const siblings = yield* tick(database, [v1, v2], true)
+				return { before, after: yield* storedKeys(database), siblings }
+			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+		)
+		expect(result.before).toEqual([
+			{ fingerprintHash: "f1", groupingKey: keysOf([v1])[0]?.key, configDigest: "" },
+		])
+		const mappedKey = keysOf([v1], { stacks: symbolicator().api })[0]?.key
+		expect(result.after).toEqual([
+			{ fingerprintHash: "f1", groupingKey: mappedKey, configDigest: "+source-maps" },
+			{ fingerprintHash: "f2", groupingKey: mappedKey, configDigest: "+source-maps" },
+		])
+		expect(result.siblings.get("f2")).toEqual(["f1"])
+	})
+
+	it("keeps an org without maps on today's digest", async () => {
+		const keys = await Effect.runPromise(
+			Effect.gen(function* () {
+				const database = yield* Database
+				yield* tick(database, [v1], false)
+				yield* tick(database, [v1], false)
+				return yield* storedKeys(database)
+			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+		)
+		expect(Arr.map(keys, (row) => row.configDigest)).toEqual([""])
+	})
+
+	it("holds a young sample that registered debug ids before the org has any map", async () => {
+		const ids = { f1: { [V1.url]: DEBUG_ID } }
+		const keyed = (firstSeenAgo: number) =>
+			Effect.runPromise(
+				Effect.gen(function* () {
+					const database = yield* Database
+					yield* database.execute((db) =>
+						db.run(
+							PG.insertInto(ErrorFingerprintCandidates).values({
+								orgId: ORG,
+								fingerprintHash: "f1",
+								serviceName: "web",
+								exceptionType: "TypeError",
+								exceptionMessage: MESSAGE,
+								topFrame: "",
+								firstSeenAt: NOW - firstSeenAgo,
+								lastSeenAt: NOW,
+								updatedAt: NOW,
+							}),
+						),
+					)
+					yield* tick(database, [v1, v2], false, ids)
+					return Arr.map(yield* storedKeys(database), (row) => row.fingerprintHash)
+				}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+			)
+		// f2 carries no debug ids: nothing says a map is coming, so it keys at once.
+		expect(await keyed(5 * 60_000)).toEqual(["f2"])
+		expect(await keyed(MAP_PENDING_GRACE_MS)).toEqual(["f1", "f2"])
 	})
 })

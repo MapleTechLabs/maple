@@ -78,14 +78,65 @@ const optionalLabel = (value: string | undefined, param: string) =>
 		return trimmed
 	})
 
-const stringField = (fields: { readonly [x: PropertyKey]: unknown }, key: string): string | undefined => {
+const stringField = (fields: JsonObject, key: string): string | undefined => {
 	const value = fields[key]
 	return Predicate.isString(value) ? value : undefined
 }
 
+type JsonObject = { readonly [x: PropertyKey]: unknown }
+
+/** A plain map symbolication can read: a `mappings` string and at least one source (string or null). */
+const isRegularMap = (fields: JsonObject): boolean => {
+	const sources = fields["sources"]
+	return (
+		Predicate.isString(fields["mappings"]) &&
+		Arr.isArray(sources) &&
+		sources.length > 0 &&
+		Arr.every(sources, (source) => source === null || Predicate.isString(source))
+	)
+}
+
+const sectionMaps = (fields: JsonObject): ReadonlyArray<JsonObject> => {
+	const sections = fields["sections"]
+	return Arr.isArray(sections)
+		? Arr.flatMap(sections, (section) =>
+				Predicate.isObject(section) && Predicate.isObject(section["map"]) ? [section["map"]] : [],
+			)
+		: []
+}
+
+const isOffset = (offset: unknown): boolean =>
+	Predicate.isObject(offset) && Predicate.isNumber(offset["line"]) && Predicate.isNumber(offset["column"])
+
+/** An index map: a non-empty `sections` array, each an offset and a plain version 3 map. */
+const isIndexMap = (fields: JsonObject): boolean => {
+	const sections = fields["sections"]
+	return (
+		Arr.isArray(sections) &&
+		sections.length > 0 &&
+		Arr.every(
+			sections,
+			(section) =>
+				Predicate.isObject(section) &&
+				isOffset(section["offset"]) &&
+				Predicate.isObject(section["map"]) &&
+				section["map"]["version"] === 3 &&
+				isRegularMap(section["map"]),
+		)
+	)
+}
+
+const hasContent = (fields: JsonObject): boolean => {
+	const sourcesContent = fields["sourcesContent"]
+	return (
+		Arr.isArray(sourcesContent) &&
+		Arr.some(sourcesContent, (content) => Predicate.isString(content) && content.length > 0)
+	)
+}
+
 /**
- * Checks an upload against the contract: at most 15 MiB, a version 3 map with a `mappings` string,
- * and a debug id or a service and version to find it by. A debug id the map itself carries
+ * Checks an upload against the contract: at most 15 MiB, a version 3 map with a `mappings` string
+ * and sources (or an index map of such maps), and a debug id or a service and version to find it by. A debug id the map itself carries
  * (`debugId` / `debug_id`) is used when none is passed.
  */
 export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload")(function* (
@@ -120,15 +171,14 @@ export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload"
 	if (fields["version"] !== 3) {
 		return yield* invalid("Only version 3 source maps are supported.")
 	}
-	if (!Predicate.isString(fields["mappings"])) {
+	if (!isRegularMap(fields) && !isIndexMap(fields)) {
 		return yield* invalid(
-			"The source map has no `mappings` string. Index maps with `sections` are not supported.",
+			"The source map needs a `mappings` string and a non-empty `sources` array, or a `sections` array of such maps.",
 		)
 	}
-	const sourcesContent = fields["sourcesContent"]
-	const hasSourcesContent =
-		Arr.isArray(sourcesContent) &&
-		Arr.some(sourcesContent, (content) => Predicate.isString(content) && content.length > 0)
+	const hasSourcesContent = Predicate.isUndefined(fields["sections"])
+		? hasContent(fields)
+		: Arr.some(sectionMaps(fields), hasContent)
 
 	const rawDebugId = upload.debugId ?? stringField(fields, "debugId") ?? stringField(fields, "debug_id")
 	const debugId =
@@ -158,11 +208,20 @@ export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload"
 export interface MatchableFile {
 	readonly debugId: string | null
 	readonly minifiedPath: string
+	readonly createdAt: number
 }
+
+/** Longest path first; on a tie the map without a debug id (the release's own), then the newest. */
+const releaseFileOrder = <F extends MatchableFile>() =>
+	Order.combineAll<F>([
+		Order.mapInput(Order.flip(Order.Number), (file: F) => file.minifiedPath.length),
+		Order.mapInput(Order.Boolean, (file: F) => file.debugId !== null),
+		Order.mapInput(Order.flip(Order.Number), (file: F) => file.createdAt),
+	])
 
 /**
  * Picks the file for each frame URL: the file its debug id names first, else the release file whose
- * minified path the URL ends with (the longest such path when several do).
+ * minified path the URL ends with (the longest such path when several do, see `releaseFileOrder`).
  */
 export const matchFrames = <F extends MatchableFile>(
 	urls: ReadonlyArray<string>,
@@ -180,7 +239,7 @@ export const matchFrames = <F extends MatchableFile>(
 				Arr.head(
 					Arr.sort(
 						Arr.filter(releaseFiles, (file) => urlMatchesMinifiedPath(url, file.minifiedPath)),
-						Order.mapInput(Order.flip(Order.Number), (file: F) => file.minifiedPath.length),
+						releaseFileOrder<F>(),
 					),
 				),
 			)

@@ -3,7 +3,14 @@ import { FileSystem } from "effect/FileSystem"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { sendTraced } from "../commands/api"
 import { errorMessageOf, parseJson } from "./api-request"
-import { existingDebugId, findJsFiles, mapDebugId, MAX_MAP_BYTES, SourceMapsFileError } from "./sourcemaps"
+import {
+	existingDebugId,
+	findJsFiles,
+	mapDebugId,
+	mapUsers,
+	MAX_MAP_BYTES,
+	SourceMapsFileError,
+} from "./sourcemaps"
 
 /** One map the workspace refused, or that never reached it (no `status`). */
 export class SourceMapUploadError extends Schema.TaggedError<SourceMapUploadError>()(
@@ -103,7 +110,8 @@ const send = (
 	})
 
 /**
- * Upload every map below `dir` whose JS file is there too. `onOutcome` runs as each file finishes,
+ * Upload every map below `dir` whose JS file is there too, one upload per JS file. A map a file
+ * names outside `dir` is skipped, never read. `onOutcome` runs as each file finishes,
  * so progress prints while the rest are still uploading.
  */
 export const uploadDirectory = (
@@ -114,14 +122,26 @@ export const uploadDirectory = (
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
 		const files = yield* findJsFiles(dir)
-		const pairs = Arr.flatMap(files, (js) =>
-			Option.toArray(Option.map(js.mapPath, (mapPath) => ({ js, mapPath }))),
+		const users = mapUsers(files)
+		const refused = Arr.flatMap(files, (js) =>
+			Option.toArray(
+				Option.map(js.refusedMap, (mapPath): UploadOutcome => ({
+					_tag: "skipped",
+					minifiedPath: minifiedPathFor(options.urlPrefix, js.file),
+					reason: `its source map ${mapPath} is outside ${dir}`,
+				})),
+			),
 		)
-		// Two JS files naming one map upload it once, under the first path.
-		const withMaps = Arr.dedupeWith(pairs, (a, b) => a.mapPath === b.mapPath)
-		return yield* Effect.forEach(
+		yield* Effect.forEach(refused, onOutcome, { discard: true })
+		// A map two JS files share is uploaded once per file, each under its own path and id.
+		const withMaps = Arr.flatMap(files, (js) =>
+			Option.toArray(
+				Option.map(js.mapPath, (mapPath) => ({ js, mapPath, shared: (users.get(mapPath) ?? 0) > 1 })),
+			),
+		)
+		const uploaded = yield* Effect.forEach(
 			withMaps,
-			({ js, mapPath }) =>
+			({ js, mapPath, shared }) =>
 				Effect.gen(function* () {
 					const minifiedPath = minifiedPathFor(options.urlPrefix, js.file)
 					const info = yield* fs.stat(mapPath).pipe(
@@ -150,8 +170,9 @@ export const uploadDirectory = (
 								}),
 						),
 					)
-					const debugId = Option.orElse(mapDebugId(new TextDecoder().decode(body)), () =>
-						existingDebugId(js.code),
+					// The file's own id is what its frames report; a shared map's id belongs to no one file.
+					const debugId = Option.orElse(existingDebugId(js.code), () =>
+						shared ? Option.none() : mapDebugId(new TextDecoder().decode(body)),
 					)
 					if (
 						Option.isNone(debugId) &&
@@ -183,4 +204,5 @@ export const uploadDirectory = (
 				}).pipe(Effect.tap(onOutcome)),
 			{ concurrency: options.concurrency },
 		)
+		return [...refused, ...uploaded]
 	})
