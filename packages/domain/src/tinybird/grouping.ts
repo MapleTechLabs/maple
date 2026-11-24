@@ -123,15 +123,21 @@ const mappedFunction = (frame: StackFrame): string | undefined => {
 	return name === null || name === minified || plumbingRe.test(name) ? undefined : name
 }
 
-/** A mapped frame as the key reads it: original file and function, never a line or column. */
-const mappedFrameLine = (frame: StackFrame, file: string): string => {
+/**
+ * A mapped frame as the key reads it, never a line or column: its original file and function, or,
+ * with no function name, the file and its source line's text. `undefined` when it has neither.
+ */
+const mappedFrameLine = (frame: StackFrame, file: string): string | undefined => {
 	const name = mappedFunction(frame)
-	return name === undefined ? `at ${file}` : `at ${name} (${file})`
+	if (name !== undefined) return `at ${name} (${file})`
+	const text = frame.context === null ? "" : Str.trim(Str.replace(/\s+/gu, " ")(frame.context.line))
+	return text === "" ? undefined : `at ${file} | ${text}`
 }
 
 /**
  * The app's source-mapped frames, top first, when the stack resolved at least one. Unmapped
- * frames are left out: their names and hashed files change with every deploy.
+ * frames are left out: their names and hashed files change with every deploy. `undefined` also
+ * when a frame the key reads has no identity beyond its file: the raw key keeps it apart.
  */
 const sourceMappedFrames = (
 	sample: GroupingSample,
@@ -143,18 +149,21 @@ const sourceMappedFrames = (
 		Arr.flatMap(stack.frames, (frame) => {
 			if (!frame.resolved || frame.file === null) return []
 			const line = mappedFrameLine(frame, frame.file)
-			const kind = rules.frameKind(line, sample)
-			return [{ line, app: kind === undefined ? frame.in_app : kind === "app" }]
+			const shown = line ?? `at ${frame.file}`
+			const kind = rules.frameKind(shown, sample)
+			return [{ line, shown, app: kind === undefined ? frame.in_app : kind === "app" }]
 		}),
-		(a, b) => a.line === b.line,
+		(a, b) => a.line !== undefined && a.line === b.line,
 	)
-	const app = Arr.filter(mapped, (frame) => frame.app)
-	if (app.length === 0) return undefined
+	const read = Arr.filter(mapped, (frame) => frame.app).slice(0, MAX_FINGERPRINT_FRAMES)
+	if (read.length === 0) return undefined
+	const lines = Arr.getSomes(Arr.map(read, (frame) => Option.fromUndefinedOr(frame.line)))
+	if (lines.length < read.length) return undefined
 	return {
-		frames: Arr.map(app, (frame) => frame.line).slice(0, MAX_FINGERPRINT_FRAMES),
+		frames: lines,
 		skipped: Arr.map(
 			Arr.filter(mapped, (frame) => !frame.app),
-			(frame) => frame.line,
+			(frame) => frame.shown,
 		),
 	}
 }

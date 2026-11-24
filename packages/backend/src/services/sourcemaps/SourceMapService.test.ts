@@ -10,7 +10,7 @@ import { inMemoryObjectStore, sourceMapBucketLayer } from "@maple/backend/platfo
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SourceMapReader } from "./SourceMapReader"
-import { SOURCE_MAP_RETENTION, SourceMapService } from "./SourceMapService"
+import { claimExpired, SOURCE_MAP_RETENTION, SourceMapService } from "./SourceMapService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -25,7 +25,7 @@ const makeHarness = (database: Layer.Layer<Database> = createTestDb(createdDbs).
 	const layer = Layer.mergeAll(
 		Layer.effect(SourceMapService, SourceMapService.make),
 		Layer.effect(SourceMapReader, SourceMapReader.make),
-	).pipe(Layer.provide(database), Layer.provide(sourceMapBucketLayer(store)))
+	).pipe(Layer.provideMerge(database), Layer.provide(sourceMapBucketLayer(store)))
 	return { objects, store, layer }
 }
 
@@ -220,6 +220,73 @@ describe("SourceMapService.upload", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("keeps builds with their own debug ids apart on one release path", () => {
+		const { objects, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const path = { minifiedPath: "assets/main.js", serviceName: "web", version: "1.4.2" }
+			const releaseOnly = yield* service.upload(ORG, { bytes: mapBytes(), ...path })
+			const first = yield* service.upload(ORG, { bytes: mapBytes(), debugId: DEBUG_ID, ...path })
+			const second = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				debugId: "7d6f3c2b-2a3f-4e4d-9c8b-123456789abc",
+				...path,
+			})
+			const rows = yield* service.list(ORG, { limit: 10, offset: 0 })
+			expect(
+				Arr.sort(
+					Arr.map(rows, (row) => row.id),
+					Order.String,
+				),
+			).toEqual(Arr.sort([releaseOnly.id, first.id, second.id], Order.String))
+			expect(Arr.every([first, second, releaseOnly], (row) => objects.has(row.objectKey))).toBe(true)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("keeps the stored map when a replacement is not usable", () => {
+		const { objects, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const release = { minifiedPath: "assets/main.js", serviceName: "web", version: "2.4.0" }
+			const stored = yield* service.upload(ORG, { bytes: mapBytes(), ...release })
+			const unusable = [
+				mapBytes({ sources: undefined }),
+				mapBytes({ sources: [] }),
+				mapBytes({ sources: [1] }),
+				mapBytes({ mappings: undefined, sections: [{ offset: { line: 0 }, map: {} }] }),
+			]
+			const errors = yield* Effect.forEach(unusable, (bytes) =>
+				service.upload(ORG, { bytes, ...release }).pipe(
+					Effect.flip,
+					Effect.map((error) => error._tag),
+				),
+			)
+			expect(Arr.dedupe(errors)).toEqual(["@maple/http/sourcemaps/SourceMapInvalidError"])
+			const rows = yield* service.list(ORG, { limit: 10, offset: 0 })
+			expect(Arr.map(rows, (row) => row.id)).toEqual([stored.id])
+			expect([...objects.keys()]).toEqual([stored.objectKey])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("accepts an index map whose sections are usable maps", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const section = { version: 3, sources: ["src/a.ts"], names: [], mappings: "AAAA" }
+			const row = yield* service.upload(ORG, {
+				bytes: new TextEncoder().encode(
+					JSON.stringify({
+						version: 3,
+						sections: [{ offset: { line: 0, column: 0 }, map: section }],
+					}),
+				),
+				minifiedPath: "assets/a.js",
+				debugId: DEBUG_ID,
+			})
+			expect(row.debugId).toBe(DEBUG_ID)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("rejects what is not a usable source map, storing nothing", () => {
 		const { objects, layer } = makeHarness()
 		return Effect.gen(function* () {
@@ -317,6 +384,47 @@ describe("SourceMapReader.findForFrames", () => {
 			expect(otherOrg.size).toBe(0)
 		}).pipe(Effect.provide(layer))
 	})
+	it.effect("on a shared release path, prefers the map without a debug id, else the newest", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const reader = yield* SourceMapReader
+			const release = { serviceName: "web", version: "1.2.0" }
+			const url = "https://cdn.test/assets/main.js"
+			const find = Effect.map(
+				reader.findForFrames({ orgId: ORG, debugIds: new Map(), ...release, urls: [url] }),
+				(matches) => matches.get(url)?.id,
+			)
+			yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/main.js",
+				debugId: DEBUG_ID,
+				...release,
+			})
+			yield* TestClock.adjust(Duration.seconds(1))
+			const newer = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/main.js",
+				debugId: "7d6f3c2b-2a3f-4e4d-9c8b-123456789abc",
+				...release,
+			})
+			expect(yield* find).toBe(newer.id)
+			const releaseOnly = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/main.js",
+				...release,
+			})
+			yield* TestClock.adjust(Duration.seconds(1))
+			yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/main.js",
+				debugId: "8e7a4d3c-3b4a-4f5e-8d9c-23456789abcd",
+				...release,
+			})
+			expect(yield* find).toBe(releaseOnly.id)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("matches percent-encoded frame URLs to the decoded stored path", () => {
 		const { layer } = makeHarness()
 		return Effect.gen(function* () {
@@ -390,6 +498,36 @@ describe("SourceMapService.sweepExpired", () => {
 
 			const later = Duration.toMillis(Duration.days(60)) + Duration.toMillis(SOURCE_MAP_RETENTION) + 1
 			expect(yield* service.sweepExpired(later)).toBe(1)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("claimExpired", () => {
+	it.effect("keeps a map whose use was recorded after the sweep selected it", () => {
+		const { objects, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const database = yield* Database
+			const touched = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "a.js",
+				debugId: DEBUG_ID,
+			})
+			const idle = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "b.js",
+				serviceName: "web",
+				version: "1",
+			})
+			yield* TestClock.adjust(Duration.days(91))
+			const cutoff = Duration.toMillis(Duration.days(1))
+			// Both were expired when selected; one is used before the claim runs.
+			yield* (yield* SourceMapReader).touch(ORG, [touched.id])
+			const claimed = yield* claimExpired(database, [touched.id, idle.id], cutoff)
+			expect(claimed).toEqual([idle.objectKey])
+			const left = yield* service.list(ORG, { limit: 10, offset: 0 })
+			expect(Arr.map(left, (row) => row.id)).toEqual([touched.id])
+			expect(objects.has(touched.objectKey)).toBe(true)
 		}).pipe(Effect.provide(layer))
 	})
 })
