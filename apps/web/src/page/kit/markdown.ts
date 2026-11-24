@@ -48,19 +48,47 @@ export class MarkdownParseError extends Schema.TaggedError<MarkdownParseError>()
 	{ message: Schema.String, cause: Schema.Defect() },
 ) {}
 
-/** Each text parsed by the lazily imported remark pipeline; a rejected text parses to `null`. */
-export const parseMarkdownTexts = (texts: ReadonlyArray<string>) =>
-	Effect.promise(() => import("@foldkit/markdown/vite")).pipe(
-		Effect.flatMap(({ parseMarkdown }) =>
-			Effect.forEach(texts, (text) =>
-				Effect.try({
-					try: () => parseMarkdown(escapeDirectives(text)),
-					catch: (cause) =>
-						new MarkdownParseError({ message: "The remark pipeline rejected the text", cause }),
-				}).pipe(
-					Effect.map((document): ParsedMarkdown => ({ text, document })),
-					Effect.orElseSucceed((): ParsedMarkdown => ({ text, document: null })),
-				),
-			),
-		),
-	)
+class MarkdownParserLoadError extends Schema.TaggedError<MarkdownParserLoadError>()(
+	"@maple/web/kit/MarkdownParserLoadError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const unparsed = (texts: ReadonlyArray<string>): Array<ParsedMarkdown> =>
+	Arr.map(texts, (text) => ({ text, document: null }))
+
+type ParserModule = Pick<typeof import("@foldkit/markdown/vite"), "parseMarkdown">
+
+/**
+ * Each text parsed by the remark pipeline `load` imports; a rejected text parses to `null`. A
+ * parser chunk that fails to load (a tab on a superseded build) leaves every text plain.
+ */
+export const parseMarkdownTextsWith =
+	(load: () => Promise<ParserModule>) =>
+	(texts: ReadonlyArray<string>): Effect.Effect<Array<ParsedMarkdown>> =>
+		Effect.tryPromise({
+			try: load,
+			catch: (cause) =>
+				new MarkdownParserLoadError({ message: "The markdown parser failed to load", cause }),
+		}).pipe(
+			Effect.tapError((error) => Effect.logWarning(error.message)),
+			Effect.matchEffect({
+				onFailure: () => Effect.succeed(unparsed(texts)),
+				onSuccess: ({ parseMarkdown }) =>
+					Effect.forEach(texts, (text) =>
+						Effect.try({
+							try: () => parseMarkdown(escapeDirectives(text)),
+							catch: (cause) =>
+								new MarkdownParseError({
+									message: "The remark pipeline rejected the text",
+									cause,
+								}),
+						}).pipe(
+							Effect.map((document): ParsedMarkdown => ({ text, document })),
+							Effect.orElseSucceed((): ParsedMarkdown => ({ text, document: null })),
+						),
+					),
+			}),
+		)
+
+/** `parseMarkdownTextsWith` the lazily imported parser chunk. */
+export const parseMarkdownTexts = parseMarkdownTextsWith(() => import("@foldkit/markdown/vite"))

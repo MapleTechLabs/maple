@@ -1,6 +1,6 @@
 import { Effect, Array as Arr, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
-import { escapeDirectives, parseMarkdownTexts } from "./markdown"
+import { escapeDirectives, parseMarkdownTexts, parseMarkdownTextsWith } from "./markdown"
 
 const parse = (text: string) => Effect.runPromise(parseMarkdownTexts([text])).then(([parsed]) => parsed)
 
@@ -22,6 +22,18 @@ describe("the shared markdown parse", () => {
 			"image:latest",
 			"```",
 			"after\\:fence",
+		])
+	})
+
+	test("a parser chunk that fails to load leaves every text plain instead of failing", async () => {
+		const staleChunk = () =>
+			Promise.reject(
+				new TypeError("Failed to fetch dynamically imported module: /assets/public-old.js"),
+			)
+		const parsed = await Effect.runPromise(parseMarkdownTextsWith(staleChunk)(["**one**", "two"]))
+		expect(parsed).toEqual([
+			{ text: "**one**", document: null },
+			{ text: "two", document: null },
 		])
 	})
 })

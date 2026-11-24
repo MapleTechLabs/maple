@@ -1,9 +1,12 @@
+import { TinybirdDateTime } from "@maple/domain/query-engine"
 import {
+	formatWarehouseDateTime,
 	isCalendarAlignedShorthand,
+	parseWarehouseDateTime,
 	resolveRelativeRangeToWarehouse,
 	snapRangeForCache,
 } from "@maple/query-engine"
-import { String as Str } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 export interface TimeRange {
 	startTime: string
@@ -32,8 +35,18 @@ export interface ResolveTimeRangeOptions {
 	readonly snap?: boolean | undefined
 }
 
+const isWarehouseDateTime = Schema.is(TinybirdDateTime)
+
+/** A URL bound in the warehouse shape: kept as written, an ISO or other parseable date converted, junk none. */
+const toWarehouseBound = (value: string): Option.Option<string> => {
+	if (isWarehouseDateTime(value)) return Option.some(value)
+	const epochMs = parseWarehouseDateTime(value)
+	return Number.isNaN(epochMs) ? Option.none() : Option.some(formatWarehouseDateTime(epochMs))
+}
+
 /**
- * The effective window at `nowMs`: an explicit `startTime`/`endTime` pair untouched, otherwise
+ * The effective window at `nowMs`: an explicit `startTime`/`endTime` pair in the warehouse shape
+ * (an ISO pair converted; an unparseable one ignored), otherwise
  * the `defaultRange` preset (falling back to 12h) resolved and snapped by `snapRangeForCache`.
  * The clock and zone are arguments so every caller (hook, loader, Command) resolves alike.
  */
@@ -45,7 +58,11 @@ export function resolveTimeRangeAt(
 	options: ResolveTimeRangeOptions,
 ): TimeRange {
 	if (startTime && endTime) {
-		return { startTime, endTime }
+		const explicit = Option.all({
+			startTime: toWarehouseBound(startTime),
+			endTime: toWarehouseBound(endTime),
+		})
+		if (Option.isSome(explicit)) return explicit.value
 	}
 	const resolved =
 		resolveRelativeRangeToWarehouse(defaultRange, nowMs, options.timeZone) ??
