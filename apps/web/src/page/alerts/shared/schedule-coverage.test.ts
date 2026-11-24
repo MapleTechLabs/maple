@@ -110,6 +110,42 @@ describe("draftCoverage", () => {
 		expectMatchesServer(form, overrides, range, HOUR / 2)
 	})
 
+	it("shows the window of an override whose assignee left as a gap, as paging reads it", () => {
+		// Weekdays only, with Eve covering a Saturday. Eve has since left the org.
+		const form = formOf([
+			layer({
+				participants: people(["ana"]),
+				rotation: "weekly",
+				startsAt: "2026-11-02T09:00",
+				restrictions: [
+					{
+						key: "r0",
+						weekdays: ["mon", "tue", "wed", "thu", "fri"],
+						startTime: "08:00",
+						endTime: "20:00",
+					},
+				],
+			}),
+		])
+		const overrides = decodeOverrides([
+			{
+				id: "0b7f6a3e-1c2d-4e5f-8a9b-1c2d3e4f5a61",
+				userId: "eve",
+				startsAt: at("2026-11-14T08:00:00Z"),
+				endsAt: at("2026-11-14T16:00:00Z"),
+				createdAt: 1,
+			},
+		])
+		const saturdayNoon = at("2026-11-14T12:00:00Z")
+		const covers = (isPresent?: (userId: UserId) => boolean) =>
+			Arr.some(
+				draftCoverage(form, overrides, range.startMs, range.endMs, range.startMs, isPresent).final,
+				(shift) => shift.startMs <= saturdayNoon && saturdayNoon < shift.endMs,
+			)
+		expect(covers()).toBe(true)
+		expect(covers((userId) => userId !== "eve")).toBe(false)
+	})
+
 	it("reports restriction holes as gaps that match onCallAt being null", () => {
 		const form = formOf([
 			layer({

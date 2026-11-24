@@ -3,6 +3,7 @@ import {
 	renderOnCall,
 	uncoveredIntervals,
 	type Interval,
+	type OnCallOptions,
 	type OnCallShift,
 } from "@maple/alerting-core/oncall"
 import { OnCallLayer, OnCallScheduleConfig, OnCallTimeZone } from "@maple/domain/http"
@@ -99,6 +100,8 @@ export const draftCoverage = (
 	fromMs: number,
 	toMs: number,
 	nowMs: number,
+	/** Who can still be paged; as when paging, someone who left covers nothing. Default: everyone. */
+	isPresent?: OnCallOptions["isPresent"],
 ): Coverage => {
 	const gapFrom = Math.max(fromMs, nowMs)
 	return Option.match(draftConfigOf(form), {
@@ -108,7 +111,13 @@ export const draftCoverage = (
 			gaps: uncoveredIntervals([], gapFrom, toMs),
 		}),
 		onSome: ({ config, draftIndexes }) => {
-			const render = renderOnCall(config, overrides, fromMs, toMs)
+			const render = renderOnCall(
+				config,
+				overrides,
+				fromMs,
+				toMs,
+				isPresent === undefined ? undefined : { isPresent },
+			)
 			return {
 				layers: Arr.map(form.layers, (_, draftIndex) =>
 					Option.flatMap(

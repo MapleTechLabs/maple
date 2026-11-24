@@ -3966,6 +3966,21 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										true,
 									)
 								: null
+						// Back down a tier, a chain that keeps running tells its next step of the breach as it
+						// stands now, not of the higher one that ended.
+						const deescalatedPayload =
+							lifecycle.transition === "deescalated"
+								? (yield* prepareIncidentNotification(
+										row.orgId,
+										tierRule,
+										refreshedIncident,
+										evaluation,
+										"trigger",
+										timestamp,
+										null,
+										true,
+									)).payload
+								: null
 						const escalation =
 							escalatedNotification !== null
 								? yield* prepareEscalationStart(
@@ -4083,6 +4098,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										severity,
 										nowMs: timestamp,
 									})
+									if (deescalatedPayload !== null) {
+										yield* refreshEscalationRunPayload(db, {
+											orgId: row.orgId,
+											incidentId: openIncident.id,
+											payload: deescalatedPayload,
+											nowMs: timestamp,
+										})
+									}
 								}
 								if (lifecycle.transition !== "escalated") return result
 								const inherited = escalation !== null && escalation.severity !== severity
@@ -6404,6 +6427,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				row: EscalationWorkRow,
 				nowMs: number,
 				directoryOf: (orgId: OrgId) => Effect.Effect<MemberDirectory | null>,
+				/** Every earlier step of this pass was skipped just now: the pass has reached nobody. */
+				isPassUnreached: boolean,
 			) {
 				yield* Effect.annotateCurrentSpan({
 					orgId: row.orgId,
@@ -6447,8 +6472,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const enabled = yield* dbExecute((db) =>
 					enabledDestinationIds(db, row.orgId, stepDestinationIds(step)),
 				)
-				// A pass ending with nothing sent so far: if this step reaches nobody either, admins are paged.
-				const isLastChance = row.stepsSent === 0 && !continuesPass(plan)
+				// A pass ending having reached nobody, on this run or on this pass of it: if this step
+				// reaches nobody either, admins are paged.
+				const isLastChance =
+					(row.stepsSent === 0 || row.stepIndex === 0 || isPassUnreached) && !continuesPass(plan)
 				const pagesPeople = Arr.some(step.targets, (target) => target.type !== "destination")
 				const directory =
 					pagesPeople || (isLastChance && enabled.size === 0) ? yield* directoryOf(row.orgId) : null
@@ -6538,15 +6565,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				row: EscalationWorkRow,
 				nowMs: number,
 				directoryOf: (orgId: OrgId) => Effect.Effect<MemberDirectory | null>,
+				isPassUnreached = false,
 			): Effect.Effect<
 				EscalationApplyOutcome,
 				Effect.Error<ReturnType<typeof advanceEscalationStep>>
 			> =>
-				Effect.flatMap(advanceEscalationStep(row, nowMs, directoryOf), ({ outcome, next }) =>
-					Option.match(next, {
-						onNone: () => Effect.succeed(outcome),
-						onSome: (nextRow) => advanceEscalationRun(nextRow, nowMs, directoryOf),
-					}),
+				Effect.flatMap(
+					advanceEscalationStep(row, nowMs, directoryOf, isPassUnreached),
+					({ outcome, next }) =>
+						Option.match(next, {
+							onNone: () => Effect.succeed(outcome),
+							// Only a skip leads here, so the pass stays unreached if it was from its first step.
+							onSome: (nextRow) =>
+								advanceEscalationRun(
+									nextRow,
+									nowMs,
+									directoryOf,
+									row.stepIndex === 0 || isPassUnreached,
+								),
+						}),
 				)
 
 			/** Sends every due escalation step, so the drain that follows delivers it this tick. */

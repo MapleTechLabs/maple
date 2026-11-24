@@ -389,6 +389,9 @@ const setup = (
 		readonly secondStep?: EscalationStep["targets"]
 		/** Step 1 pages the schedule instead of the webhook. */
 		readonly firstStepPagesSchedule?: boolean
+		/** Who step 1 pages instead of the webhook or the schedule. */
+		readonly firstStep?: EscalationStep["targets"]
+		readonly repeatCount?: number
 	} = {},
 ) =>
 	Effect.gen(function* () {
@@ -412,9 +415,10 @@ const setup = (
 		const steps: [EscalationStep, ...Array<EscalationStep>] = [
 			{
 				targets:
-					options.firstStepPagesSchedule === true
+					options.firstStep ??
+					(options.firstStepPagesSchedule === true
 						? [{ type: "schedule", scheduleId: schedule.id }]
-						: [{ type: "destination", destinationId: team.id }],
+						: [{ type: "destination", destinationId: team.id }]),
 				waitMinutes: 10,
 			},
 			{
@@ -426,7 +430,11 @@ const setup = (
 			orgId,
 			ana,
 			adminRoles,
-			new EscalationChainCreateRequest({ name: "API escalation", steps }),
+			new EscalationChainCreateRequest({
+				name: "API escalation",
+				steps,
+				...(options.repeatCount === undefined ? undefined : { repeatCount: options.repeatCount }),
+			}),
 		)
 		yield* alerts.createRule(
 			orgId,
@@ -696,6 +704,49 @@ describe("escalation pages the on-call", () => {
 		})
 	})
 
+	it.effect("pages the admins when a repeat of the chain reaches nobody, though its first pass did", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const directory: Array<OrgMember> = Arr.map(MEMBERS, (member) => ({
+			...member,
+			role: member.userId === ana ? "org:admin" : "org:engineer",
+		}))
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_repeat_unreached", testDb, {
+					firstStep: [{ type: "user", userId: chen }],
+					secondStep: [{ type: "user", userId: chen }],
+					repeatCount: 1,
+				})
+				// The first pass pages Chen at both steps.
+				yield* ticks(alerts, 12)
+				assert.deepStrictEqual(
+					Arr.map(emails, (email) => email.to),
+					["chen@acme.test", "chen@acme.test"],
+				)
+				// Chen leaves before the repeat: it reaches nobody, so the admin hears instead.
+				const leaving = Arr.findFirstIndex(directory, (member) => member.userId === chen)
+				if (Option.isSome(leaving)) directory.splice(leaving.value, 1)
+				yield* ticks(alerts, 20)
+				assert.deepStrictEqual(
+					Arr.map(emails.slice(2), (email) => [
+						email.to,
+						Str.startsWith("Nobody on call was reached: ")(email.subject),
+					]),
+					[["ana@acme.test", true]],
+				)
+				// One timeline entry per step that missed its own people, the one admins stood in for included.
+				assert.deepStrictEqual(yield* incidentEvents(testDb, orgId), [
+					{ type: "on_call_gap", detail: null },
+					{ type: "on_call_gap", detail: null },
+				])
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat, { directory })))
+		})
+	})
+
 	it.effect("refuses to delete a schedule a running escalation still pages", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { tracesAggregateRows: errorRate(10) }
@@ -721,6 +772,42 @@ describe("escalation pages the on-call", () => {
 				const refused = yield* Effect.flip(schedules.delete(orgId, adminRoles, schedule.id))
 				assert.strictEqual(refused._tag, "@maple/http/errors/OnCallScheduleInUseError")
 				assert.include(refused.message, "open incident")
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
+		})
+	})
+
+	it.effect("lets a schedule go once the running escalation is past the only step that paged it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				// Step 1 paged the schedule; the run now waits on step 2, which pages Chen, and never repeats.
+				const { chains, orgId, schedule, chain, team } = yield* setup(
+					"org_page_delete_passed",
+					testDb,
+					{
+						firstStepPagesSchedule: true,
+						secondStep: [{ type: "user", userId: chen }],
+					},
+				)
+				const schedules = yield* OnCallSchedulesService
+				yield* chains.update(
+					orgId,
+					ana,
+					adminRoles,
+					chain.id,
+					new EscalationChainUpdateRequest({
+						steps: [
+							{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 10 },
+						],
+					}),
+				)
+				yield* schedules.delete(orgId, adminRoles, schedule.id)
+				const left = yield* schedules.list(orgId)
+				assert.deepStrictEqual(left.schedules, [])
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})
 	})

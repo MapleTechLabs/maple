@@ -556,9 +556,16 @@ export class OnCallSchedulesService extends Context.Service<
 						}
 						// A running escalation pages from its own snapshot, so a chain edited since can still
 						// name the schedule until the run ends.
-						const runs = yield* db.run(
+						const naming = yield* db.run(
 							PG.from(AlertEscalationRuns)
-								.select("chainId", "chainName")
+								.select(
+									"chainId",
+									"chainName",
+									"stepsJson",
+									"stepIndex",
+									"passIndex",
+									"repeatCount",
+								)
 								.where(($) => [
 									$.orgId.eq(orgId),
 									$.status.in_("active", "acknowledged"),
@@ -566,6 +573,20 @@ export class OnCallSchedulesService extends Context.Service<
 										{ targets: [{ type: "schedule", scheduleId }] },
 									])}::jsonb`,
 								]),
+						)
+						// Only a step the run can still reach counts: its current one, a later one, or any
+						// of them while a repeat is left.
+						const runs = Arr.filter(naming, (run) =>
+							Arr.some(
+								run.stepsJson,
+								(step, index) =>
+									(index >= run.stepIndex || run.passIndex < run.repeatCount) &&
+									Arr.some(
+										step.targets,
+										(target) =>
+											target.type === "schedule" && target.scheduleId === scheduleId,
+									),
+							),
 						)
 						if (runs.length > 0) {
 							const names = Arr.dedupe(Arr.map(runs, (run) => run.chainName))
