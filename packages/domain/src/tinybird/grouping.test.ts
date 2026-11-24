@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest"
 
 import type { StackFrame, SymbolicatedStack } from "../errors/js-stack"
 import { explainGrouping, groupingKey, groupingParts, type GroupingSample } from "./grouping"
-import { compileGroupingRules, GroupingConfig, groupingConfigDigest, OrgGroupingRule } from "./grouping-rules"
+import {
+	compileGroupingRules,
+	GroupingConfig,
+	groupingConfigDigest,
+	OrgGroupingRule,
+	stableHash,
+} from "./grouping-rules"
 
 const node = (
 	type: string,
@@ -472,9 +478,15 @@ describe("source-mapped frames", () => {
 		const other = withStack(node("StoreVaultError", "", [`Tq (https://app.example/w-2.js:1:9)`]), [
 			mappedFrame(raw("Tq", "w-2"), "readStore", "src/vault.ts"),
 		])
-		expect(groupingParts(v1).rule).toBe("source-mapped")
+		expect(groupingParts(v1).rule).toBe("source-mapped-function")
+		expect(explainGrouping(v1).frames).toEqual(["at forwardStore (src/vault.ts)"])
 		expect(groupingKey(v1)).toBe(groupingKey(v2))
 		expect(groupingKey(v1)).not.toBe(groupingKey(other))
+		// The key still hashes the rule as `source-mapped`, as it did before the rule had its own
+		// name, so no stored key changes.
+		expect(groupingKey(v1)).toBe(
+			stableHash(Arr.join(["g1", "api", "source-mapped", "StoreVaultError", "forwardStore"], "\u0000")),
+		)
 	})
 })
 
