@@ -44,11 +44,11 @@ export const issueField = (h: H, label: string, children: ReadonlyArray<Html>): 
 const COPY_CLASS =
 	"-my-0.5 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/mono:opacity-100 pointer-coarse:opacity-100"
 
-/** The first mapped in-app frame as `function (file:line:column)`, when the stack was source mapped. */
+/** The top in-app frame as `function (file:line:column)`, when a map resolved that frame itself. */
 const mappedTopFrame = (stack: SymbolicatedStack | null): string | undefined => {
 	if (stack === null) return undefined
-	const frame = Option.getOrUndefined(Arr.findFirst(stack.frames, (f) => f.resolved && f.in_app))
-	if (frame === undefined || frame.file === null) return undefined
+	const frame = Option.getOrUndefined(Arr.findFirst(stack.frames, (f) => f.in_app))
+	if (frame === undefined || !frame.resolved || frame.file === null) return undefined
 	const position =
 		frame.line === null ? "" : `:${frame.line}${frame.column === null ? "" : `:${frame.column}`}`
 	return `${frame.function ?? "<anonymous>"} (${frame.file}${position})`

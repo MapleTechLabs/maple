@@ -4,8 +4,8 @@ import { ErrorIssueId } from "@maple/domain/http"
 import { encodePublicId, V2ErrorIssueDetail } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { click, expect as expectView, given, role, scene, text } from "foldkit/scene"
-import { describe, test } from "vitest"
+import { click, expect as expectView, given, role, scene, selector, text } from "foldkit/scene"
+import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { detailOf } from "./derive"
 import { Message } from "./message"
@@ -61,12 +61,8 @@ const missingMap: SymbolicatedStack = {
 	missing: ["https://app.acme.dev/assets/index-Bx81.js"],
 }
 
-const loadedWith = (stack: SymbolicatedStack | null): Model => {
-	const windowed = pageUpdate(
-		init({ issueId, search: {} }, context).model,
-		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
-	).model
-	const wire = Schema.decodeSync(V2ErrorIssueDetail)({
+const wireWith = (stack: SymbolicatedStack | null, raw: string) =>
+	Schema.decodeSync(V2ErrorIssueDetail)({
 		id: encodePublicId("iss", issueId),
 		object: "error_issue",
 		kind: "error",
@@ -104,14 +100,28 @@ const loadedWith = (stack: SymbolicatedStack | null): Model => {
 		sample_traces: [],
 		incidents: [],
 		environments: [],
-		latest_stacktrace: RAW,
+		latest_stacktrace: raw,
 		latest_stack: stack,
 	})
-	return pageUpdate(
-		windowed,
-		Message.CompletedFetchDetail({ key: windowed.detail.key ?? "", result: Result.succeed(wire) }),
+
+const delivered = (model: Model, stack: SymbolicatedStack | null, raw: string): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedFetchDetail({
+			key: model.detail.key ?? "",
+			result: Result.succeed(wireWith(stack, raw)),
+		}),
 	).model
-}
+
+const loadedWith = (stack: SymbolicatedStack | null, raw: string = RAW): Model =>
+	delivered(
+		pageUpdate(
+			init({ issueId, search: {} }, context).model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		).model,
+		stack,
+		raw,
+	)
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	Option.match(detailOf(model), {
@@ -126,13 +136,13 @@ describe("issue stack trace", () => {
 			{ update: pageUpdate, view },
 			given(loadedWith(resolved)),
 			expectView(text("Source mapped")).toExist(),
-			expectView(text("return catalog[tier].plan")).toExist(),
+			expectView(selector("#issue-stack-frame-0 [data-error-line]")).toExist(),
 			expectView(text("dispatch")).toBeAbsent(),
 			click(role("button", { name: "2 library frames" })),
 			expectView(text("dispatch")).toExist(),
-			expectView(text("await subscriptions.renew(id)")).toBeAbsent(),
+			expectView(selector("#issue-stack-frame-3")).toBeAbsent(),
 			click(role("button", { name: /handleRenewal/ })),
-			expectView(text("await subscriptions.renew(id)")).toExist(),
+			expectView(selector("#issue-stack-frame-3 [data-error-line]")).toExist(),
 		)
 	})
 
@@ -174,6 +184,37 @@ describe("issue stack trace", () => {
 			expectView(text("Partly source mapped")).toExist(),
 			expectView(text("Not mapped to source: https://app.acme.dev/assets/vendor-9f.js")).toExist(),
 		)
+	})
+
+	test("Raised at keeps the reported frame when the top app frame did not map", () => {
+		const topUnmapped: SymbolicatedStack = {
+			...resolved,
+			status: "partial",
+			frames: [
+				frame({ function: "Kc", file: "https://app.acme.dev/assets/index-Bx81.js", resolved: false }),
+				...resolved.frames,
+			],
+			missing: ["https://app.acme.dev/assets/index-Bx81.js"],
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(loadedWith(topUnmapped)),
+			expectView(text("at Kc (index-Bx81.js:1:48213)")).toExist(),
+			expectView(text(/resolvePlan \(src\/billing\/plan\.ts/)).toBeAbsent(),
+		)
+	})
+
+	test("a different stack arriving resets the rows the reader flipped", () => {
+		const flipped = pageUpdate(loadedWith(resolved), Message.ToggledStackRow({ key: "frame-3" })).model
+		const raw = pageUpdate(flipped, Message.ToggledRawStack()).model
+		const same = delivered(raw, resolved, RAW)
+		const next = delivered(
+			raw,
+			resolved,
+			`${RAW}\n    at Zt (https://app.acme.dev/assets/index-Qz07.js:1:9)`,
+		)
+		expect([same.stackToggles, same.isShowingRawStack]).toEqual([["frame-3"], true])
+		expect([next.stackToggles, next.isShowingRawStack]).toEqual([[], false])
 	})
 
 	test("an API with no symbolicated stack shows the raw disclosure as before", () => {

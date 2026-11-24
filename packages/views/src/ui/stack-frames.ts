@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { StackFrame, StackFrameContext } from "@maple/domain/errors/js-stack"
 import { Array as Arr, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { highlightCode } from "../lib/highlight"
 import { icon } from "./icon"
 import { typography } from "./typography"
 
@@ -111,6 +112,7 @@ const codeLine = <M>(
 	text: string,
 	isError: boolean,
 	key: string,
+	lang: string,
 ): Html =>
 	h.div(
 		[
@@ -131,9 +133,13 @@ const codeLine = <M>(
 				],
 				[number === null ? "" : String(number)],
 			),
+			// Highlighted line by line: each row keeps its own number and error tint.
 			h.span(
-				[h.Class(cn("pr-4 whitespace-pre", isError ? "text-foreground" : "text-foreground-soft"))],
-				[text === "" ? " " : text],
+				[
+					h.Class("pr-4 whitespace-pre text-foreground"),
+					h.InnerHTML(text === "" ? " " : highlightCode(text, lang)),
+				],
+				[],
 			),
 		],
 	)
@@ -147,6 +153,7 @@ const codeContext = <M>(
 ): Html => {
 	const first = frame.line === null ? null : frame.line - context.pre.length
 	const numberAt = (offset: number) => (first === null ? null : first + offset)
+	const lang = frame.file ?? ""
 	return h.div(
 		[
 			h.Id(id),
@@ -158,10 +165,12 @@ const codeContext = <M>(
 			h.div(
 				[h.Class("w-max min-w-full")],
 				[
-					...Arr.map(context.pre, (text, i) => codeLine(h, numberAt(i), text, false, `pre-${i}`)),
-					codeLine(h, numberAt(context.pre.length), context.line, true, "line"),
+					...Arr.map(context.pre, (text, i) =>
+						codeLine(h, numberAt(i), text, false, `pre-${i}`, lang),
+					),
+					codeLine(h, numberAt(context.pre.length), context.line, true, "line", lang),
 					...Arr.map(context.post, (text, i) =>
-						codeLine(h, numberAt(context.pre.length + 1 + i), text, false, `post-${i}`),
+						codeLine(h, numberAt(context.pre.length + 1 + i), text, false, `post-${i}`, lang),
 					),
 				],
 			),

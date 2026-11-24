@@ -422,6 +422,17 @@ const navigateSearch = (model: Model, search: Search): Return => ({
 	}),
 })
 
+const latestStacktraceOf = (model: Model): string | null =>
+	Option.match(detailOf(model), { onNone: () => null, onSome: (detail) => detail.latestStacktrace })
+
+/** The new detail; rows flipped open or closed belong to the old stack, so a different one resets them. */
+const withDetail = (model: Model, detail: Model["detail"]): Model => {
+	const next = { ...model, detail }
+	return latestStacktraceOf(next) === latestStacktraceOf(model)
+		? next
+		: { ...next, stackToggles: [], isShowingRawStack: false }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
@@ -431,7 +442,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			]),
 		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchDetail: ({ key, result }) =>
-			runSteps(syncSelects({ ...model, detail: Keyed.accept(model.detail, key, result) }), [
+			runSteps(syncSelects(withDetail(model, Keyed.accept(model.detail, key, result))), [
 				loadedReads(context),
 				vcsStep(context),
 				groupingReads(context, "Load"),
