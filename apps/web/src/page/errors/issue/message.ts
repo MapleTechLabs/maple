@@ -76,6 +76,8 @@ export const Message = defineMessageUnion({
 	ClickedRetryGrouping: {},
 	ClickedRetrySimilar: {},
 	ToggledSkippedFrames: { fingerprintHash: Schema.String },
+	ToggledStackRow: { key: Schema.String },
+	ToggledRawStack: {},
 	ClickedSplitOut: { fingerprintHash: Schema.String },
 	CompletedSplitOut: { fingerprintHash: Schema.String, result: Schema.Result(Schema.Null, LoadFailure) },
 	ClickedMergeSimilar: { sourceIssueId: ErrorIssueId },

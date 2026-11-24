@@ -2,7 +2,7 @@ import { keyed, runSteps, type Step as KitStep } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { type ErrorIssueId, ErrorIssuePullRequestId } from "@maple/domain/http"
-import { Option, Result, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { SETUP_CARD_ID } from "./model"
 import { AsyncData, Command } from "foldkit"
@@ -256,6 +256,8 @@ export const init = (
 		grouping: Keyed.idle(),
 		similar: Keyed.idle(),
 		openSkippedFrames: [],
+		stackToggles: [],
+		isShowingRawStack: false,
 		splittingHash: null,
 		mergingIssueId: null,
 		groupingError: null,
@@ -476,6 +478,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryGrouping: () => retryGrouping(model, context, "grouping"),
 		ClickedRetrySimilar: () => retryGrouping(model, context, "similar"),
 		ToggledSkippedFrames: ({ fingerprintHash }) => toggledSkippedFrames(model, fingerprintHash),
+		ToggledStackRow: ({ key }) => ({
+			model: {
+				...model,
+				stackToggles: model.stackToggles.includes(key)
+					? Arr.filter(model.stackToggles, (toggled) => toggled !== key)
+					: [...model.stackToggles, key],
+			},
+		}),
+		ToggledRawStack: () => ({ model: { ...model, isShowingRawStack: !model.isShowingRawStack } }),
 		ClickedSplitOut: ({ fingerprintHash }) => clickedSplitOut(model, fingerprintHash),
 		CompletedSplitOut: ({ fingerprintHash, result }) =>
 			completedGroupingWrite(
