@@ -422,13 +422,29 @@ const navigateSearch = (model: Model, search: Search): Return => ({
 	}),
 })
 
-const latestStacktraceOf = (model: Model): string | null =>
-	Option.match(detailOf(model), { onNone: () => null, onSome: (detail) => detail.latestStacktrace })
+/** The stack as sent and as mapped: a map uploaded since the last load changes the second alone. */
+const stackIdentityOf = (model: Model): string | null =>
+	Option.match(detailOf(model), {
+		onNone: () => null,
+		onSome: (detail) =>
+			Arr.join(
+				[
+					detail.latestStacktrace ?? "",
+					detail.latestStack?.status ?? "",
+					...Arr.map(
+						detail.latestStack?.frames ?? [],
+						(frame) =>
+							`${frame.function ?? ""}@${frame.file ?? ""}:${frame.line ?? ""}:${frame.column ?? ""}`,
+					),
+				],
+				"\n",
+			),
+	})
 
 /** The new detail; rows flipped open or closed belong to the old stack, so a different one resets them. */
 const withDetail = (model: Model, detail: Model["detail"]): Model => {
 	const next = { ...model, detail }
-	return latestStacktraceOf(next) === latestStacktraceOf(model)
+	return stackIdentityOf(next) === stackIdentityOf(model)
 		? next
 		: { ...next, stackToggles: [], isShowingRawStack: false }
 }

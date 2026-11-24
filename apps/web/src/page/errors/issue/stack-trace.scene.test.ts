@@ -215,6 +215,8 @@ describe("issue stack trace", () => {
 		)
 		expect([same.stackToggles, same.isShowingRawStack]).toEqual([["frame-3"], true])
 		expect([next.stackToggles, next.isShowingRawStack]).toEqual([[], false])
+		const remapped = delivered(raw, { ...resolved, status: "partial" }, RAW)
+		expect([remapped.stackToggles, remapped.isShowingRawStack]).toEqual([[], false])
 	})
 
 	test("an API with no symbolicated stack shows the raw disclosure as before", () => {
