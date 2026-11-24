@@ -60,6 +60,7 @@ const FailureMessages = {
 	unreadable: "The stored page could not be read",
 	pushFailed: "The push could not be sent",
 	noPhone: "No phone is registered for this member",
+	pushNotConfigured: "Push is not set up on this deployment",
 	noChatAccount: "The page names no chat account",
 	noWorkspaceKnowsUser: "No linked chat workspace could reach this member",
 	chatAuth: "The chat workspace refused Maple's credentials",
@@ -338,8 +339,10 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 						linkUrl: input.linkUrl,
 						collapseId: `page:${row.incidentId}`,
 					})
-					const attempt: Attempt =
-						summary.sent > 0
+					// Without push credentials nothing was tried: say that, not that the member has no phone.
+					const attempt: Attempt = !summary.configured
+						? { status: "skipped", message: FailureMessages.pushNotConfigured }
+						: summary.sent > 0
 							? { status: "sent" }
 							: summary.failed > 0
 								? failure(FailureMessages.pushFailed, true)

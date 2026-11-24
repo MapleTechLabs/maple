@@ -210,6 +210,7 @@ const layerFor = (
 		/** Records the pages pushed to members' phones; `memberPagesFail` lets none of them land. */
 		readonly memberPages?: Array<MemberPagePush>
 		readonly memberPagesFail?: boolean
+		readonly memberPagesUnconfigured?: boolean
 	} = {},
 ) => {
 	const directory = options.directory ?? [...MEMBERS]
@@ -226,6 +227,9 @@ const layerFor = (
 				...(options.memberPagesFail === undefined
 					? undefined
 					: { memberPagesFail: options.memberPagesFail }),
+				...(options.memberPagesUnconfigured === undefined
+					? undefined
+					: { memberPagesUnconfigured: options.memberPagesUnconfigured }),
 			},
 			options.email ?? stubEmailService(emails),
 			ChatAlertPoster.layer.pipe(
@@ -828,6 +832,37 @@ describe("escalation pages the on-call", () => {
 				)
 			}).pipe(
 				Effect.provide(layerFor(testDb, state, emails, chat, { memberPages, memberPagesFail: true })),
+			)
+		})
+	})
+
+	it.effect("a phone page on a deployment without push says so, not that the member has no phone", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const memberPages: Array<MemberPagePush> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_phone_unconfigured", testDb, {
+					secondStep: [{ type: "user", userId: ben }],
+				})
+				yield* registerPhone(testDb, orgId, ben)
+				yield* ticks(alerts, 10)
+				const pushRows = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "push")
+				assert.deepStrictEqual(
+					Arr.map(pushRows, (row) => [row.status, row.error_message]),
+					[["skipped", "Push is not set up on this deployment"]],
+				)
+			}).pipe(
+				Effect.provide(
+					layerFor(testDb, state, emails, chat, {
+						memberPages,
+						memberPagesFail: true,
+						memberPagesUnconfigured: true,
+					}),
+				),
 			)
 		})
 	})

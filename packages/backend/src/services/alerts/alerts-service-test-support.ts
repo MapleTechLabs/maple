@@ -212,6 +212,8 @@ export interface TestOverrides extends Partial<AlertRuntimeApi> {
 	/** Records every page pushed to a member's phones; `memberPagesFail` makes none of them land. */
 	readonly memberPages?: Array<MemberPagePush>
 	readonly memberPagesFail?: boolean
+	/** The deployment has no push credentials: a page reports that nothing was tried. */
+	readonly memberPagesUnconfigured?: boolean
 }
 
 export const DEFAULT_CLOCK_EPOCH_MS = 1_700_000_000_000
@@ -273,6 +275,7 @@ export const makeLayer = (
 		pushes,
 		memberPages,
 		memberPagesFail,
+		memberPagesUnconfigured,
 		...runtimeOverrides
 	} = overrides
 	const noPushes = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
@@ -293,7 +296,11 @@ export const makeLayer = (
 					notifyIncidentDigest: () => Effect.succeed(noPushes),
 					pageMember: (page) =>
 						Effect.sync(() => memberPages?.push(page)).pipe(
-							Effect.as({ ...noPushes, sent: memberPagesFail === true ? 0 : 1 }),
+							Effect.as({
+								...noPushes,
+								sent: memberPagesFail === true ? 0 : 1,
+								configured: memberPagesUnconfigured !== true,
+							}),
 						),
 					refreshWidgets: () => Effect.succeed(noPushes),
 				})

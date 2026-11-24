@@ -149,7 +149,7 @@ export interface MobilePushServiceApi {
 	 * A page to one person's own phones, from an escalation step. It is not filtered by their
 	 * notification preferences: those tune what the org's incidents tell them, a page is for them.
 	 */
-	readonly pageMember: (page: MemberPagePush) => Effect.Effect<MobilePushSummary>
+	readonly pageMember: (page: MemberPagePush) => Effect.Effect<MemberPageSummary>
 	/**
 	 * Wake the organization's phones so their Home Screen widgets can refresh.
 	 *
@@ -158,6 +158,12 @@ export interface MobilePushServiceApi {
 	 * they asked for a widget that is not hours out of date.
 	 */
 	readonly refreshWidgets: (orgId: OrgId, reason: string) => Effect.Effect<MobilePushSummary>
+}
+
+/** What a page to one member's phones came to. */
+export interface MemberPageSummary extends MobilePushSummary {
+	/** False on a deployment without push credentials: nothing was tried, whatever phones exist. */
+	readonly configured: boolean
 }
 
 /** An escalation step's page to one member. */
@@ -569,8 +575,14 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					"maple.alert.rule_id": page.ruleId,
 					"maple.alert.incident_id": page.incidentId,
 				})
-				const empty: MobilePushSummary = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
-				if (!apns.isConfigured) return empty
+				const empty: MemberPageSummary = {
+					sent: 0,
+					failed: 0,
+					unregistered: 0,
+					skipped: 0,
+					configured: true,
+				}
+				if (!apns.isConfigured) return { ...empty, configured: false }
 				// A read that failed is not "no phone": the page counts as failed, so it is tried again.
 				const registered = yield* devices.listForOrg(page.orgId).pipe(
 					Effect.map((listed): ReadonlyArray<MobileDevice> | null => listed),
@@ -665,6 +677,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					failed: withOutcome("failed").length,
 					unregistered: withOutcome("unregistered").length,
 					skipped: 0,
+					configured: true,
 				}
 			})
 

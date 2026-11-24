@@ -518,7 +518,13 @@ describe("MobilePushService.pageMember", () => {
 		return Effect.gen(function* () {
 			const push = yield* MobilePushService
 			const summary = yield* push.pageMember(page)
-			assert.deepStrictEqual(summary, { sent: 1, failed: 0, unregistered: 0, skipped: 0 })
+			assert.deepStrictEqual(summary, {
+				sent: 1,
+				failed: 0,
+				unregistered: 0,
+				skipped: 0,
+				configured: true,
+			})
 			assert.deepStrictEqual(
 				Arr.map(sent, (one) => [one.deviceToken, one.interruptionLevel, one.alert?.title]),
 				[["token-1", "time-sensitive", page.title]],
@@ -547,7 +553,13 @@ describe("MobilePushService.pageMember", () => {
 		return Effect.gen(function* () {
 			const push = yield* MobilePushService
 			const summary = yield* push.pageMember(page)
-			assert.deepStrictEqual(summary, { sent: 0, failed: 0, unregistered: 1, skipped: 0 })
+			assert.deepStrictEqual(summary, {
+				sent: 0,
+				failed: 0,
+				unregistered: 1,
+				skipped: 0,
+				configured: true,
+			})
 			assert.deepStrictEqual(deviceWrites, [
 				`disable:${ORG}:${deviceId(1)}:Unregistered`,
 				`pushed:${ORG}:`,
@@ -574,6 +586,7 @@ describe("MobilePushService.pageMember", () => {
 				failed: 1,
 				unregistered: 0,
 				skipped: 0,
+				configured: true,
 			})
 			assert.lengthOf(sent, 0)
 		}).pipe(Effect.provide(makeLayer(null, () => ({ outcome: "sent", apnsId: null }), sent, [])))
@@ -584,7 +597,7 @@ describe("MobilePushService.pageMember", () => {
 		const none = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
 		const withoutPhone = Effect.gen(function* () {
 			const push = yield* MobilePushService
-			assert.deepStrictEqual(yield* push.pageMember(page), none)
+			assert.deepStrictEqual(yield* push.pageMember(page), { ...none, configured: true })
 		}).pipe(
 			Effect.provide(
 				makeLayer(
@@ -597,7 +610,8 @@ describe("MobilePushService.pageMember", () => {
 		)
 		const unconfigured = Effect.gen(function* () {
 			const push = yield* MobilePushService
-			assert.deepStrictEqual(yield* push.pageMember(page), none)
+			// Told apart from a member without a phone: this one has one, the deployment cannot push.
+			assert.deepStrictEqual(yield* push.pageMember(page), { ...none, configured: false })
 		}).pipe(
 			Effect.provide(
 				makeLayer([device(1)], () => ({ outcome: "sent", apnsId: null }), sent, [], false),
