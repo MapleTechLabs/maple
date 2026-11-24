@@ -93,15 +93,42 @@ describe("roles list", () => {
 describe("create role dialog", () => {
 	const opened = () => update(loaded(), Message.ClickedCreate()).model
 	const child = (message: CreateDialog.Message) => Message.GotCreateMessage({ message })
+	const pickTemplate = (key: string) =>
+		child(
+			CreateDialog.Message.GotTemplateMessage({
+				message: SelectMessage.SelectedItem({ index: 0, value: key }),
+			}),
+		)
+
+	test("a custom role can be the template", () => {
+		const filled = run(opened(), [
+			child(CreateDialog.Message.ChangedName({ value: "Night shift" })),
+			pickTemplate(ON_CALL.id),
+		])
+		expect(argsOf(update(filled, child(CreateDialog.Message.SubmittedCreate())), "CreateRole")).toEqual({
+			name: "Night shift",
+			description: "",
+			permissions: Arr.filter(ON_CALL.permissions, Policy.grantableToCustomRoles),
+		})
+	})
+
+	test("no template starts the role with no permissions", () => {
+		const filled = run(opened(), [
+			child(CreateDialog.Message.ChangedName({ value: "Night shift" })),
+			pickTemplate("engineer"),
+			pickTemplate(""),
+		])
+		expect(
+			argsOf(update(filled, child(CreateDialog.Message.SubmittedCreate())), "CreateRole"),
+		).toMatchObject({
+			permissions: [],
+		})
+	})
 
 	test("a copy of Engineer starts with what Engineer holds that a custom role may", () => {
 		const filled = run(opened(), [
 			child(CreateDialog.Message.ChangedName({ value: " Incident commander " })),
-			child(
-				CreateDialog.Message.GotStartMessage({
-					message: { _tag: "SelectedRadio", value: "engineer" },
-				}),
-			),
+			pickTemplate("engineer"),
 		])
 		const submitted = update(filled, child(CreateDialog.Message.SubmittedCreate()))
 		expect(argsOf(submitted, "CreateRole")).toEqual({

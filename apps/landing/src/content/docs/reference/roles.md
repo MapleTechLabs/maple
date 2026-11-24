@@ -68,12 +68,12 @@ Make a custom role when none of the built-in roles fits: for example, an Analyst
 
 1. Go to **Settings → Roles** and click **Create role**.
 2. Enter a name (up to 40 characters, unique in your organization) and an optional description (up to 160 characters). The description is shown in the role picker on the Members page.
-3. Choose where it starts: **Empty**, **Member**, **Engineer**, or **Copy a custom role**.
+3. Under **Start from**, pick a role to copy its permissions from (any built-in or custom role), or **No role** to start with none.
 4. Click **Create and choose permissions**, then tick the permissions you want and click **Save role**.
 
 Nobody holds a new role until you assign it on the Members page.
 
-To start from any existing role instead, open the row menu on **Settings → Roles** and choose **Duplicate**. On a built-in role's page, click **Duplicate to customize**.
+**Duplicate** in a role's row menu, or **Duplicate to customize** on a built-in role's page, opens the same dialog with that role picked.
 
 ### Edit a role
 
