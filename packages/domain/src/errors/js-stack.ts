@@ -176,9 +176,13 @@ export const parseJsFrame = (raw: string): Option.Option<ParsedFrame> => {
 		const rest = Str.trim(Str.slice(3)(line))
 		return rest === "" ? Option.none() : parseV8Frame(raw, rest)
 	}
-	// Firefox and Safari: `fn@location`, the function never holding an `@`.
+	// Firefox and Safari: `fn@location`, the function never holding an `@`. A `: ` before the `@`
+	// is a message header (`Error: bad token for user@api:401`), never a function name.
 	return Option.flatMap(
-		Option.filter(splitAt(line, "@"), ({ after }) => Str.trim(after) !== ""),
+		Option.filter(
+			splitAt(line, "@"),
+			({ before, after }) => Str.trim(after) !== "" && !Str.includes(": ")(before),
+		),
 		({ before, after }) => Option.map(parseLocation(after), (loc) => frameOf(raw, nonEmpty(before), loc)),
 	)
 }

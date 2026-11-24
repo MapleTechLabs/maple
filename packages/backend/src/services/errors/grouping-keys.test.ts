@@ -755,6 +755,51 @@ describe("an org's first source map upload", () => {
 		expect(keyed).toEqual(["zz-ready"])
 	})
 
+	it("keeps re-keying stale keys during a storm of new hashes", async () => {
+		const storm = Arr.makeBy(250, (i) => `s${Str.padStart(3, "0")(String(i))}`)
+		const stale = Arr.makeBy(10, (i) => sampleRow(`stale-${i}`, "TypeError", MESSAGE, [V1.app("a")]))
+		const digests = await Effect.runPromise(
+			Effect.gen(function* () {
+				const database = yield* Database
+				yield* database.execute((db) =>
+					db.run(
+						PG.insertInto(ErrorGroupingKeys).values(
+							Arr.map(stale, (row) => ({
+								orgId: ORG,
+								fingerprintHash: row.fingerprintHash,
+								groupingKey: "old-key",
+								keyVersion: 1,
+								configDigest: "rules-before",
+								rule: "frames" as const,
+								pinned: false,
+								createdAt: 0,
+								updatedAt: 0,
+							})),
+						),
+					),
+				)
+				yield* resolveGroupingSiblings(
+					(run) => database.execute(run),
+					{
+						samples: (hashes) =>
+							Effect.succeed(Arr.filter(stale, (s) => Arr.contains(hashes, s.fingerprintHash))),
+						spans: (rows) => Effect.succeed(Arr.map(rows, (row) => spanRow(row.fingerprintHash))),
+						mapsInPlay: Effect.succeedSome(false),
+					},
+					{
+						orgId: ORG,
+						hashes: [...storm, ...Arr.map(stale, (row) => row.fingerprintHash)],
+						nowMs: NOW,
+						grouping: DEFAULT_ORG_GROUPING,
+						lineage: new Map(),
+					},
+				)
+				return Arr.map(yield* storedKeys(database), (row) => row.configDigest)
+			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+		)
+		expect(digests).toEqual(Arr.makeBy(10, () => ""))
+	})
+
 	it("keeps expired hashes that never find a span from taking every slot", async () => {
 		const noSpan = Arr.makeBy(200, (i) => `y${Str.padStart(3, "0")(String(i))}`)
 		const fresh = sampleRow("new-one", "TypeError", MESSAGE, [V1.app("a")])
