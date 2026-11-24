@@ -1408,6 +1408,36 @@
 	@apply mb-0;
 }
 
+/* A page-opening panel: why the feature matters, with product shots under it. */
+.docs-content .docs-banner {
+	@apply border border-border rounded-xl p-5 my-6;
+	background: color-mix(in oklab, var(--bg-elevated) 55%, transparent);
+}
+
+.docs-content .docs-banner-eyebrow {
+	@apply mt-0 mb-3 text-sm font-medium text-primary;
+}
+
+.docs-content .docs-banner-points {
+	@apply my-0 pl-5 text-sm;
+}
+
+.docs-content .docs-banner-points li {
+	@apply my-1.5;
+}
+
+.docs-content figure.docs-banner-shot {
+	@apply mt-5 mb-0;
+}
+
+.docs-content figure.docs-banner-shot figcaption {
+	@apply mb-2 text-xs text-fg-muted;
+}
+
+.docs-content figure.docs-banner-shot img {
+	@apply w-full h-auto aspect-auto object-contain border border-border rounded-lg my-0 bg-bg-deep;
+}
+
 .docs-content hr {
 	@apply border-border my-8;
 }
