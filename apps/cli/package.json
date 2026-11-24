@@ -10,7 +10,7 @@
 		"start": "bun run src/bin.ts",
 		"bench:ingest": "bun bench/ingest-http.ts",
 		"bench:ingest:chdb": "bun bench/ingest-chdb.ts",
-		"test": "bun test --max-concurrency=1 test/*.test.ts src/core/*.test.ts",
+		"test": "bun test --max-concurrency=1 test/*.test.ts src/core/*.test.ts src/commands/*.test.ts",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
