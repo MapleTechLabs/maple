@@ -14,9 +14,12 @@ import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
 import { type SourceMapUpload, sourceMapObjectKey, validateSourceMapUpload } from "./source-map-files"
-import { toSourceMapStorageError as toStorageError } from "./SourceMapReader"
+import { SOURCE_MAP_TOUCH_INTERVAL, toSourceMapStorageError as toStorageError } from "./SourceMapReader"
 
-/** A file unused this long is deleted, row and object. */
+/**
+ * A file unused this long is deleted, row and object. A recorded use may be up to a day stale
+ * (`SOURCE_MAP_TOUCH_INTERVAL`), so a used file gets that day on top.
+ */
 export const SOURCE_MAP_RETENTION = Duration.days(90)
 const SWEEP_BATCH = 500
 const SWEEP_BATCHES_PER_TICK = 10
@@ -96,7 +99,7 @@ export const claimExpired = (
 						.where(($) => [
 							PG.inList($.id, ids),
 							PG.or(
-								$.lastUsedAt.lt(cutoff),
+								$.lastUsedAt.lt(cutoff - Duration.toMillis(SOURCE_MAP_TOUCH_INTERVAL)),
 								PG.and($.lastUsedAt.isNull(), $.createdAt.lt(cutoff)),
 							),
 						])
@@ -120,7 +123,7 @@ const sweep = (database: DatabaseApi, bucket: WritableObjectStore, now: number) 
 						.select("id")
 						.where(($) => [
 							PG.or(
-								$.lastUsedAt.lt(cutoff),
+								$.lastUsedAt.lt(cutoff - Duration.toMillis(SOURCE_MAP_TOUCH_INTERVAL)),
 								PG.and($.lastUsedAt.isNull(), $.createdAt.lt(cutoff)),
 							),
 						])

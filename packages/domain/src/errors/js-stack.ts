@@ -29,6 +29,8 @@ export type StackFrameContext = typeof StackFrameContext.Type
 export const StackFrame = Schema.Struct({
 	raw: Schema.String,
 	function: Schema.NullOr(Schema.String),
+	/** True when a source map supplied `function`; otherwise it is the name as the stack wrote it. */
+	function_from_map: Schema.optionalKey(Schema.Boolean),
 	file: Schema.NullOr(Schema.String),
 	line: Schema.NullOr(Schema.Number),
 	column: Schema.NullOr(Schema.Number),
@@ -166,7 +168,8 @@ export const frameUrlPath = (url: string): string => {
 
 /** True when the frame URL's path is the stored minified path or ends with it at a `/` boundary. */
 export const urlMatchesMinifiedPath = (url: string, minifiedPath: string): boolean => {
-	const target = stripLeadingSlashes(Str.replace(/[?#].*$/u, "")(Str.trim(minifiedPath)))
+	// The stored path is already normalized at upload; a `#` or `?` in it is part of the file name.
+	const target = stripLeadingSlashes(Str.trim(minifiedPath))
 	if (target === "") return false
 	const path = frameUrlPath(url)
 	return path === target || Str.endsWith(`/${target}`)(path)

@@ -6316,6 +6316,9 @@
                 "function": {
                   "type": "string"
                 },
+                "function_from_map": {
+                  "type": "boolean"
+                },
                 "in_app": {
                   "type": "boolean"
                 },

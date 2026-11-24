@@ -37,7 +37,7 @@ const requireUpload = (tenant: CurrentTenant.TenantSchema) =>
 
 const tooLarge = (sizeBytes: number) =>
 	new SourceMapTooLargeError({
-		message: `Source map is ${sizeBytes} bytes; the limit is ${SOURCE_MAP_MAX_BYTES}.`,
+		message: `Source map is ${sizeBytes} bytes; the limit is ${SOURCE_MAP_MAX_BYTES} (10 MiB), the largest map Maple can symbolicate with.`,
 		sizeBytes,
 	})
 

@@ -7,11 +7,22 @@ import { type ObjectStoreError, SourceMapReadBucket } from "@maple/backend/platf
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { describeCause } from "@maple/backend/platform/describe-cause"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { frameUrlPath } from "@maple/domain/errors/js-stack"
 import { matchFrames } from "./source-map-files"
 
-/** `last_used_at` is written at most this often per file. */
-const TOUCH_INTERVAL = Duration.days(1)
+/** `last_used_at` is written at most this often per file; retention allows for it. */
+export const SOURCE_MAP_TOUCH_INTERVAL = Duration.days(1)
+/** Rows for the requested paths only, newest first; past this many, older builds of a path drop. */
 const RELEASE_FILES_LIMIT = 2000
+
+/** `a/b/c.js` -> `a/b/c.js`, `b/c.js`, `c.js`: every stored path `urlMatchesMinifiedPath` accepts. */
+export const pathSuffixes = (url: string): ReadonlyArray<string> => {
+	const segments = Str.split("/")(frameUrlPath(url))
+	return Arr.filter(
+		Arr.map(segments, (_, i) => Arr.join(segments.slice(i), "/")),
+		(suffix) => suffix !== "",
+	)
+}
 
 export interface SourceMapFrameLookup {
 	readonly orgId: OrgId
@@ -90,8 +101,14 @@ export class SourceMapReader extends Context.Service<SourceMapReader, SourceMapR
 										.where(($) => [$.orgId.eq(orgId), $.debugId.in_(...debugIds)]),
 								),
 							)
+				// Only the stored paths a frame URL can match: its path and each suffix after a `/`.
+				const candidatePaths = Arr.dedupe(Arr.flatMap(lookup.urls, pathSuffixes))
 				const releaseFiles =
-					serviceName == null || version == null || serviceName === "" || version === ""
+					serviceName == null ||
+					version == null ||
+					serviceName === "" ||
+					version === "" ||
+					candidatePaths.length === 0
 						? []
 						: yield* dbExecute((db) =>
 								db.run(
@@ -101,7 +118,9 @@ export class SourceMapReader extends Context.Service<SourceMapReader, SourceMapR
 											$.orgId.eq(orgId),
 											$.serviceName.eq(serviceName),
 											$.version.eq(version),
+											$.minifiedPath.in_(...candidatePaths),
 										])
+										.orderBy(($) => [[$.createdAt, "desc"]])
 										.limit(RELEASE_FILES_LIMIT),
 								),
 							)
@@ -124,7 +143,7 @@ export class SourceMapReader extends Context.Service<SourceMapReader, SourceMapR
 			) {
 				if (ids.length === 0) return
 				const now = yield* Clock.currentTimeMillis
-				const staleBefore = now - Duration.toMillis(TOUCH_INTERVAL)
+				const staleBefore = now - Duration.toMillis(SOURCE_MAP_TOUCH_INTERVAL)
 				yield* dbExecute((db) =>
 					db.run(
 						PG.update(SourceMapFiles)

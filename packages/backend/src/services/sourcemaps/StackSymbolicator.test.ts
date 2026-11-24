@@ -76,12 +76,24 @@ interface BucketState {
 	failReads: boolean
 	/** While set, reads wait for it. */
 	gate: Deferred.Deferred<void> | undefined
+	/** Completed when a read starts (before it waits on the gate). */
+	readStarted: Deferred.Deferred<void> | undefined
+	/** Completed when a frame lookup returns. */
+	lookedUp: Deferred.Deferred<void> | undefined
 }
 
 /** An in-memory bucket that counts reads and can be made to fail or hold them. */
 const makeHarness = () => {
 	const objects = new Map<string, Uint8Array>()
-	const state: BucketState = { reads: 0, failReads: false, gate: undefined }
+	const state: BucketState = {
+		reads: 0,
+		failReads: false,
+		gate: undefined,
+		readStarted: undefined,
+		lookedUp: undefined,
+	}
+	const signal = (deferred: Deferred.Deferred<void> | undefined) =>
+		deferred === undefined ? Effect.void : Deferred.succeed(deferred, undefined)
 	const memory = inMemoryObjectStore(objects)
 	const bucket: WritableObjectStore = {
 		...memory,
@@ -91,16 +103,46 @@ const makeHarness = () => {
 				const read = state.failReads
 					? Effect.fail(new ObjectStoreError({ message: "bucket unavailable", cause: undefined }))
 					: memory.getBytes(key)
-				return state.gate === undefined ? read : Effect.andThen(Deferred.await(state.gate), read)
+				const started = signal(state.readStarted)
+				return state.gate === undefined
+					? Effect.andThen(started, read)
+					: Effect.andThen(started, Effect.andThen(Deferred.await(state.gate), read))
 			}),
 	}
 	const sourceMaps = Layer.mergeAll(
 		Layer.effect(SourceMapService, SourceMapService.make),
-		Layer.effect(SourceMapReader, SourceMapReader.make),
+		Layer.effect(
+			SourceMapReader,
+			Effect.map(SourceMapReader.make, (reader) => ({
+				...reader,
+				findForFrames: (lookup: Parameters<typeof reader.findForFrames>[0]) =>
+					Effect.tap(reader.findForFrames(lookup), () => signal(state.lookedUp)),
+			})),
+		),
 	).pipe(Layer.provideMerge(createTestDb(createdDbs).layer), Layer.provide(sourceMapBucketLayer(bucket)))
 	const layer = Layer.effect(StackSymbolicator, StackSymbolicator.make).pipe(Layer.provideMerge(sourceMaps))
 	return { state, layer }
 }
+
+/**
+ * Forks `run` twice: the first is let through to its (gated) bucket read, the second only once
+ * that read is blocked, and is returned once its lookup is done and it is waiting on that load.
+ */
+const joinedLoad = <A>(state: BucketState, run: Effect.Effect<A>) =>
+	Effect.gen(function* () {
+		state.readStarted = yield* Deferred.make<void>()
+		const loading = yield* Effect.forkChild(run)
+		yield* Deferred.await(state.readStarted)
+		state.readStarted = undefined
+		state.lookedUp = yield* Deferred.make<void>()
+		const waiting = yield* Effect.forkChild(run)
+		yield* Deferred.await(state.lookedUp)
+		state.lookedUp = undefined
+		// From its lookup to waiting on the shared load the fiber does no I/O; let it run there.
+		yield* Effect.yieldNow
+		yield* Effect.yieldNow
+		return [loading, waiting] as const
+	})
 
 describe("StackSymbolicator", () => {
 	it.effect("resolves a frame through the map its debug id names, whatever the file is called", () => {
@@ -174,6 +216,12 @@ describe("StackSymbolicator", () => {
 			const sourceMaps = yield* SourceMapService
 			const symbolicator = yield* StackSymbolicator
 			const release = request({ serviceName: "shop-web", serviceVersion: "2.4.0" })
+			// The org has a map, so the miss comes from the URL lookup, not the org's no-maps answer.
+			yield* sourceMaps.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/unrelated.js",
+				debugId: DEBUG_ID,
+			})
 
 			assert.strictEqual((yield* symbolicator.symbolicate(release)).status, "missing_map")
 			yield* sourceMaps.upload(ORG, {
@@ -183,8 +231,11 @@ describe("StackSymbolicator", () => {
 				version: "2.4.0",
 			})
 			assert.strictEqual((yield* symbolicator.symbolicate(release)).status, "missing_map")
+			// Past the one-minute org cache, the URL is still remembered as missing.
+			yield* TestClock.adjust(Duration.minutes(2))
+			assert.strictEqual((yield* symbolicator.symbolicate(release)).status, "missing_map")
 
-			yield* TestClock.adjust(Duration.minutes(5))
+			yield* TestClock.adjust(Duration.minutes(3))
 			assert.strictEqual((yield* symbolicator.symbolicate(release)).status, "resolved")
 		}).pipe(Effect.provide(layer))
 	})
@@ -325,10 +376,7 @@ describe("StackSymbolicator", () => {
 
 			const gate = yield* Deferred.make<void>()
 			state.gate = gate
-			const fibers = yield* Effect.forEach([withDebugId, withDebugId], (req) =>
-				Effect.forkChild(symbolicator.symbolicate(req)),
-			)
-			yield* Effect.sleep("100 millis")
+			const fibers = yield* joinedLoad(state, symbolicator.symbolicate(withDebugId))
 			yield* Deferred.succeed(gate, undefined)
 			state.gate = undefined
 			const stacks = yield* Fiber.joinAll(fibers)
@@ -363,10 +411,11 @@ describe("StackSymbolicator", () => {
 			const withDebugId = request({ debugIds: new Map([[BUNDLE_URL, DEBUG_ID]]) })
 
 			state.gate = yield* Deferred.make<void>()
-			const loading = yield* Effect.forkChild(symbolicator.symbolicate(withDebugId))
-			yield* Effect.sleep("50 millis")
-			const waiting = yield* Effect.forkChild(symbolicator.symbolicateWithOutcome(withDebugId))
-			yield* Effect.sleep("50 millis")
+			const [loading, waiting] = yield* joinedLoad(
+				state,
+				symbolicator.symbolicateWithOutcome(withDebugId),
+			)
+			if (loading === undefined || waiting === undefined) return assert.fail("both fibers start")
 			yield* Fiber.interrupt(loading)
 			const waited = yield* Fiber.join(waiting)
 			assert.deepStrictEqual([waited.stack.status, waited.lookupFailed], ["missing_map", true])
@@ -452,6 +501,52 @@ describe("StackSymbolicator", () => {
 			yield* symbolicator.symbolicate(request({ debugIds: new Map([[BUNDLE_URL, DEBUG_ID]]) }))
 			const [touched] = yield* sourceMaps.list(ORG, { limit: 1, offset: 0 })
 			assert.isNotNull(touched?.lastUsedAt ?? null)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("loads no more maps for one stack than its memory budget", () => {
+		const { state, layer } = makeHarness()
+		const OTHER_ID = "7d6f3c2b-2a3f-4e4d-9c8b-1234567890ab"
+		const OTHER_URL = "https://shop.example.com/assets/chunk-Zz91.js"
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			const database = yield* Database
+			const rows = yield* Effect.forEach(
+				[
+					["assets/index-Bx81.js", DEBUG_ID],
+					["assets/chunk-Zz91.js", OTHER_ID],
+				] as const,
+				([minifiedPath, debugId]) =>
+					sourceMaps.upload(ORG, { bytes: mapBytes(), minifiedPath, debugId }),
+			)
+			// Each estimated at 36 MiB: one fits the 64 MiB budget, two do not.
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(SourceMapFiles)
+						.set({ sizeBytes: 6 * 1024 * 1024 })
+						.where(($) => [
+							PG.inList(
+								$.id,
+								Arr.map(rows, (row) => row.id),
+							),
+						]),
+				),
+			)
+			const stack = yield* symbolicator.symbolicate(
+				request({
+					stacktrace: `TypeError: boom\n    at a (${BUNDLE_URL}:1:1)\n    at b (${OTHER_URL}:1:1)`,
+					debugIds: new Map([
+						[BUNDLE_URL, DEBUG_ID],
+						[OTHER_URL, OTHER_ID],
+					]),
+				}),
+			)
+			assert.deepStrictEqual(
+				Arr.map(stack.frames, (frame) => frame.resolved),
+				[true, false],
+			)
+			assert.strictEqual(state.reads, 1)
 		}).pipe(Effect.provide(layer))
 	})
 })

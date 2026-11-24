@@ -1,13 +1,17 @@
 import { FlattenMap, type TraceMap } from "@jridgewell/trace-mapping"
 import type { SourceMapFileRow } from "@maple/db/tables"
+import { SOURCE_MAP_MAX_BYTES } from "@maple/domain/http"
 import { isSourceMappableUrl, parseJsStack, type SymbolicatedStack } from "@maple/domain/errors/js-stack"
 import type { OrgId, SourceMapFileId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Deferred, Duration, Effect, Exit, Layer, Option } from "effect"
 import { SourceMapReader } from "./SourceMapReader"
 import { symbolicateStack } from "./symbolicate"
 
-/** Larger maps are not loaded: parsing one costs several times its size in a 128 MB isolate. */
-export const SYMBOLICATION_MAX_MAP_BYTES = 10 * 1024 * 1024
+/**
+ * Larger maps are not loaded: parsing one costs several times its size in a 128 MB isolate. Uploads
+ * are capped at the same size; this only guards maps stored before the cap.
+ */
+export const SYMBOLICATION_MAX_MAP_BYTES = SOURCE_MAP_MAX_BYTES
 /** A parsed map's heap, estimated from its file size (decoded mappings plus the parsed JSON). */
 export const PARSED_MAP_SIZE_FACTOR = 6
 /** Parsed maps kept per isolate: at most this many, and this much estimated heap. */
@@ -18,6 +22,12 @@ const NEGATIVE_TTL = Duration.minutes(5)
 const NEGATIVE_MAX_ENTRIES = 10_000
 /** `last_used_at` is asked for at most this often per file from one isolate. */
 const TOUCH_INTERVAL = Duration.hours(1)
+const TOUCHED_MAX_ENTRIES = 10_000
+/**
+ * Estimated heap of the parsed maps one request holds at once. The first map always loads (one map
+ * at the upload cap is 60 MiB by estimate); later ones load only while the total stays under this.
+ */
+export const REQUEST_MAX_ESTIMATED_BYTES = 64 * 1024 * 1024
 /** How long one isolate trusts its answer to "does this org have any maps"; short, so a first upload shows soon. */
 const HAS_MAPS_TTL = Duration.minutes(1)
 const HAS_MAPS_MAX_ENTRIES = 10_000
@@ -250,7 +260,21 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 				)
 				if (due.length === 0) return Effect.void
 				return sourceMaps.touch(orgId, due).pipe(
-					Effect.tap(() => Effect.sync(() => Arr.forEach(due, (id) => touchedAt.set(id, now)))),
+					Effect.tap(() =>
+						Effect.sync(() => {
+							Arr.forEach(due, (id) => {
+								touchedAt.delete(id)
+								touchedAt.set(id, now)
+							})
+							// Oldest first: a forgotten file costs one more conditional update, nothing else.
+							const excess = touchedAt.size - TOUCHED_MAX_ENTRIES
+							if (excess > 0) {
+								Arr.forEach(Arr.take(Array.from(touchedAt.keys()), excess), (id) =>
+									touchedAt.delete(id),
+								)
+							}
+						}),
+					),
 					Effect.catch((error) =>
 						Effect.logWarning("Source map use was not recorded").pipe(
 							Effect.annotateLogs({ orgId, message: error.message }),
@@ -344,8 +368,23 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 						}),
 					)
 				}
-				// One at a time: each parse briefly holds the file, its string and the parsed map.
-				const loaded = yield* Effect.forEach(rows, (row) =>
+				// One at a time: each parse briefly holds the file, its string and the parsed map. Every
+				// loaded map stays live for the request, so past the budget the rest are left unloaded.
+				const estimate = (row: SourceMapFileRow) => row.sizeBytes * PARSED_MAP_SIZE_FACTOR
+				const withinBudget = Arr.filter(
+					rows,
+					(row, i) =>
+						i === 0 ||
+						Arr.reduce(Arr.take(rows, i + 1), 0, (sum, r) => sum + estimate(r)) <=
+							REQUEST_MAX_ESTIMATED_BYTES,
+				)
+				const overBudget = rows.length - withinBudget.length
+				if (overBudget > 0) {
+					yield* Effect.logWarning(
+						"Source maps over the per-stack memory budget were not loaded",
+					).pipe(Effect.annotateLogs({ orgId, skipped: overBudget }))
+				}
+				const loaded = yield* Effect.forEach(withinBudget, (row) =>
 					Effect.map(mapOf(row), (result) => ({ row, ...result })),
 				)
 				const mapByFile = new Map(
@@ -387,6 +426,7 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 						.length,
 					"maple.stack.maps_matched": matched.length,
 					"maple.stack.maps_too_large": tooLarge.length,
+					"maple.stack.maps_over_budget": overBudget,
 					"maple.stack.maps_loaded": Arr.filter(loaded, (entry) => !entry.cacheHit).length,
 					"maple.stack.map_cache_hits": Arr.filter(loaded, (entry) => entry.cacheHit).length,
 					"maple.stack.negative_cache_hits": urls.length - pending.length,
