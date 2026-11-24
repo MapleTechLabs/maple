@@ -325,6 +325,8 @@ const FenceResultRow = Schema.Struct({ fenced: Schema.Number })
 
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
 
+/** How a chat post that was deliberately not made reads in a delivery's provider message. */
+const SKIPPED_POST_PREFIX = "Skipped:"
 const STALE_PAGE_MESSAGE = "Not sent: the incident resolved before this page went out"
 const STALE_STEP_RESOLVED_MESSAGE = "Not sent: the incident resolved before this escalation step went out"
 const STALE_STEP_ACKNOWLEDGED_MESSAGE =
@@ -3010,8 +3012,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						(row.eventType === "trigger" || row.eventType === "renotify")
 					) {
 						// The page is recorded as sent and nothing queues this again, so a transient
-						// failure is retried here. The insert is keyed: a repeat adds nothing.
-						yield* acknowledgeLatePage(row, claimTime).pipe(Effect.retry({ times: 2 }))
+						// failure is retried here. It never fails the delivery: that would send the page again.
+						yield* acknowledgeLatePage(row, claimTime).pipe(
+							Effect.retry({ times: 2 }),
+							isolate("A late page could not be acknowledged at the pager", {
+								deliveryKey: row.deliveryKey,
+							}),
+						)
 					}
 
 					// An acknowledgement is not a notification: it must not restart the reminder clock.
@@ -3253,7 +3260,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								finalizeDigest(destinationRow, sendable, claimTime, {
 									providerMessage:
 										posted.messageId === null
-											? `Skipped: alert notifications are off for this ${posted.connectorName} workspace`
+											? `${SKIPPED_POST_PREFIX} alert notifications are off for this ${posted.connectorName} workspace`
 											: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${sendable.length}`,
 									providerReference: posted.messageId,
 								}),
@@ -3621,7 +3628,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								: yield* dbExecute((db) =>
 										db.run(
 											PG.from(AlertDeliveryEvents)
-												.select("status")
+												.select("status", "providerMessage")
 												.where(($) => [
 													$.orgId.eq(row.orgId),
 													$.incidentId.eq(priorNotified.id),
@@ -3629,7 +3636,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												]),
 										),
 									)
-						const isUnheard = !Arr.some(priorPages, (page) => page.status === "success")
+						// A chat post skipped because the workspace has notifications off is stored as a
+						// success with nothing posted: nobody heard that one either.
+						const isUnheard = !Arr.some(
+							priorPages,
+							(page) =>
+								page.status === "success" &&
+								!Str.startsWith(SKIPPED_POST_PREFIX)(page.providerMessage ?? ""),
+						)
 						// A chain that pages people leaves no delivery row: its pages are read too.
 						const priorPeoplePaged =
 							priorNotified === null || !isUnheard
