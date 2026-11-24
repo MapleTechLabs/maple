@@ -83,6 +83,7 @@ import {
 	type AlertDestinationRow,
 	AlertIncidentEvents,
 	AlertIncidents,
+	AlertMemberNotifications,
 	type AlertIncidentRow,
 	AlertRuleClaims,
 	AlertRules,
@@ -2981,6 +2982,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								groupKey,
 								incidentRow === null ? null : row.incidentId,
 							),
+							isRuleDeleted: ruleRow === null,
 							sentAtMs: deliveryStart,
 						},
 						payloadJson,
@@ -3007,7 +3009,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						destinationRow.type === "pagerduty" &&
 						(row.eventType === "trigger" || row.eventType === "renotify")
 					) {
-						yield* acknowledgeLatePage(row, claimTime)
+						// The page is recorded as sent and nothing queues this again, so a transient
+						// failure is retried here. The insert is keyed: a repeat adds nothing.
+						yield* acknowledgeLatePage(row, claimTime).pipe(Effect.retry({ times: 2 }))
 					}
 
 					// An acknowledgement is not a notification: it must not restart the reminder clock.
@@ -3178,7 +3182,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								groupBy: storedRule?.groupBy ?? null,
 							},
 							groupKey,
-							row.incidentId,
+							incident === null ? null : row.incidentId,
 						),
 					} satisfies ChatDigestItem
 				})
@@ -3609,8 +3613,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										.limit(1),
 								),
 							))[0] ?? null
-						// An earlier incident whose every page failed or was dropped told nobody: its
-						// all-clear is no reason to open this one quietly.
+						// An earlier incident that reached nobody (every page failed or was dropped, or it
+						// queued none) told nobody: its all-clear is no reason to open this one quietly.
 						const priorPages =
 							priorNotified === null
 								? []
@@ -3625,9 +3629,24 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												]),
 										),
 									)
-						const neverPaged =
-							priorPages.length > 0 &&
-							!Arr.some(priorPages, (page) => page.status === "success")
+						const isUnheard = !Arr.some(priorPages, (page) => page.status === "success")
+						// A chain that pages people leaves no delivery row: its pages are read too.
+						const priorPeoplePaged =
+							priorNotified === null || !isUnheard
+								? []
+								: yield* dbExecute((db) =>
+										db.run(
+											PG.from(AlertMemberNotifications)
+												.select("id")
+												.where(($) => [
+													$.orgId.eq(row.orgId),
+													$.incidentId.eq(priorNotified.id),
+													$.status.eq("sent"),
+												])
+												.limit(1),
+										),
+									)
+						const neverPaged = isUnheard && priorPeoplePaged.length === 0
 						lifecycle = yield* planAlertLifecycle({
 							...lifecycleInput,
 							previousNotificationAtMs: neverPaged

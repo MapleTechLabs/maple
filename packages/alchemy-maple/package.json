@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/alchemy",
-	"version": "0.7.0",
+	"version": "0.7.1",
 	"description": "Alchemy provider for Maple resources — declare API keys, ingest keys, dashboards, alert destinations, alert rules, uptime monitors and status pages in your alchemy.run.ts",
 	"keywords": [
 		"alchemy",

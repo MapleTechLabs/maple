@@ -146,9 +146,24 @@ const findDefaultAnomalyRule = (db: MapleDb, orgId: OrgId) =>
 export const deleteRuleRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId) =>
 	Effect.gen(function* () {
 		const nowMs = yield* Clock.currentTimeMillis
-		const resolves = yield* deletedRuleResolveRows(db, orgId, ruleId, nowMs)
+		// Pages that never left go first. One the dispatcher claims meanwhile survives this delete
+		// as in flight, so the read below answers it with an all-clear.
 		yield* db.run(
-			PG.deleteFrom(AlertDeliveryEvents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+			PG.deleteFrom(AlertDeliveryEvents).where(($) => [
+				$.orgId.eq(orgId),
+				$.ruleId.eq(ruleId),
+				$.eventType.neq("resolve"),
+				$.status.in_("queued", "silenced"),
+			]),
+		)
+		const resolves = yield* deletedRuleResolveRows(db, orgId, ruleId, nowMs)
+		// An all-clear still on its way out stays: the page it closes is already with the pager.
+		yield* db.run(
+			PG.deleteFrom(AlertDeliveryEvents).where(($) => [
+				$.orgId.eq(orgId),
+				$.ruleId.eq(ruleId),
+				PG.or($.eventType.neq("resolve"), $.status.in_("success", "failed", "silenced")),
+			]),
 		)
 		yield* db.run(PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
 		yield* db.run(PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))

@@ -22,6 +22,7 @@
 // and `DateTime64` (sessions, product events), and emitting the raw columns
 // would force a UNION supertype with inconsistent precision.
 
+import { Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
@@ -40,6 +41,11 @@ export interface SignalPresenceOutput {
 	readonly lastSeen: string
 }
 
+export interface SignalPresenceOptions {
+	/** Services left out of the traces, logs and metrics branches (onboarding's test trace). */
+	readonly excludeServiceNames?: ReadonlyArray<string>
+}
+
 /**
  * One `service_usage` branch per signal. The window predicate snaps to the hour
  * floor because `service_usage` is keyed on top-of-hour `Hour` — comparing to a
@@ -52,7 +58,9 @@ export interface SignalPresenceOutput {
  * does not cost the zero-row guarantee: these aggregates are group-less, so a
  * branch that matches nothing still returns one row reading `count: 0`.
  */
-export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
+export function signalPresenceQuery(options: SignalPresenceOptions = {}): CHUnionQuery<SignalPresenceOutput> {
+	const excluded = options.excludeServiceNames ?? []
+
 	const traces = from(Datasources.serviceUsage)
 		.select(($) => ({
 			signal: CH.lit("traces"),
@@ -65,6 +73,7 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcHourFloor("endTime")),
 			$.TraceCount.gt(0),
+			...Arr.map(excluded, (name) => $.ServiceName.neq(name)),
 		])
 
 	const logs = from(Datasources.serviceUsage)
@@ -79,6 +88,7 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcHourFloor("endTime")),
 			$.LogCount.gt(0),
+			...Arr.map(excluded, (name) => $.ServiceName.neq(name)),
 		])
 
 	// All four metric shapes count as "metrics are wired" — a service that only
@@ -102,6 +112,7 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 				.add($.HistogramMetricCount)
 				.add($.ExpHistogramMetricCount)
 				.gt(0),
+			...Arr.map(excluded, (name) => $.ServiceName.neq(name)),
 		])
 
 	const sessions = from(Datasources.sessionReplays)

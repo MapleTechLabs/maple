@@ -10,6 +10,7 @@ import {
 	metricsSummaryQuery,
 } from "./metrics"
 import { OrgId } from "@maple/domain"
+import { inlineNestedCteReads } from "../../runtime/raw-sql-ctes"
 
 const baseParams = {
 	orgId: OrgId.make("org_1"),
@@ -291,6 +292,16 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).toContain("FROM with_deltas")
 		expect(sql).toContain("sumIf(with_deltas.delta, with_deltas.delta >= 0) / 3600, 0), 0) AS value")
 		expect(sql).not.toContain("FROM metrics_sum")
+	})
+
+	it("reads no CTE from a nested level, which row-filtered warehouse tokens cannot resolve", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			bucketSeconds: 3600,
+			groupBy: ["service"],
+		})
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(inlineNestedCteReads(sql)).toBe(sql)
 	})
 
 	it("applies span.kind filters on the hourly SpanMetrics calls rollup", () => {

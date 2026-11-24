@@ -116,6 +116,7 @@ describe("connect panel scene", () => {
 			),
 			expect(text(/maple_sk_secret/)).toBeAbsent(),
 			expect(text(/Handoff code \(single use, 1 hour\): ••••••••••/)).toExist(),
+			expect(role("button", { name: "Copy prompt" })).toBeEnabled(),
 			click(role("button", { name: "Copy prompt" })),
 			Command.resolve(
 				AgentHandoff.MintHandoff({ publicKey: "maple_pk_0123456789abcdef" }),
@@ -211,6 +212,9 @@ describe("connect panel scene", () => {
 				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
 			),
 			expect(role("link", { name: "Ingestion settings" })).toHaveAttr("href", "/settings/ingestion"),
+			// A prompt without the key would send to a placeholder ingest drops, so it cannot be copied.
+			expect(role("button", { name: "Copy prompt" })).toBeDisabled(),
+			expect(text(/^The prompt needs your ingest key/)).toExist(),
 			// A failed status read makes no claim either way, matching Settings > Ingestion.
 			expect(text("Status unknown")).toExist(),
 			expect(text("Waiting for telemetry")).toBeAbsent(),

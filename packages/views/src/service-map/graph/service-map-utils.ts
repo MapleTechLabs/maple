@@ -1,3 +1,4 @@
+import type { ServiceIdentity } from "@maple/domain/service-identity"
 import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 import { getServiceColor, getValueHue } from "@maple/ui/lib/colors"
@@ -95,6 +96,8 @@ export interface ServiceNodeData {
 	runsOn?: string
 	platform?: ServicePlatform
 	runtime?: string
+	/** What kind of service it is and its framework; absent on database and external nodes. */
+	identity?: ServiceIdentity
 	dbSystem?: string
 	/** Database identity (db.namespace et al.); "" for the generic per-system node. */
 	dbNamespace?: string
@@ -227,7 +230,8 @@ export const parseDbNodeId = (id: string): { dbSystem: string; dbNamespace: stri
 
 export const DEFAULT_LAYOUT_CONFIG = {
 	nodeWidth: 220,
-	nodeHeight: 70,
+	// A service card with its identity line; the layout spaces nodes by this, not the measured card.
+	nodeHeight: 88,
 	layerGapX: 350,
 	nodeGapY: 40,
 	componentGapY: 60,
@@ -316,6 +320,7 @@ export interface BuildFlowElementsInput {
 	serviceRunsOn?: ReadonlyMap<string, string>
 	platforms?: ReadonlyMap<string, ServicePlatform>
 	runtimes?: ReadonlyMap<string, string>
+	identities?: ReadonlyMap<string, ServiceIdentity>
 	/** Cloudflare direct-integration Worker analytics (instrumented-Worker overlay). */
 	cloudflareServices?: ReadonlyArray<ServiceMapCloudflareRow>
 	/** service.name → faas.name, so a `cloudflare-worker/{script}` can match its instrumented node. */
@@ -352,6 +357,7 @@ export function buildFlowElements({
 	serviceRunsOn,
 	platforms,
 	runtimes,
+	identities,
 	cloudflareServices = [],
 	faasNames,
 	planetscaleDatabases,
@@ -448,6 +454,7 @@ export function buildFlowElements({
 				runsOn: serviceRunsOn?.get(service),
 				platform: platforms?.get(service),
 				runtime: runtimes?.get(service),
+				identity: identities?.get(service),
 				namespace: overview?.serviceNamespace || undefined,
 			},
 		}

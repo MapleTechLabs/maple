@@ -470,6 +470,7 @@ export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(
 			faasName: row.faasName,
 			mapleSdkType: row.mapleSdkType,
 			runtime: row.processRuntimeName,
+			identity: row.identity,
 		})),
 		workloads: Arr.map(result.workloads, (row) => ({
 			serviceName: row.serviceName,

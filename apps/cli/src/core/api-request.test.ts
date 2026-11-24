@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Array as Arr, Option, Result } from "effect"
+import { Array as Arr, Effect, Exit, Option, Result, Tracer } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import {
 	buildBody,
 	errorMessageOf,
@@ -9,7 +10,7 @@ import {
 	withQuery,
 	type Field,
 } from "./api-request"
-import { ApiResponseError } from "../commands/api"
+import { ApiResponseError, sendTraced } from "../commands/api"
 import { describeFailure } from "../lib/failure"
 
 const fields = (...raw: ReadonlyArray<string>): ReadonlyArray<Field> =>
@@ -112,5 +113,34 @@ describe("a refused raw API request", () => {
 		expect(report(404).expected).toBe(true)
 		expect(report(404).message).toBe("GET /v2/x returned HTTP 404")
 		expect(report(502).expected).toBe(false)
+	})
+})
+
+describe("the raw request's client span", () => {
+	test("closes Ok on a 4xx, records the status and propagates the trace", async () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		let traceparent: string | undefined
+		const client = HttpClient.make((request) => {
+			traceparent = request.headers.traceparent
+			return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("{}", { status: 404 })))
+		})
+		const url = new URL("https://api.maple.test/v2/services")
+		const response = await Effect.runPromise(
+			sendTraced(client, HttpClientRequest.get(url.toString()), url).pipe(Effect.withTracer(tracer)),
+		)
+		expect(response.status).toBe(404)
+		expect(spans.length).toBe(1)
+		const span = spans[0]
+		const status = span?.status
+		expect(status?._tag === "Ended" && Exit.isSuccess(status.exit)).toBe(true)
+		expect(span?.attributes.get("http.response.status_code")).toBe(404)
+		expect(traceparent).toBe(`00-${span?.traceId}-${span?.spanId}-01`)
 	})
 })

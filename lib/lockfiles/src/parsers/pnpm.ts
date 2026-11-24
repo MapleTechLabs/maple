@@ -4,6 +4,7 @@ import { parseYamlDocuments } from "../internal/decode.ts"
 import { LockfileParseError } from "../errors.ts"
 import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
 import type { ParserOutput } from "./types.ts"
+import { parseSpan } from "../internal/span.ts"
 
 interface NameVersion {
 	readonly name: string
@@ -66,9 +67,10 @@ const entryNameVersion = (key: string, value: unknown): NameVersion | undefined 
 		: undefined
 }
 
-export const parsePnpmLock = Effect.fn("lockfiles.parsePnpmLock")(function* (input: LockfileInput) {
+export const parsePnpmLock = Effect.fn(function* (input: LockfileInput) {
 	// pnpm 11 can write an env document (the pinned package manager) before the project's.
-	const parsed = yield* parseYamlDocuments(input.path, input.content)
+	// A merge can leave a snapshot twice; pnpm rewrites it on the next install, so read it as it stands.
+	const parsed = yield* parseYamlDocuments(input.path, input.content, { uniqueKeys: false })
 	const docs = Arr.filter(parsed, isRecord)
 	if (!Arr.some(docs, (doc) => doc.lockfileVersion !== undefined)) {
 		return yield* new LockfileParseError({
@@ -101,4 +103,4 @@ export const parsePnpmLock = Effect.fn("lockfiles.parsePnpmLock")(function* (inp
 		skipped.size > 0 ? [`skipped ${skipped.size} non-registry packages (git, tarball or local)`] : []
 	const output: ParserOutput = { kind: "pnpm-lock", packages, warnings }
 	return output
-})
+}, parseSpan("lockfiles.parsePnpmLock"))

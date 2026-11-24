@@ -14,6 +14,8 @@ export const ONBOARDING_REWARD_WINDOW_MS = 24 * 60 * 60 * 1000
 export const ONBOARDING_REWARD_AMOUNT_USD = 30
 /** Id of the Autumn reward the API applies to the org's subscription; defined in `apps/api/autumn.config.ts`. */
 export const ONBOARDING_REWARD_ID = "onboarding_checklist"
+/** The service Quick Start's "Send test trace" reports as: proof the pipeline works, not an app. */
+export const ONBOARDING_TEST_TRACE_SERVICE = "maple-test"
 
 export const ONBOARDING_CHECKLIST_STEP_IDS = [
 	"send_telemetry",

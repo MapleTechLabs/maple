@@ -79,6 +79,15 @@ describe("reviewFailureReason over a provider failure", () => {
 		assert.equal(reviewFailureReason(midStream, ORG_KEY), "provider_unavailable")
 	})
 
+	it("reads a malformed response as the model's error, not Maple's", () => {
+		const cutShort = Cause.fail(
+			ModelProtocolError.make({
+				message: "Model response declared Tool Call call-1 before its parameters completed",
+			}),
+		)
+		assert.equal(reviewFailureReason(cutShort, ORG_KEY), "model_error")
+	})
+
 	it("still reports a typed limit over a provider failure", () => {
 		assert.equal(
 			reviewFailureReason(Cause.combine(rejectedKey, policy("duration")), MAPLE_KEY),
