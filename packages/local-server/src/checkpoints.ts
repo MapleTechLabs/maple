@@ -286,8 +286,9 @@ const MISSING_BACKUPS_CONFIG_MESSAGE =
 
 /**
  * A checkpoint the CLI correctly refuses to take: the running server's chDB
- * config carries no `<backups>` stanza. An unmet precondition, not a failure, so
- * `expected` lets `bin.ts` exit 1 with the root span `Ok` (`recoverExpected`).
+ * config carries no `<backups>` stanza, or another live maintenance operation
+ * holds the store. An unmet precondition, not a failure, so `expected` lets
+ * `bin.ts` exit 1 with the root span `Ok` (`recoverExpected`).
  */
 export class CheckpointPreconditionError extends Schema.TaggedError<CheckpointPreconditionError>()(
 	"@maple/cli/CheckpointPreconditionError",
@@ -295,6 +296,14 @@ export class CheckpointPreconditionError extends Schema.TaggedError<CheckpointPr
 ) {
 	readonly expected = true
 }
+
+/** A live process holds the store's maintenance lock: a concurrent checkpoint, restore or archive. */
+export class MaintenanceLockBusyError extends Schema.TaggedError<MaintenanceLockBusyError>()(
+	"@maple/cli/MaintenanceLockBusyError",
+	{ lockPath: Schema.String, pid: Schema.Number, message: Schema.String },
+) {}
+
+const isMaintenanceLockBusy = Schema.is(MaintenanceLockBusyError)
 
 export class CheckpointRecoveryError extends Schema.TaggedError<CheckpointRecoveryError>()(
 	"@maple/cli/CheckpointRecoveryError",
@@ -1419,10 +1428,13 @@ const acquireMaintenance = async (
 				throw new Error(`maintenance lock is present but ownership is uncertain: ${lockPath}`)
 			}
 		} else if (await maintenanceOwnerIsLive(owner, lockPath)) {
-			throw new Error(
-				`another Maple maintenance operation is active (PID ${owner.pid}). ` +
+			throw new MaintenanceLockBusyError({
+				lockPath,
+				pid: owner.pid,
+				message:
+					`another Maple maintenance operation is active (PID ${owner.pid}). ` +
 					`If no Maple process uses this store (for example after a container restart), remove ${lockPath} and retry.`,
-			)
+			})
 		}
 		const quarantinedLock = `${lockPath}.quarantine-${randomUUID()}`
 		await durableRename(lockPath, quarantinedLock)
@@ -2300,7 +2312,12 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 	// derives this span's status from that channel, and a refused precondition
 	// must not close `CheckpointService.create` as `Error`. `createCheckpoint`
 	// below re-raises it once the span has closed, so callers still see a failure.
-	return yield* withMaintenance(options.dataDir, operationId, createError("lock"), () =>
+	// Another checkpoint or restore holding the store is a refusal to retry later, not a failure.
+	const lockError = (error: unknown): CheckpointCreateError | CheckpointPreconditionError =>
+		isMaintenanceLockBusy(error)
+			? new CheckpointPreconditionError({ dataDir: resolve(options.dataDir), message: error.message })
+			: createError("lock")(error)
+	return yield* withMaintenance(options.dataDir, operationId, lockError, () =>
 		Effect.gen(function* () {
 			const prepared = yield* Effect.tryPromise({
 				try: async () => {
