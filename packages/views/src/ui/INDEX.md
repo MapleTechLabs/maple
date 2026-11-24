@@ -201,7 +201,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 
 - `apps/web/src/page/kit/advanced-filter.ts` `advancedFilterButton`, `appliedWhereClause`, `advancedFilterDialog`, `whereClauseWarnings`: The pieces around a list page's advanced filter dialog (`/traces`, `/logs`).
 - `apps/web/src/page/kit/affected-chips.ts` `affectedChips`: The entities a setup-health check names, as chips with a "+N more" for the rest past the cap.
-- `apps/web/src/page/kit/agent-handoff-view.ts` `agentProgress`, `agentPrompt`: The coding-agent prompt with its handoff code masked, a Copy prompt that mints the code, and the agent's progress once a run exists.
+- `apps/web/src/page/kit/agent-handoff-view.ts` `agentProgress`, `missingKeyNote`, `agentPrompt`: The coding-agent prompt with its handoff code masked, a Copy prompt that mints the code, and the agent's progress once a run exists.
 - `apps/web/src/page/kit/agent-handoff.ts` `mintHandoff`, `isRunOpen`, `isPolling`, `shouldReadRun`, `shown` (stateful: Model, init, update): The coding-agent prompt's handoff: Copy mints a single-use code into the prompt (a new run), and the run's stages are read back while the connect step polls.
 - `apps/web/src/page/kit/alert-collections.ts` `ruleRows`, `ruleStateRows`, `incidentRows`, `destinationRows`: The alert rules, incidents and destinations as live streams.
 - `apps/web/src/page/kit/alert-links.ts` `ruleHref`, `incidentHref`, `alertsHref`, `createHref`: A rule's page.

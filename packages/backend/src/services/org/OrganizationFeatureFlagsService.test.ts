@@ -51,8 +51,8 @@ describe("answeringWithin", () => {
 const fakeClerkFetch = (respond: () => Response) => {
 	const calls = { count: 0 }
 	const fetchImpl: typeof globalThis.fetch = async (input) => {
-		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		if (Str.includes("api.clerk.com")(url) && Str.includes("/organizations/")(url)) {
+		const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+		if (url.hostname === "api.clerk.com" && Str.includes("/organizations/")(url.pathname)) {
 			calls.count++
 			return respond()
 		}
@@ -161,4 +161,26 @@ describe("OrganizationFeatureFlagsService", () => {
 			)
 		},
 	)
+
+	it.effect("a stale shared answer whose delete fails is still not served", () => {
+		let enabled = true
+		const clerk = fakeClerkFetch(() => clerkOrganization({ datasources: enabled }))
+		const memory = makeMemoryBackend()
+		// Writes land 10s late and deletes never take, so the stale entry survives the invalidate.
+		const stuck = Layer.succeed(
+			CacheBackend,
+			CacheBackend.of({
+				...memory,
+				put: (bucket, hash, value, ttlSeconds, nowMs) =>
+					memory.put(bucket, hash, value, ttlSeconds, nowMs + 10_000),
+				delete: () => Effect.void,
+			}),
+		)
+		return Effect.gen(function* () {
+			expect((yield* readInFreshIsolate).dataSources).toBe(true)
+			enabled = false
+			yield* TestClock.adjust(Duration.seconds(35))
+			expect((yield* readInFreshIsolate).dataSources).toBe(false)
+		}).pipe(Effect.provide([clerkEnv, EdgeCacheService.layer.pipe(Layer.provide(stuck)), clerk.layer]))
+	})
 })
