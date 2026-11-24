@@ -278,7 +278,7 @@ export const resolveAction = <M>(
 
 /** What a resolve by hand does, said before it is done: the all-clear cannot be taken back. */
 export const RESOLVE_DIALOG_DESCRIPTION =
-	"Everyone this incident notified gets the all-clear, and its escalation stops. If the rule still breaches, no new incident opens for it until one healthy check has been seen."
+	"Everyone this incident notified gets the all-clear, and its escalation stops. If the rule still breaches, no new incident opens for it until a check reads healthy or reads no data, and for a day at most."
 
 /** A link to the incident's investigation, or the button that starts one for who may run one. */
 const investigateAction = (

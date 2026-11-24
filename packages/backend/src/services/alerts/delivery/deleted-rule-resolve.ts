@@ -13,8 +13,6 @@ import { queuedDeliveryEventRow } from "../alert-delivery-rows"
 import { DELETED_RULE_RESOLVE_DETAIL } from "./resolution-notes"
 import { StoredDeliveryPayloadSchema } from "./stored-payload"
 
-
-
 /**
  * How long the all-clear waits for a page still on its way out: sent first, a pager keyed by
  * incident would take the late page as a new alert.

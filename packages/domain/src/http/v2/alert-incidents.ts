@@ -425,7 +425,7 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 				identifier: "resolveAlertIncident",
 				summary: "Resolve an alert incident",
 				description:
-					"Resolves an open incident by hand and sends the all-clear to every destination it notified. If the rule still breaches, it opens no new incident for this group until one healthy check has been seen, so a resolve is not undone a minute later. Fails with 409 on an incident that is already resolved. Requires the `alerts:write` scope.",
+					"Resolves an open incident by hand and sends the all-clear to every destination it notified. If the rule still breaches, it opens no new incident for this group until a check reads healthy or reads no data, and for a day at most, so a resolve is not undone a minute later. Fails with 409 on an incident that is already resolved. Requires the `alerts:write` scope.",
 			}),
 		),
 	)

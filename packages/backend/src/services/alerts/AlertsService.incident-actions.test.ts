@@ -8,9 +8,15 @@ import {
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Duration, Effect, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/testing/test-pglite"
 import type { AlertIncidentActor } from "./AlertIncidentAckService"
-import { type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi, QUIET_AFTER_RESOLVE_CEILING_MS } from "./AlertsService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
 	adminRoles,
@@ -49,7 +55,12 @@ const recordingFetch = (requests: Array<Request>) =>
 		const body = init?.body
 		requests.push({
 			event: new Headers(init?.headers).get("x-maple-event-type") ?? "",
-			body: body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : "",
+			body:
+				body instanceof Uint8Array
+					? new TextDecoder().decode(body)
+					: typeof body === "string"
+						? body
+						: "",
 		})
 		return new Response("ok", { status: 200 })
 	}) as typeof fetch
@@ -87,13 +98,10 @@ const firing = (alerts: Effect.Success<typeof alertServices>, orgId: OrgId, user
 				signingSecret: "team-secret",
 			}),
 		)
-		yield* alerts.createRule(
-			orgId,
-			userId,
-			adminRoles,
+		const request = (enabled: boolean) =>
 			new AlertRuleUpsertRequest({
 				name: "Checkout error rate",
-				enabled: true,
+				enabled,
 				serviceNames: ["checkout"],
 				signalType: "error_rate",
 				comparator: "gt",
@@ -103,45 +111,57 @@ const firing = (alerts: Effect.Success<typeof alertServices>, orgId: OrgId, user
 				consecutiveBreachesRequired: 2,
 				consecutiveHealthyRequired: 2,
 				renotifyIntervalMinutes: 60,
-			}),
-		)
+			})
+		const rule = yield* alerts.createRule(orgId, userId, adminRoles, request(true))
 		yield* ticks(alerts, 2)
 		const [incident] = (yield* alerts.listIncidents(orgId)).incidents
 		if (incident === undefined) return yield* Effect.die("expected an open incident")
-		return incident
+		const setEnabled = (enabled: boolean) =>
+			alerts.updateRule(orgId, userId, adminRoles, rule.id, request(enabled))
+		return { ...incident, ruleId: rule.id, setEnabled }
 	})
+
+const statuses = (alerts: AlertsServiceApi, orgId: OrgId) =>
+	Effect.map(alerts.listIncidents(orgId), (list) => Arr.map(list.incidents, (row) => row.status))
 
 describe("AlertsService manual resolve", () => {
 	const dana: AlertIncidentActor = { userId: asUserId("user_dana"), name: "Dana Kim", source: "web" }
 
-	it.effect("closes the incident, sends an all-clear that says who resolved it, and refuses a second resolve", () => {
-		const testDb = createTestDb(trackedDbs)
-		const state = { tracesAggregateRows: errorRateRows(10) }
-		const requests: Array<Request> = []
-		return Effect.gen(function* () {
-			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* alertServices
-			const orgId = asOrgId("org_manual_resolve")
-			const incident = yield* firing(alerts, orgId, asUserId("user_manual_resolve"))
+	it.effect(
+		"closes the incident, sends an all-clear that says who resolved it, and refuses a second resolve",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) }
+			const requests: Array<Request> = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* alertServices
+				const orgId = asOrgId("org_manual_resolve")
+				const incident = yield* firing(alerts, orgId, asUserId("user_manual_resolve"))
 
-			const resolved = yield* alerts.resolveIncident(orgId, incident.id, dana)
-			assert.strictEqual(resolved.status, "resolved")
-			yield* tick(alerts)
+				const resolved = yield* alerts.resolveIncident(orgId, incident.id, dana)
+				assert.strictEqual(resolved.status, "resolved")
+				yield* tick(alerts)
 
-			const allClear = Arr.findFirst(requests, (request) => request.event === "resolve")
-			assert.isTrue(allClear._tag === "Some")
-			assert.isTrue(Str.includes("Resolved by Dana Kim")(allClear._tag === "Some" ? allClear.value.body : ""))
+				const allClear = Arr.findFirst(requests, (request) => request.event === "resolve")
+				assert.isTrue(allClear._tag === "Some")
+				assert.isTrue(
+					Str.includes("Resolved by Dana Kim")(allClear._tag === "Some" ? allClear.value.body : ""),
+				)
 
-			const again = yield* Effect.flip(alerts.resolveIncident(orgId, incident.id, dana))
-			assert.strictEqual(again._tag, "@maple/http/errors/AlertIncidentResolvedError")
-			const elsewhere = yield* Effect.flip(
-				alerts.resolveIncident(asOrgId("org_manual_resolve_other"), incident.id, dana),
+				const again = yield* Effect.flip(alerts.resolveIncident(orgId, incident.id, dana))
+				assert.strictEqual(again._tag, "@maple/http/errors/AlertIncidentResolvedError")
+				const elsewhere = yield* Effect.flip(
+					alerts.resolveIncident(asOrgId("org_manual_resolve_other"), incident.id, dana),
+				)
+				assert.strictEqual(elsewhere._tag, "@maple/http/errors/AlertIncidentNotFoundError")
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
 			)
-			assert.strictEqual(elsewhere._tag, "@maple/http/errors/AlertIncidentNotFoundError")
-		}).pipe(
-			Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) })),
-		)
-	})
+		},
+	)
 
 	it.effect("opens nothing while the rule still breaches, and opens again once it has been healthy", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -173,5 +193,85 @@ describe("AlertsService manual resolve", () => {
 		}).pipe(
 			Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) })),
 		)
+	})
+	/** Resolved by hand while breaching, then `after` runs and the breach is back for two checks. */
+	const reopensAfter = (
+		orgName: string,
+		after: (
+			alerts: Effect.Success<typeof alertServices>,
+			incident: Effect.Success<ReturnType<typeof firing>>,
+			state: { tracesAggregateRows: ReadonlyArray<Record<string, unknown>> },
+		) => Effect.Effect<unknown, unknown>,
+	) => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId(orgName)
+			const incident = yield* firing(alerts, orgId, asUserId(`user_${orgName}`))
+			yield* alerts.resolveIncident(orgId, incident.id, dana)
+			yield* ticks(alerts, 3)
+			assert.deepStrictEqual(yield* statuses(alerts, orgId), ["resolved"])
+
+			yield* after(alerts, incident, state)
+			state.tracesAggregateRows = errorRateRows(10)
+			yield* ticks(alerts, 3)
+			assert.sameMembers(yield* statuses(alerts, orgId), ["resolved", "open"])
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch([]) })))
+	}
+
+	it.effect("opens again after the rule read no data at all, which is as well as it gets", () =>
+		reopensAfter("org_manual_no_data", (alerts, _incident, state) =>
+			Effect.gen(function* () {
+				state.tracesAggregateRows = []
+				yield* ticks(alerts, 2)
+			}),
+		),
+	)
+
+	it.effect("opens again after a day, however long the breach lasts", () =>
+		reopensAfter("org_manual_ceiling", () =>
+			TestClock.adjust(Duration.millis(QUIET_AFTER_RESOLVE_CEILING_MS)),
+		),
+	)
+
+	it.effect("opens again after the rule was switched off and on", () =>
+		reopensAfter("org_manual_toggled", (_alerts, incident) =>
+			Effect.gen(function* () {
+				yield* incident.setEnabled(false)
+				yield* incident.setEnabled(true)
+			}),
+		),
+	)
+
+	it.effect("leaves the incident open when its all-clear cannot be prepared", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_manual_unprepared")
+			const incident = yield* firing(alerts, orgId, asUserId("user_manual_unprepared"))
+			// The stored rule no longer decodes, so no all-clear can be built from it.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`update alert_rules set thresholds_json = '[{"severity":"not-a-severity","value":1,"upper":null,"recoveryValue":null,"destinationIds":[]}]'::jsonb where id = $1`,
+					[incident.ruleId],
+				),
+			)
+
+			const refused = yield* Effect.flip(alerts.resolveIncident(orgId, incident.id, dana))
+			assert.strictEqual(refused._tag, "@maple/http/errors/AlertPersistenceError")
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ status: string }>(
+					testDb,
+					"select status from alert_incidents where id = $1",
+					[incident.id],
+				),
+			)
+			assert.strictEqual(row?.status, "open")
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch([]) })))
 	})
 })

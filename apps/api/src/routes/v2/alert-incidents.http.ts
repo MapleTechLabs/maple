@@ -11,7 +11,7 @@ import type { V2AlertIncident, V2AlertIncidentEscalation, V2AlertIncidentEvent }
 import { MapleApiV2, paginateOffsetQuery, timestampOrNull } from "@maple/domain/http/v2"
 import { Duration, Effect, Option, Array as Arr } from "effect"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertIncidentResolver } from "@maple/backend/services/alerts/AlertIncidentResolver"
 import {
 	AlertIncidentAckService,
 	type AlertIncidentActor,
@@ -121,7 +121,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 	Effect.gen(function* () {
 		const readModels = yield* AlertReadModelsService
 		const acks = yield* AlertIncidentAckService
-		const alerts = yield* AlertsService
+		const resolver = yield* AlertIncidentResolver
 		const pagesService = yield* AlertIncidentPagesService
 		const members = yield* OrgMembersService
 
@@ -216,7 +216,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 			.handle("resolve", ({ params }) =>
 				Effect.gen(function* () {
 					const { orgId, actor } = yield* callerActor
-					const incident = yield* alerts.resolveIncident(orgId, params.id, actor)
+					const incident = yield* resolver.resolve(orgId, params.id, actor)
 					return yield* withEscalation(orgId, incident)
 				}).pipe(Effect.withSpan("HttpV2AlertIncidents.resolve")),
 			)

@@ -42,6 +42,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertIncidentResolver } from "@maple/backend/services/alerts/AlertIncidentResolver"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
@@ -261,6 +262,7 @@ const makeHarness = (
 					Layer.provide(
 						Layer.mergeAll(
 							Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+							Layer.effect(AlertIncidentResolver, AlertIncidentResolver.make),
 							Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make),
 						),
 					),

@@ -14,7 +14,7 @@ export function registerResolveAlertIncidentTool(server: McpToolRegistrar) {
 		title: "Resolve Alert Incident",
 		description:
 			"Resolve an open alert incident by hand. Every destination it notified gets the all-clear. " +
-			"If its rule still breaches, no new incident opens for that group until one healthy check has been seen, so the resolve is not undone a minute later. " +
+			"If its rule still breaches, no new incident opens for that group until a check reads healthy or reads no data, and for a day at most, so the resolve is not undone a minute later. " +
 			"To keep an incident open but quiet, use acknowledge_alert_incident or a silence instead. Only open incidents; ids from list_alert_incidents.",
 		parameters: Schema.Struct({
 			incident_id: P.resourceId("alertIncident", "Alert incident ID"),
@@ -67,7 +67,7 @@ export function registerResolveAlertIncidentTool(server: McpToolRegistrar) {
 			title: "Incident Resolved",
 			blocks: [
 				doc.text(
-					"Resolved by hand. Its rule opens no new incident for this group until one healthy check has been seen.",
+					"Resolved by hand. Its rule opens no new incident for this group until a check reads healthy or reads no data, and for a day at most.",
 				),
 				doc.fields([
 					["Incident", output.id],

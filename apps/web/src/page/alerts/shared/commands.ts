@@ -42,7 +42,9 @@ export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
 			return next !== null && pages + 1 < maxPages
 		})
 		yield* readPage.pipe(Effect.repeat({ while: (hasMore) => hasMore }))
-		return Arr.map((yield* Ref.get(progress)).rows, v2DeliveryToDocument)
+		// The list moves while it is read: a delivery added between two pages comes back twice.
+		const unique = Arr.dedupeWith((yield* Ref.get(progress)).rows, (a, b) => a.id === b.id)
+		return Arr.map(unique, v2DeliveryToDocument)
 	})
 
 export const listDeliveries = (incidentId?: AlertIncidentId) =>

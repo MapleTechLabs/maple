@@ -221,6 +221,18 @@ describe("renderIncidentPush", () => {
 		expect(resolved.sound).toBe(null)
 	})
 
+	it("says who resolved an incident by hand, not that its value came back", () => {
+		const resolved = renderIncidentPush(
+			event({
+				eventType: "resolve",
+				value: null,
+				openForMs: 2 * 3_600_000,
+				resolutionNote: "Resolved by Dana Kim",
+			}),
+		)
+		expect(resolved.alert.body).toBe("Resolved by Dana Kim after 2h.")
+	})
+
 	it("says what the telemetry did when a resolve ends a hold, not 'back to'", () => {
 		// No recovered value was ever measured: the breach stopped showing up
 		// while traffic was thin, and the hold ceiling elapsed. "Back to 0%"

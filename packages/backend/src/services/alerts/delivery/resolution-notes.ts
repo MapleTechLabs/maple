@@ -13,4 +13,5 @@ export const manualResolveNote = (name: string | null): string =>
 	`${MANUAL_RESOLVE_PREFIX}${name ?? "a teammate"}`
 
 export const isResolutionNote = (detail: string | null | undefined): detail is string =>
-	detail != null && (detail === DELETED_RULE_RESOLVE_DETAIL || Str.startsWith(MANUAL_RESOLVE_PREFIX)(detail))
+	detail != null &&
+	(detail === DELETED_RULE_RESOLVE_DETAIL || Str.startsWith(MANUAL_RESOLVE_PREFIX)(detail))
