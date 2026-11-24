@@ -2,6 +2,7 @@
 import {
 	type AuditEventJob,
 	type RuleSuiteScanJob,
+	type VcsRepositoryId,
 	type AuditTrailPersistenceError,
 	type BranchEventJob,
 	type InstallationSyncJob,
@@ -40,6 +41,7 @@ import {
 	Option,
 	Schema,
 	Match,
+	Ref,
 	Array as Arr,
 	String as Str,
 } from "effect"
@@ -81,6 +83,21 @@ const RULE_SUITE_SCAN_BATCH = 50
 const RULE_SUITE_FIRST_READ_MS = 60 * 60 * 1000
 /** How long a force push waits on GitHub for its branch's pull requests before it is kept unattributed. */
 const FORCE_PUSH_LOOKUP_BUDGET = Duration.seconds(20)
+
+/** A repository a refused-push scan reads, and how far it was read. */
+interface RuleSuiteScanTarget {
+	readonly id: VcsRepositoryId
+	readonly externalRepoId: string
+	readonly owner: string
+	readonly name: string
+	readonly ruleSuitesReadUntil: number | null
+}
+
+interface RuleSuiteScanOutcome {
+	readonly status: "read" | "unavailable" | "failed" | "rate_limited"
+	readonly refused: number
+	readonly retryAfterSeconds?: number
+}
 
 /** An audit event for an installation not stored yet waits this many times, this long each. */
 const AUDIT_INSTALLATION_WAITS = 5
@@ -1203,10 +1220,107 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				}
 			})
 
-			// The pushes each repository's rulesets refused since its cursor, written as audit events,
-			// then the cursor moves to the newest one. A repository GitHub will not answer for (no
-			// Administration: read, or no rule insights on its plan) is skipped; a rate limit ends
-			// the scan, and the next one picks up from the cursors.
+			// One repository's refusals since its cursor, written oldest first; the cursor moves past
+			// what was written, so a failed write leaves the rest for the next scan.
+			const scanRefusedPushes = Effect.fn("VcsSyncService.scanRefusedPushes")(function* (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				target: RuleSuiteScanTarget,
+				now: number,
+			) {
+				if (auditSink === undefined)
+					return { status: "read", refused: 0 } satisfies RuleSuiteScanOutcome
+				const read = yield* provider
+					.fetchRefusedPushes(
+						installation,
+						{
+							externalRepoId: target.externalRepoId,
+							owner: target.owner,
+							name: target.name,
+							fullName: `${target.owner}/${target.name}`,
+						},
+						{ sinceMs: target.ruleSuitesReadUntil ?? now - RULE_SUITE_FIRST_READ_MS, nowMs: now },
+					)
+					.pipe(
+						Effect.map((found) => ({ _tag: "Read" as const, ...found })),
+						Effect.catchTags({
+							"@maple/http/errors/VcsRateLimitedError": (error) =>
+								Effect.succeed({
+									_tag: "RateLimited" as const,
+									retryAfterSeconds: error.retryAfterSeconds,
+								}),
+							"@maple/http/errors/VcsRepoUnavailableError": () =>
+								Effect.succeed({ _tag: "Unavailable" as const }),
+							"@maple/http/errors/VcsRepositoryBlockedError": () =>
+								Effect.succeed({ _tag: "Unavailable" as const }),
+							// A 403 is a repository the token cannot see rulesets on; anything else is a failure.
+							"@maple/http/errors/VcsProviderError": (error) =>
+								error.status === 403
+									? Effect.succeed({ _tag: "Unavailable" as const })
+									: Effect.logWarning("[VCS] Refused pushes could not be read").pipe(
+											Effect.annotateLogs({
+												"vcs.repository.id": target.id,
+												"vcs.error": error.message,
+											}),
+											Effect.as({ _tag: "Failed" as const }),
+										),
+						}),
+					)
+				if (read._tag === "RateLimited")
+					return {
+						status: "rate_limited",
+						refused: 0,
+						retryAfterSeconds: read.retryAfterSeconds,
+					} satisfies RuleSuiteScanOutcome
+				if (read._tag === "Unavailable")
+					return { status: "unavailable", refused: 0 } satisfies RuleSuiteScanOutcome
+				if (read._tag === "Failed")
+					return { status: "failed", refused: 0 } satisfies RuleSuiteScanOutcome
+				if (read.truncated)
+					yield* Effect.logWarning(
+						"[VCS] More refused pushes than one read takes; the oldest were skipped",
+					).pipe(Effect.annotateLogs({ "vcs.repository.id": target.id }))
+				// Events go out oldest first, so after a failed write the cursor stops at the last one written.
+				const written = yield* Ref.make<{ readonly at: number | undefined; readonly count: number }>({
+					at: undefined,
+					count: 0,
+				})
+				const failed = yield* Effect.forEach(
+					read.events,
+					(event) =>
+						auditSink
+							.onAuditEvent(installation.orgId, event)
+							.pipe(
+								Effect.andThen(
+									Ref.update(written, (sofar) => ({
+										at: event.occurredAtMs,
+										count: sofar.count + 1,
+									})),
+								),
+							),
+					{ discard: true },
+				).pipe(
+					Effect.as(false),
+					Effect.catchTag("@maple/http/errors/AuditTrailPersistenceError", () =>
+						Effect.succeed(true),
+					),
+				)
+				const done = yield* Ref.get(written)
+				const readUntil = failed ? done.at : read.newestMs
+				if (readUntil !== undefined) yield* repo.advanceRuleSuitesReadUntil(target.id, readUntil)
+				if (failed)
+					yield* Effect.logError("[VCS] Refused pushes could not be written to the audit log").pipe(
+						Effect.annotateLogs({ "vcs.repository.id": target.id }),
+					)
+				return {
+					status: failed ? "failed" : "read",
+					refused: done.count,
+				} satisfies RuleSuiteScanOutcome
+			})
+
+			// The pushes each installation's rulesets refused, a batch of repositories at a time. An
+			// installation that never granted Administration: read is skipped whole; a rate limit
+			// retries the same batch once GitHub allows it, and the cursors keep what was read.
 			const handleRuleSuiteScan = Effect.fn("VcsSyncService.handleRuleSuiteScan")(function* (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
@@ -1214,10 +1328,19 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			) {
 				if (!(yield* ensureProcessable(installation, job.kind))) return
 				const collected =
+					auditSink !== undefined &&
 					installation.auditLogEnabled &&
 					githubAuditCategoryEnabled(installation.auditCategories, "refusedPushes")
 				yield* Effect.annotateCurrentSpan({ "vcs.rule_suites.collected": collected })
-				if (auditSink === undefined || !collected) return
+				if (!collected) return
+				const permitted = yield* provider.canReadRuleSuites(installation).pipe(
+					Effect.catchTags({
+						"@maple/http/errors/VcsRepositoryBlockedError": () => Effect.succeed(false),
+						"@maple/http/errors/VcsRepoUnavailableError": () => Effect.succeed(false),
+					}),
+				)
+				yield* Effect.annotateCurrentSpan({ "vcs.rule_suites.permitted": permitted })
+				if (!permitted) return
 				const targets = yield* repo.listRuleSuiteScanTargets(
 					installation.id,
 					job.afterRepositoryId,
@@ -1226,63 +1349,31 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				const now = yield* Clock.currentTimeMillis
 				const outcomes = yield* Effect.forEach(
 					targets,
-					(target) =>
-						provider
-							.fetchRefusedPushes(
-								installation,
-								{
-									externalRepoId: target.externalRepoId,
-									owner: target.owner,
-									name: target.name,
-									fullName: `${target.owner}/${target.name}`,
-								},
-								{
-									sinceMs: target.ruleSuitesReadUntil ?? now - RULE_SUITE_FIRST_READ_MS,
-									nowMs: now,
-								},
-							)
-							.pipe(
-								Effect.flatMap(({ events, newestMs }) =>
-									Effect.forEach(
-										events,
-										(event) => auditSink.onAuditEvent(installation.orgId, event),
-										{
-											discard: true,
-										},
-									).pipe(
-										Effect.andThen(
-											newestMs === undefined
-												? Effect.void
-												: repo.advanceRuleSuitesReadUntil(target.id, newestMs),
-										),
-										Effect.as({ refused: events.length, status: "read" as const }),
-									),
-								),
-								Effect.catchTags({
-									"@maple/http/errors/VcsRateLimitedError": () =>
-										Effect.succeed({ refused: 0, status: "rate_limited" as const }),
-									"@maple/http/errors/VcsRepoUnavailableError": () =>
-										Effect.succeed({ refused: 0, status: "unavailable" as const }),
-									"@maple/http/errors/VcsRepositoryBlockedError": () =>
-										Effect.succeed({ refused: 0, status: "unavailable" as const }),
-									"@maple/http/errors/VcsProviderError": () =>
-										Effect.succeed({ refused: 0, status: "unavailable" as const }),
-								}),
-							),
+					(target) => scanRefusedPushes(provider, installation, target, now),
 					{ concurrency: 4 },
 				)
-				const rateLimited = Arr.some(outcomes, (outcome) => outcome.status === "rate_limited")
+				const count = (status: RuleSuiteScanOutcome["status"]) =>
+					Arr.filter(outcomes, (outcome) => outcome.status === status).length
+				const retryAfter = Arr.reduce(outcomes, 0, (max, outcome) =>
+					Math.max(max, outcome.retryAfterSeconds ?? 0),
+				)
+				const rateLimited = count("rate_limited") > 0
 				const last = Arr.last(targets)
-				const more = targets.length === RULE_SUITE_SCAN_BATCH && !rateLimited && Option.isSome(last)
+				const more = targets.length === RULE_SUITE_SCAN_BATCH && Option.isSome(last)
 				yield* Effect.annotateCurrentSpan({
 					"vcs.rule_suites.repositories": targets.length,
-					"vcs.rule_suites.unavailable": Arr.filter(outcomes, (o) => o.status === "unavailable")
-						.length,
+					"vcs.rule_suites.unavailable": count("unavailable"),
+					"vcs.rule_suites.failed": count("failed"),
 					"vcs.rule_suites.rate_limited": rateLimited,
-					"vcs.rule_suites.refused": Arr.reduce(outcomes, 0, (sum, o) => sum + o.refused),
-					"vcs.rule_suites.continued": more,
+					"vcs.rule_suites.refused": Arr.reduce(
+						outcomes,
+						0,
+						(sum, outcome) => sum + outcome.refused,
+					),
+					"vcs.rule_suites.continued": more || rateLimited,
 				})
-				if (more)
+				if (rateLimited) yield* queue.send(job, { delaySeconds: Math.max(retryAfter, 60) })
+				else if (more)
 					yield* queue.send({
 						kind: "rule-suite-scan",
 						provider: job.provider,

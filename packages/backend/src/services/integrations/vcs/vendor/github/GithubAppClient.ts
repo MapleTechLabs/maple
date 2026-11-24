@@ -1038,17 +1038,20 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					permissions === undefined ||
 					permissions[permission] === "read" ||
 					permissions[permission] === "write"
-			const grantsActions = grants("actions")
-			const canReadActions = Effect.fnUntraced(function* (externalInstallationId: string) {
-				const token = yield* installationToken(externalInstallationId)
-				const now = yield* Clock.currentTimeMillis
-				if (grantsActions(token) || now - token.mintedAtMs < PERMISSION_DENIAL_RECHECK_MS) {
-					return grantsActions(token)
-				}
-				yield* installationTokens.remove(externalInstallationId)
-				const refreshed = yield* installationToken(externalInstallationId)
-				return grantsActions(refreshed)
-			})
+			const canRead = (granted: (token: InstallationToken) => boolean) =>
+				Effect.fnUntraced(function* (externalInstallationId: string) {
+					const token = yield* installationToken(externalInstallationId)
+					const now = yield* Clock.currentTimeMillis
+					if (granted(token) || now - token.mintedAtMs < PERMISSION_DENIAL_RECHECK_MS) {
+						return granted(token)
+					}
+					yield* installationTokens.remove(externalInstallationId)
+					const refreshed = yield* installationToken(externalInstallationId)
+					return granted(refreshed)
+				})
+			const canReadActions = canRead(grants("actions"))
+			// Rule insights need repository `administration: read`.
+			const canReadAdministration = canRead(grants("administration"))
 
 			const authedGet = (
 				_config: ResolvedAppConfig,
@@ -2904,6 +2907,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			return {
 				mintInstallationToken,
+				canReadAdministration,
 				checkAccountAdmin,
 				listInstallationRepositories,
 				listBranches,

@@ -2073,6 +2073,12 @@ describe("VcsSyncService orchestrator", () => {
 		readonly refusedPushes?: (repoName: string) => ReturnType<VcsProviderClient["fetchRefusedPushes"]>
 		/** Each refused-push read the stubbed provider served: the repository and its cursor. */
 		readonly refusedPushReads?: Array<{ repo: string; sinceMs: number }>
+		/** False when the stubbed installation has not granted access to rule insights. */
+		readonly ruleSuitesReadable?: boolean
+		/** The audit sink fails the write of this event id only. */
+		readonly auditWriteFailsOn?: string
+		/** The audit sink fails the write of this event id only. */
+		readonly auditWriteFailsOn?: string
 		/** CI job logs the sync service forwarded, read to the end. */
 		readonly forwardedLogs?: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }>
 		/** The lines the stubbed provider serves as any job's log. */
@@ -2163,13 +2169,14 @@ describe("VcsSyncService orchestrator", () => {
 					: opts.workflowAnnotationsError
 						? Effect.fail(opts.workflowAnnotationsError)
 						: Effect.succeed(opts.workflowAnnotations ?? []),
+			canReadRuleSuites: () => Effect.succeed(opts.ruleSuitesReadable ?? true),
 			fetchRefusedPushes: (_installation, repo, request) =>
 				Effect.sync(() =>
 					opts.refusedPushReads?.push({ repo: repo.name, sinceMs: request.sinceMs }),
 				).pipe(
 					Effect.andThen(
 						opts.refusedPushes?.(repo.name) ??
-							Effect.succeed({ events: [], newestMs: undefined }),
+							Effect.succeed({ events: [], newestMs: undefined, truncated: false }),
 					),
 				),
 			fetchPullRequests: (_installation, _repo, request) =>
@@ -2245,7 +2252,7 @@ describe("VcsSyncService orchestrator", () => {
 				? Layer.empty
 				: Layer.succeed(AuditEventSink, {
 						onAuditEvent: (orgId, event) =>
-							opts.auditWriteFails === true
+							opts.auditWriteFails === true || opts.auditWriteFailsOn === event.providerEventId
 								? Effect.fail(
 										new AuditTrailPersistenceError({
 											message: "The audit trail could not be written",
@@ -2663,8 +2670,8 @@ describe("VcsSyncService orchestrator", () => {
 			name === "locked"
 				? Effect.fail(new VcsRepoUnavailableError({ message: "rule insights: 404" }))
 				: name === "api"
-					? Effect.succeed({ events: [refusal], newestMs: REFUSED_AT })
-					: Effect.succeed({ events: [], newestMs: undefined })
+					? Effect.succeed({ events: [refusal], newestMs: REFUSED_AT, truncated: false })
+					: Effect.succeed({ events: [], newestMs: undefined, truncated: false })
 
 		it.effect("writes each repository's refused pushes and reads on from where it stopped", () => {
 			const testDb = createTestDb(trackedDbs)
@@ -2712,6 +2719,104 @@ describe("VcsSyncService orchestrator", () => {
 			}).pipe(
 				Effect.provide(
 					orchestratorLayer(testDb, { sent: [], forwardedAudit, refusedPushes, refusedPushReads }),
+				),
+			)
+		})
+
+		it.effect("skips an installation that never granted rule insights", () => {
+			const testDb = createTestDb(trackedDbs)
+			const refusedPushReads: Array<{ repo: string; sinceMs: number }> = []
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				const installation = yield* seedInstallation(repo, asOrgId("org_rule_suites_denied"))
+				yield* repo.upsertRepositories(installation, [repoNamed("api", "7")])
+				yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
+				assert.deepStrictEqual(refusedPushReads, [])
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent: [],
+						forwardedAudit: [],
+						refusedPushReads,
+						ruleSuitesReadable: false,
+					}),
+				),
+			)
+		})
+
+		it.effect("retries the batch once GitHub allows it, keeping what the other repositories read", () => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<VcsSyncJob> = []
+			const sentDelays: Array<number | undefined> = []
+			const refusedPushReads: Array<{ repo: string; sinceMs: number }> = []
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				const installation = yield* seedInstallation(repo, asOrgId("org_rule_suites_limited"))
+				yield* repo.upsertRepositories(installation, [repoNamed("api", "7"), repoNamed("busy", "8")])
+				yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
+				assert.deepStrictEqual(sent, [scanJob])
+				assert.deepStrictEqual(sentDelays, [120])
+				// The retry reads `api` on from its cursor.
+				yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
+				assert.isTrue(
+					Arr.some(refusedPushReads, (read) => read.repo === "api" && read.sinceMs === REFUSED_AT),
+				)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent,
+						sentDelays,
+						forwardedAudit: [],
+						refusedPushReads,
+						refusedPushes: (name) =>
+							name === "busy"
+								? Effect.fail(
+										new VcsRateLimitedError({
+											message: "secondary limit",
+											retryAfterSeconds: 120,
+										}),
+									)
+								: refusedPushes(name),
+					}),
+				),
+			)
+		})
+
+		it.effect("after a failed write, reads on from the last refusal it wrote", () => {
+			const testDb = createTestDb(trackedDbs)
+			const forwardedAudit: Array<{ orgId: string; action: string }> = []
+			const refusedPushReads: Array<{ repo: string; sinceMs: number }> = []
+			const second = { ...refusal, providerEventId: "rule-suite-12", occurredAtMs: REFUSED_AT + 60_000 }
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				const installation = yield* seedInstallation(repo, asOrgId("org_rule_suites_write"))
+				yield* repo.upsertRepositories(installation, [repoNamed("api", "7")])
+				const scan = svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
+				// The job itself succeeds: the failed write is that repository's alone.
+				yield* scan
+				assert.strictEqual(forwardedAudit.length, 1)
+				yield* scan
+				assert.deepStrictEqual(
+					Arr.map(refusedPushReads, (read) => read.sinceMs),
+					[-60 * 60 * 1000, REFUSED_AT],
+				)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent: [],
+						forwardedAudit,
+						refusedPushReads,
+						auditWriteFailsOn: "rule-suite-12",
+						refusedPushes: () =>
+							Effect.succeed({
+								events: [refusal, second],
+								newestMs: second.occurredAtMs,
+								truncated: false,
+							}),
+					}),
 				),
 			)
 		})

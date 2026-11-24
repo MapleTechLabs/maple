@@ -179,6 +179,17 @@ describe("GithubProvider refused pushes", () => {
 		}).pipe(Effect.provide(github({ requests, pages: [full, [suite(1, "2026-11-23T20:00:00Z")]] })))
 	})
 
+	it.effect("stops after three pages and says older refusals were left unread", () => {
+		const requests: Array<string> = []
+		const page = (n: number) => Arr.makeBy(100, (i) => suite(n * 1000 - i, "2026-11-24T11:59:00Z"))
+		return Effect.gen(function* () {
+			const { events, truncated } = yield* refused()
+			assert.strictEqual(events.length, 300)
+			assert.isTrue(truncated)
+			assert.isFalse(Arr.some(requests, Str.includes("page=4")))
+		}).pipe(Effect.provide(github({ requests, pages: [page(1), page(2), page(3), page(4)] })))
+	})
+
 	it.effect("answers a repository without rule insights as unavailable", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(refused())

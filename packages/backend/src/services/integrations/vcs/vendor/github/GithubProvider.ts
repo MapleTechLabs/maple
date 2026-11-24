@@ -1356,7 +1356,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 
 			// Rule insights keep a window GitHub picks (hour, day, week): the smallest that covers the
-			// cursor. A busy repository's refusals past `RULE_SUITE_PAGES` pages wait for the next read.
+			// cursor. Past `RULE_SUITE_PAGES` pages the oldest refusals stay unread, and the read says so.
 			const fetchRefusedPushes: VcsProviderClient["fetchRefusedPushes"] = Effect.fn(
 				"GithubProvider.fetchRefusedPushes",
 			)(function* (installation, repo, opts) {
@@ -1443,6 +1443,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				return {
 					events: Arr.getSomes(events),
 					newestMs: Number.isFinite(newest) ? newest : undefined,
+					truncated: fresh.length === RULE_SUITE_PAGES * RULE_SUITE_PAGE_SIZE,
 				}
 			}, Effect.mapError(toVcsError))
 
@@ -2227,6 +2228,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.streamJobLog(installation.externalInstallationId, repo.owner, repo.name, jobId)
 					.pipe(Stream.mapError(toVcsCommitError))
 
+			const canReadRuleSuites: VcsProviderClient["canReadRuleSuites"] = (installation) =>
+				client
+					.canReadAdministration(installation.externalInstallationId)
+					.pipe(Effect.mapError(toVcsCommitError))
+
 			const canReadWorkflowLogs: VcsProviderClient["canReadWorkflowLogs"] = (installation) =>
 				client
 					.canReadActions(installation.externalInstallationId)
@@ -2325,6 +2331,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchWorkflowJobAnnotations,
 				streamWorkflowJobLog,
 				canReadWorkflowLogs,
+				canReadRuleSuites,
 				fetchBillingUsage,
 				installationSettingsUrl,
 			} satisfies VcsProviderClient
