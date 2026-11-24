@@ -294,12 +294,15 @@ export const renderIncidentPush = (
 	const rule = truncate(event.ruleName, 60)
 	const openFor = event.openForMs === null ? null : humanDuration(event.openForMs)
 
+	// Resolved by hand: no check passed and no certificate was renewed, so the note is the body.
+	const handResolved = event.eventType === "resolve" ? (event.resolutionNote ?? null) : null
+
 	// A certificate nearing expiry: a heads-up, not a page.
 	if (event.signalType === "uptime" && event.groupKey === UPTIME_CERTIFICATE_GROUP_KEY) {
-		const body = uptimeSummaryLine(event)
+		const body = handResolved === null ? uptimeSummaryLine(event) : `${handResolved}.`
 		return {
 			alert: {
-				title: `${event.eventType === "resolve" ? "Certificate renewed" : "Certificate expiring"} · ${rule}`,
+				title: `${event.eventType !== "resolve" ? "Certificate expiring" : handResolved === null ? "Certificate renewed" : "Resolved"} · ${rule}`,
 				subtitle: service ?? undefined,
 				body,
 			},
@@ -313,11 +316,17 @@ export const renderIncidentPush = (
 	if (event.signalType === "uptime") {
 		const body = uptimeSummaryLine(event)
 		if (event.eventType === "resolve") {
+			const resolvedBody =
+				handResolved !== null
+					? `${handResolved}${openFor === null ? "" : ` after ${openFor}`}.`
+					: openFor === null
+						? body
+						: `${body} Down for ${openFor}.`
 			return {
 				alert: {
 					title: `Resolved · ${rule}`,
 					subtitle: service ?? undefined,
-					body: openFor === null ? body : `${body} Down for ${openFor}.`,
+					body: resolvedBody,
 				},
 				interruptionLevel: "passive",
 				priority: 5,

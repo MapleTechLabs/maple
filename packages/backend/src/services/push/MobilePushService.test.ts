@@ -274,6 +274,30 @@ describe("renderIncidentPush", () => {
 		)
 	})
 
+	it("does not say a monitor passed or a certificate renewed when someone resolved it by hand", () => {
+		const byHand = { eventType: "resolve", value: null, resolutionNote: "Resolved by Dana Kim" } as const
+		const monitor = renderIncidentPush(
+			event({ ...byHand, signalType: "uptime", ruleName: "Checkout health", openForMs: 2 * 3_600_000 }),
+		)
+		const certificate = renderIncidentPush(
+			event({
+				...byHand,
+				signalType: "uptime",
+				ruleName: "Checkout health",
+				groupKey: "__tls_certificate__",
+			}),
+		)
+		assert.deepStrictEqual(
+			[monitor.alert.title, monitor.alert.body, certificate.alert.title, certificate.alert.body],
+			[
+				"Resolved · Checkout health",
+				"Resolved by Dana Kim after 2h.",
+				"Resolved · Checkout health",
+				"Resolved by Dana Kim.",
+			],
+		)
+	})
+
 	it("says how long a repeat has been going on", () => {
 		const rendered = renderIncidentPush(event({ eventType: "renotify", openForMs: 2 * 3_600_000 }))
 		expect(rendered.alert.title).toBe("Still critical · Checkout error rate")

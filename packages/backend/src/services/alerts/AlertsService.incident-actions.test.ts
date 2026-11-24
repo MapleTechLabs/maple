@@ -23,6 +23,7 @@ import {
 	alertServices,
 	asOrgId,
 	asUserId,
+	createWebhookDestination,
 	makeLayer,
 	makeWarehouseStub,
 	tracesRow,
@@ -244,6 +245,63 @@ describe("AlertsService manual resolve", () => {
 			}),
 		),
 	)
+
+	it.effect("a group resolved by hand opens again once it left the results and came back", () => {
+		const testDb = createTestDb(trackedDbs)
+		const breaching = (groupName: string) =>
+			tracesRow({ groupName, count: 500, errorRate: 42, estimatedSpanCount: 500 })
+		const both = [breaching("checkout"), breaching("payments")]
+		const state = { tracesAggregateRows: both }
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_manual_group")
+			const userId = asUserId("user_manual_group")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Grouped error rate",
+					severity: "critical",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 1,
+					consecutiveHealthyRequired: 1,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [destination.id],
+				}),
+			)
+			yield* tick(alerts)
+			const paymentsStatuses = Effect.map(alerts.listIncidents(orgId), (list) =>
+				Arr.map(
+					Arr.filter(list.incidents, (row) => row.groupKey === "payments"),
+					(row) => row.status,
+				),
+			)
+			const [payments] = Arr.filter(
+				(yield* alerts.listIncidents(orgId)).incidents,
+				(row) => row.groupKey === "payments",
+			)
+			if (payments === undefined) return yield* Effect.die("expected a payments incident")
+			yield* alerts.resolveIncident(orgId, payments.id, dana)
+			yield* ticks(alerts, 2)
+			assert.deepStrictEqual(yield* paymentsStatuses, ["resolved"])
+
+			// Payments sends nothing for a while, then comes back as bad as it was.
+			state.tracesAggregateRows = [breaching("checkout")]
+			yield* tick(alerts)
+			state.tracesAggregateRows = both
+			yield* tick(alerts)
+			assert.sameMembers(yield* paymentsStatuses, ["resolved", "open"])
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch([]) })))
+	})
 
 	it.effect("leaves the incident open when its all-clear cannot be prepared", () => {
 		const testDb = createTestDb(trackedDbs)

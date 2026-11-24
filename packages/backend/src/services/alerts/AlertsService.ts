@@ -5496,6 +5496,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					ruleId: AlertRuleId,
 					groupKey: string,
 				) => ReadonlyArray<AlertIncidentRow["id"]>
+				/** Every group of the rule that is quiet after a resolve by hand, with those incidents. */
+				readonly quietGroupsForRule: (
+					orgId: OrgId,
+					ruleId: AlertRuleId,
+				) => ReadonlyArray<{ readonly id: AlertIncidentRow["id"]; readonly groupKey: string }>
 			}
 
 			const EMPTY_INCIDENTS: ReadonlyArray<AlertIncidentRow> = []
@@ -5521,6 +5526,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						openIncidentsForRule: () => EMPTY_INCIDENTS,
 						stateKeysForRule: () => [],
 						quietFor: () => [],
+						quietGroupsForRule: () => [],
 					} satisfies TickPrefetch
 				}
 
@@ -5601,6 +5607,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const quietByGroup = Arr.groupBy(quiet, (row) =>
 					groupCacheKey(row.orgId, row.ruleId, row.groupKey ?? UNGROUPED_GROUP_KEY),
 				)
+				const quietByRule = Arr.groupBy(quiet, (row) => ruleCacheKey(row.orgId, row.ruleId))
 				const incidentsByRule = Arr.groupBy(incidentRows, (incident) =>
 					ruleCacheKey(incident.orgId, incident.ruleId),
 				)
@@ -5634,6 +5641,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								Option.getOrElse((): typeof quiet => []),
 							),
 							(row) => row.id,
+						),
+					quietGroupsForRule: (orgId, ruleId) =>
+						Arr.map(
+							Record.get(quietByRule, ruleCacheKey(orgId, ruleId)).pipe(
+								Option.getOrElse((): typeof quiet => []),
+							),
+							(row) => ({ id: row.id, groupKey: row.groupKey ?? UNGROUPED_GROUP_KEY }),
 						),
 				} satisfies TickPrefetch
 			})
@@ -6362,6 +6376,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						).pipe(flushingStates)
 
 						const evaluatedGroups = HashSet.fromIterable(Arr.map(eligible, (r) => r.groupKey))
+						// A group resolved by hand that left the results has nothing left to measure,
+						// which ends its quiet as a check that read no data does. Back, it opens again.
+						const departedQuietIds = Arr.filterMap(
+							prefetch.quietGroupsForRule(row.orgId, row.id),
+							(quiet) =>
+								HashSet.has(evaluatedGroups, quiet.groupKey)
+									? Result.failVoid
+									: Result.succeed(quiet.id),
+						)
+						if (Arr.isReadonlyArrayNonEmpty(departedQuietIds)) {
+							yield* writeUnderClaim(
+								{ ruleId: row.id, claimedAt: timestamp, ruleUpdatedAt: row.updatedAt },
+								(db) =>
+									db.run(
+										PG.update(AlertIncidents)
+											.set({ quietSince: null })
+											.where(($) => [
+												$.orgId.eq(row.orgId),
+												$.id.in_(...departedQuietIds),
+											]),
+									),
+							)
+						}
 						// An anomaly rule's source reports every open incident it still owns, so a missing
 						// group was closed elsewhere; never probe the warehouse for it.
 						if (normalized.signalType !== "anomaly") {
