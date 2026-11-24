@@ -272,9 +272,10 @@ private struct IncidentHeader: View {
 
 /// Open the incident on the web, or share its link.
 private struct IncidentActions: View {
+	@Environment(SessionController.self) private var session
 	let detail: IncidentDetail
 
-	private var url: URL { MapleWeb.incident(detail.incident.id) }
+	private var url: URL { session.web.incident(detail.incident.id) }
 
 	var body: some View {
 		HStack(spacing: 8) {
