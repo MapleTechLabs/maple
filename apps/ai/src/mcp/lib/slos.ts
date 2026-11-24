@@ -10,7 +10,9 @@ import {
 } from "@maple/primitives"
 import {
 	SLO_BURN_TIERS,
+	SLO_MIN_TIER_EVENTS,
 	sloNameFromRuleName,
+	tierFactor,
 	tierState,
 	windowLabel,
 	type SloBurnWindow,
@@ -38,7 +40,7 @@ export const BURN_TIER_TEXT = `Its burn-rate alert ${Arr.join(
 			`${tier.severity === "critical" ? "pages (critical)" : "opens a ticket (warning)"} when the ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)} windows both burn at ${tier.factor}x or more`,
 	),
 	", and ",
-)}.`
+)}. A tier needs at least ${SLO_MIN_TIER_EVENTS} events in its long window, a low target fires at less (the factor is capped under the highest burn it can reach), and a spent error budget is a warning of its own.`
 
 export const toSloConfigRow = (slo: SloRecord): typeof SloConfigRow.Type => ({
 	id: slo.id,
@@ -61,21 +63,24 @@ export const toSloConfigRow = (slo: SloRecord): typeof SloConfigRow.Type => ({
 })
 
 /** The highest alert tier the windows breach, critical before warning. */
-export const burningTier = (windows: ReadonlyArray<SloBurnWindow>): "critical" | "warning" | null =>
+export const burningTier = (
+	windows: ReadonlyArray<SloBurnWindow>,
+	targetPercent: number,
+): "critical" | "warning" | null =>
 	Option.match(
-		Arr.findFirst(SLO_BURN_TIERS, (tier) => tierState(tier, windows) === "breach"),
+		Arr.findFirst(SLO_BURN_TIERS, (tier) => tierState(tier, windows, targetPercent) === "breach"),
 		{ onNone: () => null, onSome: (tier) => tier.severity },
 	)
 
-/** Whether a tier holds its state: no events in its short window, so it neither fires nor clears. */
-export const anyTierHolding = (windows: ReadonlyArray<SloBurnWindow>): boolean =>
-	Arr.some(SLO_BURN_TIERS, (tier) => tierState(tier, windows) === "hold")
+/** Whether a tier holds its state (no events in its short window, or too few to judge its burn). */
+export const anyTierHolding = (windows: ReadonlyArray<SloBurnWindow>, targetPercent: number): boolean =>
+	Arr.some(SLO_BURN_TIERS, (tier) => tierState(tier, windows, targetPercent) === "hold")
 
 /** The fastest-burning window; the first one on a tie. */
 export const worstWindow = (windows: ReadonlyArray<SloBurnWindow>): SloBurnWindow | undefined =>
 	Arr.sort(windows, Order.flip(Order.mapInput(Order.Number, (window: SloBurnWindow) => window.burnRate)))[0]
 
-export const toSloStatusRow = (status: SloStatus): typeof SloStatusRow.Type => ({
+export const toSloStatusRow = (status: SloStatus, targetPercent: number): typeof SloStatusRow.Type => ({
 	asOf: iso(status.asOfMs),
 	total: status.total,
 	good: status.good,
@@ -89,10 +94,11 @@ export const toSloStatusRow = (status: SloStatus): typeof SloStatusRow.Type => (
 		burnRate: window.burnRate,
 	})),
 	tiers: Arr.map(SLO_BURN_TIERS, (tier) => {
-		const state = tierState(tier, status.burnWindows)
+		const state = tierState(tier, status.burnWindows, targetPercent)
 		return {
 			severity: tier.severity,
-			factor: tier.factor,
+			// The burn this SLO's target makes the tier fire at, capped for a low target.
+			factor: tierFactor(tier, targetPercent),
 			longWindow: windowLabel(tier.longWindowMinutes),
 			shortWindow: windowLabel(tier.shortWindowMinutes),
 			breached: state === "breach",

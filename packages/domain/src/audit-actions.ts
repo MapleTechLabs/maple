@@ -110,7 +110,7 @@ export const AuditResources = {
 	},
 	oncall_schedule: {
 		prefix: PublicIdPrefixes.oncallSchedule,
-		verbs: ["created", "updated", "deleted"],
+		verbs: ["created", "updated", "deleted", "calendar_feed_created", "calendar_feed_deleted"],
 	},
 	oncall_override: {
 		prefix: PublicIdPrefixes.oncallOverride,
@@ -369,6 +369,8 @@ export const AuditActionLabels = {
 	"oncall_schedule.deleted": "Deleted on-call schedule",
 	"oncall_override.created": "Created on-call override",
 	"oncall_override.deleted": "Deleted on-call override",
+	"oncall_schedule.calendar_feed_created": "Created on-call calendar link",
+	"oncall_schedule.calendar_feed_deleted": "Turned off on-call calendar link",
 	"alert_silence.created": "Silenced alerts",
 	"alert_silence.updated": "Updated alert silence",
 	"alert_silence.ended": "Ended alert silence",

@@ -1,6 +1,6 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { compareAlertThreshold } from "@maple/alerting-core/tiers"
-import { sloNameFromRuleName } from "@maple/domain/slo"
+import { isSloBudgetIncident, sloNameFromRuleName } from "@maple/domain/slo"
 import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 
 import {
@@ -73,6 +73,9 @@ export function incidentTitle(incident: IncidentLine): string {
 		return `${incident.ruleName}: ${incident.status === "resolved" ? "certificate renewed" : "certificate expires soon"}`
 	if (isUptime(incident))
 		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
+	// A spent budget is a standing warning of its own, never a burn.
+	if (isSloBudgetIncident(incident))
+		return `${sloNameOf(incident.ruleName)} ${incident.status === "resolved" ? "has error budget left again" : "has spent its error budget"}`
 	if (isSlo(incident))
 		return `${sloNameOf(incident.ruleName)} ${incident.status === "resolved" ? "stopped burning its error budget" : "is burning its error budget"}`
 	if (isQueryIncident(incident)) return incident.ruleName
@@ -107,6 +110,9 @@ export function incidentValues(incident: IncidentLine): Readonly<{ now: string; 
 		return { now: incident.status === "resolved" ? "Renewed" : "Expiring", threshold: NO_THRESHOLD }
 	if (isUptime(incident))
 		return { now: incident.status === "resolved" ? "Up" : "Down", threshold: NO_THRESHOLD }
+	// A budget incident observes the share of the budget used: no burn rate, no factor to compare.
+	if (isSloBudgetIncident(incident))
+		return { now: incident.status === "resolved" ? "Recovered" : "Spent", threshold: NO_THRESHOLD }
 	// An anomaly's threshold is the detector's, not the rule's: its severity is the whole reading.
 	if (incident.signalType === "anomaly")
 		return { now: anomalySeverityLabel(incident.lastObservedValue), threshold: null }

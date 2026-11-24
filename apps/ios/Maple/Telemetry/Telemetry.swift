@@ -654,13 +654,14 @@ extension MapleAPIError {
 		case .unexpectedStatus(let status, _): "unexpected_status_\(status)"
 		case .transport: "transport"
 		case .decoding: "decoding"
+		case .unknownRegion: "unknown_region"
 		}
 	}
 
 	var telemetryStatusCode: Int? {
 		switch self {
 		case .api(let status, _), .unexpectedStatus(let status, _): status
-		case .notAuthenticated, .transport, .decoding: nil
+		case .notAuthenticated, .transport, .decoding, .unknownRegion: nil
 		}
 	}
 }

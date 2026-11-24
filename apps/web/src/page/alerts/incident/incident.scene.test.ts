@@ -31,6 +31,7 @@ import {
 } from "@maple/domain/http/v2"
 import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
+import * as Dialog from "@maple/views/ui/dialog"
 import { requestKey } from "@maple/views/data/request-key"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
@@ -38,7 +39,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { AppRoute, hrefOf } from "../../../route"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
-import { checkoutSlo } from "../shared/slo-test-fixtures"
+import { budgetIncidentRow, checkoutSlo } from "../shared/slo-test-fixtures"
 import { monitorHref, uptimeTabHref } from "../../kit/uptime/commands"
 import { httpMonitor, MONITOR_RULE, monitorId } from "../../kit/uptime/test-monitors"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow, stateRow } from "../../kit/alert-test-rows"
@@ -287,6 +288,39 @@ describe("alert incident", () => {
 			expectView(text("SLO burning its error budget at 14.4x or more")).toExist(),
 			expectView(text(/0\.3x/u)).not.toExist(),
 			expectView(text(/now /u)).not.toExist(),
+		)
+	})
+
+	test("an SLO's budget incident says the error budget is spent, with no burn factor", () => {
+		const budget = budgetIncidentRow({ id: INCIDENT_ID, rule_id: ruleRow(2).id })
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [budget] }),
+				Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "slo_burn_rate" })] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withDeliveries = step(
+			loaded,
+			Message.CompletedFetchDeliveries({
+				key: loaded.deliveries.key ?? "",
+				result: Result.succeed([]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withDeliveries),
+			themeResolved(),
+			expectView(role("heading", { name: "Checkout API has spent its error budget" })).toExist(),
+			expectView(text("SLO error budget · 135% of the error budget used")).toExist(),
+			expectView(text("The SLO's error budget is spent")).toExist(),
+			expectView(text(/it opened when the SLO's window had used the whole budget/u)).toExist(),
+			// Its observed value is a share of the budget and its threshold is 1: neither is a burn.
+			expectView(text(/1\.4x|1\.0x/u)).not.toExist(),
+			expectView(text(/burning its error budget/u)).not.toExist(),
+			expectView(text(/__slo_budget__/u)).not.toExist(),
 		)
 	})
 
@@ -603,6 +637,7 @@ describe("alert incident", () => {
 			acknowledged_at: acknowledgedAt,
 			acknowledged_by: acknowledgedAt === null ? null : { user_id: "user_dana", name: "Dana Kim" },
 			acknowledged_via: acknowledgedAt === null ? null : "web",
+			first_acknowledged_at: acknowledgedAt,
 			error_issue_id: null,
 			escalation: null,
 			silence_id: null,
@@ -733,6 +768,93 @@ describe("alert incident", () => {
 		// Only an acknowledgement that landed is the product event.
 		expect(names(done.commands)).toContain("TrackIncidentAcknowledged")
 		expect(names(failed.commands)).not.toContain("TrackIncidentAcknowledged")
+	})
+
+	test("Resolve asks first, resolves once, and shows the incident as resolved", () => {
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+				Message.CompletedFetchSession({ grants: MEMBER }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const resolvedAt = new Date(NOW).toISOString()
+		const resolvedIncident = Schema.decodeSync(V2AlertIncident)({
+			...Schema.encodeSync(V2AlertIncident)(ackedIncident(null)),
+			status: "resolved",
+			resolved_at: resolvedAt,
+		})
+		// The click only opens the question: nothing is sent until it is confirmed.
+		const asked = step(loaded, Message.ClickedResolve())
+		expect(asked.model.resolveDialog.isOpen).toBe(true)
+		expect(names(asked.commands)).not.toContain("ResolveAlertIncident")
+		scene(
+			{ update: pageUpdate, view },
+			given(asked.model),
+			themeResolved(),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("button", { name: "Resolve" })).toExist(),
+			expectView(text("Resolve this incident?")).toExist(),
+			expectView(text(/gets the all-clear/)).toExist(),
+		)
+		const confirmed = step(asked.model, Message.ClickedConfirmResolve())
+		expect(names(confirmed.commands)).toEqual(["ResolveAlertIncident"])
+		// A second confirm while the request runs sends nothing.
+		expect(step(confirmed.model, Message.ClickedConfirmResolve()).commands ?? []).toHaveLength(0)
+
+		const done = step(
+			confirmed.model,
+			Message.CompletedResolve({ result: Result.succeed(resolvedIncident) }),
+		)
+		expect(done.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			type: "success",
+			title: "Incident resolved",
+		})
+		expect(done.model.resolveDialog.isOpen).toBe(false)
+		scene(
+			{ update: pageUpdate, view },
+			given(done.model),
+			themeResolved(),
+			// The dialog is still on its way out.
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			// Shown as resolved before the sync delivers the same row.
+			expectView(role("button", { name: "Resolve" })).not.toExist(),
+			expectView(role("button", { name: "Acknowledge" })).not.toExist(),
+			expectView(text(/^Resolved /)).toExist(),
+		)
+
+		const failed = step(
+			confirmed.model,
+			Message.CompletedResolve({ result: Result.fail(toLoadFailure(new Error("boom"))) }),
+		)
+		expect(failed.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			title: "Couldn't resolve the incident",
+		})
+		// The question stays open, so the resolve can be tried again.
+		expect(failed.model.isResolving).toBe(false)
+		expect(failed.model.resolveDialog.isOpen).toBe(true)
+	})
+
+	test("Resolve is locked for a role that may not respond to incidents", () => {
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+				Message.CompletedFetchSession({ grants: Policy.grantsOf(["org:analyst"]) }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(role("button", { name: "Resolve" })).toBeDisabled(),
+		)
 	})
 
 	test("a resolved incident offers no acknowledge button", () => {

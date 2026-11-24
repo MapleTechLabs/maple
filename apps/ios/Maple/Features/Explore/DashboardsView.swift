@@ -211,7 +211,7 @@ struct DashboardDetailView: View {
 		.navigationBarTitleDisplayMode(.inline)
 		.toolbar {
 			ToolbarItem(placement: .topBarTrailing) {
-				OpenOnWebButton(url: MapleWeb.dashboard(dashboardID))
+				OpenOnWebButton(url: session.web.dashboard(dashboardID))
 			}
 		}
 		.mapleScreen(Screen.dashboardDetail)

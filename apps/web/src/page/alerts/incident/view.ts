@@ -1,3 +1,4 @@
+import { isSloBudgetIncident } from "@maple/domain/slo"
 import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 import type {
 	AlertCheckDocument,
@@ -15,14 +16,17 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import {
 	acknowledgedLine,
+	budgetUsedLabel,
 	buildIncidentTimeline,
 	conditionPhrase,
 	holdReasonLabel,
 	incidentGroup,
 	type IncidentTimelineEntry,
 	signalTitle,
+	timeToAcknowledge,
 } from "@maple/web-data/alerts/incident-timeline"
 import { incidentTitle, isQueryIncident } from "@maple/web-data/alerts/overview-derive"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -52,7 +56,7 @@ import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
 import { msIso } from "../../kit/alert-time"
 import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { type Model, RESOLVE_DIALOG_ID } from "./model"
 import { type EscalationData, incidentRail } from "./view-rail"
 import { activeSilenceFor } from "../shared/silences"
 import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
@@ -94,12 +98,27 @@ const statusLine = <M>(
 			"Resolved ",
 			...(incident.resolvedAt ? [at(incident.resolvedAt)] : []),
 			` · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`,
+			...Option.match(Option.fromNullishOr(timeToAcknowledge(incident)), {
+				onNone: () => [],
+				onSome: (waited) => [` · acknowledged after ${waited}`],
+			}),
 		]
 	const acked = acknowledgedLine(incident)
+	const waited = timeToAcknowledge(incident)
 	const ackSuffix: ReadonlyArray<Html | string> =
 		acked === null || incident.acknowledgedAt === null
 			? []
-			: [` · ${acked} at `, at(incident.acknowledgedAt)]
+			: [
+					` · ${acked} at `,
+					at(incident.acknowledgedAt),
+					...(waited === null
+						? []
+						: [
+								incident.acknowledgedAt === incident.firstAcknowledgedAt
+									? `, ${waited} after it opened`
+									: `, first acknowledged after ${waited}`,
+							]),
+				]
 	if (incident.holdReason != null)
 		return [`Waiting on data · ${holdReasonLabel[incident.holdReason]}`, ...ackSuffix]
 	return [
@@ -134,22 +153,30 @@ export const headerTitle = <M>(
 				: // An anomaly's severity badge says how bad it is: no threshold to read out.
 					isAnomaly
 					? [`Rule ${rule?.name ?? incident.ruleName}`, "detected by Maple's anomaly detector"]
-					: isSlo
+					: isSloBudgetIncident(incident)
 						? [
-								"SLO burn rate",
-								// A resolved incident's last value is the healthy burn it ended on.
+								// A spent budget is no burn: it reads the share used, never a factor.
+								"SLO error budget",
 								incident.status === "resolved"
 									? null
-									: `now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
-								group,
+									: Str.uncapitalize(budgetUsedLabel(incident.lastObservedValue)),
 							]
-						: [
-								isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
-								`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
-								rule != null && rule.environments.length > 0
-									? Arr.join(rule.environments, ", ")
-									: null,
-							],
+						: isSlo
+							? [
+									"SLO burn rate",
+									// A resolved incident's last value is the healthy burn it ended on.
+									incident.status === "resolved"
+										? null
+										: `now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+									group,
+								]
+							: [
+									isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
+									`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
+									rule != null && rule.environments.length > 0
+										? Arr.join(rule.environments, ", ")
+										: null,
+								],
 			(part) => part != null,
 		),
 		" · ",
@@ -222,6 +249,36 @@ export const acknowledgeAction = <M>(
 		),
 	]
 }
+
+/** The incident header's Resolve button, which asks first; nothing once the incident resolved. */
+export const resolveAction = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		incident: AlertIncidentDocument
+		isLoading: boolean
+		isDisabled?: boolean
+		onResolve: M
+	}>,
+): ReadonlyArray<Html> =>
+	options.incident.status !== "open"
+		? []
+		: [
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isLoading: options.isLoading,
+						isDisabled: options.isDisabled,
+						attributes: [h.OnClick(options.onResolve)],
+					},
+					["Resolve"],
+				),
+			]
+
+/** What a resolve by hand does, said before it is done: the all-clear cannot be taken back. */
+export const RESOLVE_DIALOG_DESCRIPTION =
+	"Everyone this incident notified gets the all-clear, and its escalation stops. If the rule still breaches, no new incident opens for it until a check reads healthy or reads no data, and for a day at most."
 
 /** A link to the incident's investigation, or the button that starts one for who may run one. */
 const investigateAction = (
@@ -341,7 +398,9 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 								[h.Class("space-y-3")],
 								[
 									eyebrow(h, { as: "h2" }, [
-										signalTitle(incident.signalType),
+										isSloBudgetIncident(incident)
+											? "SLO error budget"
+											: signalTitle(incident.signalType),
 										...(group != null ? [` · ${group}`] : []),
 									]),
 									incident.signalType === "anomaly"
@@ -362,7 +421,9 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 												})
 											: incident.signalType === "slo_burn_rate"
 												? sourceNote(h, {
-														text: "This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
+														text: isSloBudgetIncident(incident)
+															? "This incident follows an SLO's error budget: it opened when the SLO's window had used the whole budget, and resolves once bad hours leave the window and budget is left again. It reminds once a day while open. The SLO's page charts the budget."
+															: "This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
 														href: inputs.sourceHref ?? null,
 														label: "Open SLO",
 														fallback: { href: slosTabHref(), label: "Open SLOs" },
@@ -568,6 +629,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 									? control
 									: lockedControl(h, denialReason("incidents:respond"), control),
 						),
+						...Arr.map(
+							resolveAction(h, {
+								incident: view.incident,
+								isLoading: model.isResolving,
+								isDisabled: !canRespondToIncidents(model),
+								onResolve: Message.ClickedResolve(),
+							}),
+							(control) =>
+								canRespondToIncidents(model)
+									? control
+									: lockedControl(h, denialReason("incidents:respond"), control),
+						),
 						...(isOpenIncident(model)
 							? [
 									gatedControl(h, model, "alerts:manage", (isLocked) =>
@@ -600,6 +673,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				view: SilenceDialogView.view,
 				viewInputs: { id: "alert-incident-silence" },
 				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+			}),
+			confirmDialog(h, {
+				slotId: RESOLVE_DIALOG_ID,
+				model: model.resolveDialog,
+				toParentMessage: (message) => Message.GotResolveDialogMessage({ message }),
+				title: "Resolve this incident?",
+				description: RESOLVE_DIALOG_DESCRIPTION,
+				confirmLabel: "Resolve incident",
+				tone: "default",
+				isPending: model.isResolving,
+				onConfirm: Message.ClickedConfirmResolve(),
 			}),
 		],
 	)

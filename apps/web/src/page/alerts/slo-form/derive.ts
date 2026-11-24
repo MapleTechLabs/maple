@@ -4,7 +4,7 @@ import { Array as Arr, Option, String as Str } from "effect"
 import { type Form, TARGET_PRESETS, type TargetPick } from "./form"
 
 const MIN_TARGET = 50
-const MAX_TARGET = 99.999
+export const MAX_TARGET = 99.999
 
 const isPreset = (value: string): value is (typeof TARGET_PRESETS)[number] =>
 	Arr.some(TARGET_PRESETS, (preset) => preset === value)

@@ -116,6 +116,7 @@ final class LiveActivityController {
 	private func observe(_ activity: Activity<IncidentActivityAttributes>) {
 		guard activityObservers[activity.id] == nil else { return }
 		let incidentId = activity.attributes.incidentId
+		let organizationId = activity.attributes.organizationId
 
 		let tokens = Task { [weak self] in
 			for await data in activity.pushTokenUpdates {
@@ -123,6 +124,7 @@ final class LiveActivityController {
 				await self.submit(
 					activityId: activity.id,
 					incidentId: incidentId,
+					organizationId: organizationId,
 					pushToken: Self.hex(data)
 				)
 			}
@@ -133,7 +135,7 @@ final class LiveActivityController {
 				guard let self else { return }
 				switch state {
 				case .dismissed, .ended:
-					await self.forget(activityId: activity.id, incidentId: incidentId)
+					await self.forget(activityId: activity.id, incidentId: incidentId, organizationId: organizationId)
 				// `stale` is still on screen — the content is old, not gone, and
 				// the next push is what fixes it.
 				case .active, .stale:
@@ -155,6 +157,7 @@ final class LiveActivityController {
 			await submit(
 				activityId: activity.id,
 				incidentId: activity.attributes.incidentId,
+				organizationId: activity.attributes.organizationId,
 				pushToken: Self.hex(data)
 			)
 		}
@@ -186,14 +189,15 @@ final class LiveActivityController {
 	/// Posting an activity's update token is what stops a Lock Screen card
 	/// freezing on the numbers it started with. It fails silently by design, so
 	/// the span is the only place that failure is ever recorded.
-	private func submit(activityId: String, incidentId: String, pushToken: String) async {
+	private func submit(activityId: String, incidentId: String, organizationId: String?, pushToken: String) async {
 		guard let context, let deviceToken = PushRegistrar.shared.deviceToken else { return }
+		let api = Self.api(context.api, for: organizationId)
 		await Telemetry.span(
 			Telemetry.Name.liveActivitySubmit,
 			attributes: [Telemetry.Key.liveActivityAction: .string("register")]
 		) { span in
 			await self.submit(
-				context: context,
+				api: api,
 				deviceToken: deviceToken,
 				activityId: activityId,
 				incidentId: incidentId,
@@ -204,7 +208,7 @@ final class LiveActivityController {
 	}
 
 	private func submit(
-		context: Context,
+		api: any MapleAPI,
 		deviceToken: String,
 		activityId: String,
 		incidentId: String,
@@ -212,7 +216,7 @@ final class LiveActivityController {
 		span: Span?
 	) async {
 		do {
-			try await context.api.registerLiveActivity(
+			try await api.registerLiveActivity(
 				deviceToken: deviceToken,
 				incidentId: incidentId,
 				activityId: activityId,
@@ -230,18 +234,26 @@ final class LiveActivityController {
 		}
 	}
 
-	private func forget(activityId: String, incidentId: String) async {
+	private func forget(activityId: String, incidentId: String, organizationId: String?) async {
 		if let context, let deviceToken = PushRegistrar.shared.deviceToken {
+			let api = Self.api(context.api, for: organizationId)
 			await Telemetry.span(
 				Telemetry.Name.liveActivityEnd,
 				attributes: [Telemetry.Key.liveActivityAction: .string("end")]
 			) { _ in
-				try? await context.api.endLiveActivity(deviceToken: deviceToken, incidentId: incidentId)
+				try? await api.endLiveActivity(deviceToken: deviceToken, incidentId: incidentId)
 			}
 		}
 		// After the request, not before: this cancels the task that is running
 		// this very function, and a cancelled task cannot make a network call.
 		activityObservers.removeValue(forKey: activityId)?.forEach { $0.cancel() }
+	}
+
+	/// The incident's own organization, and with it its region: the activity can
+	/// belong to an organization other than the one on screen. Activities started
+	/// before the payload named one fall back to the active organization.
+	private static func api(_ api: any MapleAPI, for organizationId: String?) -> any MapleAPI {
+		organizationId.map { api.scoped(to: $0) } ?? api
 	}
 
 	private static func hex(_ data: Data) -> String {

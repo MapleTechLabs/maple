@@ -170,17 +170,17 @@ const makeHarness = () => {
 	const alertRulesLive = AlertRulesService.layer.pipe(
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
+	// Incident pushes and the pages a chain step sends to a person's phone.
+	const mobilePushLive = Layer.effect(MobilePushService, MobilePushService.make).pipe(
+		Layer.provide(
+			Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
+		),
+	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
 		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
-		Layer.provide(
-			Layer.effect(MobilePushService, MobilePushService.make).pipe(
-				Layer.provide(
-					Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
-				),
-			),
-		),
+		Layer.provide(mobilePushLive),
 		Layer.provide(
 			Layer.mergeAll(
 				envLive,
@@ -199,6 +199,7 @@ const makeHarness = () => {
 				alertRulesLive,
 				Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
 					Layer.provide(ChatAlertPoster.layer),
+					Layer.provide(mobilePushLive),
 					Layer.provide(
 						Layer.mergeAll(envLive, testDb.layer, runtimeLive, emailLive, orgMembersLive),
 					),

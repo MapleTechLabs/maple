@@ -47,6 +47,7 @@ import { HttpErrorsLive } from "@/routes/internal/errors.http"
 import { HttpIntegrationsLive } from "@/routes/internal/integrations.http"
 import { IntegrationsCallbackRouter } from "@/routes/integrations-callback.http"
 import { OAuthDiscoveryRouter } from "@/routes/oauth-discovery.http"
+import { OnCallCalendarRouter } from "@/routes/oncall-calendar.http"
 import { HttpOrgClickHouseSettingsLive } from "@/routes/internal/org-clickhouse-settings.http"
 import {
 	HttpOrganizationCreationLive,
@@ -303,6 +304,7 @@ const RawRoutes = rawRoutes<Layer.Success<ApiPortsLayer>>()(
 		DocsRoute,
 		DocsV2Route,
 		DiscoveryRouter,
+		OnCallCalendarRouter,
 		AwsOidcRouter,
 		// Last by convention only — find-my-way ranks the wildcard below every other
 		// route regardless of registration order.

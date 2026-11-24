@@ -92,6 +92,8 @@ export interface SloStatus {
 	readonly asOfMs: number
 	readonly total: number
 	readonly good: number
+	/** Spans recorded over the SLO window, before sampling weights. */
+	readonly samples: number
 	/** Good share over the SLO window, `null` without events. */
 	readonly sli: number | null
 	/** Share of the window's budget left: 1 untouched, negative when overspent. */
@@ -334,6 +336,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 					name,
 					serviceName,
 					environments,
+					targetPercent,
 					enabled: input.alerting?.enabled ?? true,
 					criticalDestinationIds: Arr.dedupe(input.alerting?.criticalDestinationIds ?? []),
 					warningDestinationIds: Arr.dedupe(input.alerting?.warningDestinationIds ?? []),
@@ -433,6 +436,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 								name: name ?? locked.name,
 								serviceName: serviceName ?? locked.serviceName,
 								environments: environments ?? locked.environments,
+								targetPercent: targetPercent ?? locked.targetPercent,
 								// A missing rule comes back switched on.
 								enabled: input.alerting?.enabled ?? (ruleMissing || locked.alerting.enabled),
 								criticalDestinationIds:
@@ -449,6 +453,8 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 								ruleMissing ||
 								rule.name !== locked.name ||
 								rule.serviceName !== locked.serviceName ||
+								// The target sets the burn each tier is stored and shown at.
+								rule.targetPercent !== locked.targetPercent ||
 								!sameIds(rule.environments, locked.environments) ||
 								rule.enabled !== locked.alerting.enabled ||
 								!sameIds(
@@ -550,6 +556,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 					asOfMs,
 					total: totals.total,
 					good: totals.good,
+					samples: totals.samples ?? totals.total,
 					sli: sliRatio(totals),
 					budgetRemaining: budgetRemaining(totals, slo.targetPercent),
 					burnWindows: windows,
@@ -570,6 +577,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 							asOfMs,
 							total: totals.total,
 							good: totals.good,
+							samples: totals.samples ?? totals.total,
 							sli: sliRatio(totals),
 							budgetRemaining: budgetRemaining(totals, slo.targetPercent),
 							burnWindows: found?.windows ?? [],

@@ -7,7 +7,15 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { sloHref } from "../shared/slo-commands"
-import { checkoutSlo, SLO_RULE_UUID, searchSlo, sloStatus, sloUuid } from "../shared/slo-test-fixtures"
+import {
+	budgetIncidentRow,
+	burnIncidentRow,
+	checkoutSlo,
+	SLO_RULE_UUID,
+	searchSlo,
+	sloStatus,
+	sloUuid,
+} from "../shared/slo-test-fixtures"
 import { hubAt, incidentRow, NOW, ORG } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model, SloListRow } from "./model"
@@ -160,6 +168,84 @@ describe("alerts hub, SLOs tab", () => {
 			{ update: pageUpdate, view },
 			given(withSlos(HEALTHY_AND_BURNING)),
 			expectView(within(table, text("Alerting on"))).toExist(),
+		)
+	})
+
+	test("an SLO whose only open incident is the spent budget reads Budget spent, not burning", () => {
+		const rows: ReadonlyArray<SloListRow> = [{ slo: checkoutSlo(), status: sloStatus("exhausted") }]
+		const budgetOnly = pageUpdate(
+			withSlos(rows),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [budgetIncidentRow()] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(budgetOnly),
+			expectView(within(table, text("Budget spent"))).toExist(),
+			expectView(within(table, text("Incident open"))).not.toExist(),
+			expectView(text(/^0\s*burning$/u)).toExist(),
+			expectView(text(/^1\s*out of budget$/u)).toExist(),
+		)
+		// With a burn incident open beside it, the burn is what the row reads.
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					budgetOnly,
+					Message.UpdatedIncidents({ orgId: ORG, rows: [budgetIncidentRow(), burnIncidentRow()] }),
+				).model,
+			),
+			expectView(within(table, text("Incident open"))).toExist(),
+			expectView(within(table, text("Budget spent"))).not.toExist(),
+		)
+	})
+
+	test("a budget incident does not hold an outage's tiers open as burning", () => {
+		const rows: ReadonlyArray<SloListRow> = [{ slo: checkoutSlo(), status: sloStatus("holding") }]
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					withSlos(rows),
+					Message.UpdatedIncidents({ orgId: ORG, rows: [budgetIncidentRow()] }),
+				).model,
+			),
+			expectView(text(/^0\s*burning$/u)).toExist(),
+		)
+	})
+
+	test("an SLO that counted no events reads No data with why, never a full budget bar", () => {
+		const silent = checkoutSlo({ id: sloUuid(5), name: "Signup flow", environments: ["prod"] })
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withSlos([
+					...HEALTHY_AND_BURNING,
+					{ slo: silent, status: sloStatus("no-data", { sloId: silent.id }) },
+				]),
+			),
+			expectView(within(table, text("No data"))).toExist(),
+			expectView(
+				within(table, role("img", { name: /Environments are free text: prod does not match/u })),
+			).toExist(),
+			expectView(within(table, text("100%"))).not.toExist(),
+			expectView(within(table, role("meter", { name: "100% of the error budget left" }))).not.toExist(),
+			expectView(text(/^1\s*without data$/u)).toExist(),
+			expectView(text(/^0\s*out of budget$/u)).toExist(),
+		)
+		// With every SLO counting events the readout does not mention data at all.
+		scene(
+			{ update: pageUpdate, view },
+			given(withSlos(HEALTHY_AND_BURNING)),
+			expectView(text(/without data$/u)).not.toExist(),
+		)
+	})
+
+	test("a budget overspent on a handful of events is not counted as out of budget", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withSlos([{ slo: checkoutSlo(), status: sloStatus("sparse") }])),
+			expectView(text(/^0\s*out of budget$/u)).toExist(),
+			expectView(text(/^0\s*burning$/u)).toExist(),
 		)
 	})
 
