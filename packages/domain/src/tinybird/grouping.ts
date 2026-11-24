@@ -120,13 +120,44 @@ const mappedFunction = (frame: StackFrame): string | undefined => {
 }
 
 /**
+ * A source line with formatting whitespace collapsed to one space and trimmed; whitespace inside a
+ * string literal (`'`, `"`, `` ` ``, with backslash escapes) is part of the code and kept as is.
+ */
+export const collapseCodeWhitespace = (line: string): string =>
+	Str.trim(
+		Arr.reduce(
+			Arr.fromIterable(line),
+			{ out: "", quote: "", escaped: false, space: false },
+			(state, char) => {
+				if (state.quote !== "") {
+					const closes = !state.escaped && char === state.quote
+					return {
+						out: state.out + char,
+						quote: closes ? "" : state.quote,
+						escaped: !state.escaped && char === "\\",
+						space: false,
+					}
+				}
+				if (/\s/u.test(char)) return { ...state, space: true }
+				const out = `${state.out}${state.space ? " " : ""}${char}`
+				return {
+					out,
+					quote: char === "'" || char === '"' || char === "`" ? char : "",
+					escaped: false,
+					space: false,
+				}
+			},
+		).out,
+	)
+
+/**
  * A mapped frame as the key reads it, never a line or column: its original file and function, or,
  * with no function name, the file and its source line's text. `undefined` when it has neither.
  */
 const mappedFrameLine = (frame: StackFrame, file: string): string | undefined => {
 	const name = mappedFunction(frame)
 	if (name !== undefined) return `at ${name} (${file})`
-	const text = frame.context === null ? "" : Str.trim(Str.replace(/\s+/gu, " ")(frame.context.line))
+	const text = frame.context === null ? "" : collapseCodeWhitespace(frame.context.line)
 	return text === "" ? undefined : `at ${file} | ${text}`
 }
 
@@ -146,8 +177,15 @@ const sourceMappedFrames = (
 			if (!frame.resolved || frame.file === null) return []
 			const line = mappedFrameLine(frame, frame.file)
 			const shown = line ?? `at ${frame.file}`
-			const kind = rules.frameKind(shown, sample)
-			return [{ line, shown, app: kind === undefined ? frame.in_app : kind === "app" }]
+			// Rules read both the generated frame and its mapped location, as they did before the
+			// map came: a frame either side marks a library stays out of the key.
+			const kinds = [rules.frameKind(shown, sample), rules.frameKind(frame.raw, sample)]
+			const app = Arr.contains(kinds, "library")
+				? false
+				: Arr.contains(kinds, "app")
+					? true
+					: frame.in_app
+			return [{ line, shown, app }]
 		}),
 		(a, b) => a.line !== undefined && a.line === b.line,
 	)

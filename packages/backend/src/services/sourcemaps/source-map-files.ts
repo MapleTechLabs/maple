@@ -98,36 +98,6 @@ const isRegularMap = (fields: JsonObject): boolean => {
 	)
 }
 
-const sectionMaps = (fields: JsonObject): ReadonlyArray<JsonObject> => {
-	const sections = fields["sections"]
-	return Arr.isArray(sections)
-		? Arr.flatMap(sections, (section) =>
-				Predicate.isObject(section) && Predicate.isObject(section["map"]) ? [section["map"]] : [],
-			)
-		: []
-}
-
-const isOffset = (offset: unknown): boolean =>
-	Predicate.isObject(offset) && Predicate.isNumber(offset["line"]) && Predicate.isNumber(offset["column"])
-
-/** An index map: a non-empty `sections` array, each an offset and a plain version 3 map. */
-const isIndexMap = (fields: JsonObject): boolean => {
-	const sections = fields["sections"]
-	return (
-		Arr.isArray(sections) &&
-		sections.length > 0 &&
-		Arr.every(
-			sections,
-			(section) =>
-				Predicate.isObject(section) &&
-				isOffset(section["offset"]) &&
-				Predicate.isObject(section["map"]) &&
-				section["map"]["version"] === 3 &&
-				isRegularMap(section["map"]),
-		)
-	)
-}
-
 const hasContent = (fields: JsonObject): boolean => {
 	const sourcesContent = fields["sourcesContent"]
 	return (
@@ -137,8 +107,8 @@ const hasContent = (fields: JsonObject): boolean => {
 }
 
 /**
- * Checks an upload against the contract: at most 10 MiB (what symbolication can load), a version 3 map with a `mappings` string
- * and sources (or an index map of such maps), and a debug id or a service and version to find it by. A debug id the map itself carries
+ * Checks an upload against the contract: at most 10 MiB (what symbolication can load), a regular
+ * version 3 map (no index map) with a `mappings` string and sources, and a debug id or a service and version to find it by. A debug id the map itself carries
  * (`debugId` / `debug_id`) is used when none is passed.
  */
 export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload")(function* (
@@ -182,14 +152,14 @@ export const validateSourceMapUpload = Effect.fn("SourceMapFiles.validateUpload"
 	if (fields["version"] !== 3) {
 		return yield* invalid("Only version 3 source maps are supported.")
 	}
-	if (!isRegularMap(fields) && !isIndexMap(fields)) {
-		return yield* invalid(
-			"The source map needs a `mappings` string and a non-empty `sources` array, or a `sections` array of such maps.",
-		)
+	// Any `sections` field makes it an index map, which symbolication does not read.
+	if (fields["sections"] !== undefined) {
+		return yield* invalid("Index source maps are not supported; emit a regular map.")
 	}
-	const hasSourcesContent = Predicate.isUndefined(fields["sections"])
-		? hasContent(fields)
-		: Arr.some(sectionMaps(fields), hasContent)
+	if (!isRegularMap(fields)) {
+		return yield* invalid("The source map needs a `mappings` string and a non-empty `sources` array.")
+	}
+	const hasSourcesContent = hasContent(fields)
 
 	const rawDebugId = upload.debugId ?? stringField(fields, "debugId") ?? stringField(fields, "debug_id")
 	const debugId =

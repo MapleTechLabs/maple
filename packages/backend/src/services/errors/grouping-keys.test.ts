@@ -2,7 +2,7 @@ import { TraceMap } from "@jridgewell/trace-mapping"
 import { compileGroupingRules, GroupingConfig, OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
 import { explainGrouping, groupingKey } from "@maple/domain/tinybird/grouping"
 import { OrgId } from "@maple/domain/http"
-import { Array as Arr, DateTime, Effect, Option, Order, Record as Rec, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Order, Record as Rec, Schema, String as Str } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorFingerprintCandidates, ErrorGroupingKeys } from "@maple/db/tables"
@@ -458,9 +458,8 @@ describe("keys that wait for a source map", () => {
 		expect(await keyedBy([mixed, vendor], api)).toEqual(["p3"])
 	})
 
-	it("reads no first sightings for an org without maps, even past the per-tick cap", async () => {
-		const many = Arr.makeBy(201, (i) => `n${i}`)
-		const statementsWith = (mapsInPlay: boolean) =>
+	it("reads first sightings only past the per-tick cap", async () => {
+		const statementsFor = (count: number) =>
 			Effect.runPromise(
 				Effect.gen(function* () {
 					const database = yield* Database
@@ -475,11 +474,11 @@ describe("keys that wait for a source map", () => {
 							samples: () => Effect.succeed([]),
 							spans: () => Effect.succeed([]),
 							sourceMapped: (entries) => Effect.succeed(entries),
-							mapsInPlay: Effect.succeedSome(mapsInPlay),
+							mapsInPlay: Effect.succeedSome(false),
 						},
 						{
 							orgId: ORG,
-							hashes: many,
+							hashes: Arr.makeBy(count, (i) => `n${i}`),
 							nowMs: NOW,
 							grouping: DEFAULT_ORG_GROUPING,
 							lineage: new Map(),
@@ -488,9 +487,9 @@ describe("keys that wait for a source map", () => {
 					return runs.count
 				}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
 			)
-		// Only the stored-key read without maps; with maps, one first-sighting read more.
-		expect(await statementsWith(false)).toBe(1)
-		expect(await statementsWith(true)).toBe(2)
+		// The stored-key read; past the cap, one first-sighting read more to order the hashes.
+		expect(await statementsFor(200)).toBe(1)
+		expect(await statementsFor(201)).toBe(2)
 	})
 })
 
@@ -506,6 +505,7 @@ describe("an org's first source map upload", () => {
 		samples: ReadonlyArray<GroupingSampleRow>,
 		hasMaps: Option.Option<boolean>,
 		debugIds: Readonly<Record<string, Record<string, string>>> = {},
+		nowMs: number = NOW,
 	) => {
 		const { api } = symbolicator()
 		const stacks: StackSymbolicatorApi = {
@@ -516,7 +516,8 @@ describe("an org's first source map upload", () => {
 		return resolveGroupingSiblings(
 			(run) => database.execute(run),
 			{
-				samples: () => Effect.succeed(samples),
+				samples: (hashes) =>
+					Effect.succeed(Arr.filter(samples, (s) => Arr.contains(hashes, s.fingerprintHash))),
 				spans: (rows) =>
 					Effect.succeed(
 						Arr.map(rows, (row) => {
@@ -538,7 +539,7 @@ describe("an org's first source map upload", () => {
 			{
 				orgId: ORG,
 				hashes: Arr.map(samples, (sample) => sample.fingerprintHash),
-				nowMs: NOW,
+				nowMs,
 				grouping: DEFAULT_ORG_GROUPING,
 				lineage: new Map(),
 			},
@@ -603,6 +604,69 @@ describe("an org's first source map upload", () => {
 		)
 		expect(Arr.map(result.before, (row) => row.configDigest)).toEqual(["", "+source-maps"])
 		expect(result.after).toEqual(result.before)
+	})
+
+	const seedSeen = (
+		database: (typeof Database)["Service"],
+		seen: ReadonlyArray<readonly [string, number]>,
+	) =>
+		database.execute((db) =>
+			db.run(
+				PG.insertInto(ErrorFingerprintCandidates).values(
+					Arr.map(seen, ([fingerprintHash, firstSeenAt]) => ({
+						orgId: ORG,
+						fingerprintHash,
+						serviceName: "web",
+						exceptionType: "TypeError",
+						exceptionMessage: MESSAGE,
+						topFrame: "",
+						firstSeenAt,
+						lastSeenAt: NOW,
+						updatedAt: NOW,
+					})),
+				),
+			),
+		)
+
+	it("lets a ready hash past 200 held for a first map in a mapless org within two ticks", async () => {
+		const held = Arr.makeBy(200, (i) =>
+			sampleRow(`w${Str.padStart(3, "0")(String(i))}`, "TypeError", MESSAGE, [V1.app("a")]),
+		)
+		const ready = sampleRow("zz-ready", "TypeError", MESSAGE, [V1.app("a")])
+		const ids = Rec.fromEntries(
+			Arr.map(held, (row) => [row.fingerprintHash, { [V1.url]: DEBUG_ID }] as const),
+		)
+		const keyed = await Effect.runPromise(
+			Effect.gen(function* () {
+				const database = yield* Database
+				yield* seedSeen(
+					database,
+					Arr.map([...held, ready], (row) => [row.fingerprintHash, NOW - 5 * 60_000] as const),
+				)
+				yield* tick(database, [...held, ready], Option.some(false), ids)
+				yield* tick(database, [...held, ready], Option.some(false), ids, NOW + 60_000)
+				return Arr.map(yield* storedKeys(database), (row) => row.fingerprintHash)
+			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+		)
+		expect(keyed).toEqual(["zz-ready"])
+	})
+
+	it("keys a hash held past its grace window even behind 200 first sightings", async () => {
+		const fresh = Arr.makeBy(200, (i) =>
+			sampleRow(`x${Str.padStart(3, "0")(String(i))}`, "TypeError", MESSAGE, [V1.app("a")]),
+		)
+		const expired = sampleRow("old", "TypeError", MESSAGE, [
+			"a (https://app.example.com/assets/index-unknown.js:1:1)",
+		])
+		const keyed = await Effect.runPromise(
+			Effect.gen(function* () {
+				const database = yield* Database
+				yield* seedSeen(database, [["old", NOW - MAP_PENDING_GRACE_MS]])
+				yield* tick(database, [...fresh, expired], Option.some(true))
+				return Arr.map(yield* storedKeys(database), (row) => row.fingerprintHash)
+			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+		)
+		expect(keyed).toContain("old")
 	})
 
 	it("holds a young sample that registered debug ids before the org has any map", async () => {
