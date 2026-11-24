@@ -199,7 +199,7 @@ struct ServiceDetailView: View {
 				.accessibilityAddTraits(.isHeader)
 			}
 			ToolbarItem(placement: .topBarTrailing) {
-				OpenOnWebButton(url: MapleWeb.service(serviceName))
+				OpenOnWebButton(url: session.web.service(serviceName))
 			}
 		}
 		.mapleScreen(Screen.serviceDetail)
