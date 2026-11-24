@@ -60,6 +60,10 @@ const onCallLine = (model: Model, schedule: V2OnCallSchedule): string =>
 			`${memberName(model.members, now.user_id)} is on call until ${formatShiftEdge(toEpochMs(now.ends_at), schedule.time_zone)}`,
 	})
 
+/** What happens to the shifts of someone who left, including when nobody is left to take them. */
+const DEPARTED_SHIFTS =
+	"Their shifts pass to the next person in the rotation who is still in the org, and go uncovered when nobody is."
+
 /**
  * Participants who left the org: who, what happens to their shifts, and where to take them out.
  * Nothing while everyone in the rotation is a member.
@@ -76,14 +80,14 @@ const departedNotice = (h: H, model: Model, schedule: V2OnCallSchedule): Readonl
 						[],
 						canManageAlerts(model)
 							? [
-									"Their shifts pass to the next person in the rotation. ",
+									`${DEPARTED_SHIFTS} `,
 									textLink(h, { href: editScheduleHref(schedule.id) }, [
 										"Edit the schedule",
 									]),
 									" to take them out of it.",
 								]
 							: [
-									"Their shifts pass to the next person in the rotation. An org admin or engineer can edit the schedule to take them out of it.",
+									`${DEPARTED_SHIFTS} An org admin or engineer can edit the schedule to take them out of it.`,
 								],
 					),
 				]),

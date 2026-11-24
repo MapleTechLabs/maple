@@ -92,6 +92,8 @@ export interface SloStatus {
 	readonly asOfMs: number
 	readonly total: number
 	readonly good: number
+	/** Spans recorded over the SLO window, before sampling weights. */
+	readonly samples: number
 	/** Good share over the SLO window, `null` without events. */
 	readonly sli: number | null
 	/** Share of the window's budget left: 1 untouched, negative when overspent. */
@@ -554,6 +556,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 					asOfMs,
 					total: totals.total,
 					good: totals.good,
+					samples: totals.samples ?? totals.total,
 					sli: sliRatio(totals),
 					budgetRemaining: budgetRemaining(totals, slo.targetPercent),
 					burnWindows: windows,
@@ -574,6 +577,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 							asOfMs,
 							total: totals.total,
 							good: totals.good,
+							samples: totals.samples ?? totals.total,
 							sli: sliRatio(totals),
 							budgetRemaining: budgetRemaining(totals, slo.targetPercent),
 							burnWindows: found?.windows ?? [],

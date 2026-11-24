@@ -28,6 +28,17 @@ const alertsListUrl = (link: string | undefined): Option.Option<string> =>
 		: Option.none()
 const decodeComparator = Schema.decodeUnknownOption(AlertComparator)
 
+/**
+ * `stored` with its links pointed at the alerts list, for an all-clear that outlives its rule and
+ * incident; none when it carries no link to move.
+ */
+export const relinkedToAlertsList = (stored: unknown): Option.Option<Record<string, unknown>> =>
+	Option.gen(function* () {
+		const payload = yield* decodeStored(stored)
+		const url = yield* alertsListUrl(payload.linkUrl ?? payload.chatUrl)
+		return { ...payload, linkUrl: url, chatUrl: url }
+	})
+
 /** `stored` (a trigger or reminder payload) as the resolve that closes it, when it names its rule. */
 export const deletedRuleResolvePayload = (
 	orgId: OrgId,
