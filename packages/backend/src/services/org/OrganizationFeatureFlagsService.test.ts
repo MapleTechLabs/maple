@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Duration, Effect, Fiber, Layer, Option, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
+import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { OrgId } from "@maple/domain/http"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -129,4 +130,35 @@ describe("OrganizationFeatureFlagsService", () => {
 			expect(clerk.calls.count).toBe(2)
 		}).pipe(Effect.provide([clerkEnv, EdgeCacheServiceLive, clerk.layer]))
 	})
+
+	it.effect(
+		"a shared answer stored late stops serving 30s after Clerk gave it, not after the write",
+		() => {
+			let enabled = true
+			const clerk = fakeClerkFetch(() => clerkOrganization({ datasources: enabled }))
+			const memory = makeMemoryBackend()
+			// Every write lands 10s after the answer it carries, so storage keeps it until 40s.
+			const lateWrites = Layer.succeed(
+				CacheBackend,
+				CacheBackend.of({
+					...memory,
+					put: (bucket, hash, value, ttlSeconds, nowMs) =>
+						memory.put(bucket, hash, value, ttlSeconds, nowMs + 10_000),
+				}),
+			)
+			return Effect.gen(function* () {
+				expect((yield* readInFreshIsolate).dataSources).toBe(true)
+				enabled = false
+				yield* TestClock.adjust(Duration.seconds(35))
+				expect((yield* readInFreshIsolate).dataSources).toBe(false)
+				expect(clerk.calls.count).toBe(2)
+			}).pipe(
+				Effect.provide([
+					clerkEnv,
+					EdgeCacheService.layer.pipe(Layer.provide(lateWrites)),
+					clerk.layer,
+				]),
+			)
+		},
+	)
 })
