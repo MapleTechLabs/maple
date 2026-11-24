@@ -79,6 +79,7 @@ const rawEdges = (opts: SloScope, grain: "hour" | "minute") =>
 			bBucket: grain === "minute" ? CH.toStartOfMinute($.Timestamp) : CH.toStartOfHour($.Timestamp),
 			bService: $.ServiceName,
 			bEnv: $.DeploymentEnv,
+			bSamples: CH.count(),
 			bTotal: CH.sum($.SampleRate),
 			bGood: CH.sumIf(
 				$.SampleRate,
@@ -107,6 +108,7 @@ type LadderColumns = {
  */
 const rollupCounts = <
 	A extends {
+		readonly SpanCount: CH.Expr<number>
 		readonly EstimatedSpanCount: CH.Expr<number>
 		readonly EstimatedErrorCount: CH.Expr<number>
 	} & LadderColumns,
@@ -116,10 +118,12 @@ const rollupCounts = <
 ) =>
 	sli._tag === "availability"
 		? {
+				bSamples: CH.sum($.SpanCount),
 				bTotal: CH.sum($.EstimatedSpanCount),
 				bGood: CH.sum($.EstimatedSpanCount).sub(CH.sum($.EstimatedErrorCount)),
 			}
 		: {
+				bSamples: CH.sum($.SpanCount),
 				bTotal: CH.sum($[SLO_LATENCY_COVERAGE_COLUMN]),
 				bGood: CH.sum($[sloLatencyColumnName(sli.thresholdMs)]),
 			}
@@ -170,6 +174,8 @@ export const sloTotalsRowSchema = Schema.Struct({
 	total: CHNumber,
 	/** The good ones among them. */
 	good: CHNumber,
+	/** Spans actually recorded, before sampling weights. */
+	samples: CHNumber,
 })
 
 export type SloTotalsOutput = typeof sloTotalsRowSchema.Type
@@ -177,7 +183,11 @@ export type SloTotalsOutput = typeof sloTotalsRowSchema.Type
 /** Good and total events over `[startTime, endTime]`, one row. */
 export function sloTotalsQuery(opts: SloSliQueryOpts) {
 	return sloBuckets(scopeOf(opts), "window")
-		.select(($) => ({ total: CH.sum($.bTotal), good: CH.sum($.bGood) }))
+		.select(($) => ({
+			total: CH.sum($.bTotal),
+			good: CH.sum($.bGood),
+			samples: CH.sum($.bSamples),
+		}))
 		.format("JSON")
 }
 
@@ -199,6 +209,7 @@ export function sloBucketsQuery(opts: SloSliQueryOpts, grain: "hour" | "minute")
 			bucket: CH.toStartOfInterval($.bBucket, param.int("bucketSeconds")),
 			total: CH.sum($.bTotal),
 			good: CH.sum($.bGood),
+			samples: CH.sum($.bSamples),
 		}))
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
@@ -227,6 +238,7 @@ export function sloTotalsByServiceQuery(opts: SloGroupQueryOpts) {
 			environment: $.bEnv,
 			total: CH.sum($.bTotal),
 			good: CH.sum($.bGood),
+			samples: CH.sum($.bSamples),
 		}))
 		.groupBy("serviceName", "environment")
 		.format("JSON")
@@ -237,12 +249,22 @@ export const sloBurnByServiceRowSchema = Schema.Struct({
 	environment: Schema.String,
 	total5: CHNumber,
 	good5: CHNumber,
+	samples5: CHNumber,
 	total30: CHNumber,
 	good30: CHNumber,
+	samples30: CHNumber,
 	total60: CHNumber,
 	good60: CHNumber,
+	samples60: CHNumber,
+	total120: CHNumber,
+	good120: CHNumber,
+	samples120: CHNumber,
 	total360: CHNumber,
 	good360: CHNumber,
+	samples360: CHNumber,
+	total1440: CHNumber,
+	good1440: CHNumber,
+	samples1440: CHNumber,
 })
 
 export type SloBurnByServiceOutput = typeof sloBurnByServiceRowSchema.Type
@@ -254,8 +276,8 @@ const inLastMinutes = (minutes: number) =>
 	)
 
 /**
- * The 5m, 30m, 1h and 6h burn windows ending at `endTime` for many services in one minute-grain
- * read over `[startTime, endTime]` (the 6h lookback), one row per (service, environment).
+ * The 5m to 24h burn windows ending at `endTime` for many services in one minute-grain read
+ * over `[startTime, endTime]` (the 24h lookback), one row per (service, environment).
  */
 export function sloBurnByServiceQuery(opts: SloGroupQueryOpts) {
 	return sloBuckets({ serviceNames: opts.serviceNames, environments: [], sli: opts.sli }, "minute")
@@ -264,12 +286,22 @@ export function sloBurnByServiceQuery(opts: SloGroupQueryOpts) {
 			environment: $.bEnv,
 			total5: CH.sumIf($.bTotal, inLastMinutes(5)),
 			good5: CH.sumIf($.bGood, inLastMinutes(5)),
+			samples5: CH.sumIf($.bSamples, inLastMinutes(5)),
 			total30: CH.sumIf($.bTotal, inLastMinutes(30)),
 			good30: CH.sumIf($.bGood, inLastMinutes(30)),
+			samples30: CH.sumIf($.bSamples, inLastMinutes(30)),
 			total60: CH.sumIf($.bTotal, inLastMinutes(60)),
 			good60: CH.sumIf($.bGood, inLastMinutes(60)),
+			samples60: CH.sumIf($.bSamples, inLastMinutes(60)),
+			total120: CH.sumIf($.bTotal, inLastMinutes(120)),
+			good120: CH.sumIf($.bGood, inLastMinutes(120)),
+			samples120: CH.sumIf($.bSamples, inLastMinutes(120)),
 			total360: CH.sumIf($.bTotal, inLastMinutes(360)),
 			good360: CH.sumIf($.bGood, inLastMinutes(360)),
+			samples360: CH.sumIf($.bSamples, inLastMinutes(360)),
+			total1440: CH.sumIf($.bTotal, inLastMinutes(1440)),
+			good1440: CH.sumIf($.bGood, inLastMinutes(1440)),
+			samples1440: CH.sumIf($.bSamples, inLastMinutes(1440)),
 		}))
 		.groupBy("serviceName", "environment")
 		.format("JSON")

@@ -1,7 +1,14 @@
 import { Context, Effect, Layer } from "effect"
 import { bindWarehouse } from "@maple/backend/services/warehouse/bind-warehouse"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { readBudgetHistory, readBurnWindows, readStatuses, readWindowTotals } from "./slo-reads"
+import {
+	readBudgetHistory,
+	readBurnBatch,
+	readBurnWindows,
+	readStatuses,
+	readTotalsBatch,
+	readWindowTotals,
+} from "./slo-reads"
 
 /** The SLO warehouse reads, shared by the SLO API and the alerting SLO source. */
 const make = Effect.gen(function* () {
@@ -12,6 +19,8 @@ const make = Effect.gen(function* () {
 		burnWindows: bind(readBurnWindows),
 		budgetHistory: bind(readBudgetHistory),
 		statuses: bind(readStatuses),
+		burnBatch: bind(readBurnBatch),
+		totalsBatch: bind(readTotalsBatch),
 	}
 })
 

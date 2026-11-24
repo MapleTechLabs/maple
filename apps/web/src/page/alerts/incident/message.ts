@@ -20,6 +20,7 @@ import { Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
+import * as Dialog from "@maple/views/ui/dialog"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewFailure } from "../shared/preview"
@@ -72,6 +73,10 @@ export const Message = defineMessageUnion({
 		acknowledged: Schema.Boolean,
 		result: Schema.Result(V2AlertIncident, LoadFailure),
 	},
+	ClickedResolve: {},
+	GotResolveDialogMessage: { message: Dialog.Message },
+	ClickedConfirmResolve: {},
+	CompletedResolve: { result: Schema.Result(V2AlertIncident, LoadFailure) },
 	/** `trackProduct("alert_incident_acknowledged")` was handed to the session SDK. */
 	CompletedTrackAcknowledged: {},
 	CompletedCreateInvestigation: { result: Schema.Result(Schema.String, LoadFailure) },

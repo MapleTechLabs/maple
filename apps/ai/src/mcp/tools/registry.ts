@@ -20,6 +20,7 @@ import { registerAlertSilenceTools } from "./manage-alert-silence"
 import { registerEscalationChainTools } from "./manage-escalation-chain"
 import { registerOnCallScheduleTools } from "./manage-oncall-schedule"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
+import { registerResolveAlertIncidentTool } from "./resolve-alert-incident"
 import { registerListEscalationChainsTool } from "./list-escalation-chains"
 import { registerListOnCallSchedulesTool } from "./list-oncall-schedules"
 import { registerWhoIsOnCallTool } from "./who-is-on-call"
@@ -194,6 +195,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerListAlertSilencesTool,
 	registerAlertSilenceTools,
 	registerAcknowledgeAlertIncidentTool,
+	registerResolveAlertIncidentTool,
 	registerListEscalationChainsTool,
 	registerEscalationChainTools,
 	registerListOnCallSchedulesTool,

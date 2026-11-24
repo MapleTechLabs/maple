@@ -183,7 +183,10 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 				],
 				"\n",
 			),
-			servers: [{ url: "https://api.maple.dev", description: "Production" }],
+			servers: [
+				{ url: "https://api.maple.dev", description: "Production" },
+				{ url: "https://api.eu.maple.dev", description: "Production, EU region" },
+			],
 			// `info.contact` and top-level `externalDocs` have no dedicated annotation
 			// key (they are not in `OpenAPISpecInfo`), so inject them via the api-level
 			// spec transform, which receives the whole generated document.

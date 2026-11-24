@@ -3,10 +3,12 @@ import {
 	V2AlertIncidentEvent,
 	V2EscalationChain,
 	V2OnCallOverride,
+	V2OnCallCalendarFeed,
 	V2OnCallSchedule,
 	V2OnCallShifts,
 } from "@maple/domain/http/v2"
-import { UserId } from "@maple/domain/http"
+import { uncoveredIntervals } from "@maple/alerting-core/oncall"
+import { ONCALL_GAP_LOOKAHEAD_MS, UserId } from "@maple/domain/http"
 import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { Array as Arr, Option, Order, Schema, String as Str } from "effect"
 import type { OrgMember } from "./org-members"
@@ -45,6 +47,9 @@ export const oncallMembers: ReadonlyArray<OrgMember> = Arr.map(NAMES, (name, ind
 	email: `${Str.toLowerCase(Str.replaceAll(" ", ".")(name))}@acme.test`,
 	imageUrl: "",
 }))
+
+/** Someone who left the org: no member list names them any more. */
+export const formerMemberId = memberId(NAMES.length)
 
 // A tiny on-call engine over the zone's wall clock.
 
@@ -213,6 +218,10 @@ type Spec = Readonly<{
 	layers: ReadonlyArray<unknown>
 	segments: (fromMs: number) => ReadonlyArray<ReadonlyArray<Segment>>
 	overrides: (nowMs: number) => ReadonlyArray<Segment & Readonly<{ id: string }>>
+	/** Participants who left the org; `segments` already hands their shifts to the next person. */
+	departed?: ReadonlyArray<string>
+	/** When the calendar link was made; absent while the feed is off. */
+	calendarFeedCreatedAt?: string
 }>
 
 const m = (index: number) => memberId(index)
@@ -318,18 +327,34 @@ const weekends: Spec = {
 	overrides: () => [],
 }
 
-const SPECS: ReadonlyArray<Spec> = [checkout, longName, weekends]
+/** Covered around the clock, with one participant who has left the org. */
+const platform: Spec = {
+	n: 4,
+	name: "Platform secondary",
+	timeZone: "Europe/London",
+	layers: [
+		{
+			name: "Secondary",
+			participants: [m(1), formerMemberId, m(5)],
+			rotation: { kind: "weekly", handoff_weekday: "mon", handoff_time: "10:00" },
+			starts_at: "2026-10-05T09:00:00.000Z",
+		},
+	],
+	segments: (fromMs) => [
+		rotation([m(1), m(5)], "Europe/London", fromMs, 10, (day) => day === "Mon", 7 * DAY_MS),
+	],
+	overrides: () => [],
+	departed: [formerMemberId],
+}
+
+const SPECS: ReadonlyArray<Spec> = [checkout, longName, weekends, platform]
 
 const WEEK_MS = 7 * 86_400_000
 
 /** The schedule as `GET /oncall_schedules` returns it, with who is on call at `nowMs`. */
 const scheduleOf = (spec: Spec, nowMs: number): V2OnCallSchedule => {
-	const final = flatten(
-		spec.segments(nowMs - WEEK_MS),
-		spec.overrides(nowMs),
-		nowMs - WEEK_MS,
-		nowMs + WEEK_MS,
-	)
+	const aheadMs = nowMs + ONCALL_GAP_LOOKAHEAD_MS
+	const final = flatten(spec.segments(nowMs - WEEK_MS), spec.overrides(nowMs), nowMs - WEEK_MS, aheadMs)
 	const current = Arr.findFirst(final, (shift) => shift.startMs <= nowMs && nowMs < shift.endMs)
 	return decodeSchedule({
 		id: encodePublicId("onc", scheduleUuid(spec.n)),
@@ -345,17 +370,49 @@ const scheduleOf = (spec: Spec, nowMs: number): V2OnCallSchedule => {
 				ends_at: iso(shift.endMs),
 			})),
 		),
+		coverage_gaps: Arr.map(uncoveredIntervals(final, nowMs, aheadMs), (gap) => ({
+			starts_at: iso(gap.startMs),
+			ends_at: iso(gap.endMs),
+		})),
+		departed_user_ids: spec.departed ?? [],
+		calendar_feed_created_at: spec.calendarFeedCreatedAt ?? null,
 		chain_ids: spec.n === 1 ? [encodePublicId("esc", "0199a00e-0000-7000-8000-000000000001")] : [],
 		created_at: iso(nowMs - 30 * 86_400_000),
 		updated_at: iso(nowMs - 86_400_000),
 	})
 }
 
-/** Three schedules: one with three layers and overrides, one with a long name, one in a gap. */
+/**
+ * Four schedules: one with three layers and overrides, one with a long name, one in a gap, and
+ * one with a participant who left the org.
+ */
 export const populatedSchedules = (nowMs: number = ONCALL_NOW): ReadonlyArray<V2OnCallSchedule> =>
 	Arr.map(SPECS, (spec) => scheduleOf(spec, nowMs))
 
-export const checkoutSchedule = (nowMs: number = ONCALL_NOW): V2OnCallSchedule => scheduleOf(checkout, nowMs)
+/** The checkout schedule; `departed` are participants the API reports as gone from the org. */
+export const checkoutSchedule = (
+	nowMs: number = ONCALL_NOW,
+	departed: ReadonlyArray<string> = [],
+	/** When its calendar link was made; absent while the feed is off. */
+	calendarFeedCreatedAt?: string,
+): V2OnCallSchedule =>
+	scheduleOf(
+		{
+			...checkout,
+			departed,
+			...(calendarFeedCreatedAt === undefined ? undefined : { calendarFeedCreatedAt }),
+		},
+		nowMs,
+	)
+
+/** `POST /{id}/calendar_feed` for the checkout schedule: the link, as it is shown once. */
+export const checkoutCalendarFeed = (nowMs: number = ONCALL_NOW): V2OnCallCalendarFeed =>
+	Schema.decodeSync(V2OnCallCalendarFeed)({
+		object: "oncall_calendar_feed",
+		schedule_id: encodePublicId("onc", scheduleUuid(1)),
+		url: "https://api.maple.dev/calendar/oncall/mcal_2f0cQ5c1mJk3vX8nH4yT7wRbZ6aL9dE0sUoPiKgNq1A.ics",
+		created_at: iso(nowMs),
+	})
 
 /** `GET /{id}/shifts` for the checkout schedule over `[fromMs, toMs)`. */
 export const checkoutShifts = (nowMs: number, fromMs: number, toMs: number): V2OnCallShifts => {
@@ -426,6 +483,23 @@ export const pagedEvents = (incidentId: string, atMs: number): ReadonlyArray<V2A
 				created_at: iso(atMs + event.minutes * 60_000),
 			}),
 	)
+
+/** An `on_call_gap` event: a step paged `scheduleNames` while nobody was on call there. */
+export const onCallGapEvent = (
+	incidentId: string,
+	atMs: number,
+	scheduleNames: string,
+): V2AlertIncidentEvent =>
+	decodeEvent({
+		id: encodePublicId("evt", eventUuid(5)),
+		object: "alert_incident_event",
+		incident_id: encodePublicId("inc", incidentId),
+		type: "on_call_gap",
+		actor: null,
+		source: null,
+		detail: scheduleNames,
+		created_at: iso(atMs + 6 * 60_000),
+	})
 
 const decodeChain = Schema.decodeUnknownSync(V2EscalationChain)
 

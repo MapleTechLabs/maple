@@ -29,6 +29,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentResolver } from "@maple/backend/services/alerts/AlertIncidentResolver"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
@@ -296,6 +297,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
 	AlertIncidentAckService.layer,
+	AlertIncidentResolver.layer,
 	AlertIncidentPagesService.layer,
 	AlertRulesService.layer,
 	AlertSilencesService.layer,

@@ -8,7 +8,6 @@ import {
 	draftCoverage,
 	durationText,
 	gapRangeText,
-	gapsOf,
 	gapSummary,
 	layerOnCallAt,
 	previewLayerOf,
@@ -54,40 +53,6 @@ const expectMatchesServer = (
 		expect(inGap).toBe(server === null)
 	})
 }
-
-describe("gapsOf", () => {
-	it("returns the whole range when nothing covers it", () => {
-		expect(gapsOf([], 0, 10)).toEqual([{ startMs: 0, endMs: 10 }])
-	})
-	it("returns no gaps when shifts cover the range end to end", () => {
-		expect(
-			gapsOf(
-				[
-					{ startMs: 5, endMs: 12 },
-					{ startMs: -2, endMs: 5 },
-				],
-				0,
-				10,
-			),
-		).toEqual([])
-	})
-	it("finds holes between, before and after shifts", () => {
-		expect(
-			gapsOf(
-				[
-					{ startMs: 2, endMs: 4 },
-					{ startMs: 6, endMs: 8 },
-				],
-				0,
-				10,
-			),
-		).toEqual([
-			{ startMs: 0, endMs: 2 },
-			{ startMs: 4, endMs: 6 },
-			{ startMs: 8, endMs: 10 },
-		])
-	})
-})
 
 describe("draftCoverage", () => {
 	const range = { startMs: at("2026-11-09T00:00:00Z"), endMs: at("2026-11-23T00:00:00Z") }
@@ -143,6 +108,42 @@ describe("draftCoverage", () => {
 		expect(coverage.gaps).toEqual([])
 		expect(Arr.some(coverage.final, (s) => s.userId === "eve")).toBe(true)
 		expectMatchesServer(form, overrides, range, HOUR / 2)
+	})
+
+	it("shows the window of an override whose assignee left as a gap, as paging reads it", () => {
+		// Weekdays only, with Eve covering a Saturday. Eve has since left the org.
+		const form = formOf([
+			layer({
+				participants: people(["ana"]),
+				rotation: "weekly",
+				startsAt: "2026-11-02T09:00",
+				restrictions: [
+					{
+						key: "r0",
+						weekdays: ["mon", "tue", "wed", "thu", "fri"],
+						startTime: "08:00",
+						endTime: "20:00",
+					},
+				],
+			}),
+		])
+		const overrides = decodeOverrides([
+			{
+				id: "0b7f6a3e-1c2d-4e5f-8a9b-1c2d3e4f5a61",
+				userId: "eve",
+				startsAt: at("2026-11-14T08:00:00Z"),
+				endsAt: at("2026-11-14T16:00:00Z"),
+				createdAt: 1,
+			},
+		])
+		const saturdayNoon = at("2026-11-14T12:00:00Z")
+		const covers = (isPresent?: (userId: UserId) => boolean) =>
+			Arr.some(
+				draftCoverage(form, overrides, range.startMs, range.endMs, range.startMs, isPresent).final,
+				(shift) => shift.startMs <= saturdayNoon && saturdayNoon < shift.endMs,
+			)
+		expect(covers()).toBe(true)
+		expect(covers((userId) => userId !== "eve")).toBe(false)
 	})
 
 	it("reports restriction holes as gaps that match onCallAt being null", () => {

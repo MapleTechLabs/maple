@@ -25,6 +25,10 @@ An incident has two statuses, **open** and **resolved**. A resolved incident sta
 
 **Acknowledge**, in the **Inbox** or on the incident's page, marks an open incident as handled. Maple stops reminders and pending escalation chain steps for it, and the **Timeline** records who acknowledged it. An escalation from warning to critical clears the acknowledgement.
 
+**Resolve**, on the incident's page, closes an open incident by hand. Everyone it notified gets the all-clear, which says who resolved it, and its [escalation chain](/docs/alerting/escalation-chains) stops. If the rule still breaches, Maple opens no new incident for that rule and group until a check reads healthy or reads no data, and for a day at most.
+
+The **Inbox**, the incident's page and a rule's **History** show how long an incident stood before it was first acknowledged.
+
 **Silence** holds back notifications for the services, tags and environments it covers until it ends: after 1 hour, 4 hours, at 09:00, or at a time you pick. Start one from a rule, an incident, or **New silence** under **Alerts → Silences**.
 
 ### Flapping

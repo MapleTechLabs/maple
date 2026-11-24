@@ -137,6 +137,59 @@ describe("planAlertLifecycle", () => {
 		})
 	})
 
+	it("judges a flap by the named window when it is shorter than the reminder interval", () => {
+		const reopened = {
+			policy: { ...policy, renotifyIntervalMinutes: 1440 },
+			evaluation: breached,
+			state: { consecutiveBreaches: 1, consecutiveHealthy: 0 },
+			openIncident: null,
+			nowMs: 3 * 3_600_000,
+			previousNotificationAtMs: 0,
+		}
+		// Told three hours ago: a flap inside a daily reminder, news with a one hour window.
+		expect(planAlertLifecycle(reopened)).toMatchObject({
+			eventType: null,
+			notificationSuppression: "flapping",
+		})
+		expect(planAlertLifecycle({ ...reopened, flapWindowMinutes: 60 })).toMatchObject({
+			transition: "opened",
+			eventType: "trigger",
+		})
+	})
+
+	it("pages a reopen above the severity the earlier notification was for", () => {
+		const tiered = { ...policy, severities: ["warning" as const, "critical" as const] }
+		const critical: AlertEvaluation = {
+			...breached,
+			levels: [
+				{ severity: "warning", status: "breach" },
+				{ severity: "critical", status: "breach" },
+			],
+		}
+		const reopen = (previousNotificationSeverity: "warning" | "critical") =>
+			planAlertLifecycle({
+				policy: tiered,
+				evaluation: critical,
+				state: { consecutiveBreaches: 1, consecutiveHealthy: 0 },
+				openIncident: null,
+				nowMs: 600_000,
+				previousNotificationAtMs: 300_000,
+				previousNotificationSeverity,
+			})
+
+		expect(reopen("warning")).toMatchObject({
+			transition: "opened",
+			severity: "critical",
+			eventType: "trigger",
+			notificationSuppression: null,
+		})
+		expect(reopen("critical")).toMatchObject({
+			transition: "opened",
+			eventType: null,
+			notificationSuppression: "flapping",
+		})
+	})
+
 	it("advances the notification anchor when renotify becomes due", () => {
 		const plan = planAlertLifecycle({
 			policy,

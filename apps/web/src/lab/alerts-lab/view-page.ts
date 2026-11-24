@@ -39,6 +39,7 @@ const acknowledgedByDana = (
 			acknowledgedByUserId: null,
 			acknowledgedByName: "Dana Kim",
 			acknowledgedVia: "slack",
+			firstAcknowledgedAt: Schema.decodeSync(IsoDateTimeString)(acknowledgedAt),
 		}),
 		activity: [
 			Schema.decodeSync(V2AlertIncidentEvent)({
