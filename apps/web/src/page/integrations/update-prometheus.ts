@@ -25,7 +25,7 @@ import {
 	ToggleTarget,
 } from "./prometheus"
 import type { Model } from "./model"
-import { HubRequest, type ProviderEnv, type ProviderReturn } from "./provider"
+import { HubRequest, type ProviderEnv, type ProviderReturn, steps } from "./provider"
 
 // The scrape-target card's state changes (Prometheus and WarpStream), as their module's update.
 
@@ -37,20 +37,6 @@ const withCard = (model: PrometheusCardModel, card: Partial<PrometheusCardModel>
 	...model,
 	...card,
 })
-
-/** Runs steps in order: the last step's model, every request and Command in order. */
-const steps = (
-	model: PrometheusCardModel,
-	next: ReadonlyArray<(model: PrometheusCardModel) => Return>,
-): Return =>
-	Arr.reduce<(typeof next)[number], Return>(next, { model }, (acc, step) => {
-		const result = step(acc.model)
-		return {
-			model: result.model,
-			requests: [...(acc.requests ?? []), ...(result.requests ?? [])],
-			commands: [...(acc.commands ?? []), ...(result.commands ?? [])],
-		}
-	})
 
 const toast = (
 	model: PrometheusCardModel,

@@ -34,16 +34,8 @@ import type {
 import type { ConfigureTarget } from "./gcp-schema"
 import { type GcpCardModel, GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
-import { HubRequest } from "../../../integrations/provider"
-import {
-	connectorsIn,
-	type Env,
-	readStatus,
-	refreshInventory,
-	type Return,
-	steps,
-	withCard,
-} from "./update-gcp"
+import { HubRequest, steps } from "../../../integrations/provider"
+import { connectorsIn, type Env, readStatus, refreshInventory, type Return, withCard } from "./update-gcp"
 
 // The configure wizard's state changes, as steps of the Google Cloud module.
 

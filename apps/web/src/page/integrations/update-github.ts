@@ -24,7 +24,13 @@ import {
 	SelectGithubInstallation,
 } from "./github"
 import type { Model } from "./model"
-import { HubRequest, type ProviderEnv, type ProviderReturn, type StatusAnswer } from "./provider"
+import {
+	andThen as then,
+	HubRequest,
+	type ProviderEnv,
+	type ProviderReturn,
+	type StatusAnswer,
+} from "./provider"
 
 // The GitHub card's state changes, as the GitHub module's update.
 
@@ -38,15 +44,6 @@ const withCard = (model: GithubCardModel, card: Partial<GithubCardModel>): Githu
 })
 
 /** Both answers concatenated: the second step's model, every request and Command in order. */
-const then = (first: Return, second: (model: GithubCardModel) => Return): Return => {
-	const next = second(first.model)
-	return {
-		model: next.model,
-		requests: [...(first.requests ?? []), ...(next.requests ?? [])],
-		commands: [...(first.commands ?? []), ...(next.commands ?? [])],
-	}
-}
-
 const statusOf = (slot: Keyed.Keyed<GithubIntegrationStatus, LoadFailure>): Status =>
 	Option.getOrNull(AsyncData.getData(slot.data))
 

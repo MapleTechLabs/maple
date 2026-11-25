@@ -16,7 +16,7 @@ import {
 	unavailableOverview,
 	unavailableStatus,
 } from "../../../integrations/overview"
-import { HubRequest, type ProviderModule, type ProviderUpdate } from "../../../integrations/provider"
+import { HubRequest, type ProviderModule, type ProviderUpdate, steps } from "../../../integrations/provider"
 import { GCP_STATUS_READ, type GcpCardModel, GcpMessage, initGcpCard } from "./gcp"
 import { gcpFlow } from "./flow-gcp"
 import * as Gcp from "./update-gcp"
@@ -118,7 +118,7 @@ export const GCP: ProviderModule<Status, GcpCardModel, GcpMessage> = {
 	update,
 	// The band's reads wait on the status and the clock.
 	onEnter: (model, env) =>
-		Gcp.steps(model, [(next) => Gcp.enterGcp(next, env), (next) => Gcp.requestBand(next, env)]),
+		steps(model, [(next) => Gcp.enterGcp(next, env), (next) => Gcp.requestBand(next, env)]),
 	onClock: Gcp.requestBand,
 	onStatus: (model, env, { isCurrent }) =>
 		Gcp.requestBand(

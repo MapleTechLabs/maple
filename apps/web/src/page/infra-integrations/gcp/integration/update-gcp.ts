@@ -28,7 +28,7 @@ import {
 import { initConfigure } from "./gcp-configure"
 import { disconnectSpec } from "../../../integrations/disconnect"
 import type { Model } from "../../../integrations/model"
-import { HubRequest, type ProviderEnv, type ProviderReturn } from "../../../integrations/provider"
+import { HubRequest, type ProviderEnv, type ProviderReturn, steps } from "../../../integrations/provider"
 import type { ConfigureTarget } from "./gcp-schema"
 
 // The Google Cloud card's state changes (its band, menus, removal and cleanup), as module steps.
@@ -42,17 +42,6 @@ export const withCard = (model: GcpCardModel, card: Partial<GcpCardModel>): GcpC
 	...model,
 	...card,
 })
-
-/** Runs steps in order: the last step's model, every request and Command in order. */
-export const steps = (model: GcpCardModel, next: ReadonlyArray<(model: GcpCardModel) => Return>): Return =>
-	Arr.reduce<(typeof next)[number], Return>(next, { model }, (acc, step) => {
-		const result = step(acc.model)
-		return {
-			model: result.model,
-			requests: [...(acc.requests ?? []), ...(result.requests ?? [])],
-			commands: [...(acc.commands ?? []), ...(result.commands ?? [])],
-		}
-	})
 
 /** The status re-read after a write. */
 export const readStatus =

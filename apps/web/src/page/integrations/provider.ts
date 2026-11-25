@@ -1,5 +1,5 @@
 import type { GithubInstallationSelection } from "@maple/domain/http"
-import type { Effect } from "effect"
+import { Array as Arr, type Effect } from "effect"
 import type { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Keyed from "@maple/views/data/keyed"
@@ -81,6 +81,26 @@ export type ProviderReturn<M, Msg> = Readonly<{
 
 /** A message's update, which may also rewrite the status in place before its re-read (an answered write). */
 export type ProviderUpdate<M, Msg, S> = ProviderReturn<M, Msg> & Readonly<{ status?: (status: S) => S }>
+
+/** `first`, then `second` on its model: the last model, every request and Command in order. */
+export const andThen = <M, Msg>(
+	first: ProviderReturn<M, Msg>,
+	second: (model: M) => ProviderReturn<M, Msg>,
+): ProviderReturn<M, Msg> => {
+	const next = second(first.model)
+	return {
+		model: next.model,
+		requests: [...(first.requests ?? []), ...(next.requests ?? [])],
+		commands: [...(first.commands ?? []), ...(next.commands ?? [])],
+	}
+}
+
+/** Runs `next` in order from `model`, as `andThen` does for two. */
+export const steps = <M, Msg>(
+	model: M,
+	next: ReadonlyArray<(model: M) => ProviderReturn<M, Msg>>,
+): ProviderReturn<M, Msg> =>
+	Arr.reduce<(model: M) => ProviderReturn<M, Msg>, ProviderReturn<M, Msg>>(next, { model }, andThen)
 
 /** The status read that answered: `isCurrent` when it answers the read in flight. */
 export type StatusAnswer<S> = Readonly<{ isCurrent: boolean; previous: Keyed.Keyed<S, LoadFailure> }>
