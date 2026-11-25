@@ -1,0 +1,58 @@
+{
+	"name": "@maple-dev/vite",
+	"version": "0.0.0",
+	"description": "Vite plugin for Maple: gives each built JS file a debug id, keeps source maps out of the deployed output and uploads them, so error stacks in Maple show your original source.",
+	"keywords": [
+		"maple",
+		"observability",
+		"opentelemetry",
+		"source-maps",
+		"vite",
+		"vite-plugin"
+	],
+	"homepage": "https://maple.dev/docs/errors/source-maps",
+	"bugs": "https://github.com/MapleTechLabs/maple/issues",
+	"license": "MIT",
+	"author": "Makisuo, Inc.",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/MapleTechLabs/maple.git",
+		"directory": "packages/vite"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"import": "./dist/index.mjs"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsrs --noEmit",
+		"test": "vitest run",
+		"prepublishOnly": "bun run build"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:effect",
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
+		"@maple/sourcemaps": "workspace:*",
+		"@types/node": "catalog:tooling",
+		"tsdown": "^0.23.7",
+		"typescript": "catalog:tooling",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"vite": ">=6.0.0"
+	}
+}
