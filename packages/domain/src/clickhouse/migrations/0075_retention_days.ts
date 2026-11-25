@@ -4,7 +4,7 @@
  * `product_events` is left out: views fill it, and it gets the column when it is rebuilt.
  *
  * `requiredForIngest: false`: the gateway's insert never names the column
- * (`INGEST_UNWRITTEN_COLUMNS` in `tinybird/ingest-token.ts`), so a cluster below 75 keeps
+ * (`SELF_MANAGED_INSERT_OMITTED_COLUMNS` in `tinybird/ingest-token.ts`), so a cluster below 75 keeps
  * ingesting. Frozen v75 DDL: never re-derive it from a later snapshot.
  */
 export const migration_0075_retention_days = {

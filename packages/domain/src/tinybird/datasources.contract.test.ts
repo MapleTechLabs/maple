@@ -8,7 +8,6 @@ import {
 	metricsSum,
 	traces,
 } from "./datasources"
-import { INGEST_UNWRITTEN_COLUMNS } from "./ingest-token"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /**
@@ -44,6 +43,7 @@ const EXPECTED_TOPLEVEL_KEYS = {
 		"scope_version",
 		"scope_attributes",
 		"log_attributes",
+		"retention_days",
 	]),
 	traces: new Set([
 		"start_time",
@@ -71,6 +71,7 @@ const EXPECTED_TOPLEVEL_KEYS = {
 		"links_span_id",
 		"links_trace_state",
 		"links_attributes",
+		"retention_days",
 	]),
 	metrics_sum: new Set([...metricCommonKeys(), "value", "aggregation_temporality", "is_monotonic"]),
 	metrics_gauge: new Set([...metricCommonKeys(), "value"]),
@@ -121,6 +122,7 @@ function metricCommonKeys(): string[] {
 		"exemplars_timestamp",
 		"exemplars_value",
 		"exemplars_filtered_attributes",
+		"retention_days",
 	]
 }
 
@@ -134,10 +136,8 @@ function topLevelKey(jsonPath: string): string | null {
 
 function emittedTopLevelKeys(datasource: AnyDatasource): Set<string> {
 	const keys = new Set<string>()
-	for (const [name, column] of Rec.toEntries(datasource.options.schema)) {
+	for (const column of Rec.values(datasource.options.schema)) {
 		if (getColumnType(column).modifiers.defaultExpression !== undefined) continue
-		// The encoder does not write these yet; the table default fills them.
-		if (INGEST_UNWRITTEN_COLUMNS.has(name)) continue
 		const path = getColumnJsonPath(column)
 		if (!path) continue
 		const top = topLevelKey(path)
