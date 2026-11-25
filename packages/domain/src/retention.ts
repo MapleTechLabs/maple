@@ -2,7 +2,7 @@
 // show the same numbers the backend resolves.
 
 import { SourceSignal } from "@maple/primitives"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 
 /** A signal with a retention period: the same families a source can be limited to. */
 export const RetentionSignal = SourceSignal
@@ -93,6 +93,37 @@ export const readHorizonDays = (
 		),
 	)
 }
+
+/**
+ * The column a raw table ages its rows by, per table of `RETENTION_SIGNAL_DATASOURCES`.
+ * Session replay recordings age from when Maple received them.
+ */
+export const RETENTION_TIME_COLUMNS = {
+	traces: "Timestamp",
+	logs: "TimestampTime",
+	metrics_sum: "TimeUnix",
+	metrics_gauge: "TimeUnix",
+	metrics_histogram: "TimeUnix",
+	metrics_exponential_histogram: "TimeUnix",
+	session_replays: "StartTime",
+	session_replay_events: "Timestamp",
+	session_events: "Timestamp",
+	product_events: "Timestamp",
+	profiles: "Timestamp",
+} as const satisfies Readonly<Record<(typeof RETENTION_SIGNAL_DATASOURCES)[RetentionSignal][number], string>>
+
+/**
+ * The periods rows are physically stored under. A policy keeps its exact days for reads; the
+ * row is stamped with the next period up, so tables hold a bounded set of expiry groups.
+ */
+export const RETENTION_STAMP_LADDER = [3, 7, 14, 30, 60, 90, 180, 365, 550, 800] as const
+
+/** The period a row is stored under for a policy of `days`: the shortest ladder period that covers it. */
+export const retentionStampDays = (days: number): number =>
+	Option.getOrElse(
+		Arr.findFirst(RETENTION_STAMP_LADDER, (period) => period >= days),
+		() => MAX_RETENTION_DAYS,
+	)
 
 /** Whether a set of overrides sets anything at all. */
 export const hasRetentionOverrides = (overrides: RetentionOverrides): boolean =>

@@ -9,6 +9,9 @@ import {
 	readHorizonDays,
 	RETENTION_SIGNAL_DATASOURCES,
 	RETENTION_SIGNALS,
+	RETENTION_STAMP_LADDER,
+	RETENTION_TIME_COLUMNS,
+	retentionStampDays,
 	RetentionOverrides,
 	sourceRetentionDays,
 } from "./retention"
@@ -31,6 +34,48 @@ describe("retention defaults", () => {
 			for (const datasource of RETENTION_SIGNAL_DATASOURCES[signal]) {
 				expect(ttlDays(datasource), `${signal}: ${datasource}`).toBe(DEFAULT_RETENTION_DAYS[signal])
 			}
+		}
+	})
+})
+
+describe("retention time columns", () => {
+	it("name the column each raw table's own expiry is keyed on", () => {
+		for (const signal of RETENTION_SIGNALS) {
+			for (const datasource of RETENTION_SIGNAL_DATASOURCES[signal]) {
+				const found = Arr.findFirst(
+					tinybirdProjectManifest.datasources,
+					(candidate) => candidate.name === datasource,
+				)
+				expect(Option.getOrUndefined(found)?.content, datasource).toContain(
+					`ENGINE_TTL "toDate(${RETENTION_TIME_COLUMNS[datasource]}) + `,
+				)
+			}
+		}
+	})
+})
+
+describe("retention stamp", () => {
+	it("stores a period under the shortest ladder period that covers it", () => {
+		expect(Arr.map([1, 3, 4, 30, 31, 45, 366, 551, MAX_RETENTION_DAYS], retentionStampDays)).toEqual([
+			3, 3, 7, 30, 60, 60, 550, 800, 800,
+		])
+	})
+
+	it("stores every default under its own days, so an untouched org keeps nothing longer", () => {
+		for (const signal of RETENTION_SIGNALS) {
+			expect(retentionStampDays(DEFAULT_RETENTION_DAYS[signal]), signal).toBe(
+				DEFAULT_RETENTION_DAYS[signal],
+			)
+		}
+	})
+
+	it("tops out at the longest period a policy can ask for", () => {
+		expect(Arr.lastNonEmpty(RETENTION_STAMP_LADDER)).toBe(MAX_RETENTION_DAYS)
+	})
+
+	it("never stores a period under fewer days than it asks for", () => {
+		for (let days = 1; days <= MAX_RETENTION_DAYS; days++) {
+			expect(retentionStampDays(days)).toBeGreaterThanOrEqual(days)
 		}
 	})
 })
