@@ -170,6 +170,30 @@ describe("RetentionService", () => {
 		),
 	)
 
+	it.effect("refuses a period that cannot be stored, as a bad request and without writing", () =>
+		withDb((db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const debug = yield* source(db, ORG, "nodejs")
+				yield* retention.setOrganization(ORG, ANA, { logs: 800 })
+				const tooLong = yield* Effect.result(retention.setOrganization(ORG, ANA, { logs: 801 }))
+				const fraction = yield* Effect.result(retention.setSource(ORG, ANA, debug, { traces: 1.5 }))
+				for (const refused of [tooLong, fraction]) {
+					assert.isTrue(Result.isFailure(refused))
+					if (Result.isFailure(refused)) {
+						assert.strictEqual(
+							refused.failure._tag,
+							"@maple/http/retention/RetentionInvalidError",
+						)
+					}
+				}
+				const policy = yield* retention.get(ORG)
+				assert.deepStrictEqual(policy.overrides, { logs: 800 })
+				assert.deepStrictEqual(policy.sources, [])
+			}),
+		),
+	)
+
 	it.effect("records who last changed the organization's periods", () =>
 		withDb((db) =>
 			Effect.gen(function* () {

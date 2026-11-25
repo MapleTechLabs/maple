@@ -1,19 +1,22 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgRetentionPolicies, Sources } from "@maple/db/tables"
-import { RetentionPersistenceError, SourceNotFoundError } from "@maple/domain/http"
+import { RetentionInvalidError, RetentionPersistenceError, SourceNotFoundError } from "@maple/domain/http"
 import {
 	DEFAULT_RETENTION_DAYS,
 	hasRetentionOverrides,
+	MAX_RETENTION_DAYS,
+	MIN_RETENTION_DAYS,
 	organizationRetentionDays,
 	readHorizonDays,
 	RETENTION_SIGNALS,
 	type RetentionDaysBySignal,
-	type RetentionOverrides,
+	RetentionOverrides,
 	type RetentionSignal,
 	sourceRetentionDays,
 } from "@maple/domain/retention"
 import type { OrgId, SourceId, UserId } from "@maple/primitives"
-import { Array as Arr, Clock, Context, Effect, Layer } from "effect"
+import type { MapleDb } from "@maple/db/client"
+import { Array as Arr, Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -78,14 +81,17 @@ export interface RetentionServiceApi {
 		orgId: OrgId,
 		userId: UserId,
 		overrides: RetentionOverrides,
-	) => Effect.Effect<RetentionPolicy, RetentionPersistenceError>
+	) => Effect.Effect<RetentionPolicy, RetentionPersistenceError | RetentionInvalidError>
 	/** Replaces one source's overrides; an empty set makes it inherit again. */
 	readonly setSource: (
 		orgId: OrgId,
 		userId: UserId,
 		sourceId: SourceId,
 		overrides: RetentionOverrides,
-	) => Effect.Effect<RetentionPolicy, RetentionPersistenceError | SourceNotFoundError>
+	) => Effect.Effect<
+		RetentionPolicy,
+		RetentionPersistenceError | RetentionInvalidError | SourceNotFoundError
+	>
 }
 
 const toPersistenceError = makePersistenceErrorMapper(
@@ -95,6 +101,19 @@ const toPersistenceError = makePersistenceErrorMapper(
 
 const NO_OVERRIDES: RetentionOverrides = {}
 
+const decodeOverrides = Schema.decodeUnknownEffect(RetentionOverrides)
+
+/** Periods a caller may store: whole days within the bounds, for known signals only. */
+const validOverrides = (input: RetentionOverrides) =>
+	decodeOverrides(input).pipe(
+		Effect.mapError(
+			() =>
+				new RetentionInvalidError({
+					message: `Retention must be a whole number of days from ${MIN_RETENTION_DAYS} to ${MAX_RETENTION_DAYS}`,
+				}),
+		),
+	)
+
 export class RetentionService extends Context.Service<RetentionService, RetentionServiceApi>()(
 	"@maple/backend/services/retention/RetentionService",
 	{
@@ -102,23 +121,20 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "RetentionService", toPersistenceError)
 
-			const get = Effect.fn("RetentionService.get")(function* (orgId: OrgId) {
-				yield* Effect.annotateCurrentSpan({ orgId })
-				const policies = yield* dbExecute((db) =>
-					db.run(
-						PG.from(OrgRetentionPolicies)
-							.select(($) => ({ retentionDays: $.retentionDays }))
-							.where(($) => [$.orgId.eq(orgId)])
-							.limit(1),
-					),
+			// The org's periods and its sources' are read from one snapshot, so the horizon
+			// is never worked out from two different commits.
+			const readPolicy = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
+				const policies = yield* db.run(
+					PG.from(OrgRetentionPolicies)
+						.select(($) => ({ retentionDays: $.retentionDays }))
+						.where(($) => [$.orgId.eq(orgId)])
+						.limit(1),
 				)
-				const sourceRows = yield* dbExecute((db) =>
-					db.run(
-						PG.from(Sources)
-							.select(($) => ({ id: $.id, retentionDays: $.retentionDays }))
-							.where(($) => [$.orgId.eq(orgId)])
-							.orderBy(["id", "asc"]),
-					),
+				const sourceRows = yield* db.run(
+					PG.from(Sources)
+						.select(($) => ({ id: $.id, retentionDays: $.retentionDays }))
+						.where(($) => [$.orgId.eq(orgId)])
+						.orderBy(["id", "asc"]),
 				)
 				const overrides = policies[0]?.retentionDays ?? NO_OVERRIDES
 				const overridden = Arr.filter(sourceRows, (row) => hasRetentionOverrides(row.retentionDays))
@@ -139,6 +155,16 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 						days: sourceRetentionDays(overrides, row.retentionDays),
 					})),
 				} satisfies RetentionPolicy
+			})
+
+			const get = Effect.fn("RetentionService.get")(function* (orgId: OrgId) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				return yield* dbExecute((db) =>
+					db.transaction(readPolicy(db, orgId), {
+						isolationLevel: "repeatable read",
+						accessMode: "read only",
+					}),
+				)
 			})
 
 			// Per-instance (per-isolate) cache. An entry past `freshUntil` stays as the last
@@ -220,49 +246,75 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 			const setOrganization = Effect.fn("RetentionService.setOrganization")(function* (
 				orgId: OrgId,
 				userId: UserId,
-				overrides: RetentionOverrides,
+				input: RetentionOverrides,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
+				const overrides = yield* validOverrides(input)
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(OrgRetentionPolicies)
-							.values({
-								orgId,
-								retentionDays: overrides,
-								createdAt: now,
-								updatedAt: now,
-								updatedBy: userId,
-							})
-							.onConflictDoUpdate({
-								target: ["orgId"],
-								set: () => ({ retentionDays: overrides, updatedAt: now, updatedBy: userId }),
-							}),
+				// The write and the policy it returns commit together: a failed read undoes the write.
+				const policy = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.run(
+								PG.insertInto(OrgRetentionPolicies)
+									.values({
+										orgId,
+										retentionDays: overrides,
+										createdAt: now,
+										updatedAt: now,
+										updatedBy: userId,
+									})
+									.onConflictDoUpdate({
+										target: ["orgId"],
+										set: () => ({
+											retentionDays: overrides,
+											updatedAt: now,
+											updatedBy: userId,
+										}),
+									}),
+							)
+							return yield* readPolicy(db, orgId)
+						}),
+						{ isolationLevel: "repeatable read" },
 					),
 				)
-				return yield* Effect.flatMap(get(orgId), (policy) => rememberPolicy(orgId, policy))
+				return yield* rememberPolicy(orgId, policy)
 			})
 
 			const setSource = Effect.fn("RetentionService.setSource")(function* (
 				orgId: OrgId,
 				userId: UserId,
 				sourceId: SourceId,
-				overrides: RetentionOverrides,
+				input: RetentionOverrides,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId, sourceId })
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"tenant.userId": userId,
+					"maple.source.id": sourceId,
+				})
+				const overrides = yield* validOverrides(input)
 				const now = yield* Clock.currentTimeMillis
-				const updated = yield* dbExecute((db) =>
-					db.run(
-						PG.update(Sources)
-							.set({ retentionDays: overrides, updatedAt: now, updatedBy: userId })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
-							.returning(($) => ({ id: $.id })),
+				const policy = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const updated = yield* db.run(
+								PG.update(Sources)
+									.set({ retentionDays: overrides, updatedAt: now, updatedBy: userId })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
+									.returning(($) => ({ id: $.id })),
+							)
+							if (updated.length === 0) {
+								return yield* new SourceNotFoundError({
+									sourceId,
+									message: "Source not found",
+								})
+							}
+							return yield* readPolicy(db, orgId)
+						}),
+						{ isolationLevel: "repeatable read" },
 					),
 				)
-				if (updated.length === 0) {
-					return yield* new SourceNotFoundError({ sourceId, message: "Source not found" })
-				}
-				return yield* Effect.flatMap(get(orgId), (policy) => rememberPolicy(orgId, policy))
+				return yield* rememberPolicy(orgId, policy)
 			})
 
 			return { get, readHorizon, setOrganization, setSource } satisfies RetentionServiceApi
