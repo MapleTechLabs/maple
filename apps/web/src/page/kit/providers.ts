@@ -4,8 +4,8 @@ import type { IconName } from "@maple/views/ui/icon"
 import { docsUrl } from "./docs"
 import type { IntegrationBrand } from "./integration-empty"
 
-// The integration providers: each one's name, mark, accent, copy, docs and infra page, read by the
-// integrations catalog, the sidebar, the infra overview, Sources and the provider pages.
+// The integration providers: each one's name, mark, accent, catalog copy, docs and infra page.
+// The catalog, the sidebar, the infra overview, Sources and the provider pages read them.
 
 export type ProviderId =
 	| "cloudflare"
