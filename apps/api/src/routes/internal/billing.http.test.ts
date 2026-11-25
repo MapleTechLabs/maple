@@ -877,7 +877,7 @@ describe("billing writes over HTTP", () => {
 			)
 		})
 
-		it("carries the trial's days left onto Startup, bills now once it ended, and keeps plan terms otherwise", async () => {
+		it("carries the trial's days left onto Startup, bills now once it ended, and gives a first plan the card trial", async () => {
 			const running = await attachWith("startup", [
 				{ planId: "trial", status: "active", trialEndsAt: Date.now() + 8.5 * DAY_MS },
 			])
@@ -885,8 +885,11 @@ describe("billing writes over HTTP", () => {
 				{ planId: "trial", status: "expired", trialEndsAt: Date.now() - DAY_MS },
 			])
 			const neverTrialed = await attachWith("startup", [])
+			// A trial Autumn remembers, or a plan held before, gets no second one.
+			const trialRemembered = await attachWith("startup", [], { trialsUsed: ["trial"] })
+			const lapsed = await attachWith("startup", [{ planId: "startup", status: "expired" }])
 			assert.deepStrictEqual(
-				Arr.map([running, ended, neverTrialed], ({ response, attaches }) => [
+				Arr.map([running, ended, neverTrialed, trialRemembered, lapsed], ({ response, attaches }) => [
 					response.status,
 					attaches.length,
 					attaches[0]?.trialDays,
@@ -894,6 +897,8 @@ describe("billing writes over HTTP", () => {
 				[
 					[200, 1, 9],
 					[200, 1, null],
+					[200, 1, 14],
+					[200, 1, undefined],
 					[200, 1, undefined],
 				],
 			)

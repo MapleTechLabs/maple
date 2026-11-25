@@ -225,9 +225,18 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 			const read = yield* autumn.getOrCreateCustomer(customerId, { expand: ["trials_used"] })
 			const response = yield* ensureOk(read)
 			const customer = yield* decodeUpstream(BillingCustomer, response)
+			const { trialsUsed } = yield* decodeUpstream(TrialsUsed, response)
 			if (planId === STARTUP_PLAN_ID) {
 				const now = yield* Clock.currentTimeMillis
-				return { isHeld: false, trialDays: startupTrialDays(customer.subscriptions, now) }
+				const carried = startupTrialDays(customer.subscriptions, now)
+				// An org that never held a plan or a trial gets the trial as a card trial: Startup
+				// no longer has one of its own, and the trial is still once per org.
+				const isFirstPlan =
+					!hasHadPlan(customer.subscriptions) && Arr.isReadonlyArrayEmpty(trialsUsed ?? [])
+				return {
+					isHeld: false,
+					trialDays: carried === undefined && isFirstPlan ? TRIAL_DURATION_DAYS : carried,
+				}
 			}
 			if (
 				Arr.some(
@@ -236,7 +245,6 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 				)
 			)
 				return { isHeld: true, trialDays: undefined }
-			const { trialsUsed } = yield* decodeUpstream(TrialsUsed, response)
 			const hasUsedTrial = Arr.some(trialsUsed ?? [], (trial) => trial.planId === TRIAL_PLAN_ID)
 			if (!hasUsedTrial && !hasHadPlan(customer.subscriptions)) return planTerms
 			return yield* new BillingConflictError({
