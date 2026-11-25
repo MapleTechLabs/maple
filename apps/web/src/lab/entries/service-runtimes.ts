@@ -154,7 +154,11 @@ const ANSWERS: ReadonlyArray<Answer> = [
 	),
 	slot(
 		(model) => model.sourceMaps,
-		(key) => PageMessage.CompletedFetchSourceMaps({ key, result: Result.succeed(RUNTIMES_SOURCE_MAPS) }),
+		(key) =>
+			PageMessage.CompletedFetchSourceMaps({
+				key,
+				result: Result.succeed({ maps: RUNTIMES_SOURCE_MAPS, hasMore: false }),
+			}),
 	),
 	(model) =>
 		Arr.flatMap(Rec.toEntries(model.commits), ([sha, data]) => {

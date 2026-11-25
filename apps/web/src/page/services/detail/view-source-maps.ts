@@ -12,7 +12,7 @@ import { vstack } from "@maple/views/ui/stack"
 import { isResolvableSha } from "../../kit/commit-card"
 import { relativeTime } from "../../kit/relative-time"
 import type { Commit } from "../../kit/service-metrics/points"
-import { latestRelease, SERVICE_SOURCE_MAPS_LIMIT } from "../../kit/source-maps"
+import { latestRelease } from "../../kit/source-maps"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
@@ -64,15 +64,16 @@ const repositoryLink = (h: H, repoFullName: string): Html =>
 
 /** Nothing until the maps answer, and nothing when the service has none. */
 export const sourceMapsPanel = (h: H, model: Model, clock: Clock): Html => {
-	const maps = AsyncData.getOrElse(model.sourceMaps.data, (): ReadonlyArray<V2SourceMap> => [])
+	const page = AsyncData.getOrElse(model.sourceMaps.data, () => ({ maps: [], hasMore: false }))
+	const maps = page.maps
 	const release = latestRelease(maps)
 	const newest = release?.maps[0]
 	if (release === null || newest === undefined) return null
 	const commit = repositoryCommit(model, release.version)
 	// Any of the service's maps, not only the newest release's: older builds still serve clients.
 	const lastUsed = lastUsedOf(maps)
-	// A full page may hold back more of the release: a re-upload interleaves it with older builds.
-	const fileCount = `${release.maps.length}${maps.length === SERVICE_SOURCE_MAPS_LIMIT ? "+" : ""}`
+	// More pages may hold more of the release: a re-upload interleaves it with older builds.
+	const fileCount = `${release.maps.length}${page.hasMore ? "+" : ""}`
 	const header: PanelHeaderOptions = {
 		title: "Source maps",
 		scope: typography(h, { size: "2xs", tone: "subtle" }, ["stack traces map to your code"]),

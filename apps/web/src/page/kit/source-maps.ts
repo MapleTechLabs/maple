@@ -1,5 +1,5 @@
-import type { V2SourceMap } from "@maple/domain/http/v2"
-import { Array as Arr, Effect } from "effect"
+import { V2SourceMap } from "@maple/domain/http/v2"
+import { Array as Arr, Effect, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 
@@ -8,6 +8,13 @@ import { MapleApiV2Client } from "../../platform/api-clients"
 /** Maps read per service: enough to count the newest release's files. */
 export const SERVICE_SOURCE_MAPS_LIMIT = 100
 
+/** One page of a service's maps, newest first, and whether the list goes on past it. */
+export const ServiceSourceMaps = Schema.Struct({
+	maps: Schema.Array(V2SourceMap),
+	hasMore: Schema.Boolean,
+})
+export type ServiceSourceMaps = typeof ServiceSourceMaps.Type
+
 /** `sourceMaps.list` for one service, newest first. */
 export const listServiceSourceMaps = (serviceName: string) =>
 	Effect.gen(function* () {
@@ -15,7 +22,7 @@ export const listServiceSourceMaps = (serviceName: string) =>
 		const response = yield* client.sourceMaps.list({
 			query: { service: serviceName, limit: SERVICE_SOURCE_MAPS_LIMIT },
 		})
-		return response.data
+		return { maps: response.data, hasMore: response.has_more } satisfies ServiceSourceMaps
 	}).pipe(Effect.mapError(toLoadFailure))
 
 /**

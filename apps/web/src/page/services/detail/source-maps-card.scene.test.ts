@@ -40,14 +40,14 @@ const sourceMap = (version: string | null, index: number, hasSources = true): V2
 	})
 
 /** The Overview of `web` with its source maps answered, and the release commit when given. */
-const withSourceMaps = (maps: ReadonlyArray<V2SourceMap>, resolvedSha?: string): Model => {
+const withSourceMaps = (maps: ReadonlyArray<V2SourceMap>, resolvedSha?: string, hasMore = false): Model => {
 	const start = init({ serviceName: "web", search: {} }, context).model
 	const resolved = pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" })).model
 	const answered = pageUpdate(
 		resolved,
 		Message.CompletedFetchSourceMaps({
 			key: resolved.sourceMaps.key ?? "",
-			result: Result.succeed(maps),
+			result: Result.succeed({ maps, hasMore }),
 		}),
 	).model
 	if (resolvedSha === undefined) return answered
@@ -114,7 +114,22 @@ describe("service detail, Source maps card", () => {
 		expect(commit !== undefined && AsyncData.isLoading(commit)).toBe(true)
 	})
 
-	test("a full page of one release counts as more than the page", () => {
+	test("a page with more after it counts as more than the page", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withSourceMaps(
+					Array.from({ length: SERVICE_SOURCE_MAPS_LIMIT }, (_, index) => sourceMap(SHA, index)),
+					undefined,
+					true,
+				),
+			),
+			...mounted,
+			expectView(text(`${SERVICE_SOURCE_MAPS_LIMIT}+`)).toExist(),
+		)
+	})
+
+	test("a release of exactly one page, with nothing after it, counts exactly", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
@@ -123,20 +138,25 @@ describe("service detail, Source maps card", () => {
 				),
 			),
 			...mounted,
-			expectView(text(`${SERVICE_SOURCE_MAPS_LIMIT}+`)).toExist(),
+			expectView(text(`${SERVICE_SOURCE_MAPS_LIMIT}`)).toExist(),
+			expectView(text(`${SERVICE_SOURCE_MAPS_LIMIT}+`)).not.toExist(),
 		)
 	})
 
-	test("a full page mixing releases marks the newest release's count as possibly incomplete", () => {
+	test("a page mixing releases with more after it marks the newest release's count as possibly incomplete", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
-				withSourceMaps([
-					sourceMap(SHA, 0),
-					...Array.from({ length: SERVICE_SOURCE_MAPS_LIMIT - 1 }, (_, index) =>
-						sourceMap(OLD_SHA, index + 1),
-					),
-				]),
+				withSourceMaps(
+					[
+						sourceMap(SHA, 0),
+						...Array.from({ length: SERVICE_SOURCE_MAPS_LIMIT - 1 }, (_, index) =>
+							sourceMap(OLD_SHA, index + 1),
+						),
+					],
+					undefined,
+					true,
+				),
 			),
 			...mounted,
 			expectView(text("1+")).toExist(),

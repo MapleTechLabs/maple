@@ -225,7 +225,10 @@ const overviewShas = (model: Model): ReadonlyArray<string> => {
 		(check) => check.sha,
 	)
 	// The Source maps card links its release's commit, which may predate the window's deploys.
-	const release = latestRelease(AsyncData.getOrElse(model.sourceMaps.data, () => []))?.version
+	const release = Option.match(AsyncData.getData(model.sourceMaps.data), {
+		onNone: () => undefined,
+		onSome: (page) => latestRelease(page.maps)?.version,
+	})
 	const uploaded = release === undefined || release === null ? [] : [release]
 	return [...new Set([...markers, ...Arr.filter([...rows, ...uploaded], isResolvableSha)])]
 }
