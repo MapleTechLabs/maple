@@ -106,7 +106,7 @@ export const update = (model: Model, message: Message): Return =>
 				...model,
 				policy: AsyncData.Loading(),
 			},
-			commands: [FetchRetention()],
+			commands: [FetchRetention(), ...(model.sourceNames === null ? [FetchSourceNames()] : [])],
 		}),
 		ChangedPeriod: ({ signal, value }) =>
 			model.draft === null || !canManage(model)
