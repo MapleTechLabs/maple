@@ -31,8 +31,16 @@ export const Model = Schema.Struct({
 	/** Whether the draft limits the role to namespaces; `namespaces` are the ones it names. */
 	isLimited: Schema.Boolean,
 	namespaces: Schema.Array(Schema.String),
-	/** What turning the limit on unticked, so turning it off again puts the ticks back. */
-	setAside: Schema.Array(Policy.PermissionName),
+	/**
+	 * What turning the limit on unticked, and which of those ticks were only implied, so turning it
+	 * off again puts both back. `null` when the limit was not turned on in this draft.
+	 */
+	setAside: Schema.NullOr(
+		Schema.Struct({
+			permissions: Schema.Array(Policy.PermissionName),
+			autoTicked: Schema.Array(Policy.PermissionName),
+		}),
+	),
 	/** The picker's list could not be read: it then offers only the draft's own namespaces. */
 	isNamespaceListFailed: Schema.Boolean,
 	namespacesBox: Combobox.Model,

@@ -87,7 +87,7 @@ export const init = (route: RoleRoute, context: PageContext): Return => {
 			autoTicked: [],
 			isLimited: false,
 			namespaces: [],
-			setAside: [],
+			setAside: null,
 			isNamespaceListFailed: false,
 			namespacesBox: Combobox.init("role-namespaces", "multiple"),
 			knownNamespaces: [],
@@ -115,7 +115,7 @@ const withDrafts = (model: Model, role: RoleEntry): Model => ({
 	autoTicked: [],
 	isLimited: role.namespaces.length > 0,
 	namespaces: role.namespaces,
-	setAside: [],
+	setAside: null,
 	isDraftLoaded: true,
 })
 
@@ -159,10 +159,13 @@ const toggled = (draft: PermissionDraft, permission: Policy.Permission): Permiss
 	return { permissions: next, autoTicked: Arr.filter(autoTicked, (held) => next.includes(held)) }
 }
 
+const needsEveryNamespace = (permission: Policy.Permission): boolean => !Policy.holdableWhenScoped(permission)
+
 /**
  * Turning the limit on unticks what needs telemetry from every namespace, Read telemetry included,
- * and sets it aside. Turning it off ticks that back; a role that was limited when it loaded has
- * nothing aside, so it gets Read telemetry and goes on reading, now from every namespace.
+ * and sets it aside with which ticks were only implied. Turning it off puts exactly that back, even
+ * when it is nothing. Only a role that was limited when it loaded gets Read telemetry ticked: it
+ * read telemetry before, and goes on reading, now from every namespace.
  */
 const toggledLimit = (model: Model): Model => {
 	if (!model.isLimited) {
@@ -171,20 +174,41 @@ const toggledLimit = (model: Model): Model => {
 			isLimited: true,
 			permissions: Arr.filter(model.permissions, Policy.holdableWhenScoped),
 			autoTicked: Arr.filter(model.autoTicked, Policy.holdableWhenScoped),
-			setAside: Arr.filter(model.permissions, (permission) => !Policy.holdableWhenScoped(permission)),
+			setAside: {
+				permissions: Arr.filter(model.permissions, needsEveryNamespace),
+				autoTicked: Arr.filter(model.autoTicked, needsEveryNamespace),
+			},
 		}
 	}
-	const back = model.setAside.length === 0 ? (["telemetry:read"] as const) : model.setAside
+	const back = model.setAside ?? { permissions: ["telemetry:read"] as const, autoTicked: [] }
+	const permissions = Policy.withImplied([...model.permissions, ...back.permissions])
 	return {
 		...model,
 		isLimited: false,
-		permissions: Policy.withImplied([...model.permissions, ...back]),
-		setAside: [],
+		permissions,
+		autoTicked: Arr.filter(Arr.union(model.autoTicked, back.autoTicked), (held) =>
+			permissions.includes(held),
+		),
+		setAside: null,
 	}
 }
 
 const isNamespace = Schema.is(Policy.RoleNamespace)
 const areRoleNamespaces = Schema.is(Policy.RoleNamespaces)
+
+/**
+ * The namespaces to pick from: the ones reported lately, the ones the draft already names, and
+ * whatever is typed, when it makes a namespace. The list only knows the busiest ones that send
+ * spans, so a quieter one, or one that only sends logs or metrics, is added by its exact name.
+ */
+export const namespaceChoices = (model: Model): ReadonlyArray<string> => {
+	const typed = Str.trim(model.namespacesBox.inputValue)
+	return Policy.normalizeNamespaces([
+		...model.knownNamespaces,
+		...model.namespaces,
+		...(isNamespace(typed) ? [typed] : []),
+	])
+}
 
 /** Whether the drafted name, description and namespace limit make a role the API accepts. */
 export const isValidDraft = (model: Model): boolean =>
@@ -352,7 +376,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						autoTicked: [],
 						isLimited: (saved.namespaces ?? []).length > 0,
 						namespaces: saved.namespaces ?? [],
-						setAside: [],
+						setAside: null,
 					},
 					outMessage: toast("success", `${saved.name} saved`),
 				}),

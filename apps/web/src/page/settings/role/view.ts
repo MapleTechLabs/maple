@@ -58,7 +58,7 @@ import { holderLabel, namespaceLimitBadge, roleTextField, roleTypeBadge } from "
 import { Message } from "./message"
 import { canManageRoles } from "../roles/model"
 import type { Model, PermissionFilter } from "./model"
-import { isEditable, isValidDraft, requiredBy, roleOf, unsavedChanges } from "./update"
+import { isEditable, isValidDraft, namespaceChoices, requiredBy, roleOf, unsavedChanges } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -348,10 +348,6 @@ const NAMESPACE_IDS = {
 	description: "role-namespaces-description",
 }
 
-/** The namespaces to pick from: the ones reported lately, and the ones the draft already names. */
-const namespaceChoices = (model: Model): ReadonlyArray<string> =>
-	Policy.normalizeNamespaces([...model.knownNamespaces, ...model.namespaces])
-
 const namespacePicker = (h: H, model: Model): Html => {
 	const isOverLimit = model.namespaces.length > Policy.MAX_ROLE_NAMESPACES
 	const state: FieldState = {
@@ -370,10 +366,10 @@ const namespacePicker = (h: H, model: Model): Html => {
 				items: namespaceChoices(model),
 				ariaLabelledBy: NAMESPACE_IDS.label,
 				ariaDescribedBy: NAMESPACE_IDS.description,
-				placeholder: model.namespaces.length === 0 ? "Choose namespaces…" : "Add namespace…",
+				placeholder: model.namespaces.length === 0 ? "Choose or type a namespace…" : "Add namespace…",
 				emptyText: model.isNamespaceListFailed
-					? "Couldn't load the namespaces"
-					: "No namespaces reported in the last 7 days",
+					? "Couldn't load the namespaces. Type one's exact name."
+					: "No namespaces reported in the last 7 days. Type one's exact name.",
 				toView: (parts) => h.div([h.Class("sm:max-w-md")], parts),
 			},
 		}),
@@ -391,7 +387,7 @@ const namespacePicker = (h: H, model: Model): Html => {
 		fieldDescription(
 			h,
 			{ ids: NAMESPACE_IDS, state },
-			"Matches the service.namespace resource attribute. Telemetry sent without one is in no namespace, so this role does not read it.",
+			"Matches the service.namespace resource attribute exactly. Telemetry sent without one is in no namespace, so this role does not read it.",
 		),
 	])
 }

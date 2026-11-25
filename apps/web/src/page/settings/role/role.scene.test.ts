@@ -10,7 +10,7 @@ import type { PageContext } from "../../contract"
 import { customRole, ON_CALL, roleList, roleMembers, STATUS_EDITOR } from "../roles/test-roles"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, unsavedChanges, update } from "./update"
+import { init, namespaceChoices, unsavedChanges, update } from "./update"
 import { view as pageView } from "./view"
 
 const ORG = "org_acme"
@@ -136,6 +136,59 @@ describe("a role limited to namespaces", () => {
 		const after = run(before, [Message.ToggledLimit(), Message.ToggledLimit()])
 		expect([...after.permissions].sort()).toEqual([...before.permissions].sort())
 		expect(unsavedChanges(after)).toBe(0)
+	})
+
+	// Nothing was set aside, so nothing comes back: a role that never read telemetry does not start to.
+	test("turning the limit on and off on a role with no telemetry leaves it without any", () => {
+		const bare = customRole({
+			id: Policy.CustomRoleId.make("role_bare00000000"),
+			name: "Bare",
+			permissions: [],
+		})
+		const model = run(init({ _tag: "RoleEditor", roleId: bare.id }, context).model, [
+			Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:admin"]) }),
+			Message.CompletedFetchRoles({ result: Result.succeed(roleList([bare])) }),
+			Message.ToggledLimit(),
+			Message.ToggledLimit(),
+		])
+		expect(model.permissions).toEqual([])
+		expect(unsavedChanges(model)).toBe(0)
+	})
+
+	// Read telemetry was ticked only for Run raw SQL: it still goes when SQL does, after a round trip.
+	test("a tick that was only implied is still only implied after the limit is turned on and off", () => {
+		const bare = customRole({
+			id: Policy.CustomRoleId.make("role_bare00000000"),
+			name: "Bare",
+			permissions: [],
+		})
+		const model = run(init({ _tag: "RoleEditor", roleId: bare.id }, context).model, [
+			Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:admin"]) }),
+			Message.CompletedFetchRoles({ result: Result.succeed(roleList([bare])) }),
+			Message.ToggledPermission({ permission: "query:sql" }),
+			Message.ToggledLimit(),
+			Message.ToggledLimit(),
+		])
+		expect([...model.permissions].sort()).toEqual(["query:sql", "telemetry:read"])
+		const unticked = run(model, [Message.ToggledPermission({ permission: "query:sql" })])
+		expect(unticked.permissions).toEqual([])
+	})
+
+	test("a namespace the list does not know is added by typing its exact name", () => {
+		const type = (value: string) =>
+			Message.GotNamespacesMessage({ message: Combobox.Message.ChangedInput({ value }) })
+		const typed = run(openedLimited(), [type(" audit ")])
+		expect(namespaceChoices(typed)).toContain("audit")
+		const added = run(typed, [clickNamespace("audit")])
+		expect(saveArgs(pageUpdate(added, Message.ClickedSave()))).toMatchObject({
+			payload: { namespaces: ["audit", "checkout"] },
+		})
+		// What could not be a namespace is not offered.
+		expect(namespaceChoices(run(openedLimited(), [type("it's")]))).toEqual([
+			"checkout",
+			"payments",
+			"search",
+		])
 	})
 
 	test("Discard puts the limit back as saved", () => {
