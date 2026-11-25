@@ -17,8 +17,9 @@ import { CLOUDFLARE } from "../infra-integrations/cloudflare/integration/cloudfl
 import { CHAT } from "./chat-provider"
 import { FLEET } from "./fleet/fleet-provider"
 import { GITHUB } from "./github-provider"
+import { PROMETHEUS } from "./prometheus-provider"
 import { ReadClock, TrackConnected, TrackDisconnected } from "./command"
-import type { FlowSpec, FlowStage } from "./flow"
+import type { FlowContext, FlowSpec, FlowStage } from "./flow"
 import { Message } from "./message"
 import { canManage, type Model, type Statuses } from "./model"
 import type { CardStatus, IntegrationOverview } from "./overview"
@@ -70,12 +71,16 @@ export type MountedProvider = Readonly<{
 	/** `null`: the hub's own disconnect runs. */
 	onConfirmDisconnect: ((model: Model, context: PageContext) => Return) | null
 	isDisconnecting: (model: Model) => boolean
-	ticker: Readonly<{
-		everyMs: number
-		fast: Readonly<{ everyMs: number; ticks: number }> | null
-		isActive: (model: Model) => boolean
-		tick: Message
-	}> | null
+	tickers: ReadonlyArray<
+		Readonly<{
+			everyMs: number
+			fast: Readonly<{ everyMs: number; ticks: number }> | null
+			isActive: (model: Model) => boolean
+			/** `null` while inactive; a change restarts the ticks. */
+			dependency: (model: Model) => string | null
+			tick: Message
+		}>
+	>
 	delayed: Readonly<{
 		afterMs: number
 		versionOf: (model: Model) => number | null
@@ -86,12 +91,21 @@ export type MountedProvider = Readonly<{
 		model: Model,
 		timeZone: string,
 		focusId: string | null,
+		integration: IntegrationId,
 	) => ReadonlyArray<Html>
 	headerActions: ((h: HtmlBuilder<Message>, model: Model) => ReadonlyArray<Html>) | null
 	headerStatus: ((h: HtmlBuilder<Message>, model: Model, timeZone: string) => Html | undefined) | null
 	/** `null`: the generic flow. */
-	flow: ((model: Model) => FlowSpec) | null
-	flowView: ((h: HtmlBuilder<Message>, model: Model, stage: FlowStage, timeZone: string) => Html) | null
+	flow: ((model: Model, integration: IntegrationId, context: FlowContext) => FlowSpec) | null
+	flowView:
+		| ((
+				h: HtmlBuilder<Message>,
+				model: Model,
+				stage: FlowStage,
+				timeZone: string,
+				integration: IntegrationId,
+		  ) => Html)
+		| null
 	cardStatus: (statuses: Statuses, context: Omit<StatusContext, "statuses">) => CardStatus | null
 	overview: (statuses: Statuses, context: Omit<StatusContext, "statuses">) => IntegrationOverview
 }>
@@ -187,7 +201,6 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 		(step: ((sub: M, env: ProviderEnv<S>) => ProviderReturn<M, Msg>) | undefined) =>
 		(model: Model, context: PageContext): Return =>
 			step === undefined ? { model } : run(spec, model, context, step)
-	const subscription = module.subscription
 	const isDisconnecting = module.isDisconnecting
 	const blocksConnect = module.blocksConnect
 	const onConnectPayload = module.onConnectPayload
@@ -223,23 +236,26 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 				? { model }
 				: run(spec, model, context, (sub, env) => onStatus(sub, env, answer))
 		},
-		ticker:
-			subscription === undefined
-				? null
-				: {
-						everyMs: subscription.everyMs,
-						fast: subscription.fast ?? null,
-						isActive: (model) =>
-							subscription.isActive(spec.get(model), {
-								status: spec.slot(model.statuses),
-								nowMs: model.nowMs,
-								isShown: isShownIn(model, module),
-								canManage: canManage(model),
-								integration: integrationOfSearch(model.search.integration),
-								isConnecting: model.connect.active !== null,
-							}),
-						tick: spec.toHub(subscription.tick),
-					},
+		tickers: Arr.map(module.subscriptions ?? [], (subscription) => {
+			const isActive = (model: Model) =>
+				subscription.isActive(spec.get(model), {
+					status: spec.slot(model.statuses),
+					nowMs: model.nowMs,
+					isShown: isShownIn(model, module),
+					canManage: canManage(model),
+					integration: integrationOfSearch(model.search.integration),
+					isConnecting: model.connect.active !== null,
+				})
+			const restartKey = subscription.restartKey
+			return {
+				everyMs: subscription.everyMs,
+				fast: subscription.fast ?? null,
+				isActive,
+				dependency: (model: Model) =>
+					isActive(model) ? (restartKey === undefined ? "" : restartKey(spec.get(model))) : null,
+				tick: spec.toHub(subscription.tick),
+			}
+		}),
 		delayed:
 			delayed === undefined
 				? null
@@ -348,6 +364,15 @@ export const GITHUB_PROVIDER = mount({
 	toHub: (message) => Message.GotGithubMessage({ message }),
 })
 
+export const PROMETHEUS_PROVIDER = mount({
+	module: PROMETHEUS,
+	statusName: "scrapeTargets",
+	slot: (statuses) => statuses.scrapeTargets,
+	get: (model) => model.prometheusCard,
+	set: (model, prometheusCard) => ({ ...model, prometheusCard }),
+	toHub: (message) => Message.GotPrometheusMessage({ message }),
+})
+
 /** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
 export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	RAILWAY_PROVIDER,
@@ -360,6 +385,7 @@ export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	CLOUDFLARE_PROVIDER,
 	FLEET_PROVIDER,
 	GITHUB_PROVIDER,
+	PROMETHEUS_PROVIDER,
 ]
 
 export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>

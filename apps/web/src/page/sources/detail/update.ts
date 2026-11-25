@@ -33,6 +33,7 @@ import {
 	gcpConnectors,
 	Message as IntegrationMessage,
 	type Model as IntegrationModel,
+	PrometheusMessage,
 } from "../../integrations/embed"
 import * as Integrations from "../../integrations/embed"
 import {
@@ -191,7 +192,13 @@ const syncTarget = (model: Model, context: PageContext): Return => {
 		? { model }
 		: liftConnection(
 				model,
-				Integrations.update(connection, IntegrationMessage.ClickedTarget({ id: target }), context),
+				Integrations.update(
+					connection,
+					IntegrationMessage.GotPrometheusMessage({
+						message: PrometheusMessage.ClickedTarget({ id: target }),
+					}),
+					context,
+				),
 			)
 }
 
@@ -358,10 +365,12 @@ const AWS_CLEANUP_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aw
  */
 const afterConnectionWrite = (
 	model: Model,
-	child: IntegrationMessage,
+	message: IntegrationMessage,
 	step: Return,
 	context: PageContext,
 ): Return => {
+	// Scrape-target writes come wrapped for their module.
+	const child = message._tag === "GotPrometheusMessage" ? message.message : message
 	// An AWS check rewrites the source's health; a background one only matters once it verifies. A
 	// click during a background check makes it the user's, which only the card's model knows.
 	const isAwsCheck =

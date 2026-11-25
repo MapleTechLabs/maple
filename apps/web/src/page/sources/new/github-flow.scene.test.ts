@@ -408,7 +408,7 @@ describe("github connect flow", () => {
 				),
 			}),
 		)
-		const isPolling = (model: Model) => GITHUB_PROVIDER.ticker?.isActive(model.integrations) === true
+		const isPolling = (model: Model) => GITHUB_PROVIDER.tickers[0]?.isActive(model.integrations) === true
 		expect(isPolling(delayed)).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
@@ -453,7 +453,7 @@ describe("github connect flow", () => {
 		const complete = withStatus(
 			status({ repositories: [], repositoryDiscovery: { _tag: "Complete", requestId: "discovery-1" } }),
 		)
-		expect(GITHUB_PROVIDER.ticker?.isActive(complete.integrations)).toBe(false)
+		expect(GITHUB_PROVIDER.tickers[0]?.isActive(complete.integrations)).toBe(false)
 		scene(
 			{ update: pageUpdate, view },
 			given(complete),
@@ -477,7 +477,7 @@ describe("github connect flow", () => {
 				},
 			}),
 		)
-		expect(GITHUB_PROVIDER.ticker?.isActive(failed.integrations)).toBe(false)
+		expect(GITHUB_PROVIDER.tickers[0]?.isActive(failed.integrations)).toBe(false)
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),

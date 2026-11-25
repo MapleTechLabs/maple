@@ -4,7 +4,6 @@ import { overviewOf } from "./derive"
 import type { Model } from "./model"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlow } from "../infra-integrations/gcp/integration/flow-gcp"
-import { prometheusFlow } from "./flow-prometheus"
 import { awsFlow } from "../infra-integrations/aws/integration/flow-aws"
 
 // Where a source stands in `/sources/new`'s flow: Connect, Choose data, Go live.
@@ -55,11 +54,8 @@ const genericFlow = (model: Model, integration: DataIntegration): FlowSpec => {
 
 export const flowOf = (model: Model, integration: DataIntegration, context: FlowContext): FlowSpec => {
 	const flow = providerModuleOf(integration)?.flow ?? null
-	if (flow !== null) return flow(model)
+	if (flow !== null) return flow(model, integration, context)
 	switch (integration) {
-		case "prometheus":
-		case "warpstream":
-			return prometheusFlow(model, integration, context)
 		case "aws":
 			return awsFlow(model)
 		case "gcp":

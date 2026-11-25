@@ -28,11 +28,11 @@ import {
 	type ScrapeIntegration,
 	scrapeLiveHealth,
 } from "./flow-prometheus"
-import { Message } from "./message"
+import type { Message } from "./message"
 import type { Model } from "./model"
-import { hostnameOf } from "./prometheus"
+import { hostnameOf, PrometheusMessage } from "./prometheus"
 import { isFormValid, parsedInterval } from "./update-prometheus"
-import { authField, credentialFields, textField } from "./view-prometheus-form"
+import { authField, credentialFields, textField, toHub } from "./view-prometheus-form"
 import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
@@ -242,7 +242,9 @@ const failedRow = (
 								variant: "outline",
 								size: "sm",
 								className: "w-fit",
-								attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }))],
+								attributes: [
+									h.OnClick(toHub(PrometheusMessage.ClickedProbe({ id: target.id }))),
+								],
 							},
 							["Probe again"],
 						),
@@ -263,7 +265,10 @@ const connectStep = (h: H, model: Model, integration: ScrapeIntegration): Html =
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [copy.intro]),
 				...(integration === "warpstream" ? [warpstreamGuide(h)] : []),
 				h.form(
-					[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(Message.SubmittedTargetForm())],
+					[
+						h.Class(vstackClass({ gap: "4" })),
+						h.OnSubmit(toHub(PrometheusMessage.SubmittedTargetForm())),
+					],
 					[
 						textField(h, model, {
 							field: "url",
@@ -310,7 +315,10 @@ const chooseStep = (h: H, model: Model, integration: ScrapeIntegration): Html =>
 					"How it shows up in Sources and on every metric it sends.",
 				]),
 				h.form(
-					[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(Message.SubmittedTargetForm())],
+					[
+						h.Class(vstackClass({ gap: "4" })),
+						h.OnSubmit(toHub(PrometheusMessage.SubmittedTargetForm())),
+					],
 					[
 						h.div(
 							[h.Class("grid grid-cols-1 gap-4 @2xl/page:grid-cols-3")],

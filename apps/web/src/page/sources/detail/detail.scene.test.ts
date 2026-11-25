@@ -30,12 +30,14 @@ import { AppRoute } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/primitives"
-import { Message as IntegrationMessage } from "../../integrations/embed"
+import { Message as IntegrationMessage, PrometheusMessage } from "../../integrations/embed"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, isSettingsDirty, routeChanged, sourceOf, update } from "./update"
 import { breadcrumbsOf, view as pageView } from "./view"
 import { focusIdOf } from "../kit/shared"
+
+const scrape = (message: PrometheusMessage) => IntegrationMessage.GotPrometheusMessage({ message })
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -460,20 +462,24 @@ describe("integration sources", () => {
 		const deleted = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedTargetDelete({
-					id: Schema.decodeSync(ScrapeTargetId)(uuid),
-					failure: null,
-				}),
+				message: scrape(
+					PrometheusMessage.CompletedTargetDelete({
+						id: Schema.decodeSync(ScrapeTargetId)(uuid),
+						failure: null,
+					}),
+				),
 			}),
 		)
 		expect(deleted.outMessage?._tag === "RequestedNavigation" && deleted.outMessage.url).toBe("/sources")
 		const toggled = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedToggle({
-					id: Schema.decodeSync(ScrapeTargetId)(uuid),
-					failure: null,
-				}),
+				message: scrape(
+					PrometheusMessage.CompletedToggle({
+						id: Schema.decodeSync(ScrapeTargetId)(uuid),
+						failure: null,
+					}),
+				),
 			}),
 		)
 		expect(names(toggled.commands)).toContain("FetchSourceDetailList")

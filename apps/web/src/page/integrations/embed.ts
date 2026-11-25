@@ -22,6 +22,7 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 export { canManage, Model } from "./model"
 export { Message } from "./message"
+export { PrometheusMessage } from "./prometheus"
 export { routeChanged, update } from "./update"
 export { subscriptions } from "./subscription"
 export { HEALTH_TONE, overviewOf } from "./derive"

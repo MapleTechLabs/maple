@@ -6,6 +6,8 @@ import {
 } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
+import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
@@ -13,10 +15,59 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
-import { Message } from "./message"
-import { AuthType } from "./prometheus-form-field"
+import { AuthType, FormFieldName } from "./prometheus-form-field"
 
 export { FormFieldName } from "./prometheus-form-field"
+
+/** The scrape-target module's messages (Prometheus and WarpStream), carried in `GotPrometheusMessage`. */
+export const PrometheusMessage = defineMessageUnion({
+	ClickedTarget: { id: ScrapeTargetId },
+	CompletedFetchChecks: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
+	},
+	/** The target list every 30 s, the selected target's checks every 10 s. */
+	TickedTargetsRefresh: {},
+	TickedChecksRefresh: {},
+	ClickedProbe: { id: ScrapeTargetId },
+	CompletedProbe: {
+		id: ScrapeTargetId,
+		failure: Schema.NullOr(LoadFailure),
+		success: Schema.Boolean,
+		error: Schema.NullOr(Schema.String),
+	},
+	ClickedToggleTarget: { id: ScrapeTargetId },
+	CompletedToggle: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
+	ClickedEditTarget: { id: ScrapeTargetId },
+	ClickedDeleteTarget: { id: ScrapeTargetId },
+	GotTargetMenuMessage: { id: ScrapeTargetId, message: Menu.Message },
+	GotFormDialogMessage: { message: Dialog.Message },
+	GotFormFieldMessage: { field: FormFieldName, message: Field.Message },
+	GotAuthSelectMessage: { message: Select.Message },
+	SubmittedTargetForm: {},
+	CompletedSave: {
+		isEdit: Schema.Boolean,
+		id: Schema.NullOr(ScrapeTargetId),
+		failure: Schema.NullOr(LoadFailure),
+	},
+	GotTargetDeleteDialogMessage: { message: Dialog.Message },
+	ConfirmedTargetDelete: {},
+	CompletedTargetDelete: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
+})
+export type PrometheusMessage = typeof PrometheusMessage.Type
+
+/** The hub's scrape target read: every page of 100. */
+export const SCRAPE_TARGETS_STATUS_READ = {
+	name: "LoadIntegrationsScrapeTargets",
+	read: (_refresh: boolean) =>
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			collectV2Pages((cursor) =>
+				client.scrapeTargets.list({
+					query: { limit: 100, ...(cursor !== undefined ? { cursor } : undefined) },
+				}),
+			),
+		),
+}
 
 export const ScrapeForm = Schema.Struct({
 	name: Field.Model,
@@ -89,7 +140,7 @@ const failureOf = (error: unknown): LoadFailure => toLoadFailure(error)
 
 export const FetchChecks = Command.define("FetchScrapeTargetChecks", {
 	args: { key: Schema.String, id: ScrapeTargetId },
-	messages: [Message.CompletedFetchChecks],
+	messages: [PrometheusMessage.CompletedFetchChecks],
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -98,13 +149,13 @@ export const FetchChecks = Command.define("FetchScrapeTargetChecks", {
 		}).pipe(
 			Effect.mapError(failureOf),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchChecks({ key, result })),
+			Effect.map((result) => PrometheusMessage.CompletedFetchChecks({ key, result })),
 		),
 })
 
 export const ProbeTarget = Command.define("ProbeScrapeTarget", {
 	args: { id: ScrapeTargetId },
-	messages: [Message.CompletedProbe],
+	messages: [PrometheusMessage.CompletedProbe],
 	execute: ({ id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -112,9 +163,14 @@ export const ProbeTarget = Command.define("ProbeScrapeTarget", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedProbe({ id, failure: failureOf(error), success: false, error: null }),
+					PrometheusMessage.CompletedProbe({
+						id,
+						failure: failureOf(error),
+						success: false,
+						error: null,
+					}),
 				onSuccess: (result) =>
-					Message.CompletedProbe({
+					PrometheusMessage.CompletedProbe({
 						id,
 						failure: null,
 						success: result.success,
@@ -126,7 +182,7 @@ export const ProbeTarget = Command.define("ProbeScrapeTarget", {
 
 export const ToggleTarget = Command.define("ToggleScrapeTarget", {
 	args: { id: ScrapeTargetId, enabled: Schema.Boolean },
-	messages: [Message.CompletedToggle],
+	messages: [PrometheusMessage.CompletedToggle],
 	execute: ({ id, enabled }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -134,23 +190,24 @@ export const ToggleTarget = Command.define("ToggleScrapeTarget", {
 			yield* client.scrapeTargets.update({ params: { id }, payload })
 		}).pipe(
 			Effect.match({
-				onFailure: (error) => Message.CompletedToggle({ id, failure: failureOf(error) }),
-				onSuccess: () => Message.CompletedToggle({ id, failure: null }),
+				onFailure: (error) => PrometheusMessage.CompletedToggle({ id, failure: failureOf(error) }),
+				onSuccess: () => PrometheusMessage.CompletedToggle({ id, failure: null }),
 			}),
 		),
 })
 
 export const DeleteTarget = Command.define("DeleteScrapeTarget", {
 	args: { id: ScrapeTargetId },
-	messages: [Message.CompletedTargetDelete],
+	messages: [PrometheusMessage.CompletedTargetDelete],
 	execute: ({ id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			yield* client.scrapeTargets.delete({ params: { id } })
 		}).pipe(
 			Effect.match({
-				onFailure: (error) => Message.CompletedTargetDelete({ id, failure: failureOf(error) }),
-				onSuccess: () => Message.CompletedTargetDelete({ id, failure: null }),
+				onFailure: (error) =>
+					PrometheusMessage.CompletedTargetDelete({ id, failure: failureOf(error) }),
+				onSuccess: () => PrometheusMessage.CompletedTargetDelete({ id, failure: null }),
 			}),
 		),
 })
@@ -168,7 +225,7 @@ export type SavePayload = typeof SavePayload.Type
 
 export const SaveTarget = Command.define("SaveScrapeTarget", {
 	args: { editingId: Schema.NullOr(ScrapeTargetId), payload: SavePayload },
-	messages: [Message.CompletedSave],
+	messages: [PrometheusMessage.CompletedSave],
 	execute: ({ editingId, payload }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -186,12 +243,13 @@ export const SaveTarget = Command.define("SaveScrapeTarget", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedSave({
+					PrometheusMessage.CompletedSave({
 						isEdit: editingId !== null,
 						id: null,
 						failure: failureOf(error),
 					}),
-				onSuccess: (id) => Message.CompletedSave({ isEdit: editingId !== null, id, failure: null }),
+				onSuccess: (id) =>
+					PrometheusMessage.CompletedSave({ isEdit: editingId !== null, id, failure: null }),
 			}),
 		),
 })

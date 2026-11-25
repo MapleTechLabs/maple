@@ -293,7 +293,8 @@ export const updateFlow = (model: Model, message: Message, context: PageContext)
 		}),
 		GotIntegrationsMessage: ({ message: child }) => {
 			const integration = model.integration
-			const added = child._tag === "CompletedSave" && !child.isEdit && child.failure === null
+			const scrape = child._tag === "GotPrometheusMessage" ? child.message : null
+			const added = scrape?._tag === "CompletedSave" && !scrape.isEdit && scrape.failure === null
 			const step = liftIntegrations(
 				added && integration === "warpstream" ? { ...model, hasAddedTarget: true } : model,
 				Integrations.update(model.integrations, child, context),

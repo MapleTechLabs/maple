@@ -16,7 +16,6 @@ import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
 import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
 import { awsCard } from "../infra-integrations/aws/integration/view-aws"
-import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
 import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
 import { providerModuleOf } from "./provider-modules"
@@ -55,20 +54,12 @@ export const cardView = (
 	focusId: string | null = null,
 ): ReadonlyArray<Html> => {
 	const provider = providerModuleOf(integration)
-	if (provider !== undefined) return provider.card(h, model, timeZone, focusId)
+	if (provider !== undefined) return provider.card(h, model, timeZone, focusId, integration)
 	switch (integration) {
 		case "gcp":
 			return [gcpCard(h, model, timeZone, focusId)]
 		case "aws":
 			return [awsCard(h, model, timeZone, focusId)]
-		case "prometheus":
-		case "warpstream":
-			return focusId === null
-				? [
-						scrapeIntro(h, integration),
-						...scrapeTargetsSection(h, model, timeZone, null, integration),
-					]
-				: scrapeTargetsSection(h, model, timeZone, focusId, integration)
 		default:
 			return []
 	}

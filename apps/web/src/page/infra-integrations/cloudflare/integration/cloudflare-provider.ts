@@ -62,11 +62,13 @@ export const CLOUDFLARE: ProviderModule<CloudflareIntegrationStatus, CloudflareC
 		onDisconnected: (model, env) => requestUsage(model, env, "Refresh"),
 		onStatus: statusAnswered,
 		// Status and usage every 30 s while a fresh connection settles.
-		subscription: {
-			everyMs: 30_000,
-			isActive: (model, env) => env.isShown && isSettling(model, env),
-			tick: CloudflareMessage.TickedIngest(),
-		},
+		subscriptions: [
+			{
+				everyMs: 30_000,
+				isActive: (model, env) => env.isShown && isSettling(model, env),
+				tick: CloudflareMessage.TickedIngest(),
+			},
+		],
 		card: (h, model, timeZone) => [cloudflareCard(h, model, timeZone)],
 		headerActions: cloudflareHeaderActions,
 		flow: cloudflareFlow,

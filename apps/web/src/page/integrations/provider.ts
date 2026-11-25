@@ -7,7 +7,7 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../platform/resources"
 import type { PageContext } from "../contract"
 import type { IntegrationId } from "./catalog"
-import type { FlowSpec, FlowStage } from "./flow"
+import type { FlowContext, FlowSpec, FlowStage } from "./flow"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
 import type { CardStatus, IntegrationOverview } from "./overview"
@@ -132,13 +132,17 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 	onConfirmDisconnect?: ProviderHook<S, M, Msg>
 	/** The module's own removal is in flight: the shared dialog ignores its messages. */
 	isDisconnecting?: (model: M) => boolean
-	/** A tick every `everyMs` while `isActive`, answered by `tick`; `fast` ticks come first. */
-	subscription?: Readonly<{
-		everyMs: number
-		fast?: Readonly<{ everyMs: number; ticks: number }>
-		isActive: (model: M, env: Omit<ProviderEnv<S>, "context">) => boolean
-		tick: Msg
-	}>
+	/** Each a tick every `everyMs` while `isActive`, answered by `tick`; `fast` ticks come first. */
+	subscriptions?: ReadonlyArray<
+		Readonly<{
+			everyMs: number
+			fast?: Readonly<{ everyMs: number; ticks: number }>
+			isActive: (model: M, env: Omit<ProviderEnv<S>, "context">) => boolean
+			/** The ticks start over when this changes while active (the selected scrape target). */
+			restartKey?: (model: M) => string
+			tick: Msg
+		}>
+	>
 	/** One-shot: `afterMs` after `versionOf` turns to a version, once the tab is back, `fire` sends. */
 	delayed?: Readonly<{
 		afterMs: number
@@ -151,14 +155,22 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 		model: Model,
 		timeZone: string,
 		focusId: string | null,
+		/** The page's id, for a module that `owns` several. */
+		integration: IntegrationId,
 	) => ReadonlyArray<Html>
 	/** The connected header's actions. */
 	headerActions?: (h: HtmlBuilder<Message>, model: Model) => ReadonlyArray<Html>
 	/** The connected header's line under the title, in place of the overview's. */
 	headerStatus?: (h: HtmlBuilder<Message>, model: Model, timeZone: string) => Html | undefined
 	/** Where the provider stands in `/sources/new`'s flow, and the step's view; the generic flow without. */
-	flow?: (model: Model) => FlowSpec
-	flowView?: (h: HtmlBuilder<Message>, model: Model, stage: FlowStage, timeZone: string) => Html
+	flow?: (model: Model, integration: IntegrationId, context: FlowContext) => FlowSpec
+	flowView?: (
+		h: HtmlBuilder<Message>,
+		model: Model,
+		stage: FlowStage,
+		timeZone: string,
+		integration: IntegrationId,
+	) => Html
 	/** The header badge; `null` while loading. */
 	cardStatus: (status: Keyed.Keyed<S, LoadFailure>, context: StatusContext) => CardStatus | null
 	/** The catalog row's overview. */

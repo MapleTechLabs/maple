@@ -15,7 +15,6 @@ import type { IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
-import { scrapeOverview, scrapeStatus } from "./scrape-overview"
 import { providerModuleOf } from "./provider-modules"
 import {
 	attentionOr,
@@ -148,10 +147,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 				},
 				unavailableStatus,
 			)
-		case "prometheus":
-			return scrapeStatus(statuses, "prometheus")
-		case "warpstream":
-			return { label: "Via Prometheus", variant: "outline" }
 		default:
 			return null
 	}
@@ -265,10 +260,6 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return gcpOverview(statuses, nowMs)
 		case "aws":
 			return awsOverview(statuses, nowMs)
-		case "prometheus":
-			return scrapeOverview(statuses, "prometheus")
-		case "warpstream":
-			return SET_UP
 		default:
 			return null
 	}

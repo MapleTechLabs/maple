@@ -10,7 +10,6 @@ import {
 	GithubInstallationSelection,
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
-	ScrapeTargetId,
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VercelIntegrationStatus,
@@ -28,7 +27,6 @@ import {
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
 	V2ScrapeTarget,
-	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
 import {
 	AwsConnectionId,
@@ -45,7 +43,6 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
-import { FormFieldName } from "./prometheus-form-field"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { ConnectProvider } from "./connect"
 import { OAuthReturnOutcome } from "./oauth-return"
@@ -64,6 +61,7 @@ import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import { LinearMessage } from "./linear"
 import { FleetMessage } from "./fleet/fleet"
 import { GithubMessage } from "./github"
+import { PrometheusMessage } from "./prometheus"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import {
@@ -155,38 +153,6 @@ export const Message = defineMessageUnion({
 	GotDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedDisconnect: {},
 	CompletedDisconnect: { integration: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedTarget: { id: ScrapeTargetId },
-	CompletedFetchChecks: {
-		key: Schema.String,
-		result: Schema.Result(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
-	},
-	/** The target list every 30 s, the selected target's checks every 10 s. */
-	TickedTargetsRefresh: {},
-	TickedChecksRefresh: {},
-	ClickedProbe: { id: ScrapeTargetId },
-	CompletedProbe: {
-		id: ScrapeTargetId,
-		failure: Schema.NullOr(LoadFailure),
-		success: Schema.Boolean,
-		error: Schema.NullOr(Schema.String),
-	},
-	ClickedToggleTarget: { id: ScrapeTargetId },
-	CompletedToggle: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
-	ClickedEditTarget: { id: ScrapeTargetId },
-	ClickedDeleteTarget: { id: ScrapeTargetId },
-	GotTargetMenuMessage: { id: ScrapeTargetId, message: Menu.Message },
-	GotFormDialogMessage: { message: Dialog.Message },
-	GotFormFieldMessage: { field: FormFieldName, message: Field.Message },
-	GotAuthSelectMessage: { message: Select.Message },
-	SubmittedTargetForm: {},
-	CompletedSave: {
-		isEdit: Schema.Boolean,
-		id: Schema.NullOr(ScrapeTargetId),
-		failure: Schema.NullOr(LoadFailure),
-	},
-	GotTargetDeleteDialogMessage: { message: Dialog.Message },
-	ConfirmedTargetDelete: {},
-	CompletedTargetDelete: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
 	/** A message for the Railway module (`provider-modules.ts`). */
 	GotRailwayMessage: { message: RailwayMessage },
 	/** A message for the Supabase module. */
@@ -200,6 +166,8 @@ export const Message = defineMessageUnion({
 	GotPlanetscaleMessage: { message: PlanetscaleMessage },
 	GotCloudflareMessage: { message: CloudflareMessage },
 	GotGithubMessage: { message: GithubMessage },
+	/** A message for the scrape-target module (Prometheus and WarpStream). */
+	GotPrometheusMessage: { message: PrometheusMessage },
 	GotAwsAccountIdMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },

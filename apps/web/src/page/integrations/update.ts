@@ -9,13 +9,11 @@ import { integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
-import { initPrometheusCard } from "./prometheus"
 import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
 import { initAwsCard } from "../infra-integrations/aws/integration/aws"
 import * as Aws from "../infra-integrations/aws/integration/update-aws"
 import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
 import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
-import * as Prometheus from "./update-prometheus"
 import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
 import * as Connect from "./update-connect"
 import { isClerkAuthEnabled } from "../../platform/auth-mode"
@@ -37,6 +35,7 @@ import {
 	GITHUB_PROVIDER,
 	LINEAR_PROVIDER,
 	PLANETSCALE_PROVIDER,
+	PROMETHEUS_PROVIDER,
 	PROVIDER_MODULES,
 	providerModuleOf,
 	RAILWAY_PROVIDER,
@@ -164,7 +163,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		linearCard: LINEAR_PROVIDER.initial(),
 		githubCard: GITHUB_PROVIDER.initial(),
 		cloudflareCard: CLOUDFLARE_PROVIDER.initial(),
-		prometheusCard: initPrometheusCard(),
+		prometheusCard: PROMETHEUS_PROVIDER.initial(),
 		planetscaleCard: PLANETSCALE_PROVIDER.initial(),
 		gcpCard: initGcpCard(),
 		awsCard: initAwsCard(),
@@ -295,6 +294,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{ isCurrent: s.github.key === key, previous: s.github },
 			),
 		GotGithubMessage: ({ message: child }) => GITHUB_PROVIDER.update(model, child, context),
+		GotPrometheusMessage: ({ message: child }) => PROMETHEUS_PROVIDER.update(model, child, context),
 		CompletedLoadSearchConsole: ({ key, result }) =>
 			SEARCH_CONSOLE_PROVIDER.onStatus(
 				accepted(model, { ...s, searchConsole: Keyed.accept(s.searchConsole, key, result) }).model,
@@ -351,35 +351,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConnect: () => Connect.clickedConnect(model, context),
 		ClickedOpenGithubInstallPage: () => Connect.clickedConnect(model, context, "install"),
-		ClickedTarget: ({ id }) => Prometheus.clickedTarget(model, context, id),
-		CompletedFetchChecks: ({ key, result }) => ({
-			model: {
-				...model,
-				prometheusCard: {
-					...model.prometheusCard,
-					checks: Keyed.accept(model.prometheusCard.checks, key, result),
-				},
-			},
-		}),
-		TickedTargetsRefresh: () => requestStatus(model, context, "scrapeTargets", "Refresh"),
-		TickedChecksRefresh: () => Prometheus.requestChecks(model, context, "Refresh"),
-		ClickedProbe: ({ id }) => Prometheus.clickedProbe(model, id),
-		CompletedProbe: ({ id, failure, success, error }) =>
-			Prometheus.completedProbe(model, context, id, failure, success, error),
-		ClickedToggleTarget: ({ id }) => Prometheus.clickedToggle(model, id),
-		CompletedToggle: ({ id, failure }) => Prometheus.completedToggle(model, context, id, failure),
-		ClickedEditTarget: ({ id }) => Prometheus.clickedEdit(model, id),
-		ClickedDeleteTarget: ({ id }) => Prometheus.clickedDelete(model, id),
-		GotTargetMenuMessage: ({ id, message: child }) => Prometheus.gotTargetMenu(model, id, child),
-		GotFormDialogMessage: ({ message: child }) => Prometheus.gotFormDialog(model, child),
-		GotFormFieldMessage: ({ field, message: child }) => Prometheus.gotFormField(model, field, child),
-		GotAuthSelectMessage: ({ message: child }) => Prometheus.gotAuthSelect(model, child),
-		SubmittedTargetForm: () => Prometheus.submittedForm(model),
-		CompletedSave: ({ isEdit, id, failure }) =>
-			Prometheus.completedSave(model, context, isEdit, id, failure),
-		GotTargetDeleteDialogMessage: ({ message: child }) => Prometheus.gotDeleteDialog(model, child),
-		ConfirmedTargetDelete: () => Prometheus.confirmedDelete(model),
-		CompletedTargetDelete: ({ id, failure }) => Prometheus.completedDelete(model, context, id, failure),
 		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
 		SubmittedAwsAccount: () => Aws.submittedAccount(model),
 		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),

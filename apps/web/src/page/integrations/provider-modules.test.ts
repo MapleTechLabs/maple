@@ -26,6 +26,7 @@ import type { Model } from "./model"
 import {
 	CHAT_PROVIDER,
 	GITHUB_PROVIDER,
+	PROMETHEUS_PROVIDER,
 	providerModuleOf,
 	RAILWAY_PROVIDER,
 	SUPABASE_PROVIDER,
@@ -39,6 +40,7 @@ import { VERCEL_STATUS } from "../../lab/vercel-infra-fixtures"
 import { init, update } from "./update"
 import { clickedConnect, closedPopup, receivedCallback, receivedRelay } from "./update-connect"
 import { GithubMessage } from "./github"
+import { PrometheusMessage } from "./prometheus"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -56,6 +58,7 @@ const chat = (message: ChatMessage) => Message.GotChatMessage({ message })
 const searchConsole = (message: SearchConsoleMessage) => Message.GotSearchConsoleMessage({ message })
 const vercel = (message: VercelMessage) => Message.GotVercelMessage({ message })
 const planetscale = (message: PlanetscaleMessage) => Message.GotPlanetscaleMessage({ message })
+const scrape = (message: PrometheusMessage) => Message.GotPrometheusMessage({ message })
 
 const planetscaleStatus = (connected: boolean) =>
 	Schema.decodeSync(V2PlanetScaleIntegration)({
@@ -259,7 +262,7 @@ describe("provider modules", () => {
 	})
 
 	test("Railway's first-sync poll runs only on its own card while an environment waits", () => {
-		const ticker = RAILWAY_PROVIDER.ticker
+		const ticker = RAILWAY_PROVIDER.tickers[0]
 		expect(ticker?.isActive(withRailway({ integration: "railway" }, railwayStatus(true)))).toBe(true)
 		expect(ticker?.isActive(withRailway({ integration: "railway" }, railwayStatus(false)))).toBe(false)
 		expect(ticker?.isActive(withRailway({}, railwayStatus(true)))).toBe(false)
@@ -267,11 +270,11 @@ describe("provider modules", () => {
 
 	test("Supabase's card clock ticks only while the connected card shows, and its tick reads the page clock", () => {
 		const shown = withSupabase({ integration: "supabase" }, supabaseStatus(true))
-		const ticker = SUPABASE_PROVIDER.ticker
+		const ticker = SUPABASE_PROVIDER.tickers[0]
 		expect(ticker?.isActive(shown)).toBe(true)
 		expect(ticker?.isActive(withSupabase({ integration: "supabase" }, supabaseStatus(false)))).toBe(false)
 		expect(ticker?.isActive(withSupabase({}, supabaseStatus(true)))).toBe(false)
-		expect(ticker === null ? [] : names(pageUpdate(shown, ticker.tick).commands)).toEqual([
+		expect(ticker === undefined ? [] : names(pageUpdate(shown, ticker.tick).commands)).toEqual([
 			"ReadIntegrationsClock",
 		])
 	})
@@ -292,6 +295,8 @@ describe("provider modules", () => {
 		expect(providerModuleOf("chat-discord")?.id).toBe("chat")
 		expect(providerModuleOf("linear")?.id).toBe("linear")
 		expect(providerModuleOf("github")?.id).toBe("github")
+		expect(providerModuleOf("prometheus")?.id).toBe("prometheus")
+		expect(providerModuleOf("warpstream")?.id).toBe("prometheus")
 		expect(providerModuleOf("gcp")).toBeUndefined()
 		expect(providerModuleOf(null)).toBeUndefined()
 	})
@@ -338,7 +343,59 @@ describe("provider modules", () => {
 		const ended = Arr.reduce(fired, polling, (next, message) => pageUpdate(next, message).model)
 		expect(ended.githubCard.isForcePolling).toBe(false)
 		// The last read is the poll's own tick.
-		expect(fired[0]).toEqual(GITHUB_PROVIDER.ticker?.tick)
+		expect(fired[0]).toEqual(GITHUB_PROVIDER.tickers[0]?.tick)
+	})
+
+	test("Prometheus and WarpStream share one scrape-target module, its polls and its badges", () => {
+		const target = Schema.decodeSync(V2ScrapeTarget)({
+			id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
+			object: "scrape_target",
+			name: "redis exporter",
+			service_name: null,
+			url: "https://redis.internal:9121/metrics",
+			target_type: "prometheus",
+			organization: null,
+			include_branches: [],
+			exclude_branches: [],
+			scrape_interval_seconds: 60,
+			labels_json: null,
+			auth_type: "none",
+			has_credentials: false,
+			managed_by: null,
+			enabled: true,
+			last_scrape_at: null,
+			last_scrape_error: null,
+			created_at: "2026-09-01T00:00:00.000Z",
+			updated_at: "2026-09-02T00:00:00.000Z",
+		})
+		const [targetsPoll, checksPoll] = PROMETHEUS_PROVIDER.tickers
+		const warpstream = init({ search: { integration: "warpstream" } }, context).model
+		expect(targetsPoll?.isActive(warpstream)).toBe(true)
+		expect(targetsPoll?.isActive(init({ search: { integration: "github" } }, context).model)).toBe(false)
+		// The checks poll waits for a selection and starts over when it changes.
+		expect(checksPoll?.dependency(warpstream)).toBe(null)
+		const selected = pageUpdate(warpstream, scrape(PrometheusMessage.ClickedTarget({ id: target.id })))
+		expect(names(selected.commands)).toEqual(["FetchScrapeTargetChecks"])
+		expect(checksPoll?.dependency(selected.model)).toBe(target.id)
+		const loaded = pageUpdate(
+			warpstream,
+			Message.CompletedLoadScrapeTargets({
+				key: warpstream.statuses.scrapeTargets.key ?? "",
+				result: Result.succeed([target]),
+			}),
+		).model
+		// The list poll re-reads the targets through the hub.
+		expect(names(targetsPoll === undefined ? [] : pageUpdate(loaded, targetsPoll.tick).commands)).toEqual(
+			["LoadIntegrationsScrapeTargets"],
+		)
+		expect(cardStatusOf(loaded.statuses, "prometheus", NOW)).toEqual({
+			label: "1 target · 1 enabled",
+			variant: "ok",
+		})
+		expect(cardStatusOf(loaded.statuses, "warpstream", NOW)).toEqual({
+			label: "Via Prometheus",
+			variant: "outline",
+		})
 	})
 
 	test("a module drives the shared disconnect dialog and owns its confirm", () => {
@@ -415,13 +472,13 @@ describe("provider modules", () => {
 			connectedAt: NOW - 60_000,
 			lastSuccessAt: null,
 		})
-		const ticker = VERCEL_PROVIDER.ticker
+		const ticker = VERCEL_PROVIDER.tickers[0]
 		expect(ticker?.isActive(withVercel({ integration: "vercel" }, settling))).toBe(true)
 		expect(ticker?.isActive(withVercel({ integration: "vercel" }, VERCEL_STATUS))).toBe(false)
 		expect(ticker?.isActive(withVercel({}, settling))).toBe(false)
 		const shown = withVercel({ integration: "vercel" }, settling)
 		// The tick re-reads the status, then the clock that ends the window.
-		const sent = ticker === null ? [] : names(pageUpdate(shown, ticker.tick).commands)
+		const sent = ticker === undefined ? [] : names(pageUpdate(shown, ticker.tick).commands)
 		expect(sent.indexOf("LoadIntegrationsVercelStatus")).toBeGreaterThanOrEqual(0)
 		expect(sent.indexOf("LoadIntegrationsVercelStatus")).toBeLessThan(
 			sent.indexOf("ReadIntegrationsClock"),

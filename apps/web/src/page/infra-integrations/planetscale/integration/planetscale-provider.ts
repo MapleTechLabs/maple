@@ -49,12 +49,14 @@ export const PLANETSCALE: ProviderModule<V2PlanetScaleIntegration, PlanetscaleCa
 		onConnected: restartWatch,
 		onRelayedConnect: restartWatch,
 		// Watches for the first metrics; the card offers "Check again" once the watch runs out.
-		subscription: {
-			everyMs: 60_000,
-			fast: { everyMs: 5_000, ticks: 24 },
-			isActive: (model, env) => isAwaiting(env) && !isWatchExpired(model, env.nowMs),
-			tick: PlanetscaleMessage.TickedWatch(),
-		},
+		subscriptions: [
+			{
+				everyMs: 60_000,
+				fast: { everyMs: 5_000, ticks: 24 },
+				isActive: (model, env) => isAwaiting(env) && !isWatchExpired(model, env.nowMs),
+				tick: PlanetscaleMessage.TickedWatch(),
+			},
+		],
 		card: (h, model, timeZone) => [planetscaleCard(h, model, timeZone)],
 		flow: planetscaleFlow,
 		flowView: (h, model, stage) => planetscaleFlowView(h, model, stage),
