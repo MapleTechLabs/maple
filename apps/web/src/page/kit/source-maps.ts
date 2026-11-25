@@ -18,11 +18,15 @@ export const listServiceSourceMaps = (serviceName: string) =>
 		return response.data
 	}).pipe(Effect.mapError(toLoadFailure))
 
-/** The newest upload's release and the maps uploaded for it. */
+/**
+ * The newest upload's release and its maps. Maps without a release cannot be told apart by build,
+ * so an unversioned release is the newest map alone.
+ */
 export const latestRelease = (
 	maps: ReadonlyArray<V2SourceMap>,
 ): { readonly version: string | null; readonly maps: ReadonlyArray<V2SourceMap> } | null => {
 	const [newest] = maps
 	if (newest === undefined) return null
+	if (newest.version === null) return { version: null, maps: [newest] }
 	return { version: newest.version, maps: Arr.filter(maps, (map) => map.version === newest.version) }
 }

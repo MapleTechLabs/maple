@@ -7,7 +7,7 @@ import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import * as Policy from "@maple/domain/policy"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
-import { SERVICE_SOURCE_MAPS_LIMIT } from "../../kit/source-maps"
+import { latestRelease, SERVICE_SOURCE_MAPS_LIMIT } from "../../kit/source-maps"
 import { ENDPOINTS_LIMIT } from "./service-endpoints"
 import { buildServiceOpenIssuesQuery } from "../../../data/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
@@ -224,7 +224,10 @@ const overviewShas = (model: Model): ReadonlyArray<string> => {
 		railOrder(deployChecksOf(model)).slice(0, model.isDeploysExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL),
 		(check) => check.sha,
 	)
-	return [...new Set([...markers, ...Arr.filter(rows, isResolvableSha)])]
+	// The Source maps card links its release's commit, which may predate the window's deploys.
+	const release = latestRelease(AsyncData.getOrElse(model.sourceMaps.data, () => []))?.version
+	const uploaded = release === undefined || release === null ? [] : [release]
+	return [...new Set([...markers, ...Arr.filter([...rows, ...uploaded], isResolvableSha)])]
 }
 
 export const DEPLOYS_RAIL = 8
@@ -967,9 +970,8 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				canCreateUptimeMonitors: Policy.can(grants, "uptime_monitors:manage"),
 			},
 		}),
-		CompletedFetchSourceMaps: ({ key, result }) => ({
-			model: { ...model, sourceMaps: Keyed.accept(model.sourceMaps, key, result) },
-		}),
+		CompletedFetchSourceMaps: ({ key, result }) =>
+			sync({ ...model, sourceMaps: Keyed.accept(model.sourceMaps, key, result) }, context, "Load"),
 		CompletedFetchRuntimes: ({ key, result }) => ({
 			model: { ...model, runtimes: Keyed.accept(model.runtimes, key, result) },
 		}),

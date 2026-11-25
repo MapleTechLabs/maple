@@ -1,10 +1,12 @@
 import { OrgId } from "@maple/domain"
 import { V2SourceMap } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, String as Str } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
-import { describe, test } from "vitest"
+import { describe, expect, test } from "vitest"
+import { AsyncData } from "foldkit"
+import { SERVICE_SOURCE_MAPS_LIMIT } from "../../kit/source-maps"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -23,10 +25,10 @@ const mounted = [
 	Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 ] as const
 
-const sourceMap = (version: string, index: number, hasSources = true): V2SourceMap =>
+const sourceMap = (version: string | null, index: number, hasSources = true): V2SourceMap =>
 	Schema.decodeSync(V2SourceMap)({
 		object: "source_map",
-		id: `6c5e2b1a-1f2e-4d3c-8b7a-01234567890${index}`,
+		id: `6c5e2b1a-1f2e-4d3c-8b7a-${Str.padStart(12, "0")(String(index))}`,
 		debug_id: null,
 		service: "web",
 		version,
@@ -103,6 +105,35 @@ describe("service detail, Source maps card", () => {
 			expectView(
 				text("Some maps carry no sources, so their frames show a file and line without code."),
 			).toExist(),
+		)
+	})
+
+	test("the release's commit is requested even when no deploy in the window shipped it", () => {
+		const model = withSourceMaps([sourceMap(SHA, 1)])
+		const commit = model.commits[SHA]
+		expect(commit !== undefined && AsyncData.isLoading(commit)).toBe(true)
+	})
+
+	test("a full page of one release counts as more than the page", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withSourceMaps(
+					Array.from({ length: SERVICE_SOURCE_MAPS_LIMIT }, (_, index) => sourceMap(SHA, index)),
+				),
+			),
+			...mounted,
+			expectView(text(`${SERVICE_SOURCE_MAPS_LIMIT}+`)).toExist(),
+		)
+	})
+
+	test("unversioned uploads show no release and no file count", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withSourceMaps([sourceMap(null, 1), sourceMap(null, 2)])),
+			...mounted,
+			expectView(text("None")).toExist(),
+			expectView(text("Files")).not.toExist(),
 		)
 	})
 })

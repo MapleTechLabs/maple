@@ -35,7 +35,7 @@ export const repositoryCommit = (model: Model, version: string | null): Commit |
 	)
 }
 
-/** The newest `last_used_at` of the maps, or null when none has mapped a stack yet. */
+/** The newest `last_used_at` of the maps read, or null when none has mapped a stack yet. */
 const lastUsedOf = (maps: ReadonlyArray<V2SourceMap>): string | null =>
 	Arr.reduce(maps, null as string | null, (latest, map) =>
 		map.last_used_at !== null && (latest === null || map.last_used_at > latest)
@@ -69,7 +69,8 @@ export const sourceMapsPanel = (h: H, model: Model, clock: Clock): Html => {
 	const newest = release?.maps[0]
 	if (release === null || newest === undefined) return null
 	const commit = repositoryCommit(model, release.version)
-	const lastUsed = lastUsedOf(release.maps)
+	// Any of the service's maps, not only the newest release's: older builds still serve clients.
+	const lastUsed = lastUsedOf(maps)
 	const fileCount = `${release.maps.length}${maps.length === SERVICE_SOURCE_MAPS_LIMIT && release.maps.length === maps.length ? "+" : ""}`
 	const header: PanelHeaderOptions = {
 		title: "Source maps",
@@ -86,9 +87,13 @@ export const sourceMapsPanel = (h: H, model: Model, clock: Clock): Html => {
 						keyValue(h, { label: "Release", mono: true }, [
 							releaseValue(h, release.version, commit),
 						]),
-						keyValue(h, { label: "Files" }, [
-							typography(h, { mono: true, numeric: true }, [fileCount]),
-						]),
+						...(release.version === null
+							? []
+							: [
+									keyValue(h, { label: "Files" }, [
+										typography(h, { mono: true, numeric: true }, [fileCount]),
+									]),
+								]),
 						keyValue(h, { label: "Uploaded" }, [
 							relativeTime(h, { value: newest.created_at, ...clock, variant: "orDate" }),
 						]),
