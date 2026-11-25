@@ -1425,14 +1425,14 @@ const uptrace: AlternativesPage = {
 	disclosure:
 		"We build Maple and list it first because this is our site: that placement is our bias, not a ranking. The rest start with the tools you can self-host for free, then the hosted ones. Every price comes from the vendor's own pricing page, linked at the bottom with the month we checked it.",
 	method: "How we compared: in November 2026 we read Uptrace's pricing, editions and documentation pages and its GitHub repository, and re-read each alternative's pricing page. Other facts repeat sourced rows from our side-by-side comparison pages. Uptrace, OpenObserve and ClickStack have no comparison page, so their facts link to their own pages below. We did not benchmark the tools against each other; treat this as a map of trade-offs, not a test result.",
-	keyColumn: "Free self-hosted edition",
+	keyColumn: "Self-hosted for free",
 	baseline: {
 		name: "Uptrace (for reference)",
 		pricing:
 			"Cloud: 50 GB of spans and logs free each month, then from $0.075 per GB; metrics from $0.025 per million data points",
 		openSource: "AGPL-3.0 Community edition; paid self-hosted editions from $39/mo",
 		keyFact:
-			"Community: no usage cap, 14 days of retention, basic alerting; RBAC from $199/mo (to 200 GB a day), SSO from $499/mo (to 500 GB a day)",
+			"Community edition: no usage cap, 14 days of retention, basic alerting; RBAC and SSO are paid",
 	},
 	quickAnswer: [
 		{
@@ -1621,7 +1621,7 @@ const uptrace: AlternativesPage = {
 		},
 		{
 			question: "Is anything cheaper than Uptrace?",
-			answer: "Not among the hosted plans here. At list prices, 1 TB a month of logs and traces split evenly costs about $71 on Uptrace Cloud (950 GB past the free 50 GB at its starting $0.075; volume discounts may lower it), about $279 on Maple ($39 including 100 GB of each, then 800 GB at $0.30), about $300 on SigNoz Cloud and about $500 on OpenObserve Cloud before its query charge. The free self-hosted options (Uptrace Community, SigNoz, OpenObserve, ClickStack, Grafana) cost only the infrastructure you run them on.",
+			answer: "Not among the hosted plans here. At list prices, 1 TB a month of logs and traces split evenly costs about $71 on Uptrace Cloud (950 GB past the free 50 GB at its starting $0.075; volume discounts may lower it), about $279 on Maple ($39 including 100 GB of each, then 800 GB at $0.30), about $300 on SigNoz Cloud and about $500 on OpenObserve Cloud before its query charge. Grafana Cloud ($0.55 per GB) and Better Stack ($0.10 per GB ingested plus $0.05 per GB-month stored) also price above Uptrace's starting rate. The free self-hosted options (Uptrace Community, SigNoz, OpenObserve, ClickStack, Grafana) cost only the infrastructure you run them on.",
 		},
 		{
 			question: "How hard is it to move off Uptrace?",
@@ -1672,11 +1672,11 @@ const openobserve: AlternativesPage = {
 		},
 		{
 			team: "On OpenObserve Cloud and want a bill without a query meter",
-			pick: "Maple",
-			why: "Billed per GB ingested ($39 a month with 100 GB per signal, then $0.30 per GB) with no charge for queries, plus uptime checks, on-call and SLOs in the same app.",
+			pick: "SigNoz Cloud or Maple",
+			why: "Both bill $0.30 per GB ingested with no charge for queries. SigNoz Cloud starts at $49 a month; Maple at $39 with 100 GB per signal included, and adds uptime checks, on-call and SLOs.",
 		},
 		{
-			team: "Want the lowest per-GB rate, hosted or self-hosted",
+			team: "Want the lowest hosted per-GB rate, or AGPL-3.0 to self-host",
 			pick: "Uptrace",
 			why: "50 GB a month free on its cloud, then from $0.075 per GB, and an AGPL-3.0 Community edition.",
 		},
@@ -1692,7 +1692,7 @@ const openobserve: AlternativesPage = {
 		},
 	],
 	stayIf: [
-		"You self-host below 50 GB a day. The Enterprise edition is free there and includes SSO, RBAC, an audit trail and sensitive data redaction, which SigNoz and Uptrace sell under a commercial license or paid edition.",
+		"You self-host below 50 GB a day. The Enterprise edition is free there and includes SSO, RBAC, an audit trail and sensitive data redaction, Uptrace sells RBAC and SSO in paid editions, and SigNoz keeps SAML, OIDC and fine-grained RBAC under its commercial license.",
 		"You want 15 months of metric retention on a hosted plan. By default Maple keeps metrics 90 days and SigNoz one month.",
 		"You want object storage as the only data store: a single binary on one node, or a cluster writing Parquet to S3, GCS or MinIO, with no ClickHouse to run.",
 		"Your queries are SQL. Logs and traces are queried with SQL and metrics with SQL or PromQL, and that carries over to tools on ClickHouse only after rewriting to their schemas.",
@@ -1717,7 +1717,7 @@ const openobserve: AlternativesPage = {
 			],
 			cons: [
 				"The self-hosted version has no alerting, dashboards, PromQL or team accounts yet",
-				"Metrics kept 90 days, against OpenObserve Cloud's 15 months",
+				"Traces and logs kept 30 days, as on OpenObserve Cloud, but metrics 90 days against its 15 months",
 				"Source-available under FSL-1.1, not open source like OpenObserve's AGPL-3.0 edition",
 				"Younger, with a smaller community, and no free plan on Maple Cloud (a 14-day trial)",
 			],
