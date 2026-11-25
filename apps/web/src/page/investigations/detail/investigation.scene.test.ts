@@ -291,6 +291,35 @@ describe("investigation detail", () => {
 		expect(names(pageUpdate(ready, Message.ClickedPrimary()).commands)).toEqual(["RestartInvestigation"])
 	})
 
+	test("on the no-card trial, Run again and Reopen ask for a card, while Resolve stays", () => {
+		const trialView = withViewInputs(pageView, { context: { ...context, aiCardGate: "trial" } })()
+		const restartable = Arr.map(
+			[
+				investigationOf({ status: "failed", report_json: null, diagnosed_at: null }),
+				investigationOf({ status: "resolved" }),
+			],
+			(investigation) => synced(entered(), investigation).model,
+		)
+		Arr.forEach(restartable, (ready) =>
+			scene(
+				{ update: pageUpdate, view: trialView },
+				given(ready),
+				...canvas(),
+				expectView(role("button", { name: "Run again" })).toBeAbsent(),
+				expectView(role("button", { name: "Reopen" })).toBeAbsent(),
+				expectView(role("link", { name: "Add card to use AI" })).toExist(),
+			),
+		)
+		// Resolving runs no AI, so a diagnosed run keeps its button.
+		scene(
+			{ update: pageUpdate, view: trialView },
+			given(synced(entered(), investigationOf()).model),
+			...canvas(),
+			expectView(role("button", { name: "Resolve" })).toExist(),
+			expectView(role("link", { name: "Add card to use AI" })).toBeAbsent(),
+		)
+	})
+
 	test("a proposed action opens its panel through the URL, and a stale index opens nothing", () => {
 		const ready = synced(entered(), investigationOf()).model
 		expect(pageUpdate(ready, Message.ClickedAction({ index: 0 })).outMessage).toEqual(
