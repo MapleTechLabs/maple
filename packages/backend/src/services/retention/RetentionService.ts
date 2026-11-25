@@ -18,7 +18,7 @@ import {
 import type { OrgId, SourceId, UserId } from "@maple/primitives"
 import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import type { MapleDb } from "@maple/db/client"
-import { Array as Arr, Clock, Context, Duration, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Clock, Context, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -109,11 +109,16 @@ export interface ReadHorizonMemoState {
 	refreshStartedAt: number | undefined
 	/** This isolate's own policy writes, kept until a snapshot read after them is loaded. */
 	readonly written: Map<string, { readonly horizon: RetentionReadHorizon; readonly atMs: number }>
+	/** Read-backs after a write, numbered as they start, and the latest started per organization. */
+	readBacks: number
+	readonly latestReadBack: Map<string, number>
 }
 export const makeReadHorizonMemo = (): ReadHorizonMemoState => ({
 	known: undefined,
 	refreshStartedAt: undefined,
 	written: new Map(),
+	readBacks: 0,
+	latestReadBack: new Map(),
 })
 const isolateReadHorizonMemo = makeReadHorizonMemo()
 
@@ -387,18 +392,38 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 			/**
 			 * A write is read back by its own instance at once. The shared entry is dropped, so
 			 * the others follow as their own copy expires, within the TTL.
+			 *
+			 * Two writes to one organization can commit side by side, each from a snapshot
+			 * without the other, so the policy is read again after the commit and the
+			 * read-back that started last is the one kept. A read-back that fails or runs
+			 * out of time publishes nothing: the next read loads the policies afresh.
 			 */
-			const rememberPolicy = (orgId: OrgId, policy: RetentionPolicy) =>
+			const rememberPolicy = (orgId: OrgId, written: RetentionPolicy) =>
 				Effect.gen(function* () {
-					const horizon = readHorizonOf(policy)
-					state.written.set(orgId, { horizon, atMs: yield* Clock.currentTimeMillis })
-					if (horizon.configured.length > 0) state.known?.byOrg.set(orgId, horizon)
-					else state.known?.byOrg.delete(orgId)
+					state.readBacks += 1
+					const readBack = state.readBacks
+					state.latestReadBack.set(orgId, readBack)
+					const committed = yield* get(orgId).pipe(
+						Effect.timeoutOption(Duration.millis(READ_HORIZON_LOAD_TIMEOUT_MS)),
+						Effect.orElseSucceed(() => Option.none<RetentionPolicy>()),
+					)
+					if (state.latestReadBack.get(orgId) === readBack) {
+						if (Option.isSome(committed)) {
+							const horizon = readHorizonOf(committed.value)
+							state.written.set(orgId, { horizon, atMs: yield* Clock.currentTimeMillis })
+							if (horizon.configured.length > 0) state.known?.byOrg.set(orgId, horizon)
+							else state.known?.byOrg.delete(orgId)
+						} else {
+							state.written.delete(orgId)
+							if (state.known !== undefined)
+								state.known = { byOrg: state.known.byOrg, freshUntil: 0 }
+						}
+					}
 					yield* edgeCache.invalidate({
 						bucket: READ_HORIZON_CACHE_BUCKET,
 						key: READ_HORIZON_CACHE_KEY,
 					})
-					return policy
+					return Option.getOrElse(committed, () => written)
 				})
 
 			const setOrganization = Effect.fn("RetentionService.setOrganization")(function* (

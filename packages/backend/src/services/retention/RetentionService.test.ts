@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Fiber, Layer, Result, Schema } from "effect"
+import { Array as Arr, Deferred, Effect, Fiber, Layer, Result, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, SourceId, UserId } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
@@ -305,6 +305,103 @@ describe("RetentionService.readHorizon", () => {
 				const reads = database.calls
 				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, ["traces"])
 				assert.strictEqual(database.calls, reads)
+			}),
+		),
+	)
+
+	it.effect("a write's slower read-back does not undo a write that landed beside it", () =>
+		withSwitchableDb((database, db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const first = yield* source(db, ORG, "nodejs")
+				const second = yield* source(db, ORG, "python")
+				yield* retention.readHorizon(ORG)
+				// Hold what the slow write reads back: the policy from before the other write.
+				const parked = yield* Deferred.make<void>()
+				const release = yield* Deferred.make<void>()
+				const readBack = database.calls + 2
+				database.afterCall = (call) =>
+					call === readBack
+						? Effect.andThen(Deferred.succeed(parked, undefined), Deferred.await(release))
+						: Effect.void
+				const slow = yield* Effect.forkChild(retention.setSource(ORG, ANA, second, { logs: 400 }))
+				yield* Deferred.await(parked)
+				yield* retention.setSource(ORG, ANA, first, { traces: 90 })
+				yield* Deferred.succeed(release, undefined)
+				yield* Fiber.join(slow)
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).days, {
+					...DEFAULT_RETENTION_DAYS,
+					traces: 90,
+					logs: 400,
+				})
+			}),
+		),
+	)
+
+	it.effect("a write whose read-back fails does not publish its own older snapshot", () =>
+		withSwitchableDb((database, db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const first = yield* source(db, ORG, "nodejs")
+				const second = yield* source(db, ORG, "python")
+				yield* retention.readHorizon(ORG)
+				// Park the slow write between its commit and its read-back.
+				const parked = yield* Deferred.make<void>()
+				const release = yield* Deferred.make<void>()
+				const commit = database.calls + 1
+				database.afterCall = (call) =>
+					call === commit
+						? Effect.andThen(Deferred.succeed(parked, undefined), Deferred.await(release))
+						: Effect.void
+				const slow = yield* Effect.forkChild(retention.setSource(ORG, ANA, second, { logs: 400 }))
+				yield* Deferred.await(parked)
+				yield* retention.setSource(ORG, ANA, first, { traces: 90 })
+				database.down = true
+				yield* Deferred.succeed(release, undefined)
+				yield* Fiber.join(slow)
+				database.down = false
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).days, {
+					...DEFAULT_RETENTION_DAYS,
+					traces: 90,
+					logs: 400,
+				})
+			}),
+		),
+	)
+
+	it.effect("after a write whose read-back fails, the next read loads the committed period", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				// The isolate holds a fresh copy from before the write.
+				yield* retention.readHorizon(ORG)
+				const commit = database.calls + 1
+				database.afterCall = (call) =>
+					Effect.sync(() => {
+						if (call === commit) database.down = true
+					})
+				yield* retention.setOrganization(ORG, ANA, { traces: 7 })
+				database.down = false
+				assert.strictEqual((yield* retention.readHorizon(ORG)).days.traces, 7)
+			}),
+		),
+	)
+
+	it.effect("a write answers with what it committed when its read-back hangs", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				// The read-back gets its answer and never hands it over.
+				const hanging = yield* Deferred.make<void>()
+				const readBack = database.calls + 2
+				database.afterCall = (call) =>
+					call === readBack
+						? Effect.andThen(Deferred.succeed(hanging, undefined), Effect.never)
+						: Effect.void
+				const write = yield* Effect.forkChild(retention.setOrganization(ORG, ANA, { traces: 7 }))
+				yield* Deferred.await(hanging)
+				yield* TestClock.adjust(READ_HORIZON_LOAD_TIMEOUT_MS)
+				assert.strictEqual((yield* Fiber.join(write)).days.traces, 7)
 			}),
 		),
 	)

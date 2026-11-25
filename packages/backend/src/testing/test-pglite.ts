@@ -135,21 +135,30 @@ export const testEdgeCache = (db: TestDb): Layer.Layer<EdgeCacheService> => {
 	return created
 }
 
+export interface SwitchableDatabaseState {
+	down: boolean
+	stalled: boolean
+	calls: number
+	/** Runs once a call has its result, before the caller gets it. */
+	afterCall: ((call: number) => Effect.Effect<void>) | undefined
+}
+
 /**
  * A `Database` over `db` that counts its calls and fails them while `down` is set, for a
  * service that must answer from a cache or outlive a failed read.
  */
 export const makeSwitchableDatabase = (db: TestDb) => {
-	const state = { down: false, stalled: false, calls: 0 }
+	const state: SwitchableDatabaseState = { down: false, stalled: false, calls: 0, afterCall: undefined }
 	const layer = Layer.effect(
 		Database,
 		Effect.map(Database, (real): DatabaseApi => ({
 			execute: (fn) => {
 				state.calls += 1
+				const call = state.calls
 				if (state.stalled) return Effect.never
 				return state.down
 					? Effect.fail(new DatabaseError({ message: "database unavailable", cause: "test" }))
-					: real.execute(fn)
+					: Effect.tap(real.execute(fn), () => state.afterCall?.(call) ?? Effect.void)
 			},
 		})),
 	).pipe(Layer.provide(db.layer))
