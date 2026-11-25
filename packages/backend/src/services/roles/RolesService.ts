@@ -423,7 +423,12 @@ const make = Effect.gen(function* () {
 	 * with nothing on the membership, which holds nothing. Any built-in role could be more access than
 	 * the role that vanished.
 	 */
-	const reconcilePass = (orgId: OrgId, roleId: Policy.CustomRoleId, orphansTo: RoleRef | undefined) =>
+	const reconcilePass = (
+		orgId: OrgId,
+		roleId: Policy.CustomRoleId,
+		orphansTo: RoleRef | undefined,
+		redoDemotions: boolean,
+	) =>
 		Effect.gen(function* () {
 			const { roles, memberships } = yield* readState(orgId)
 			const holders = holdersOf(memberships, roleId)
@@ -433,27 +438,34 @@ const make = Effect.gen(function* () {
 				const stale = Arr.filter(holders, (holder) =>
 					Option.exists(heldCustomRole(holder), (held) => !carries(held, role.value)),
 				)
-				yield* Effect.annotateCurrentSpan({ "maple.role.holders_rewritten": stale.length })
+				// A holder already rewritten may still be undemoted: its demotion failed after the write.
+				// A repeated save cannot tell, so it demotes every holder again.
+				const rewritten = redoDemotions
+					? Arr.filter(holders, (holder) => !stale.includes(holder))
+					: []
+				yield* Effect.annotateCurrentSpan({
+					"maple.role.holders_rewritten": stale.length,
+					"maple.role.holders_redemoted": rewritten.length,
+				})
 				// One holder Clerk refuses must not leave the rest on the old codes: each is retried on
 				// its own, every one is tried, and only then does a failure fail the pass.
 				const results = yield* Effect.forEach(
-					stale,
-					(holder) =>
-						Effect.result(
+					[
+						...Arr.map(stale, (holder) =>
 							clerk
 								.setMembershipCustomRole(orgId, holder.userId, target.metadata)
-								.pipe(
-									Effect.andThen(demote(orgId, holder.userId, target.grants)),
-									Effect.retry(HOLDER_RETRY),
-								),
+								.pipe(Effect.andThen(demote(orgId, holder.userId, target.grants))),
 						),
+						...Arr.map(rewritten, (holder) => demote(orgId, holder.userId, target.grants)),
+					],
+					(settle) => Effect.result(settle.pipe(Effect.retry(HOLDER_RETRY))),
 					{ concurrency: 4 },
 				)
 				const failed = Arr.filter(results, Result.isFailure)
 				if (failed.length > 0) {
 					yield* Effect.annotateCurrentSpan({ "maple.role.holders_failed": failed.length })
 					return yield* new RolesUnavailableError({
-						message: `${failed.length} of ${stale.length} members still hold this role's previous permissions. Save the role again to finish.`,
+						message: `${failed.length} of ${results.length} members still hold this role's previous permissions. Save the role again to finish.`,
 						cause: failed[0]?.failure,
 					})
 				}
@@ -490,11 +502,12 @@ const make = Effect.gen(function* () {
 		orgId: OrgId,
 		roleId: Policy.CustomRoleId,
 		orphansTo: RoleRef | undefined,
+		redoDemotions?: boolean,
 	) {
 		const passes = yield* Ref.make(0)
 		const settledPass = Effect.gen(function* () {
 			yield* Ref.update(passes, (count) => count + 1)
-			const result = yield* reconcilePass(orgId, roleId, orphansTo)
+			const result = yield* reconcilePass(orgId, roleId, orphansTo, redoDemotions === true)
 			const { roles } = yield* clerk.customRoles(orgId)
 			const now = Arr.findFirst(roles, (candidate) => candidate.id === roleId)
 			return sameStoredRole(now, result.role) ? result : yield* concurrentEdit
@@ -633,7 +646,8 @@ const make = Effect.gen(function* () {
 			}),
 		)
 		// After the definition, so a member put on the role meanwhile with its old codes is caught.
-		const { holders } = yield* reconcileHolders(tenant.orgId, roleId, undefined)
+		// `before === after` is the same save sent again: the last one may have left a demotion undone.
+		const { holders } = yield* reconcileHolders(tenant.orgId, roleId, undefined, before === after)
 		return { before: toCustomRole(before, holders), role: toCustomRole(after, holders) }
 	})
 
