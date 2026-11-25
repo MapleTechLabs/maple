@@ -125,6 +125,11 @@ export const handleRequest = async (request: Request, assets: AssetsBinding): Pr
 	}
 
 	const assetResponse = await assets.fetch(request)
+	// Workers Assets answers `/pricing` with a 307 to `/pricing/`. A temporary redirect
+	// keeps both URLs in Google's index; a permanent one folds them into the canonical.
+	if (assetResponse.status === 307) {
+		return new Response(null, { status: 308, headers: assetResponse.headers })
+	}
 	// Vary only on the paths that actually have two representations. Putting
 	// it on hashed CSS/JS/images would split their cache entries for nothing.
 	if (assetResponse.status !== 404) {
