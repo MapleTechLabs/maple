@@ -509,9 +509,10 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// An Autumn env without the trial plan yet (the rollout window): the card trial.
 						const isTrialMissing = payload.planId === TRIAL_PLAN_ID && attempt.statusCode === 404
 						yield* Effect.annotateCurrentSpan({ "maple.billing.trial_missing": isTrialMissing })
+						const attachedPlanId = isTrialMissing ? STARTUP_PLAN_ID : payload.planId
 						const result = isTrialMissing
 							? yield* autumn.attach(customerId, {
-									planId: STARTUP_PLAN_ID,
+									planId: attachedPlanId,
 									successUrl: payload.successUrl,
 								})
 							: attempt
@@ -533,7 +534,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 										autumn.getOrCreateCustomer(customerId, {
 											expand: ["subscriptions.plan"],
 										}),
-										payload.planId,
+										attachedPlanId,
 										conflict,
 									),
 							),

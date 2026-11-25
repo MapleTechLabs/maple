@@ -11,6 +11,7 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { input } from "@maple/views/ui/input"
 import { label } from "@maple/views/ui/label"
 import { Message } from "./quick-start"
+import type { Offer } from "./pricing-cards"
 import { STEP_BODY_CLASS, STEP_FOOTER_LAYOUT } from "./step-layout"
 import { actionBar } from "@maple/views/ui/action-bar"
 import { isAlreadyInvited, type Team, TeamMessage } from "./quick-start-team"
@@ -271,20 +272,24 @@ const pricingSkeleton = (h: H): Html =>
 		),
 	)
 
-/** The trial pitch over the pricing cards; it is the first step, so no Back. */
-export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html =>
+/** The trial pitch (or, for a lapsed org, the subscribe pitch) over the cards; first step, so no Back. */
+export const planStep = (h: H, isCustomerLoading: boolean, offer: Offer, pricing: Html): Html =>
 	vstack(h, { align: "center", grow: true, className: "px-6 pb-12 pt-4 sm:px-12 lg:px-16" }, [
 		h.div(
 			[h.Class("w-full max-w-5xl")],
 			[
 				vstack(h, { gap: "2.5", align: "center", className: "mb-10 text-center" }, [
 					heading(h, { level: 1, variant: "display" }, [
-						`Start your ${TRIAL_DURATION_DAYS}-day free trial`,
+						offer === "Trial"
+							? `Start your ${TRIAL_DURATION_DAYS}-day free trial`
+							: "Pick up where you left off",
 					]),
 					h.p(
 						[h.Class("max-w-lg text-title leading-relaxed text-muted-foreground")],
 						[
-							`No credit card needed. Everything is on, with ${TRIAL_SIGNAL_GB} GB each of logs, traces and metrics. Add a card whenever you're ready to keep going.`,
+							offer === "Trial"
+								? `No credit card needed. Everything is on, with ${TRIAL_SIGNAL_GB} GB each of logs, traces and metrics. Add a card whenever you're ready to keep going.`
+								: "Your data is still here. Subscribe to start ingesting again. Cancel anytime.",
 						],
 					),
 				]),

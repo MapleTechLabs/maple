@@ -203,7 +203,7 @@ const trialPanel = (h: H, model: Model, trial: NoCardTrial, timeZone: string): H
 			hstack(h, { gap: "2", align: "center" }, [
 				typography(h, { size: "sm", weight: "medium" }, ["Free trial"]),
 				badge(h, { variant: "secondary", size: "xs", className: "tabular-nums" }, [
-					trial.daysRemaining <= 1 ? "Ends today" : `${trial.daysRemaining} days left`,
+					trial.daysRemaining <= 1 ? "Last day" : `${trial.daysRemaining} days left`,
 				]),
 			]),
 			typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [

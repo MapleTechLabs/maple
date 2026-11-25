@@ -11,7 +11,8 @@ import type * as ClerkScreens from "./clerk-screens"
 import { clerkCard } from "./clerk-card"
 import * as ClerkSignInView from "./clerk-sign-in-view"
 import * as AccountMenu from "./account-menu"
-import { accessOf, customerOf, hasPlanOf, needsRegion } from "./plan-gate"
+import { accessOf, customerOf, type CustomerSlot, hasPlanOf, needsRegion } from "./plan-gate"
+import type * as PricingCards from "./pricing-cards"
 import { hasLapsedPlan } from "../kit/billing/plan-gating"
 import * as SelectPlan from "./select-plan"
 import type * as QuickStart from "./quick-start"
@@ -144,6 +145,10 @@ const accountCluster = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, l
 	)
 }
 
+/** A new org is offered the no-card trial; one whose plan lapsed, a subscription. */
+const offerOf = (customer: CustomerSlot): PricingCards.Offer =>
+	hasLapsedPlan(customerOf(customer)) ? "Subscribe" : "Trial"
+
 /** The splash until the progress and the plan are known, then the step. */
 const quickStartView = Submodel.defineView<
 	QuickStart.Model,
@@ -167,12 +172,13 @@ const quickStartView = Submodel.defineView<
 				planStep: QuickStartTeamView.planStep(
 					h,
 					accessOf(inputs.customer) === "loading",
+					offerOf(inputs.customer),
 					h.submodel({
 						slotId: "quick-start-pricing",
 						model: model.pricing,
 						view: PricingCardsView.view,
 						viewInputs: {
-							offer: hasLapsedPlan(customerOf(inputs.customer)) ? "Subscribe" : "Trial",
+							offer: offerOf(inputs.customer),
 						},
 						toParentMessage: (message) => QuickStartMessage.GotPricingMessage({ message }),
 					}),

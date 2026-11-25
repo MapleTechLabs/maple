@@ -127,7 +127,7 @@ const trialBanner = (h: H, notice: TrialNotice, isApproachingDismissed: boolean)
 				? {
 						title:
 							notice.trial.daysRemaining <= 1
-								? "Your free trial ends today"
+								? "Your free trial ends within a day"
 								: `Your free trial ends in ${notice.trial.daysRemaining} days`,
 						body: `Add a card to keep ingesting after ${endsOn}. Nothing is charged before then.`,
 					}

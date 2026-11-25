@@ -446,6 +446,15 @@ describe("the no-card trial", () => {
 		expect(getTrialNotice(onTrial(10, { logs: used(10) }), NOW)).toBeNull()
 	})
 
+	it("counts a bought plan or add-on as paid, never the trial, the free row or an auto-enabled one", () => {
+		const paid = (sub: Partial<Subscription>) => hasPaidPlan(buildCustomer([buildSubscription(sub)]))
+		expect(paid({ planId: "free" })).toBe(false)
+		expect(paid({ planId: "starter", autoEnable: true })).toBe(false)
+		expect(paid({ planId: "trial" })).toBe(false)
+		expect(paid({ planId: "bringyourowncloud", addOn: true })).toBe(true)
+		expect(paid({ planId: "startup", status: "expired" })).toBe(false)
+	})
+
 	it("tells an ended trial from an ended subscription", () => {
 		const endedTrial = buildCustomer([
 			buildSubscription({ planId: "trial", status: "expired", trialEndsAt: NOW - DAY }),

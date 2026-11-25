@@ -80,7 +80,13 @@ export function hasSelectedPlan(customer: Customer | null | undefined): boolean 
 export function hasPaidPlan(customer: Customer | null | undefined): boolean {
 	return (
 		isUsableCustomer(customer) &&
-		Arr.some(customer.subscriptions, (sub) => sub.status === "active" && sub.planId !== TRIAL_PLAN_ID)
+		Arr.some(
+			customer.subscriptions,
+			(sub) =>
+				sub.status === "active" &&
+				sub.planId !== TRIAL_PLAN_ID &&
+				(sub.addOn === true || isPlanSubscription(sub)),
+		)
 	)
 }
 

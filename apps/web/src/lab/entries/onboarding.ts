@@ -345,6 +345,7 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 			planStep: QuickStartTeamView.planStep(
 				h,
 				false,
+				"Trial",
 				h.submodel({
 					slotId: "lab-onboarding-plans",
 					model: null,

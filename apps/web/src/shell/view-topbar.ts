@@ -70,7 +70,7 @@ const trialChip = (h: HtmlBuilder<Message>, trial: NoCardTrial): Html =>
 			className: "tabular-nums max-sm:hidden",
 		},
 		[
-			trial.daysRemaining <= 1 ? "Trial ends today" : `Trial · ${trial.daysRemaining}d left`,
+			trial.daysRemaining <= 1 ? "Trial · last day" : `Trial · ${trial.daysRemaining}d left`,
 			" · Add card",
 		],
 	)
