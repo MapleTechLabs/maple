@@ -124,6 +124,9 @@ export const Message = defineMessageUnion({
 	PressedThemeKey: {},
 	PressedFocusSearchKey: {},
 	CompletedFocusShortcutSearch: {},
+	/** Mod+S while the page shows a save bar. */
+	PressedSaveShortcut: {},
+	CompletedSaveShortcut: {},
 	GotPaletteMessage: { message: Palette.Message },
 	GotShortcutsDialogMessage: { message: Dialog.Message },
 	MeasuredShortcutsPanel: {},

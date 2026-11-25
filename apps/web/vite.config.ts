@@ -150,6 +150,33 @@ export default defineConfig(({ mode, command }) => {
 				? [clerkEarlyLoad(clerkKey)]
 				: []),
 		],
-		build: { manifest: true },
+		build: {
+			manifest: true,
+			rolldownOptions: {
+				// Eager chunks under ~2.5 MB, so each source map stays under the 10 MiB upload cap.
+				// `entriesAware` keeps `boot` off the app's chunks; strict order keeps module init
+				// order across them (without it the app throws at startup).
+				output: {
+					strictExecutionOrder: true,
+					codeSplitting: {
+						groups: [
+							{ name: "vendor", test: /node_modules/, maxSize: 2_500_000, entriesAware: true },
+							{
+								name: "kit",
+								test: /\/(packages|lib)\//,
+								maxSize: 2_500_000,
+								entriesAware: true,
+							},
+							{
+								name: "app",
+								test: /\/apps\/web\/src\//,
+								maxSize: 2_500_000,
+								entriesAware: true,
+							},
+						],
+					},
+				},
+			},
+		},
 	}
 })

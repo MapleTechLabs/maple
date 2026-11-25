@@ -5,6 +5,7 @@ import { DASHBOARD_FAVORITES_EVENT, readDashboardFavorites } from "./favorites"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { ONCALL_CHANGED_EVENT } from "../page/alerts/shared/oncall-schedules"
+import { SAVE_SHORTCUT_ATTRIBUTE } from "../page/kit/save-bar"
 
 /** `max-md`: below 768px the sidebar is a sheet. */
 export const MOBILE_QUERY = "(max-width: 767px)"
@@ -42,7 +43,8 @@ export const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilter
 })
 
 /**
- * The document keydown: Mod+K opens the palette anywhere; `?`, `T` and `/` only
+ * The document keydown: Mod+K opens the palette anywhere, Mod+S presses the save bar's Save (in a
+ * field too) when the page shows one; `?`, `T` and `/` only
  * outside fields and dialogs, and not after an element handled the key (stopped propagation).
  */
 export const globalShortcuts: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
@@ -53,6 +55,13 @@ export const globalShortcuts: Stream.Stream<Message> = Dom.streamFromEventFilter
 		if ((event.metaKey || event.ctrlKey) && key === "k") {
 			event.preventDefault()
 			return Option.some(Message.PressedPaletteShortcut())
+		}
+		if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && key === "s") {
+			if (isDialogOpen() || document.querySelector(`[data-${SAVE_SHORTCUT_ATTRIBUTE}]`) === null)
+				return Option.none()
+			// The browser's "Save page" is never what Mod+S means while edits are unsaved.
+			event.preventDefault()
+			return Option.some(Message.PressedSaveShortcut())
 		}
 		if (
 			event.defaultPrevented ||

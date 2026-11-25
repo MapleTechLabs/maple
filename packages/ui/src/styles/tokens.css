@@ -249,6 +249,8 @@
 	--border-raised: color-mix(in oklab, var(--border) 60%, transparent);
 	/* The shade under a raised control or card: faint on white, deeper on a dark surface. */
 	--raised-shade: oklch(0 0 0 / 5%);
+	/* Under a bar floating over the page it sits on (the save pill): a soft lift in light. */
+	--float-shade: 0 8px 24px -6px oklch(0 0 0 / 14%), 0 2px 6px -2px oklch(0 0 0 / 8%);
 	/* A keycap (`kbd`): its face, and its layers: a hairline ring, a lit top edge, a darker
 	   bottom lip and a 1px drop, so it reads as a key standing on any surface. */
 	--key: oklch(1 0 0);
@@ -406,6 +408,8 @@
 	--scrim-panel: oklch(0 0 0 / 24%);
 	--border-raised: oklch(1 0 0 / 10%);
 	--raised-shade: oklch(0 0 0 / 35%);
+	/* A dark page needs real black under a float, or rows scrolling past read as level with it. */
+	--float-shade: 0 12px 32px -8px oklch(0 0 0 / 65%), 0 2px 8px -2px oklch(0 0 0 / 45%);
 	--key: color-mix(in oklab, var(--foreground) 10%, var(--popover));
 	--key-shade:
 		0 0 0 1px oklch(1 0 0 / 6%), inset 0 1px 0 oklch(1 0 0 / 10%), inset 0 -1px 0 oklch(0 0 0 / 30%),
@@ -521,11 +525,13 @@
 	--radius-2xl-inset: calc(var(--radius-2xl) - 1px);
 	/* Depth comes from surfaces and the hairline; these are the only shadows. `raised` lifts a
 	   control or card off its surface, `popup` floats menus, popovers, dialogs and toasts,
-	   `control` is a control's 1px highlight (swaps per theme), `accent-start` marks the current
-	   row's leading edge. Tailwind's sizes and raw `shadow-[…]` are lint errors. */
+	   `float` lifts the save pill over the page, `control` is a control's 1px highlight (swaps
+	   per theme), `accent-start` marks the current row's leading edge. Tailwind's sizes and raw
+	   `shadow-[…]` are lint errors. */
 	--shadow-raised: 0 1px 2px 0 var(--raised-shade);
 	--shadow-popup: 0 10px 15px -3px oklch(0 0 0 / 5%), 0 4px 6px -4px oklch(0 0 0 / 5%);
 	--shadow-control: var(--control-highlight);
+	--shadow-float: var(--float-shade);
 	--shadow-accent-start: inset 2px 0 0 var(--color-primary);
 	/* A sticky footer lifting over content scrolled under it. */
 	--shadow-overflow-up: 0 -6px 12px oklch(0 0 0 / 35%);

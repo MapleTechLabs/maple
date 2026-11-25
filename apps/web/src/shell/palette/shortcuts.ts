@@ -31,6 +31,7 @@ const key = (name: string): Combo => ({ key: name })
 export const SHORTCUTS: ReadonlyArray<ShortcutDef> = [
 	{ label: "Open command palette", group: "Global", combo: { modifiers: ["Mod"], key: "K" } },
 	{ label: "Show keyboard shortcuts", group: "Global", combo: key("?"), display: ["?"] },
+	{ label: "Save unsaved changes", group: "Global", combo: { modifiers: ["Mod"], key: "S" } },
 	{ label: "Toggle dark / light mode", group: "Global", combo: key("T") },
 	{ label: "Focus search", group: "Search & time", combo: key("/") },
 	{ label: "Open time range picker", group: "Search & time", combo: key("D") },

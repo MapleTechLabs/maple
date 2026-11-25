@@ -6,6 +6,7 @@ import {
 	findJsFiles,
 	isIndexMap,
 	MANIFEST_FILE,
+	mapsNoSources,
 	mapDebugId,
 	mapUsers,
 	SourceMapsManifest,
@@ -186,8 +187,9 @@ const hasRelease = (props: SourceMapsProps) => props.release !== undefined && pr
 /** Why a map is not uploaded, or none when it is. */
 const skipReason = (props: SourceMapsProps, map: PlannedMap): Option.Option<string> => {
 	if (map.bytes.byteLength > SOURCE_MAP_MAX_BYTES) return Option.some("it is over 10 MiB")
-	if (isIndexMap(new TextDecoder().decode(map.bytes)))
-		return Option.some("index source maps are not supported")
+	const text = new TextDecoder().decode(map.bytes)
+	if (isIndexMap(text)) return Option.some("index source maps are not supported")
+	if (mapsNoSources(text)) return Option.some("it maps no sources")
 	if (byRelease(props) && !hasRelease(props)) return Option.some('`matchBy: "release"` needs a release')
 	if (Option.isNone(map.debugId) && !hasRelease(props))
 		return Option.some("it has no debug id and no release is set")

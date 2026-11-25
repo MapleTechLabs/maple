@@ -163,6 +163,20 @@ export const isIndexMap = (mapText: string): boolean =>
 		onSuccess: (map) => map["sections"] !== undefined,
 	})
 
+/**
+ * Whether a plain map has no `mappings` string or no sources, which the server refuses. A prebuilt
+ * worker's map can list none.
+ */
+export const mapsNoSources = (mapText: string): boolean =>
+	Result.match(decodeMap(mapText), {
+		onFailure: () => false,
+		onSuccess: (map) =>
+			map["sections"] === undefined &&
+			(!Predicate.isString(map["mappings"]) ||
+				!Arr.isArray(map["sources"]) ||
+				map["sources"].length === 0),
+	})
+
 /** A version 3 source map as a JSON object; anything else is never rewritten. */
 const decodeV3Map = (mapText: string) =>
 	Option.filter(Result.getSuccess(decodeMap(mapText)), (map) => map["version"] === 3)

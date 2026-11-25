@@ -39,6 +39,8 @@ The message is the span's status message, or the exception's own message when th
 
 The environment is not part of the fingerprint, so the same bug in staging and production is one issue.
 
+Minified browser code renames functions and files on every deploy. Upload [source maps](/docs/errors/source-maps) so stacks show your original code and browser errors group on it.
+
 ### Set the grouping yourself
 
 When the automatic grouping splits one bug into several issues, or merges two, set a `maple.fingerprint` attribute on the error span or on its exception event. Every error in a service that carries the same value becomes one issue, whatever its stack or message. The type, message and stack still show on the issue as usual.
@@ -223,6 +225,7 @@ The [MCP server](/docs/reference/mcp) covers the whole workflow:
 ## Next steps
 
 - [Traces](/docs/explore/traces): inspect the requests behind an occurrence.
+- [Source maps](/docs/errors/source-maps): readable stacks for minified browser code.
 - [Notification destinations](/docs/alerting/notification-destinations): set up Slack, email, and webhooks.
 - [GitHub](/docs/integrations/github): attach pull requests and verify fixes.
 - [MCP server](/docs/reference/mcp): let a coding agent triage and fix issues.

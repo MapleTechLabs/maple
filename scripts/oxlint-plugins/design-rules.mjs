@@ -66,6 +66,7 @@ const SHADOW_TOKENS = new Set([
 	"overflow-up",
 	"rule-bottom",
 	"backdrop-below",
+	"float",
 	"key",
 	"none",
 ])
@@ -84,7 +85,7 @@ const isRawShadow = (token) => {
 const noRawShadow = ratcheted("no-raw-shadow", {
 	description: "Depth comes from surfaces, the hairline and the shadow tokens.",
 	message:
-		"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control`, `shadow-accent-start`, `shadow-overflow-up`, `shadow-rule-bottom`, `shadow-backdrop-below` or `shadow-key` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`). A shadow's colour is part of its token; a new depth gets a new token in tokens.css.",
+		"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-float`, `shadow-control`, `shadow-accent-start`, `shadow-overflow-up`, `shadow-rule-bottom`, `shadow-backdrop-below` or `shadow-key` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`). A shadow's colour is part of its token; a new depth gets a new token in tokens.css.",
 	collect: (_context, push) =>
 		classStrings((node, tokens) => {
 			for (const token of tokens) if (isRawShadow(splitToken(token).utility)) push(node, { token })
@@ -249,6 +250,38 @@ const singleTooltipDelay = {
 						if (property.type === "Property" && property.key.name === "openDelayMs")
 							context.report({ node: property, messageId: "bad" })
 				}
+			},
+		}
+	},
+}
+
+// Every page with unsaved edits shows the same pill, built in one place.
+const SAVE_BAR_HOME = "apps/web/src/page/kit/save-bar.ts"
+
+const oneSaveBar = {
+	meta: {
+		type: "problem",
+		docs: { description: "An unsaved-changes bar is the kit `saveBar`." },
+		messages: {
+			bad: "Show unsaved edits with `saveBar` (`apps/web/src/page/kit/save-bar.ts`), not an `actionBar` of your own: `changeCount`, `context` and `saveLabel` cover the variations, so every page shows the same pill.",
+		},
+	},
+	create(context) {
+		if ((context.filename ?? context.getFilename()).replaceAll("\\", "/").endsWith(SAVE_BAR_HOME))
+			return {}
+		return {
+			CallExpression(node) {
+				if (node.callee.type !== "Identifier" || node.callee.name !== "actionBar") return
+				const options = node.arguments[1]
+				if (options?.type !== "ObjectExpression") return
+				for (const property of options.properties)
+					if (
+						property.type === "Property" &&
+						property.key.name === "label" &&
+						property.value.type === "Literal" &&
+						property.value.value === "Unsaved changes"
+					)
+						context.report({ node, messageId: "bad" })
 			},
 		}
 	},
@@ -503,6 +536,7 @@ export const designRules = {
 	"no-dimmed-icon": noDimmedIcon,
 	"no-raw-shadow": noRawShadow,
 	"no-transition-all": noTransitionAll,
+	"one-save-bar": oneSaveBar,
 	"single-tooltip-delay": singleTooltipDelay,
 	"tone-alpha-steps": toneAlphaSteps,
 }
