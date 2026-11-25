@@ -83,7 +83,9 @@ export const relocateMaps = (mapsDir: string, outputs: ReadonlyArray<BuildOutput
 			{ discard: true },
 		)
 		yield* fs.makeDirectory(maps, { recursive: true }).pipe(Effect.mapError(fileError(maps, "create")))
-		const moved = yield* Effect.forEach(outputs, ({ outDir }) =>
+		// Two outputs can each write `app.js.map`: each gets its own folder so neither map replaces the other.
+		const folderOf = (index: number) => (outputs.length > 1 ? String(index) : "")
+		const moved = yield* Effect.forEach(outputs, ({ outDir }, index) =>
 			Effect.gen(function* () {
 				const files = yield* listFiles(outDir, Str.endsWith(".map"))
 				// Copy then delete: `mapsDir` may be on another device than the build output.
@@ -92,7 +94,7 @@ export const relocateMaps = (mapsDir: string, outputs: ReadonlyArray<BuildOutput
 					(file) =>
 						Effect.gen(function* () {
 							const from = path.join(outDir, file)
-							const to = path.join(maps, file)
+							const to = path.join(maps, folderOf(index), file)
 							yield* fs.makeDirectory(path.dirname(to), { recursive: true })
 							yield* fs.copyFile(from, to)
 							yield* fs.remove(from)
@@ -102,14 +104,17 @@ export const relocateMaps = (mapsDir: string, outputs: ReadonlyArray<BuildOutput
 				return files.length
 			}),
 		)
-		const files = Arr.flatMap(outputs, ({ outDir, results }) =>
+		const files = Arr.flatMap(outputs, ({ outDir, results }, index) =>
 			Arr.flatMap(results, (result) =>
 				result.status === "injected" || result.status === "already_injected"
 					? Option.toArray(
 							Option.map(result.mapPath, (mapPath) => ({
 								file: result.file,
 								debugId: Option.getOrNull(result.debugId),
-								map: Str.replaceAll("\\", "/")(path.relative(outDir, mapPath)),
+								map: Str.replaceAll(
+									"\\",
+									"/",
+								)(path.join(folderOf(index), path.relative(outDir, mapPath))),
 							})),
 						)
 					: [],

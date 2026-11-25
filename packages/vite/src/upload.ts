@@ -50,7 +50,7 @@ const sendOne = (config: UploadConfig, map: PlannedMap) =>
 			Effect.mapError(
 				(cause) =>
 					new SourceMapUploadError({
-						message: `could not reach ${new URL(url).origin}`,
+						message: `could not reach ${config.apiUrl}`,
 						minifiedPath: map.minifiedPath,
 						cause,
 					}),

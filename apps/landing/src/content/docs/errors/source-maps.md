@@ -221,6 +221,7 @@ The API returns when each map last resolved a stack, to the day, as `last_used_a
 - **Frames map but show no code.** The map has no `sourcesContent`. Turn on embedding the sources in your bundler.
 - **The build log says `MAPLE_API_KEY is not set`.** The Vite plugin found no key, so it kept the maps on disk and uploaded nothing. Set `MAPLE_API_KEY` in the environment of the build step, or pass `apiKey`. `MAPLE_API_TOKEN` is the CLI's variable and the plugin does not read it.
 - **The build log says `no service is set`.** Pass `service` to `mapleSourceMaps()`.
+- **The build log says `build.sourcemap: "inline"` embeds the maps.** Inline maps ship inside the served files, so the plugin cannot upload them. Remove the setting or set it to `"hidden"`.
 - **`upload` skips every file with "no debug id".** Run `maple sourcemaps inject` first, or pass `--service` and `--release`.
 - **An error opened a new issue after a deploy.** Its map arrived more than an hour after the first occurrence. Upload before or with the deploy.
 

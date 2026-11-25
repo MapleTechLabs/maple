@@ -44,15 +44,23 @@ export const sourceMapsPlugin = (
 	// A build without the environment API (Vite 5) has no `environment` on its plugin context.
 	const environmentOf = (context: { readonly environment?: { readonly name: string } }) =>
 		context.environment?.name
+	// Unset or off becomes hidden: maps are written, but no public `sourceMappingURL` comment.
+	const withMaps = (build: { readonly sourcemap?: unknown } | undefined) =>
+		build?.sourcemap === undefined || build.sourcemap === false
+			? { build: { sourcemap: "hidden" as const } }
+			: undefined
+	// The resolved setting, for builds without the environment API.
+	let topLevelSourcemap: unknown = undefined
 	return {
 		name: "maple:source-maps",
 		apply: "build",
-		config: (config) =>
-			config.build?.sourcemap === undefined || config.build.sourcemap === false
-				? { build: { sourcemap: "hidden" } }
-				: undefined,
+		config: (config) => withMaps(config.build),
+		// An environment's own `build.sourcemap` wins over the top level, so set it there too.
+		configEnvironment: (name, config) =>
+			environments.includes(name) ? withMaps(config.build) : undefined,
 		configResolved: (config) => {
 			root = config.root
+			topLevelSourcemap = config.build.sourcemap
 		},
 		writeBundle(outputOptions) {
 			const environment = environmentOf(this)
@@ -66,6 +74,13 @@ export const sourceMapsPlugin = (
 			const dirs = written.get(key) ?? []
 			written.delete(key)
 			if (dirs.length === 0) return
+			const sourcemap = this.environment?.config.build.sourcemap ?? topLevelSourcemap
+			if (sourcemap === "inline") {
+				this.warn(
+					'`build.sourcemap: "inline"` embeds the maps in the served files, so none can be uploaded. Remove the setting or set it to "hidden".',
+				)
+				return
+			}
 			const program = Effect.gen(function* () {
 				const path = yield* Path
 				const outDirs = Arr.map(dirs, (dir) => path.resolve(root, dir))

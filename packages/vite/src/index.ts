@@ -14,7 +14,7 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { sourceMapsPlugin } from "@maple/sourcemaps/vite"
-import { Array as Arr, Config, Effect, Layer, Option, Redacted } from "effect"
+import { Array as Arr, Config, ConfigProvider, Effect, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { Plugin } from "vite"
 import { SourceMapUploadError, type UploadSummary, uploadSourceMaps } from "./upload"
@@ -69,7 +69,7 @@ const given = (value: string | undefined) => Option.filter(Option.fromNullishOr(
 type UploadOutcome =
 	| { readonly _tag: "off" }
 	| { readonly _tag: "notConfigured"; readonly reason: string }
-	| { readonly _tag: "unreadable"; readonly message: string }
+	| { readonly _tag: "failed"; readonly message: string }
 	| { readonly _tag: "done"; readonly service: string; readonly summary: UploadSummary }
 
 const runUpload = (options: MapleSourceMapsOptions, mapsDir: string) =>
@@ -86,9 +86,15 @@ const runUpload = (options: MapleSourceMapsOptions, mapsDir: string) =>
 		const apiUrl = Option.isSome(given(options.apiUrl))
 			? given(options.apiUrl)
 			: yield* envString("MAPLE_API_URL")
+		const baseUrl = Option.getOrElse(apiUrl, () => DEFAULT_API_URL)
+		if (!/^https?:\/\//i.test(baseUrl) || !URL.canParse(baseUrl))
+			return {
+				_tag: "failed",
+				message: `the Maple API URL ${baseUrl} is not an http(s) URL; set apiUrl or MAPLE_API_URL to one such as ${DEFAULT_API_URL}`,
+			} satisfies UploadOutcome
 		const config = {
 			apiKey: Redacted.make(resolvedKey.value),
-			apiUrl: Option.getOrElse(apiUrl, () => DEFAULT_API_URL),
+			apiUrl: baseUrl,
 			service: service.value,
 			release: Option.getOrUndefined(given(options.release)),
 			urlPrefix: options.urlPrefix,
@@ -97,7 +103,10 @@ const runUpload = (options: MapleSourceMapsOptions, mapsDir: string) =>
 		return yield* uploadSourceMaps(mapsDir, config).pipe(
 			Effect.map((summary): UploadOutcome => ({ _tag: "done", service: service.value, summary })),
 			Effect.catchTag("@maple/sourcemaps/SourceMapsFileError", (error) =>
-				Effect.succeed<UploadOutcome>({ _tag: "unreadable", message: error.message }),
+				Effect.succeed<UploadOutcome>({
+					_tag: "failed",
+					message: `could not read the source maps in ${mapsDir}: ${error.message}`,
+				}),
 			),
 		)
 	})
@@ -115,7 +124,14 @@ export const mapleSourceMaps = (options: MapleSourceMapsOptions = {}): Plugin =>
 		// The plugin's own entry point: the build hook is where this Effect program runs.
 		const outcome = await Effect.runPromise(
 			runUpload(options, build.mapsDir).pipe(
-				Effect.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
+				Effect.provide([
+					NodeServices.layer,
+					FetchHttpClient.layer,
+					// Effect's default provider reads the environment once per process; a second
+					// build (watch mode, a script that sets the key later) must see it as it is now.
+					// @effect-diagnostics-next-line processEnv:off -- the plugin entry point snapshots the env per build
+					ConfigProvider.layer(ConfigProvider.fromEnvRecord({ ...process.env })),
+				]),
 			),
 		)
 		const fail = (message: string) =>
@@ -125,8 +141,8 @@ export const mapleSourceMaps = (options: MapleSourceMapsOptions = {}): Plugin =>
 				return
 			case "notConfigured":
 				return log.warn(`${outcome.reason}: source maps were kept in ${build.mapsDir}, not uploaded.`)
-			case "unreadable":
-				return fail(`could not read the source maps in ${build.mapsDir}: ${outcome.message}`)
+			case "failed":
+				return fail(outcome.message)
 			case "done": {
 				const { summary } = outcome
 				Arr.forEach(summary.skipped, (skip) =>
