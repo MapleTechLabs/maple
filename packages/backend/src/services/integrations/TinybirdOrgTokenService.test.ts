@@ -24,6 +24,7 @@ import {
 	createTestDb,
 	TestEdgeCacheLive,
 	testEdgeCache,
+	TestReadHorizonMemoLive,
 	insertTestSource,
 	makeSwitchableDatabase,
 	type TestDb,
@@ -271,7 +272,7 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 				Layer.merge(TinybirdOrgTokenService.layer, RetentionService.layer).pipe(
 					Layer.provide(Env.layer),
 					Layer.provide(testConfig()),
-					Layer.provide(Layer.merge(db.layer, testEdgeCache(db))),
+					Layer.provide(Layer.mergeAll(db.layer, testEdgeCache(db), TestReadHorizonMemoLive)),
 				),
 			),
 		)
@@ -282,7 +283,9 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 		effect.pipe(
 			Effect.provide(
 				Layer.fresh(RetentionService.layer).pipe(
-					Layer.provide(Layer.merge(db.layer, testEdgeCache(db))),
+					Layer.provide(
+						Layer.mergeAll(db.layer, testEdgeCache(db), Layer.fresh(TestReadHorizonMemoLive)),
+					),
 				),
 			),
 		)

@@ -58,6 +58,7 @@ import {
 	createTestDb,
 	TestEdgeCacheLive,
 	testEdgeCache,
+	TestReadHorizonMemoLive,
 	makeSwitchableDatabase,
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
@@ -110,7 +111,9 @@ const tokenLayers = <E>(
 	databaseLive: Layer.Layer<Database> = createTestDb(trackedDbs).layer,
 	edgeCacheLive: Layer.Layer<EdgeCacheService> = TestEdgeCacheLive,
 ) => {
-	const retentionLive = RetentionService.layer.pipe(Layer.provide(Layer.merge(databaseLive, edgeCacheLive)))
+	const retentionLive = RetentionService.layer.pipe(
+		Layer.provide(Layer.mergeAll(databaseLive, edgeCacheLive, TestReadHorizonMemoLive)),
+	)
 	return Layer.mergeAll(
 		retentionLive,
 		TinybirdOrgTokenService.layerWithoutDependencies.pipe(
@@ -607,7 +610,13 @@ describe("WarehouseQueryService org-scoped reads", () => {
 		).pipe(
 			Effect.provide(
 				Layer.fresh(RetentionService.layer).pipe(
-					Layer.provide(Layer.merge(testDb.layer, testEdgeCache(testDb))),
+					Layer.provide(
+						Layer.mergeAll(
+							testDb.layer,
+							testEdgeCache(testDb),
+							Layer.fresh(TestReadHorizonMemoLive),
+						),
+					),
 				),
 			),
 		)

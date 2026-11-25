@@ -9,6 +9,7 @@ import { inject } from "vitest"
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
 import { Database, DatabaseError, type DatabaseApi } from "../platform/DatabaseLive"
 import { makeDatabaseFromInstance } from "./DatabasePgliteLive"
+import { makeReadHorizonMemo, ReadHorizonMemo } from "../services/retention/RetentionService"
 
 declare module "vitest" {
 	interface ProvidedContext {
@@ -115,6 +116,9 @@ export const createTestDb = (track?: TestDb[], startParams: ReadonlyArray<string
 const edgeCaches = new WeakMap<TestDb, Layer.Layer<EdgeCacheService>>()
 
 /** An in-memory edge cache, a new one for each layer build it is provided to. */
+/** A read horizon memo of its own for each layer build, as each isolate has one. */
+export const TestReadHorizonMemoLive = Layer.sync(ReadHorizonMemo, makeReadHorizonMemo)
+
 export const TestEdgeCacheLive: Layer.Layer<EdgeCacheService> = Layer.sync(EdgeCacheService, () =>
 	makeEdgeCacheService(makeMemoryBackend()),
 )
@@ -136,12 +140,13 @@ export const testEdgeCache = (db: TestDb): Layer.Layer<EdgeCacheService> => {
  * service that must answer from a cache or outlive a failed read.
  */
 export const makeSwitchableDatabase = (db: TestDb) => {
-	const state = { down: false, calls: 0 }
+	const state = { down: false, stalled: false, calls: 0 }
 	const layer = Layer.effect(
 		Database,
 		Effect.map(Database, (real): DatabaseApi => ({
 			execute: (fn) => {
 				state.calls += 1
+				if (state.stalled) return Effect.never
 				return state.down
 					? Effect.fail(new DatabaseError({ message: "database unavailable", cause: "test" }))
 					: real.execute(fn)
