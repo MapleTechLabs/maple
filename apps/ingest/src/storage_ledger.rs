@@ -1,13 +1,17 @@
 //! The bytes each org stores, per billed signal, UTC day and retention stamp, flushed to
 //! `ingest_storage_ledger`. The API bills storage from it once a day: the sum of the days
 //! still inside their stamp. Recorded next to the Autumn ingest track, from the same bytes.
+//!
+//! The day is when Maple received the bytes, not their event time, which the warehouse expires
+//! by. Storage is billed from that day for the period stamped then, and never past
+//! `day + retention_days` (`storage-metering.ts`).
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::KeyStore;
 
@@ -114,6 +118,31 @@ impl StorageLedgerSink {
             }
         }
         self.settle_failed(failed);
+    }
+
+    /// The flush at shutdown: the sink is dropped right after, so rows that fail are logged
+    /// one per line at error level, for adding by hand, instead of being kept.
+    pub(crate) async fn flush_final(&self, store: &dyn KeyStore) {
+        let rows = self.take();
+        for chunk in rows.chunks(LEDGER_ROWS_PER_STATEMENT) {
+            if let Err(flush_error) = store.record_storage_ledger(chunk).await {
+                error!(
+                    error = %flush_error,
+                    rows = chunk.len(),
+                    "Storage ledger final flush failed; the bytes are lost"
+                );
+                for row in chunk {
+                    error!(
+                        org_id = %row.org_id,
+                        signal = row.signal,
+                        day_ms = row.day_ms,
+                        retention_days = row.retention_days,
+                        bytes = row.bytes,
+                        "Storage ledger bytes lost at shutdown"
+                    );
+                }
+            }
+        }
     }
 
     /// Keeps the rows a flush could not write, or drops them on the `MAX_FAILED_FLUSHES`th

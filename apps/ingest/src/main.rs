@@ -12,8 +12,8 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod autumn;
 mod rules_gateway;
-mod storage_ledger;
 mod sources;
+mod storage_ledger;
 mod task_protection;
 
 use std::collections::{HashMap, HashSet};
@@ -119,11 +119,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use sha2::Sha256;
 use rules_gateway::{IngestRuleResolver, IngestRuleRows, IngestRuleStatRow, IngestRuleStatsSink};
-use storage_ledger::{StorageLedgerRow, StorageLedgerSink};
 use sources::{
     OverrideMode, PauseWindow, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef,
     SourceSignal, MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
 };
+use storage_ledger::{StorageLedgerRow, StorageLedgerSink};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::Instrument;
 use tracing::{debug, error, info, warn, Span};
@@ -3683,7 +3683,7 @@ async fn main() {
         ingest_rule_stats.flush(stats_store.as_ref()).await;
     }
     if storage_ledger_enabled {
-        storage_ledger.flush(stats_store.as_ref()).await;
+        storage_ledger.flush_final(stats_store.as_ref()).await;
     }
 
     if let Some(providers) = telemetry_providers {
