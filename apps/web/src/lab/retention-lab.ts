@@ -20,6 +20,7 @@ export const LabState = Schema.Literals([
 	"longer",
 	"member",
 	"no-sources",
+	"own-warehouse",
 	"loading",
 	"error",
 ])
