@@ -200,9 +200,8 @@ export const routeChanged = (
 
 /** The reads an integration's card mounts (Cloudflare's usage, PlanetScale's watch clock). */
 const enterIntegration = (model: Model, context: PageContext): Return => {
-	return (
-		providerModuleOf(integrationOfSearch(model.search.integration))?.onEnter(model, context) ?? { model }
-	)
+	const integration = integrationOfSearch(model.search.integration)
+	return integration === null ? { model } : providerModuleOf(integration).onEnter(model, context)
 }
 
 export const contextChanged = (model: Model): Return => ({ model })
@@ -307,11 +306,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedLoadSession: ({ grants, hasDataSources }) => {
 			const next = { ...model, grants, hasDataSources }
-			const shown = providerModuleOf(integrationOfSearch(next.search.integration))
+			const shown = integrationOfSearch(next.search.integration)
 			return chain(next, [
 				(step) =>
 					hasDataSources ? requestStatus(step, context, "dataSources", "Load") : { model: step },
-				(step) => shown?.onSession(step, context) ?? { model: step },
+				(step) =>
+					shown === null ? { model: step } : providerModuleOf(shown).onSession(step, context),
 			])
 		},
 		CompletedLoadDataSources: ({ key, result }) =>
@@ -376,7 +376,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: withDisconnectDialog(model, Dialog.update(model.disconnect.dialog, child)),
 		ConfirmedDisconnect: () => {
 			const integration = integrationOfSearch(model.search.integration)
-			const ownDisconnect = providerModuleOf(integration)?.onConfirmDisconnect ?? null
+			const ownDisconnect =
+				integration === null ? null : providerModuleOf(integration).onConfirmDisconnect
 			if (ownDisconnect !== null) return ownDisconnect(model, context)
 			if (integration === null || model.disconnect.isPending) return { model }
 			// The dialog stays open, its confirm pending, until `CompletedDisconnect` closes it.
@@ -394,6 +395,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedDisconnect: ({ integration, failure }) => {
 			const spec = DISCONNECTS.get(integration)
+			const disconnected = integrationOfSearch(
+				integration === "cloudflare-multi" ? "cloudflare" : integration,
+			)
 			const closed = withDisconnectDialog(
 				{ ...model, disconnect: { ...model.disconnect, isPending: false } },
 				Dialog.close(model.disconnect.dialog),
@@ -428,12 +432,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					(name) => (next: Model) => requestStatus(next, context, name, "Supersede"),
 				),
 				(next) =>
-					failure === null
-						? (providerModuleOf(
-								integrationOfSearch(
-									integration === "cloudflare-multi" ? "cloudflare" : integration,
-								),
-							)?.onDisconnected(next, context) ?? { model: next })
+					failure === null && disconnected !== null
+						? providerModuleOf(disconnected).onDisconnected(next, context)
 						: { model: next },
 			])
 		},

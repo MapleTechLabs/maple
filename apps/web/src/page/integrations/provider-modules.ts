@@ -1,5 +1,5 @@
 import type { GithubInstallationSelection } from "@maple/domain/http"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Keyed from "@maple/views/data/keyed"
@@ -8,7 +8,8 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { RAILWAY } from "../infra-integrations/railway/integration/railway-provider"
 import { SUPABASE } from "../infra-integrations/supabase/integration/supabase-provider"
 import * as Dialog from "@maple/views/ui/dialog"
-import { type IntegrationId, integrationOfSearch } from "./catalog"
+import type { ProviderId } from "../kit/providers"
+import { type ChatIntegrationId, type IntegrationId, integrationOfSearch } from "./catalog"
 import { SEARCH_CONSOLE } from "./search-console-provider"
 import { LINEAR } from "./linear-provider"
 import { VERCEL } from "../infra-integrations/vercel/integration/vercel-provider"
@@ -53,7 +54,6 @@ type Mount<K extends keyof Statuses, S, M, Msg> = Readonly<{
 /** A mounted module as the hub sees it: its types closed over, so every provider fits one list. */
 export type MountedProvider = Readonly<{
 	id: string
-	owns: (id: IntegrationId) => boolean
 	onEnter: (model: Model, context: PageContext) => Return
 	onSession: (model: Model, context: PageContext) => Return
 	onClock: (model: Model, context: PageContext) => Return
@@ -112,13 +112,11 @@ export type MountedProvider = Readonly<{
 	overview: (statuses: Statuses, context: Omit<StatusContext, "statuses">) => IntegrationOverview
 }>
 
-const ownsOf =
-	<S, M, Msg>(module: ProviderModule<S, M, Msg>) =>
-	(id: IntegrationId | null): boolean =>
-		id !== null && (module.owns === undefined ? id === module.id : module.owns(id))
-
-const isShownIn = <S, M, Msg>(model: Model, module: ProviderModule<S, M, Msg>): boolean =>
-	ownsOf(module)(integrationOfSearch(model.search.integration))
+/** The page shows one of the module's ids: `MODULE_OF` points that id at it. */
+const isShownIn = <S, M, Msg>(model: Model, module: ProviderModule<S, M, Msg>): boolean => {
+	const shown = integrationOfSearch(model.search.integration)
+	return shown !== null && providerModuleOf(shown).id === module.id
+}
 
 /** A step of the page's shared disconnect dialog. */
 export const withDisconnectDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -227,7 +225,6 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 	const delayed = module.delayed
 	return {
 		id: module.id,
-		owns: ownsOf(module),
 		initial: module.init,
 		update: (model, message, context) =>
 			run(spec, model, context, (sub, env) => module.update(sub, message, env)),
@@ -411,27 +408,37 @@ export const GCP_PROVIDER = mount({
 	toHub: (message) => Message.GotGcpMessage({ message }),
 })
 
-/** Every provider, each a module the hub mounts and delegates to. */
-export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
-	RAILWAY_PROVIDER,
-	SUPABASE_PROVIDER,
-	SEARCH_CONSOLE_PROVIDER,
-	LINEAR_PROVIDER,
-	CHAT_PROVIDER,
-	VERCEL_PROVIDER,
-	PLANETSCALE_PROVIDER,
-	CLOUDFLARE_PROVIDER,
-	FLEET_PROVIDER,
-	GITHUB_PROVIDER,
-	PROMETHEUS_PROVIDER,
-	AWS_PROVIDER,
-	GCP_PROVIDER,
-]
+/**
+ * Each page id's module, in hook order; `chat` serves every `chat-<connector>` page. A
+ * `ProviderId` without a module here does not compile.
+ */
+const MODULE_OF = {
+	railway: RAILWAY_PROVIDER,
+	supabase: SUPABASE_PROVIDER,
+	"google-search-console": SEARCH_CONSOLE_PROVIDER,
+	linear: LINEAR_PROVIDER,
+	chat: CHAT_PROVIDER,
+	vercel: VERCEL_PROVIDER,
+	planetscale: PLANETSCALE_PROVIDER,
+	cloudflare: CLOUDFLARE_PROVIDER,
+	fleet: FLEET_PROVIDER,
+	github: GITHUB_PROVIDER,
+	prometheus: PROMETHEUS_PROVIDER,
+	warpstream: PROMETHEUS_PROVIDER,
+	aws: AWS_PROVIDER,
+	gcp: GCP_PROVIDER,
+} satisfies { readonly [K in ProviderId | "chat"]: MountedProvider }
 
-export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>
-	id === null
-		? undefined
-		: Option.getOrUndefined(Arr.findFirst(PROVIDER_MODULES, (provider) => provider.owns(id)))
+/** Every module once, in `MODULE_OF`'s order. */
+export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = Arr.dedupeWith(
+	Rec.values(MODULE_OF),
+	(a, b) => a === b,
+)
+
+const isChatIntegration = (id: IntegrationId): id is ChatIntegrationId => Str.startsWith("chat-")(id)
+
+export const providerModuleOf = (id: IntegrationId): MountedProvider =>
+	MODULE_OF[isChatIntegration(id) ? "chat" : id]
 
 /** Runs one hook on every module, in order. */
 export const everyProvider = (

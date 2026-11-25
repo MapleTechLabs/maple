@@ -68,7 +68,7 @@ export const flowView = (
 	stage: FlowStage,
 	timeZone: string,
 ): Html => {
-	const providerView = providerModuleOf(integration)?.flowView ?? null
+	const providerView = providerModuleOf(integration).flowView
 	return providerView === null
 		? genericFlowView(h, model, integration, stage, timeZone)
 		: providerView(h, model, stage, timeZone, integration)

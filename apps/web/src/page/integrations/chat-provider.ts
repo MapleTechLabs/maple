@@ -1,7 +1,7 @@
 import type { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
-import { chatConnectorOf, chatIntegrationId } from "./catalog"
+import { chatIntegrationId } from "./catalog"
 import { CHAT_STATUS_READ, type ChatCardModel, type ChatMessage, initChatCard } from "./chat"
 import {
 	type CardStatus,
@@ -25,7 +25,6 @@ const workspacesOf = (response: V2ChatConnectorList, id: string) =>
 
 export const CHAT: ProviderModule<V2ChatConnectorList, ChatCardModel, ChatMessage> = {
 	id: "chat",
-	owns: (id) => chatConnectorOf(id) !== null,
 	statusRead: CHAT_STATUS_READ,
 	init: initChatCard,
 	update,

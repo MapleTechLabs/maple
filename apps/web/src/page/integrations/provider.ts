@@ -92,10 +92,8 @@ export type StatusContext = Readonly<{ id: IntegrationId; nowMs: number; statuse
 export type ProviderHook<S, M, Msg> = (model: M, env: ProviderEnv<S>) => ProviderReturn<M, Msg>
 
 export type ProviderModule<S, M, Msg> = Readonly<{
-	/** Names the module and, without `owns`, is the one page id it serves. */
+	/** Names the module; `MODULE_OF` (`provider-modules.ts`) routes page ids to it. */
 	id: string
-	/** The page ids the module serves, when not just `id` (chat's one per connector). */
-	owns?: (id: IntegrationId) => boolean
 	/** The status read the hub keeps for the provider (`Statuses`), shared with the sidebar and headers. */
 	statusRead: Readonly<{
 		/** The read's Command name. */

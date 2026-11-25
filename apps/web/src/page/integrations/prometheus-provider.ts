@@ -26,7 +26,6 @@ export const PROMETHEUS: ProviderModule<
 	PrometheusMessage
 > = {
 	id: "prometheus",
-	owns: (id) => id === "prometheus" || id === "warpstream",
 	statusRead: SCRAPE_TARGETS_STATUS_READ,
 	init: initPrometheusCard,
 	update,

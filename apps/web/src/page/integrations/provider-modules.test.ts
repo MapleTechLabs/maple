@@ -310,14 +310,13 @@ describe("provider modules", () => {
 	})
 
 	test("one module serves every chat connector's page, and only those", () => {
-		expect(providerModuleOf("chat-slack")?.id).toBe("chat")
-		expect(providerModuleOf("chat-discord")?.id).toBe("chat")
-		expect(providerModuleOf("linear")?.id).toBe("linear")
-		expect(providerModuleOf("github")?.id).toBe("github")
-		expect(providerModuleOf("prometheus")?.id).toBe("prometheus")
-		expect(providerModuleOf("warpstream")?.id).toBe("prometheus")
-		expect(providerModuleOf("gcp")?.id).toBe("gcp")
-		expect(providerModuleOf(null)).toBeUndefined()
+		expect(providerModuleOf("chat-slack").id).toBe("chat")
+		expect(providerModuleOf("chat-discord").id).toBe("chat")
+		expect(providerModuleOf("linear").id).toBe("linear")
+		expect(providerModuleOf("github").id).toBe("github")
+		expect(providerModuleOf("prometheus").id).toBe("prometheus")
+		expect(providerModuleOf("warpstream").id).toBe("prometheus")
+		expect(providerModuleOf("gcp").id).toBe("gcp")
 	})
 
 	test("GitHub's account choice comes through its module and holds new connects until it settles", () => {
@@ -453,7 +452,7 @@ describe("provider modules", () => {
 					}),
 				}),
 			).model
-		expect(providerModuleOf("aws")?.id).toBe("aws")
+		expect(providerModuleOf("aws").id).toBe("aws")
 		const [pendingPoll, watchPoll] = AWS_PROVIDER.tickers
 		const pending = withAws(init({ search: { integration: "aws" } }, context).model, [connection({})])
 		// The setup re-check runs only while this connection's setup is open.
