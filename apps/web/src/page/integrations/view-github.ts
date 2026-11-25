@@ -22,7 +22,8 @@ import { GITHUB_AUDIT_CATEGORIES } from "@maple/domain/github-audit"
 import { dividedList } from "@maple/views/ui/rule"
 import { switchRow } from "../kit/switch-row"
 import { disconnectDialog } from "./view-disconnect"
-import { repositoriesPanels, repoDialogs } from "./view-github-repos"
+import { repositoriesPanels, repoDialogs, toHub } from "./view-github-repos"
+import { GithubMessage } from "./github"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -106,9 +107,11 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 								attributes: [
 									h.AriaLabel(`Connect ${choice.accountLogin}`),
 									h.OnClick(
-										Message.ClickedSelectGithubInstallation({
-											installationId: choice.id,
-										}),
+										toHub(
+											GithubMessage.ClickedSelectGithubInstallation({
+												installationId: choice.id,
+											}),
+										),
 									),
 								],
 							},
@@ -163,7 +166,7 @@ const auditCategoryList = (h: H, model: Model, lockReason: string | undefined): 
 						: spec.summary,
 				isChecked: auditCategoryShown(model, spec.id),
 				isDisabled: saving,
-				onToggle: Message.ToggledAuditCategory({ id: spec.id }),
+				onToggle: toHub(GithubMessage.ToggledAuditCategory({ id: spec.id })),
 				...(lockReason !== undefined && { lockReason }),
 			})
 		}),
@@ -194,13 +197,13 @@ export const githubFeatures = (
 			spec: ciTraces,
 			isChecked: ciTracesShown(model),
 			isDisabled: model.githubCard.isSavingCiTraces,
-			onToggle: Message.ToggledCiTraces(),
+			onToggle: toHub(GithubMessage.ToggledCiTraces()),
 		},
 		{
 			spec: auditLog,
 			isChecked: auditLogOn,
 			isDisabled: model.githubCard.isSavingAuditLog,
-			onToggle: Message.ToggledAuditLog(),
+			onToggle: toHub(GithubMessage.ToggledAuditLog()),
 			...(place === "card" &&
 				auditLogOn && {
 					note: {
@@ -273,7 +276,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 					h,
 					[
 						refreshButton(h, {
-							onRefresh: Message.ClickedGithubRefresh(),
+							onRefresh: toHub(GithubMessage.ClickedGithubRefresh()),
 							isPending: model.githubCard.isRefreshing,
 						}),
 						button(
@@ -314,7 +317,7 @@ export const githubCard = (h: H, model: Model, timeZone: string): ReadonlyArray<
 		failureTitle: "Couldn't load the GitHub integration",
 		render: (data) => byState(h, model, data, timeZone),
 		loading: () => loadingState(h),
-		onRetry: Message.ClickedGithubRefresh(),
+		onRetry: toHub(GithubMessage.ClickedGithubRefresh()),
 	})
 	return [body, disconnectDialog(h, model, "github"), ...repoDialogs(h, model)]
 }

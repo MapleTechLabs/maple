@@ -14,10 +14,6 @@ import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
-import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
-import { githubCard } from "./view-github"
-import { awsCard } from "../infra-integrations/aws/integration/view-aws"
-import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
 import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
 import { providerModuleOf } from "./provider-modules"
@@ -55,26 +51,7 @@ export const cardView = (
 	timeZone: string,
 	focusId: string | null = null,
 ): ReadonlyArray<Html> => {
-	const provider = providerModuleOf(integration)
-	if (provider !== undefined) return provider.card(h, model, timeZone, focusId)
-	switch (integration) {
-		case "github":
-			return githubCard(h, model, timeZone)
-		case "gcp":
-			return [gcpCard(h, model, timeZone, focusId)]
-		case "aws":
-			return [awsCard(h, model, timeZone, focusId)]
-		case "prometheus":
-		case "warpstream":
-			return focusId === null
-				? [
-						scrapeIntro(h, integration),
-						...scrapeTargetsSection(h, model, timeZone, null, integration),
-					]
-				: scrapeTargetsSection(h, model, timeZone, focusId, integration)
-		default:
-			return []
-	}
+	return providerModuleOf(integration).card(h, model, timeZone, focusId, integration)
 }
 
 const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): Html => {
@@ -91,11 +68,8 @@ const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): 
 				entry,
 				{
 					connect: connectButton(h, model, integration),
-					actions: provider?.headerActions?.(h, model) ?? undefined,
-					statusLine:
-						integration === "gcp"
-							? gcpHeaderStatus(h, model)
-							: (provider?.headerStatus?.(h, model, timeZone) ?? undefined),
+					actions: provider.headerActions?.(h, model) ?? undefined,
+					statusLine: provider.headerStatus?.(h, model, timeZone) ?? undefined,
 				},
 				timeZone,
 			),

@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { Option, Result, Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../route"
@@ -9,15 +9,6 @@ import { integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
-import { initGithubCard } from "./github"
-import * as Github from "./update-github"
-import { initPrometheusCard } from "./prometheus"
-import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
-import { initAwsCard } from "../infra-integrations/aws/integration/aws"
-import * as Aws from "../infra-integrations/aws/integration/update-aws"
-import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
-import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
-import * as Prometheus from "./update-prometheus"
 import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
 import * as Connect from "./update-connect"
 import { isClerkAuthEnabled } from "../../platform/auth-mode"
@@ -32,12 +23,16 @@ import {
 import type { OAuthReturnOutcome } from "./oauth-return"
 import { chain, requestStatus, statusNamesOf } from "./update-status"
 import {
+	AWS_PROVIDER,
 	CHAT_PROVIDER,
 	CLOUDFLARE_PROVIDER,
 	everyProvider,
 	FLEET_PROVIDER,
+	GCP_PROVIDER,
+	GITHUB_PROVIDER,
 	LINEAR_PROVIDER,
 	PLANETSCALE_PROVIDER,
+	PROMETHEUS_PROVIDER,
 	PROVIDER_MODULES,
 	providerModuleOf,
 	RAILWAY_PROVIDER,
@@ -163,12 +158,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: CHAT_PROVIDER.initial(),
 		linearCard: LINEAR_PROVIDER.initial(),
-		githubCard: initGithubCard(),
+		githubCard: GITHUB_PROVIDER.initial(),
 		cloudflareCard: CLOUDFLARE_PROVIDER.initial(),
-		prometheusCard: initPrometheusCard(),
+		prometheusCard: PROMETHEUS_PROVIDER.initial(),
 		planetscaleCard: PLANETSCALE_PROVIDER.initial(),
-		gcpCard: initGcpCard(),
-		awsCard: initAwsCard(),
+		gcpCard: GCP_PROVIDER.initial(),
+		awsCard: AWS_PROVIDER.initial(),
 		railwayCard: RAILWAY_PROVIDER.initial(),
 		vercelCard: VERCEL_PROVIDER.initial(),
 		supabaseCard: SUPABASE_PROVIDER.initial(),
@@ -206,15 +201,8 @@ export const routeChanged = (
 /** The reads an integration's card mounts (Cloudflare's usage, PlanetScale's watch clock). */
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
-	if (integration === "aws") return Aws.enterAws(model, context)
-	if (integration === "gcp")
-		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
-	return providerModuleOf(integration)?.onEnter(model, context) ?? { model }
+	return integration === null ? { model } : providerModuleOf(integration).onEnter(model, context)
 }
-
-/** The GCP band's reads wait on the status and the clock. */
-const gcpBand = (model: Model, context: PageContext): Return =>
-	integrationOfSearch(model.search.integration) === "gcp" ? Gcp.requestBand(model, context) : { model }
 
 export const contextChanged = (model: Model): Return => ({ model })
 
@@ -224,10 +212,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	const s = model.statuses
 	return Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) =>
-			chain({ ...model, nowMs }, [
-				(next) => gcpBand(next, context),
-				(next) => everyProvider(next, (provider) => (each) => provider.onClock(each, context)),
-			]),
+			everyProvider({ ...model, nowMs }, (provider) => (each) => provider.onClock(each, context)),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
@@ -249,17 +234,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...s,
 				planetscaleDatabases: Keyed.accept(s.planetscaleDatabases, key, result),
 			}),
-		CompletedLoadGcp: ({ key, result }) => {
-			const read = accepted(model, { ...s, gcp: Keyed.accept(s.gcp, key, result) }).model
-			const arrived =
-				s.gcp.key === key && Result.isSuccess(result) ? Configure.statusArrived(read).model : read
-			return gcpBand(arrived, context)
-		},
+		CompletedLoadGcp: ({ key, result }) =>
+			GCP_PROVIDER.onStatus(
+				accepted(model, { ...s, gcp: Keyed.accept(s.gcp, key, result) }).model,
+				context,
+				{
+					isCurrent: s.gcp.key === key,
+					previous: s.gcp,
+				},
+			),
 		CompletedLoadAws: ({ key, result }) =>
-			Aws.statusArrived(
+			AWS_PROVIDER.onStatus(
 				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
 				context,
-				Aws.connectionsOf(model),
+				{ isCurrent: s.aws.key === key, previous: s.aws },
 			),
 		CompletedLoadSupabase: ({ key, result }) =>
 			SUPABASE_PROVIDER.onStatus(
@@ -290,11 +278,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{ isCurrent: s.chat.key === key, previous: s.chat },
 			),
 		CompletedLoadGithub: ({ key, result }) =>
-			// Only the current read settles the switches; a superseded answer is dropped below too.
-			accepted(Github.settledSwitches(model, s.github.key === key && Result.isSuccess(result)), {
-				...s,
-				github: Keyed.accept(s.github, key, result),
-			}),
+			GITHUB_PROVIDER.onStatus(
+				accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }).model,
+				context,
+				{ isCurrent: s.github.key === key, previous: s.github },
+			),
+		GotGithubMessage: ({ message: child }) => GITHUB_PROVIDER.update(model, child, context),
+		GotPrometheusMessage: ({ message: child }) => PROMETHEUS_PROVIDER.update(model, child, context),
+		GotAwsMessage: ({ message: child }) => AWS_PROVIDER.update(model, child, context),
+		GotGcpMessage: ({ message: child }) => GCP_PROVIDER.update(model, child, context),
 		CompletedLoadSearchConsole: ({ key, result }) =>
 			SEARCH_CONSOLE_PROVIDER.onStatus(
 				accepted(model, { ...s, searchConsole: Keyed.accept(s.searchConsole, key, result) }).model,
@@ -314,11 +306,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedLoadSession: ({ grants, hasDataSources }) => {
 			const next = { ...model, grants, hasDataSources }
-			const shown = providerModuleOf(integrationOfSearch(next.search.integration))
+			const shown = integrationOfSearch(next.search.integration)
 			return chain(next, [
 				(step) =>
 					hasDataSources ? requestStatus(step, context, "dataSources", "Load") : { model: step },
-				(step) => shown?.onSession(step, context) ?? { model: step },
+				(step) =>
+					shown === null ? { model: step } : providerModuleOf(shown).onSession(step, context),
 			])
 		},
 		CompletedLoadDataSources: ({ key, result }) =>
@@ -351,167 +344,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConnect: () => Connect.clickedConnect(model, context),
 		ClickedOpenGithubInstallPage: () => Connect.clickedConnect(model, context, "install"),
-		ClickedSelectGithubInstallation: ({ installationId }) =>
-			Github.clickedInstallation(model, installationId),
-		CompletedSelectGithubInstallation: ({ state, installationId, failure }) =>
-			Github.completedInstallation(model, context, state, installationId, failure),
-		ClickedTarget: ({ id }) => Prometheus.clickedTarget(model, context, id),
-		CompletedFetchChecks: ({ key, result }) => ({
-			model: {
-				...model,
-				prometheusCard: {
-					...model.prometheusCard,
-					checks: Keyed.accept(model.prometheusCard.checks, key, result),
-				},
-			},
-		}),
-		TickedTargetsRefresh: () => requestStatus(model, context, "scrapeTargets", "Refresh"),
-		TickedChecksRefresh: () => Prometheus.requestChecks(model, context, "Refresh"),
-		ClickedProbe: ({ id }) => Prometheus.clickedProbe(model, id),
-		CompletedProbe: ({ id, failure, success, error }) =>
-			Prometheus.completedProbe(model, context, id, failure, success, error),
-		ClickedToggleTarget: ({ id }) => Prometheus.clickedToggle(model, id),
-		CompletedToggle: ({ id, failure }) => Prometheus.completedToggle(model, context, id, failure),
-		ClickedEditTarget: ({ id }) => Prometheus.clickedEdit(model, id),
-		ClickedDeleteTarget: ({ id }) => Prometheus.clickedDelete(model, id),
-		GotTargetMenuMessage: ({ id, message: child }) => Prometheus.gotTargetMenu(model, id, child),
-		GotFormDialogMessage: ({ message: child }) => Prometheus.gotFormDialog(model, child),
-		GotFormFieldMessage: ({ field, message: child }) => Prometheus.gotFormField(model, field, child),
-		GotAuthSelectMessage: ({ message: child }) => Prometheus.gotAuthSelect(model, child),
-		SubmittedTargetForm: () => Prometheus.submittedForm(model),
-		CompletedSave: ({ isEdit, id, failure }) =>
-			Prometheus.completedSave(model, context, isEdit, id, failure),
-		GotTargetDeleteDialogMessage: ({ message: child }) => Prometheus.gotDeleteDialog(model, child),
-		ConfirmedTargetDelete: () => Prometheus.confirmedDelete(model),
-		CompletedTargetDelete: ({ id, failure }) => Prometheus.completedDelete(model, context, id, failure),
-		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
-		SubmittedAwsAccount: () => Aws.submittedAccount(model),
-		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
-		FailedAwsCreate: ({ error }) => Aws.failedCreate(model, error),
-		ClickedAwsAdd: () => Aws.setAdding(model, true),
-		ClickedAwsAddCancel: () => Aws.setAdding(model, false),
-		ClickedAwsSetup: ({ id }) => Aws.openSetup(model, context, id),
-		ClickedAwsSetupClose: () => Aws.closeSetup(model),
-		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
-		CompletedLoadAwsIngest: ({ id, key, result }) => Aws.completedIngest(model, id, key, result),
-		ClickedAwsSetupMethod: ({ part, method }) => Aws.setMethod(model, part, method),
-		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
-		TickedAwsPending: () => Aws.tickedPending(model),
-		TickedAwsWatch: () => Aws.tickedWatch(model, context),
-		CompletedAwsCheck: ({ id, quiet, connection, failure }) =>
-			Aws.completedCheck(model, context, id, quiet, connection, failure),
-		GotAwsCopyMessage: ({ id, message: child }) => Aws.gotCopy(model, id, child),
-		ClickedAwsDisconnect: ({ id }) => Aws.clickedDisconnect(model, id),
-		GotAwsDisconnectDialogMessage: ({ message: child }) => Aws.gotDisconnectDialog(model, child),
-		ConfirmedAwsDisconnect: () => Aws.confirmedDisconnect(model),
-		CompletedAwsDisconnect: ({ id, removed, error }) =>
-			Aws.completedDisconnect(model, context, id, removed, error),
-		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
-		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
-		CompletedWriteAwsRemoved: () => ({ model }),
-		ClickedAwsMetrics: ({ id }) => Aws.clickedMetrics(model, id),
-		ClickedAwsMetricsCancel: () => Aws.cancelledMetrics(model),
-		ToggledAwsRegion: ({ id, region }) => Aws.toggledRegion(model, id, region),
-		ToggledAwsNamespace: ({ id, namespace }) => Aws.toggledNamespace(model, id, namespace),
-		SubmittedAwsMetrics: ({ id }) => Aws.submittedMetrics(model, id),
-		CompletedAwsMetricStream: ({ id, connection, error }) =>
-			Aws.completedMetricStream(model, context, id, connection, error),
-		ToggledAwsModule: ({ id, module }) => Aws.toggledModule(model, id, module),
-		CompletedAwsModules: ({ id, connection, error }) =>
-			Aws.completedModules(model, context, id, connection, error),
-		ToggledAwsNewModule: ({ module }) => Aws.toggledNewModule(model, module),
-		CompletedGcpLogVolume: ({ key, result }) =>
-			Gcp.updateGcpCard(model, { logVolume: Keyed.accept(model.gcpCard.logVolume, key, result) }),
-		CompletedGcpFleet: ({ key, result }) =>
-			Gcp.updateGcpCard(model, { fleet: Keyed.accept(model.gcpCard.fleet, key, result) }),
-		CompletedGcpInventory: ({ key, result }) =>
-			Gcp.updateGcpCard(model, { inventory: Keyed.accept(model.gcpCard.inventory, key, result) }),
-		GotWorkloadFilterMessage: ({ message: child }) => Gcp.gotWorkloadFilter(model, child),
-		GotGcpMenuMessage: ({ id, message: child }) =>
-			Gcp.gotMenu(model, context, id, child, (next, target) => Configure.openConfigure(next, target)),
-		CompletedGcpScripts: ({ key, result }) =>
-			Gcp.updateGcpCard(model, { scripts: Keyed.accept(model.gcpCard.scripts, key, result) }),
-		ClickedGcpScriptToggle: () =>
-			Gcp.updateGcpCard(model, { isScriptShown: !model.gcpCard.isScriptShown }),
-		ClickedGcpScriptRetry: () => Gcp.retriedScripts(model, context),
-		GotGcpDisconnectDialogMessage: ({ message: child }) => Gcp.gotDisconnectDialog(model, child),
-		ConfirmedGcpDisconnect: () => Gcp.confirmedDisconnect(model),
-		ClickedGcpDisconnect: ({ id }) => Gcp.clickedDisconnect(model, context, id),
-		CompletedGcpDisconnect: ({ id, cleanupScript, failure }) =>
-			Gcp.completedDisconnect(model, context, id, cleanupScript, failure),
-		CompletedReadGcpRemoved: ({ removed }) => Gcp.updateGcpCard(model, { removed }),
-		CompletedWriteGcpRemoved: () => ({ model }),
-		ClickedDismissCleanup: ({ id }) => Gcp.clickedDismiss(model, id),
-		GotGcpDismissDialogMessage: ({ message: child }) => Gcp.gotDismissDialog(model, child),
-		ConfirmedDismissCleanup: () => Gcp.confirmedDismiss(model, context),
-		GotGcpCopyMessage: ({ id, message: child }) => Gcp.gotCopy(model, id, child),
-		ClickedGcpConfigure: ({ target }) => Configure.openConfigure(model, target),
-		ClosedGcpConfigure: () => Configure.closedConfigure(model),
-		GotGcpConfigureDialogMessage: ({ message: child }) => Configure.gotConfigureDialog(model, child),
-		GotGcpScopeTypeMessage: ({ message: child }) => Configure.gotScopeType(model, child),
-		GotGcpScopeFieldMessage: ({ field, message: child }) => Configure.gotScopeField(model, field, child),
-		SubmittedGcpCreate: () => Configure.submittedCreate(model),
-		ToggledGcpCollect: ({ capability }) => Configure.toggledCollect(model, capability),
-		ToggledGcpFeature: ({ id, capability }) => Configure.toggledFeature(model, id, capability),
-		ClickedGcpLogFilter: () => Configure.clickedLogFilter(model),
-		GotGcpFilterModeMessage: ({ message: child }) => Configure.gotFilterMode(model, context, child),
-		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model, context),
-		ClickedGcpUseOpenTelemetry: () => Configure.clickedUseOpenTelemetry(model, context),
-		ToggledGcpRuntime: ({ runtime }) => Configure.toggledRuntime(model, context, runtime),
-		CompletedGcpCreate: ({ opens, connector, failure }) =>
-			Configure.completedCreate(model, context, opens, connector, failure),
-		ClickedGcpChooseApply: () => Configure.clickedChooseApply(model),
-		GotGcpConfirmDialogMessage: ({ message: child }) => Configure.gotConfirmDialog(model, child),
-		ConfirmedGcpSave: () => Configure.confirmedSave(model),
-		CompletedGcpUpdate: ({ opens, flags, failure }) =>
-			Configure.completedUpdate(model, context, opens, flags, failure),
-		ClickedGcpRunEdit: () => Configure.clickedRunEdit(model),
-		CompletedGcpConfigureScripts: ({ key, result }) => Configure.completedScripts(model, key, result),
-		ClickedGcpConfigureScriptRetry: () => Configure.retriedScripts(model, context),
-		ClickedGcpScriptExpand: () => Configure.clickedScriptExpand(model),
-		ClickedGcpMethod: ({ method }) => Configure.clickedMethod(model, method),
-		GotGcpFlavourMessage: ({ message: child }) => Configure.gotFlavour(model, child),
-		ClickedGcpMethodContinue: () => Configure.clickedMethodContinue(model, context),
-		ClickedGcpManualStep: ({ title, firstTitle }) =>
-			Configure.clickedManualStep(model, title, firstTitle),
-		ClickedGcpCopyPrompt: ({ prompt }) => Configure.clickedCopyPrompt(model, prompt),
-		CompletedGcpPromptCopy: ({ isCopied }) => Configure.completedPromptCopy(model, isCopied),
-		ClickedGcpPromptBack: () => Configure.clickedPromptBack(model),
-		ClickedGcpConfirmRemoval: () => Configure.clickedConfirmRemoval(model),
-		CompletedGcpConfirmRemoval: ({ failure }) =>
-			Configure.completedConfirmRemoval(model, context, failure),
-		TickedGcpRefresh: () => {
-			const refreshed = requestStatus(model, context, "gcp", "Refresh")
-			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
-		},
-		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
-		CompletedGithubRefreshSpin: ({ version }) => Github.completedRefreshSpin(model, version),
-		ToggledCiTraces: () => Github.toggledCiTraces(model),
-		CompletedCiTraces: ({ enabled, failure }) =>
-			Github.completedCiTraces(model, context, enabled, failure),
-		ToggledAuditLog: () => Github.toggledAuditLog(model),
-		CompletedAuditLog: ({ enabled, failure }) =>
-			Github.completedAuditLog(model, context, enabled, failure),
-		ToggledAuditCategory: ({ id }) => Github.toggledAuditCategory(model, id),
-		CompletedAuditCategory: ({ id, enabled, failure }) =>
-			Github.completedAuditCategory(model, context, id, enabled, failure),
-		TickedGithubPoll: () => requestStatus(model, context, "github", "Refresh"),
-		EndedGithubForcePoll: ({ version }) => Github.endedForcePoll(model, version),
-		ClickedRepoDelete: ({ repoId }) => Github.clickedRepoDelete(model, repoId),
-		GotRepoDeleteDialogMessage: ({ message: child }) => Github.gotRepoDeleteDialog(model, child),
-		ConfirmedRepoDelete: () => Github.confirmedRepoDelete(model),
-		CompletedRepoDelete: ({ repoId, failure }) =>
-			Github.completedRepoDelete(model, context, repoId, failure),
-		GotBranchPopoverMessage: ({ repoId, message: child }) =>
-			Github.gotBranchPopover(model, repoId, child),
-		ChangedBranchQuery: ({ value }) => ({
-			model: { ...model, githubCard: { ...model.githubCard, branchQuery: value } },
-		}),
-		ClickedBranch: ({ repoId, branch }) => Github.clickedBranch(model, repoId, branch),
-		GotBranchDialogMessage: ({ message: child }) => Github.gotBranchDialog(model, child),
-		ConfirmedBranch: () => Github.confirmedBranch(model),
-		CompletedTrackedBranch: ({ repoId, branch, backfillQueued, failure }) =>
-			Github.completedTrackedBranch(model, context, repoId, branch, backfillQueued, failure),
 		SucceededStartConnect: ({ attempt }) => Connect.succeededStart(model, context, attempt),
 		FailedStartConnect: ({ attempt, title, description }) =>
 			Connect.failedStart(model, attempt, title, description),
@@ -544,7 +376,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: withDisconnectDialog(model, Dialog.update(model.disconnect.dialog, child)),
 		ConfirmedDisconnect: () => {
 			const integration = integrationOfSearch(model.search.integration)
-			const ownDisconnect = providerModuleOf(integration)?.onConfirmDisconnect ?? null
+			const ownDisconnect =
+				integration === null ? null : providerModuleOf(integration).onConfirmDisconnect
 			if (ownDisconnect !== null) return ownDisconnect(model, context)
 			if (integration === null || model.disconnect.isPending) return { model }
 			// The dialog stays open, its confirm pending, until `CompletedDisconnect` closes it.
@@ -562,6 +395,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedDisconnect: ({ integration, failure }) => {
 			const spec = DISCONNECTS.get(integration)
+			const disconnected = integrationOfSearch(
+				integration === "cloudflare-multi" ? "cloudflare" : integration,
+			)
 			const closed = withDisconnectDialog(
 				{ ...model, disconnect: { ...model.disconnect, isPending: false } },
 				Dialog.close(model.disconnect.dialog),
@@ -596,12 +432,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					(name) => (next: Model) => requestStatus(next, context, name, "Supersede"),
 				),
 				(next) =>
-					failure === null
-						? (providerModuleOf(
-								integrationOfSearch(
-									integration === "cloudflare-multi" ? "cloudflare" : integration,
-								),
-							)?.onDisconnected(next, context) ?? { model: next })
+					failure === null && disconnected !== null
+						? providerModuleOf(disconnected).onDisconnected(next, context)
 						: { model: next },
 			])
 		},

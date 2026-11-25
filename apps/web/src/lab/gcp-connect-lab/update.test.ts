@@ -1,5 +1,6 @@
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
+import { GcpMessage } from "../../page/infra-integrations/gcp/integration/gcp"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { LAB_STATES } from "./fixture"
@@ -44,7 +45,9 @@ describe("gcp connect lab", () => {
 		const waiting = pick(opened(), "waiting")
 		const closed = update(
 			waiting,
-			Message.GotHubMessage({ message: IntegrationsMessage.ClosedGcpConfigure() }),
+			Message.GotHubMessage({
+				message: IntegrationsMessage.GotGcpMessage({ message: GcpMessage.ClosedGcpConfigure() }),
+			}),
 		).model
 		expect(closed.hub.gcpCard.configure).toBeNull()
 		const reopened = update(closed, Message.ClickedReopen()).model

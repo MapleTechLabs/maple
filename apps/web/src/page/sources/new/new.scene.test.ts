@@ -27,13 +27,15 @@ import * as Field from "@maple/views/ui/field"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as Setup from "../kit/setup"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { Message as IntegrationMessage } from "../../integrations/embed"
+import { Message as IntegrationMessage, PrometheusMessage } from "../../integrations/embed"
 import { ScrollToTop } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { initPage as init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 import { trailOf } from "./view-trail"
+
+const scrape = (message: PrometheusMessage) => IntegrationMessage.GotPrometheusMessage({ message })
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -503,24 +505,29 @@ describe("connect a source", () => {
 		const added = Arr.reduce(
 			[
 				() =>
-					IntegrationMessage.GotFormFieldMessage({
-						field: "url",
-						message: Field.Message.ChangedValue({ value: target.url }),
-					}),
-				() => IntegrationMessage.SubmittedTargetForm(),
-				() => IntegrationMessage.CompletedSave({ isEdit: false, id: target.id, failure: null }),
+					scrape(
+						PrometheusMessage.GotFormFieldMessage({
+							field: "url",
+							message: Field.Message.ChangedValue({ value: target.url }),
+						}),
+					),
+				() => scrape(PrometheusMessage.SubmittedTargetForm()),
+				() =>
+					scrape(PrometheusMessage.CompletedSave({ isEdit: false, id: target.id, failure: null })),
 				(model: Model) =>
 					IntegrationMessage.CompletedLoadScrapeTargets({
 						key: model.integrations.statuses.scrapeTargets.key ?? "",
 						result: Result.succeed([target]),
 					}),
 				() =>
-					IntegrationMessage.CompletedProbe({
-						id: target.id,
-						failure: null,
-						success: true,
-						error: null,
-					}),
+					scrape(
+						PrometheusMessage.CompletedProbe({
+							id: target.id,
+							failure: null,
+							success: true,
+							error: null,
+						}),
+					),
 			],
 			entered,
 			(model, message) =>
@@ -544,7 +551,7 @@ describe("connect a source", () => {
 		const added = pageUpdate(
 			entered,
 			Message.GotIntegrationsMessage({
-				message: IntegrationMessage.CompletedSave({ isEdit: false, id: null, failure: null }),
+				message: scrape(PrometheusMessage.CompletedSave({ isEdit: false, id: null, failure: null })),
 			}),
 		)
 		expect(added.model.hasAddedTarget).toBe(false)

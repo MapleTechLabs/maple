@@ -1,78 +1,46 @@
 import * as Policy from "@maple/domain/policy"
 import { DataSourceKind } from "@maple/domain/data-sources"
-import { GithubAuditCategoryId } from "@maple/domain/github-audit"
 import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
 	FleetIntegrationStatus,
-	GcpResourcesResponse,
 	GithubIntegrationStatus,
 	GithubInstallationSelection,
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
-	ScrapeTargetId,
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
-	VcsRepositoryId,
 	VercelIntegrationStatus,
 } from "@maple/domain/http"
 import {
-	V2AwsConnection,
 	V2AwsIntegration,
-	V2AwsIngest,
-	V2AwsSetup,
 	V2ChatConnectorList,
 	V2DataSource,
-	V2GcpConnector,
 	V2GcpIntegration,
-	V2GcpSetupScripts,
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
 	V2ScrapeTarget,
-	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import {
-	AwsConnectionId,
-	AwsMetricNamespace,
-	AwsModule,
-	GcpConnectorId,
-	GcpLogRuntime,
-} from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
-import * as Popover from "@maple/views/ui/popover"
-import * as Field from "@maple/views/ui/field"
-import * as Menu from "@maple/views/ui/menu"
-import * as Select from "@maple/views/ui/select"
-import { FormFieldName } from "./prometheus-form-field"
-import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { ConnectProvider } from "./connect"
 import { OAuthReturnOutcome } from "./oauth-return"
-import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseMessage } from "../infra-integrations/supabase/integration/supabase"
 import { RailwayMessage } from "../infra-integrations/railway/integration/railway"
 import { SearchConsoleMessage } from "./search-console"
 import { ChatMessage } from "./chat"
-import { Capability, GcpFlags, SetupMethod } from "../infra-integrations/gcp/integration/gcp-configure-schema"
-import {
-	ConfigureTarget,
-	LogVolume,
-	RemovedConnector,
-} from "../infra-integrations/gcp/integration/gcp-schema"
+import { GcpMessage } from "../infra-integrations/gcp/integration/gcp"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import { LinearMessage } from "./linear"
 import { FleetMessage } from "./fleet/fleet"
+import { GithubMessage } from "./github"
+import { PrometheusMessage } from "./prometheus"
+import { AwsMessage } from "../infra-integrations/aws/integration/aws"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
-import {
-	AwsRemovedStack,
-	AwsSetupMethod,
-	AwsSetupPart,
-} from "../infra-integrations/aws/integration/aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
@@ -141,12 +109,6 @@ export const Message = defineMessageUnion({
 	 * GitHub account", and "Change repos on GitHub" (an installed account gets its settings).
 	 */
 	ClickedOpenGithubInstallPage: {},
-	ClickedSelectGithubInstallation: { installationId: Schema.String },
-	CompletedSelectGithubInstallation: {
-		state: Schema.String,
-		installationId: Schema.String,
-		failure: Schema.NullOr(LoadFailure),
-	},
 	SucceededStartConnect: { attempt: Schema.Number },
 	FailedStartConnect: { attempt: Schema.Number, title: Schema.String, description: Schema.String },
 	/** The authorize URL arrived but the popup was gone and could not be reopened. */
@@ -163,68 +125,6 @@ export const Message = defineMessageUnion({
 	GotDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedDisconnect: {},
 	CompletedDisconnect: { integration: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedGithubRefresh: {},
-	CompletedGithubRefreshSpin: { version: Schema.Number },
-	ToggledCiTraces: {},
-	CompletedCiTraces: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
-	ToggledAuditLog: {},
-	CompletedAuditLog: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
-	ToggledAuditCategory: { id: GithubAuditCategoryId },
-	CompletedAuditCategory: {
-		id: GithubAuditCategoryId,
-		enabled: Schema.Boolean,
-		failure: Schema.NullOr(LoadFailure),
-	},
-	/** The 3 s status poll while the popup is out, a branch change settles or a repo syncs. */
-	TickedGithubPoll: {},
-	EndedGithubForcePoll: { version: Schema.Number },
-	ClickedRepoDelete: { repoId: VcsRepositoryId },
-	GotRepoDeleteDialogMessage: { message: Dialog.Message },
-	ConfirmedRepoDelete: {},
-	CompletedRepoDelete: { repoId: VcsRepositoryId, failure: Schema.NullOr(LoadFailure) },
-	GotBranchPopoverMessage: { repoId: VcsRepositoryId, message: Popover.Message },
-	ChangedBranchQuery: { value: Schema.String },
-	ClickedBranch: { repoId: VcsRepositoryId, branch: Schema.String },
-	GotBranchDialogMessage: { message: Dialog.Message },
-	ConfirmedBranch: {},
-	CompletedTrackedBranch: {
-		repoId: VcsRepositoryId,
-		branch: Schema.String,
-		backfillQueued: Schema.Boolean,
-		failure: Schema.NullOr(LoadFailure),
-	},
-	ClickedTarget: { id: ScrapeTargetId },
-	CompletedFetchChecks: {
-		key: Schema.String,
-		result: Schema.Result(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
-	},
-	/** The target list every 30 s, the selected target's checks every 10 s. */
-	TickedTargetsRefresh: {},
-	TickedChecksRefresh: {},
-	ClickedProbe: { id: ScrapeTargetId },
-	CompletedProbe: {
-		id: ScrapeTargetId,
-		failure: Schema.NullOr(LoadFailure),
-		success: Schema.Boolean,
-		error: Schema.NullOr(Schema.String),
-	},
-	ClickedToggleTarget: { id: ScrapeTargetId },
-	CompletedToggle: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
-	ClickedEditTarget: { id: ScrapeTargetId },
-	ClickedDeleteTarget: { id: ScrapeTargetId },
-	GotTargetMenuMessage: { id: ScrapeTargetId, message: Menu.Message },
-	GotFormDialogMessage: { message: Dialog.Message },
-	GotFormFieldMessage: { field: FormFieldName, message: Field.Message },
-	GotAuthSelectMessage: { message: Select.Message },
-	SubmittedTargetForm: {},
-	CompletedSave: {
-		isEdit: Schema.Boolean,
-		id: Schema.NullOr(ScrapeTargetId),
-		failure: Schema.NullOr(LoadFailure),
-	},
-	GotTargetDeleteDialogMessage: { message: Dialog.Message },
-	ConfirmedTargetDelete: {},
-	CompletedTargetDelete: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
 	/** A message for the Railway module (`provider-modules.ts`). */
 	GotRailwayMessage: { message: RailwayMessage },
 	/** A message for the Supabase module. */
@@ -237,132 +137,12 @@ export const Message = defineMessageUnion({
 	GotVercelMessage: { message: VercelMessage },
 	GotPlanetscaleMessage: { message: PlanetscaleMessage },
 	GotCloudflareMessage: { message: CloudflareMessage },
-	GotAwsAccountIdMessage: { message: Field.Message },
-	SubmittedAwsAccount: {},
-	SucceededAwsCreate: { connection: V2AwsConnection },
-	FailedAwsCreate: { error: Schema.String },
-	ClickedAwsAdd: {},
-	ClickedAwsAddCancel: {},
-	ClickedAwsSetup: { id: AwsConnectionId },
-	ClickedAwsSetupClose: {},
-	CompletedLoadAwsSetup: result(V2AwsSetup),
-	CompletedLoadAwsIngest: { id: AwsConnectionId, ...result(V2AwsIngest) },
-	ClickedAwsSetupMethod: { part: AwsSetupPart, method: AwsSetupMethod },
-	ClickedAwsCheck: { id: AwsConnectionId },
-	/** The background re-check of connections still waiting for their stack. */
-	TickedAwsPending: {},
-	/** A streaming connection's status and ingest are read again. */
-	TickedAwsWatch: {},
-	CompletedAwsCheck: {
-		id: AwsConnectionId,
-		quiet: Schema.Boolean,
-		connection: Schema.NullOr(V2AwsConnection),
-		failure: Schema.NullOr(LoadFailure),
-	},
-	GotAwsCopyMessage: { id: Schema.String, message: CopyButton.Message },
-	ClickedAwsDisconnect: { id: AwsConnectionId },
-	GotAwsDisconnectDialogMessage: { message: Dialog.Message },
-	ConfirmedAwsDisconnect: {},
-	CompletedAwsDisconnect: {
-		id: AwsConnectionId,
-		removed: Schema.NullOr(AwsRemovedStack),
-		error: Schema.NullOr(Schema.String),
-	},
-	DismissedAwsRemoved: { connectionId: Schema.String },
-	CompletedReadAwsRemoved: { removed: Schema.Array(AwsRemovedStack) },
-	CompletedWriteAwsRemoved: {},
-	ClickedAwsMetrics: { id: AwsConnectionId },
-	ClickedAwsMetricsCancel: {},
-	ToggledAwsRegion: { id: AwsConnectionId, region: Schema.String },
-	ToggledAwsNamespace: { id: AwsConnectionId, namespace: AwsMetricNamespace },
-	SubmittedAwsMetrics: { id: AwsConnectionId },
-	/** `id`: the connection the save was for, which the editor may have moved on from. */
-	CompletedAwsMetricStream: {
-		id: AwsConnectionId,
-		connection: Schema.NullOr(V2AwsConnection),
-		error: Schema.NullOr(Schema.String),
-	},
-	ToggledAwsModule: { id: AwsConnectionId, module: AwsModule },
-	CompletedAwsModules: {
-		id: AwsConnectionId,
-		connection: Schema.NullOr(V2AwsConnection),
-		error: Schema.NullOr(Schema.String),
-	},
-	/** The connect flow's opt-in for a module on the account about to be connected. */
-	ToggledAwsNewModule: { module: AwsModule },
-	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
-	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
-	CompletedGcpInventory: result(GcpResourcesResponse),
-	GotWorkloadFilterMessage: { message: ToggleGroup.Message },
-	GotGcpMenuMessage: { id: GcpConnectorId, message: Menu.Message },
-	GotGcpDisconnectDialogMessage: { message: Dialog.Message },
-	ConfirmedGcpDisconnect: {},
-	/** A Google Cloud source's Delete: opens the removal dialog for its connector. */
-	ClickedGcpDisconnect: { id: Schema.String },
-	CompletedGcpDisconnect: {
-		id: GcpConnectorId,
-		cleanupScript: Schema.NullOr(Schema.String),
-		failure: Schema.NullOr(LoadFailure),
-	},
-	CompletedReadGcpRemoved: { removed: Schema.Array(RemovedConnector) },
-	CompletedWriteGcpRemoved: {},
-	ClickedDismissCleanup: { id: Schema.String },
-	GotGcpDismissDialogMessage: { message: Dialog.Message },
-	ConfirmedDismissCleanup: {},
-	GotGcpCopyMessage: { id: Schema.String, message: CopyButton.Message },
-	CompletedGcpScripts: { key: Schema.String, result: Schema.Result(V2GcpSetupScripts, LoadFailure) },
-	ClickedGcpScriptToggle: {},
-	ClickedGcpScriptRetry: {},
-	ClickedGcpConfigure: { target: ConfigureTarget },
-	/** Cancel, Close and Done: the wizard unmounts at once. */
-	ClosedGcpConfigure: {},
-	GotGcpConfigureDialogMessage: { message: Dialog.Message },
-	GotGcpScopeTypeMessage: { message: ToggleGroup.Message },
-	GotGcpScopeFieldMessage: { field: Schema.Literals(["scopeId", "hostProjectId"]), message: Field.Message },
-	/** The scope step's form submit (Continue or Enter). */
-	SubmittedGcpCreate: {},
-	ToggledGcpCollect: { capability: Capability },
-	/** A connection's feature switch: Edit data opens with that change drafted, to save from there. */
-	ToggledGcpFeature: { id: Schema.String, capability: Capability },
-	ClickedGcpLogFilter: {},
-	GotGcpFilterModeMessage: { message: Select.Message },
-	ClickedGcpForwardOutput: {},
-	ClickedGcpUseOpenTelemetry: {},
-	ToggledGcpRuntime: { runtime: GcpLogRuntime },
-	CompletedGcpCreate: {
-		opens: Schema.Number,
-		connector: Schema.NullOr(V2GcpConnector),
-		failure: Schema.NullOr(LoadFailure),
-	},
-	/** The data step's Continue, Save or "Save and continue". */
-	ClickedGcpChooseApply: {},
-	GotGcpConfirmDialogMessage: { message: Dialog.Message },
-	ConfirmedGcpSave: {},
-	CompletedGcpUpdate: {
-		opens: Schema.Number,
-		id: GcpConnectorId,
-		flags: GcpFlags,
-		failure: Schema.NullOr(LoadFailure),
-	},
-	ClickedGcpRunEdit: {},
-	CompletedGcpConfigureScripts: {
-		key: Schema.String,
-		result: Schema.Result(V2GcpSetupScripts, LoadFailure),
-	},
-	ClickedGcpConfigureScriptRetry: {},
-	ClickedGcpScriptExpand: {},
-	/** The Method step: a row, or the code flavour under it. */
-	ClickedGcpMethod: { method: SetupMethod },
-	GotGcpFlavourMessage: { message: ToggleGroup.Message },
-	ClickedGcpMethodContinue: {},
-	ClickedGcpManualStep: { title: Schema.String, firstTitle: Schema.NullOr(Schema.String) },
-	ClickedGcpCopyPrompt: { prompt: Schema.String },
-	CompletedGcpPromptCopy: { isCopied: Schema.Boolean },
-	ClickedGcpPromptBack: {},
-	ClickedGcpConfirmRemoval: {},
-	CompletedGcpConfirmRemoval: { failure: Schema.NullOr(LoadFailure) },
-	/** The status poll: 10 s while a connection settles, else every minute. */
-	TickedGcpRefresh: {},
+	GotGithubMessage: { message: GithubMessage },
+	/** A message for the scrape-target module (Prometheus and WarpStream). */
+	GotPrometheusMessage: { message: PrometheusMessage },
+	GotAwsMessage: { message: AwsMessage },
+	/** A message for the Google Cloud module, its configure wizard's among them. */
+	GotGcpMessage: { message: GcpMessage },
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

@@ -9,8 +9,9 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { PROJECT_ID_RULE, SCOPE_TYPES, SCOPES } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import type { Model } from "../../../integrations/model"
-import { Message } from "../../../integrations/message"
-import { gcpCommand, SMALL } from "./view-gcp-parts"
+import type { Message } from "../../../integrations/message"
+import { gcpCommand, SMALL, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
@@ -50,7 +51,7 @@ export const scopeFields = (
 			heading(h, { level: 3, variant: "subsection" }, ["What should Maple watch?"]),
 			ToggleGroup.view(h, {
 				model: configure.scopeGroup,
-				toParentMessage: (message) => Message.GotGcpScopeTypeMessage({ message }),
+				toParentMessage: (message) => toHub(GcpMessage.GotGcpScopeTypeMessage({ message })),
 				items: Arr.map(SCOPE_TYPES, (scopeType) => ({
 					value: scopeType,
 					label: GCP_SCOPE_NAMES[scopeType],
@@ -131,7 +132,7 @@ const idField = (
 				h.Spellcheck(false),
 				h.Placeholder(options.placeholder),
 				...Field.controlAttributes(h, model, (message) =>
-					Message.GotGcpScopeFieldMessage({ field: options.field, message }),
+					toHub(GcpMessage.GotGcpScopeFieldMessage({ field: options.field, message })),
 				),
 			],
 		}),

@@ -1,10 +1,8 @@
 import { readClock } from "@maple/views/data/timing"
-import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Effect, type Result, Schema } from "effect"
 import { Command } from "foldkit"
-import { IntegrationStatuses } from "../../data/integration-statuses"
 import { type LoadFailure, settleTo } from "@maple/views/data/load-failure"
-import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
+import { MapleApiV2Client } from "../../platform/api-clients"
 import { Message, type StatusName } from "./message"
 import { completeOAuthReturn } from "./oauth-return"
 import { BillingCustomerCache } from "../../data/billing-customer"
@@ -19,6 +17,10 @@ import { SEARCH_CONSOLE_STATUS_READ } from "./search-console"
 import { LINEAR_STATUS_READ } from "./linear-provider"
 import { FLEET_STATUS_READ } from "./fleet/fleet"
 import { CHAT_STATUS_READ } from "./chat"
+import { GITHUB_STATUS_READ } from "./github"
+import { SCRAPE_TARGETS_STATUS_READ } from "./prometheus"
+import { AWS_STATUS_READ } from "../infra-integrations/aws/integration/aws"
+import { GCP_STATUS_READ } from "../infra-integrations/gcp/integration/gcp"
 import { VERCEL_STATUS_READ } from "../infra-integrations/vercel/integration/vercel"
 import { PLANETSCALE_STATUS_READ } from "../infra-integrations/planetscale/integration/planetscale"
 import { CLOUDFLARE_STATUS_READ } from "../infra-integrations/cloudflare/integration/cloudflare"
@@ -68,13 +70,9 @@ export const STATUS_READS = {
 		Message.CompletedLoadPlanetscale,
 		PLANETSCALE_STATUS_READ.read,
 	),
-	gcp: statusRead("LoadIntegrationsGcpStatus", Message.CompletedLoadGcp, (refresh) =>
-		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.gcp({ refresh })),
-	),
+	gcp: statusRead(GCP_STATUS_READ.name, Message.CompletedLoadGcp, GCP_STATUS_READ.read),
 	supabase: statusRead(SUPABASE.statusRead.name, Message.CompletedLoadSupabase, SUPABASE.statusRead.read),
-	aws: statusRead("LoadIntegrationsAwsStatus", Message.CompletedLoadAws, () =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.awsIntegration.status()),
-	),
+	aws: statusRead(AWS_STATUS_READ.name, Message.CompletedLoadAws, AWS_STATUS_READ.read),
 	/** The poller's inventory of PlanetScale databases. */
 	planetscaleDatabases: statusRead(
 		"LoadIntegrationsPlanetscaleDatabases",
@@ -88,19 +86,12 @@ export const STATUS_READS = {
 		Message.CompletedLoadSearchConsole,
 		SEARCH_CONSOLE_STATUS_READ.read,
 	),
-	github: statusRead("LoadIntegrationsGithubStatus", Message.CompletedLoadGithub, () =>
-		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.githubStatus()),
-	),
+	github: statusRead(GITHUB_STATUS_READ.name, Message.CompletedLoadGithub, GITHUB_STATUS_READ.read),
 	chat: statusRead(CHAT_STATUS_READ.name, Message.CompletedLoadChat, CHAT_STATUS_READ.read),
-	/** Every page of 100. */
-	scrapeTargets: statusRead("LoadIntegrationsScrapeTargets", Message.CompletedLoadScrapeTargets, () =>
-		Effect.flatMap(MapleApiV2Client, (client) =>
-			collectV2Pages((cursor) =>
-				client.scrapeTargets.list({
-					query: { limit: 100, ...(cursor !== undefined ? { cursor } : undefined) },
-				}),
-			),
-		),
+	scrapeTargets: statusRead(
+		SCRAPE_TARGETS_STATUS_READ.name,
+		Message.CompletedLoadScrapeTargets,
+		SCRAPE_TARGETS_STATUS_READ.read,
 	),
 	/** The org's data sources (`dataSources` flag), every page, for the hub's rows. */
 	dataSources: statusRead("LoadIntegrationsDataSources", Message.CompletedLoadDataSources, () =>

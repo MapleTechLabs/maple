@@ -15,7 +15,7 @@ import { searchInput } from "@maple/views/ui/search-input"
 import { spinner } from "@maple/views/ui/spinner"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { relativeTime } from "../kit/relative-time"
-import { branchPopoverId } from "./github"
+import { branchPopoverId, GithubMessage } from "./github"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { githubStatusOf, trackedBranchOf } from "./update-github"
@@ -24,6 +24,9 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
 import { textLink } from "@maple/views/ui/text-link"
+
+/** A GitHub module message, as the hub carries it. */
+export const toHub = (message: GithubMessage): Message => Message.GotGithubMessage({ message })
 
 type H = HtmlBuilder<Message>
 
@@ -86,8 +89,8 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 								id: `${branchPopoverId(repo.id)}-search`,
 								value: query,
 								placeholder: "Search branches…",
-								onInput: (value) => Message.ChangedBranchQuery({ value }),
-								onClear: Message.ChangedBranchQuery({ value: "" }),
+								onInput: (value) => toHub(GithubMessage.ChangedBranchQuery({ value })),
+								onClear: toHub(GithubMessage.ChangedBranchQuery({ value: "" })),
 							}),
 						],
 					),
@@ -103,7 +106,9 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 					]
 				: Arr.map(filtered, (branch) =>
 						listRow(h, {
-							onClick: Message.ClickedBranch({ repoId: repo.id, branch: branch.name }),
+							onClick: toHub(
+								GithubMessage.ClickedBranch({ repoId: repo.id, branch: branch.name }),
+							),
 							density: "compact",
 							className: "cursor-pointer gap-2 rounded-md px-2",
 							leading: icon(h, "CheckIcon", {
@@ -203,7 +208,7 @@ const removedRow = (h: H, model: Model, repo: GithubRepoSummary): Html =>
 				className: "shrink-0",
 				isDisabled: model.githubCard.deletingRepo !== null,
 				isLoading: model.githubCard.deletingRepo === repo.id,
-				attributes: [h.OnClick(Message.ClickedRepoDelete({ repoId: repo.id }))],
+				attributes: [h.OnClick(toHub(GithubMessage.ClickedRepoDelete({ repoId: repo.id })))],
 			},
 			[icon(h, "TrashIcon"), "Delete"],
 		),
@@ -375,7 +380,7 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 		confirmDialog(h, {
 			slotId: "github-repo-delete",
 			model: model.githubCard.deleteDialog,
-			toParentMessage: (message) => Message.GotRepoDeleteDialogMessage({ message }),
+			toParentMessage: (message) => toHub(GithubMessage.GotRepoDeleteDialogMessage({ message })),
 			title: "Delete repository from Maple?",
 			description: [
 				"This permanently removes",
@@ -385,12 +390,12 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			],
 			confirmLabel: "Delete repository",
 			isPending: model.githubCard.deletingRepo !== null,
-			onConfirm: Message.ConfirmedRepoDelete(),
+			onConfirm: toHub(GithubMessage.ConfirmedRepoDelete()),
 		}),
 		confirmDialog(h, {
 			slotId: "github-branch-change",
 			model: model.githubCard.branchDialog,
-			toParentMessage: (message) => Message.GotBranchDialogMessage({ message }),
+			toParentMessage: (message) => toHub(GithubMessage.GotBranchDialogMessage({ message })),
 			title: "Change tracked branch?",
 			description: [
 				"This switches ",
@@ -408,7 +413,7 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			isPending:
 				pending !== null &&
 				Arr.some(model.githubCard.savingBranches, (entry) => entry.repoId === pending.repoId),
-			onConfirm: Message.ConfirmedBranch(),
+			onConfirm: toHub(GithubMessage.ConfirmedBranch()),
 		}),
 	]
 }
@@ -425,7 +430,7 @@ const branchSelector = (h: H, model: Model, repo: GithubRepoSummary): Html => {
 		model: popover,
 		view: Popover.view,
 		toParentMessage: (message: Popover.Message) =>
-			Message.GotBranchPopoverMessage({ repoId: repo.id, message }),
+			toHub(GithubMessage.GotBranchPopoverMessage({ repoId: repo.id, message })),
 		viewInputs: {
 			className: "w-72 p-0",
 			toView: ({ trigger, withTrigger }) =>

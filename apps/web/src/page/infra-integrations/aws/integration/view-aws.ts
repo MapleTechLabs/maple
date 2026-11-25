@@ -25,6 +25,7 @@ import {
 } from "../../../kit/feature-list"
 import {
 	type AwsModuleInfo,
+	AwsMessage,
 	isMetricsPanelOpen,
 	isSavingMetricsOf,
 	isSelectionSaved,
@@ -46,7 +47,7 @@ import {
 import { Message } from "../../../integrations/message"
 import { manageLock, type Model } from "../../../integrations/model"
 import { dataPicker } from "./view-aws-choose"
-import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
+import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody, toHub } from "./view-aws-setup"
 import { disconnectConfirm } from "../../../integrations/view-disconnect"
 import { connectedIntegrationCard, integrationStatusCard } from "../../../integrations/view-integration-card"
 import { externalLink } from "../../gcp/integration/view-gcp-configure-parts"
@@ -116,7 +117,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 	return h.form(
 		[
 			h.Class("flex w-full flex-col gap-4 rounded-md border bg-surface-faint p-3"),
-			h.OnSubmit(Message.SubmittedAwsMetrics({ id: connection.id })),
+			h.OnSubmit(toHub(AwsMessage.SubmittedAwsMetrics({ id: connection.id }))),
 		],
 		[
 			...dataPicker(h, model, connection),
@@ -148,7 +149,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 						size: "sm",
 						variant: "outline",
 						isDisabled: isSavingMetricsOf(card.metrics, connection.id),
-						attributes: [h.OnClick(Message.ClickedAwsMetricsCancel())],
+						attributes: [h.OnClick(toHub(AwsMessage.ClickedAwsMetricsCancel()))],
 					},
 					["Cancel"],
 				),
@@ -557,7 +558,9 @@ const setupToggle = (
 	return actionButton(
 		h,
 		label,
-		isOpen ? Message.ClickedAwsSetupClose() : Message.ClickedAwsSetup({ id: connection.id }),
+		isOpen
+			? toHub(AwsMessage.ClickedAwsSetupClose())
+			: toHub(AwsMessage.ClickedAwsSetup({ id: connection.id })),
 		{ isExpanded: isOpen, variant },
 	)
 }
@@ -603,8 +606,8 @@ const metricsFeature = (
 							h,
 							"Edit data",
 							isEditing
-								? Message.ClickedAwsMetricsCancel()
-								: Message.ClickedAwsMetrics({ id: connection.id }),
+								? toHub(AwsMessage.ClickedAwsMetricsCancel())
+								: toHub(AwsMessage.ClickedAwsMetrics({ id: connection.id })),
 							{ isExpanded: isEditing },
 						),
 					],
@@ -644,7 +647,7 @@ const moduleFeature = (
 		spec,
 		isChecked: state !== "off",
 		isDisabled: model.awsCard.moduleSave._tag === "Saving",
-		onToggle: Message.ToggledAwsModule({ id: connection.id, module }),
+		onToggle: toHub(AwsMessage.ToggledAwsModule({ id: connection.id, module })),
 	}
 	switch (state) {
 		case "off":
@@ -762,14 +765,14 @@ const connectionRow = (
 			connection.verified_at === null
 				? setupToggle(h, model, connection, "Finish setup", "default")
 				: setupToggle(h, model, connection, "Reconnect"),
-			action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
+			action("Sync now", toHub(AwsMessage.ClickedAwsCheck({ id: connection.id })), {
 				isLoading: isChecking,
 			}),
 			// Apart from the routine actions: it ends the connection.
 			h.span(
 				[h.Class("ml-auto")],
 				[
-					action("Disconnect", Message.ClickedAwsDisconnect({ id: connection.id }), {
+					action("Disconnect", toHub(AwsMessage.ClickedAwsDisconnect({ id: connection.id })), {
 						variant: "destructive-outline",
 					}),
 				],
@@ -821,9 +824,11 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 									variant: "ghost",
 									attributes: [
 										h.OnClick(
-											Message.DismissedAwsRemoved({
-												connectionId: stack.connectionId,
-											}),
+											toHub(
+												AwsMessage.DismissedAwsRemoved({
+													connectionId: stack.connectionId,
+												}),
+											),
 										),
 									],
 								},
@@ -858,10 +863,10 @@ export const awsDisconnectDialog = (h: H, model: Model): Html => {
 		provider: "aws",
 		slotId: "aws-disconnect",
 		model: model.awsCard.disconnectDialog,
-		toParentMessage: (message) => Message.GotAwsDisconnectDialogMessage({ message }),
+		toParentMessage: (message) => toHub(AwsMessage.GotAwsDisconnectDialogMessage({ message })),
 		subject: `AWS account ${accountId}`,
 		isPending: model.awsCard.isDisconnecting,
-		onConfirm: Message.ConfirmedAwsDisconnect(),
+		onConfirm: toHub(AwsMessage.ConfirmedAwsDisconnect()),
 	})
 }
 

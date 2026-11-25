@@ -1,5 +1,6 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { Command, type Update } from "foldkit"
+import { GcpMessage } from "../../page/infra-integrations/gcp/integration/gcp"
 import { initConfigure } from "../../page/infra-integrations/gcp/integration/gcp-configure"
 import type { ConfigureModel } from "../../page/infra-integrations/gcp/integration/gcp-configure-schema"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
@@ -14,6 +15,13 @@ import { Array as Arr, Option } from "effect"
 export type Return = Update.Return<Model, Message, Resources>
 
 const toHub = (message: IntegrationsMessage): Message => Message.GotHubMessage({ message })
+
+const gcpMessage = (message: GcpMessage): IntegrationsMessage =>
+	IntegrationsMessage.GotGcpMessage({ message })
+
+/** The Google Cloud module's message inside a hub message, if it is one. */
+const gcpTag = (message: IntegrationsMessage): GcpMessage["_tag"] | null =>
+	message._tag === "GotGcpMessage" ? message.message._tag : null
 
 type Staged = Readonly<{
 	connectors: ReadonlyArray<V2GcpConnector>
@@ -103,7 +111,7 @@ const show = (model: Model, state: LabState): Return => {
 			hub: { ...hub, gcpCard: { ...hub.gcpCard, configure: { ...configure, dialog: shown.model } } },
 		},
 		commands: Command.mapMessages(shown.commands ?? [], (message) =>
-			toHub(IntegrationsMessage.GotGcpConfigureDialogMessage({ message })),
+			toHub(gcpMessage(GcpMessage.GotGcpConfigureDialogMessage({ message }))),
 		),
 	}
 }
@@ -122,10 +130,14 @@ export const init = (flags: GcpLabFlags): Return =>
 	)
 
 /** A run fixture's Back, "Try again" and "I've removed them" do nothing. */
-const isFixtureNoop = (message: IntegrationsMessage): boolean =>
-	message._tag === "ClickedGcpRunEdit" ||
-	message._tag === "ClickedGcpConfigureScriptRetry" ||
-	message._tag === "ClickedGcpConfirmRemoval"
+const isFixtureNoop = (message: IntegrationsMessage): boolean => {
+	const tag = gcpTag(message)
+	return (
+		tag === "ClickedGcpRunEdit" ||
+		tag === "ClickedGcpConfigureScriptRetry" ||
+		tag === "ClickedGcpConfirmRemoval"
+	)
+}
 
 const isMethodState = (state: LabState): boolean => state === "method" || state === "method-code"
 
@@ -133,9 +145,9 @@ const hubMessage = (model: Model, message: IntegrationsMessage): Return => {
 	const pinned = model.pinnedScripts
 	if (pinned !== null && isFixtureNoop(message)) return { model }
 	// Back is a `noop`, Continue closes.
-	if (isMethodState(model.state) && message._tag === "ClickedGcpRunEdit") return { model }
-	if (isMethodState(model.state) && message._tag === "ClickedGcpMethodContinue")
-		return hubMessage(model, IntegrationsMessage.ClosedGcpConfigure())
+	if (isMethodState(model.state) && gcpTag(message) === "ClickedGcpRunEdit") return { model }
+	if (isMethodState(model.state) && gcpTag(message) === "ClickedGcpMethodContinue")
+		return hubMessage(model, gcpMessage(GcpMessage.ClosedGcpConfigure()))
 	const next = hubStep(model.hub, message)
 	const configure = next.hub.gcpCard.configure
 	// A run fixture keeps its script, whatever the step would read.

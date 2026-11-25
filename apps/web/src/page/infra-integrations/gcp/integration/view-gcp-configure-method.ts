@@ -10,7 +10,9 @@ import { button } from "@maple/views/ui/button"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { IAC_DOCS, MANUAL_DOCS } from "./gcp-configure-copy"
 import type { ApplyOpened, ConfigureModel } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { type ScriptFailure, SMALL, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
 import { filterShort } from "./view-gcp-configure-filter"
 import { methodChoice } from "./view-gcp-configure-method-choice"
@@ -25,7 +27,6 @@ import {
 import { runAs, runSummary } from "./view-gcp-configure-run"
 import { fileCard, loadFailure } from "./view-gcp-configure-script"
 import { runStatus } from "./view-gcp-configure-status"
-import { type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { manualSteps, removalItem } from "./view-gcp-setup-methods"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -55,8 +56,14 @@ export const methodStage = (
 					? "Each method creates the same resources."
 					: "Each method makes the same change.",
 			]),
-			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedGcpRunEdit())] }, ["Back"]),
-			button(h, { attributes: [h.OnClick(Message.ClickedGcpMethodContinue())] }, ["Continue"]),
+			button(
+				h,
+				{ variant: "outline", attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpRunEdit()))] },
+				["Back"],
+			),
+			button(h, { attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpMethodContinue()))] }, [
+				"Continue",
+			]),
 		]),
 	]
 }
@@ -129,7 +136,7 @@ const removalSection = (
 										size: "sm",
 										variant: "outline",
 										isLoading: configure.isConfirmingRemoval,
-										attributes: [h.OnClick(Message.ClickedGcpConfirmRemoval())],
+										attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpConfirmRemoval()))],
 									},
 									["I've removed them"],
 								),
@@ -293,9 +300,11 @@ export const methodApplyStage = (
 		}),
 		configureFooter(h, [
 			footerNote(h, ["Saved. Close this any time and come back to it."]),
-			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClosedGcpConfigure())] }, [
-				"Close",
-			]),
+			button(
+				h,
+				{ variant: "outline", attributes: [h.OnClick(toHub(GcpMessage.ClosedGcpConfigure()))] },
+				["Close"],
+			),
 		]),
 	]
 }
