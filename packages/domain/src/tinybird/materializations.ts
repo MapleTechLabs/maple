@@ -1,5 +1,6 @@
 import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import { AWS_METRIC_PREFIX } from "../aws-infra"
+import { ALTER_AFTER_RETENTION_ROLLOUT } from "./retention-rollout"
 import {
 	chPattern,
 	chRedactChain,
@@ -536,8 +537,10 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
 	description:
 		"Materialized view projecting service entry point spans (Server/Consumer + root) for service overview queries. Pre-extracts deployment attributes from ResourceAttributes at write time.",
 	datasource: serviceOverviewSpans,
-	// No `alter`: the RetentionDays deploy copies `traces`, and Tinybird refuses a pending `alter`
-	// then. The target's forward query keeps its rows; restore `alter` when it is removed.
+	// Migration 0037's SpanKind/IsRoot are additive and older rows may read ''/0.
+	// Without this, Tinybird rebuilds the target by replaying 30 days of `traces`.
+	// Held off while the RetentionDays rollout copies `traces` (see retention-rollout.ts).
+	...ALTER_AFTER_RETENTION_ROLLOUT,
 	nodes: [
 		node({
 			name: "service_overview_spans_mv_node",
@@ -1458,8 +1461,13 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	description:
 		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), projecting the facts the ingest gateway stamped on each (maple_ai.*: identity, model/agent/tool, kind, usage, failure, a failed tool call's result, the tool's description) plus the environment, the error.type, the status message and the failure's fingerprint, to plain columns.",
 	datasource: aiTraceIndex,
-	// No `alter`: the RetentionDays deploy copies `traces`, and Tinybird refuses a pending `alter`
-	// then. The target's forward query keeps its rows; restore `alter` when it is removed.
+	// Migration 0026's columns are additive, and the rows already in the target
+	// are explicitly allowed to carry ''/0 for them (see above). Without this,
+	// Tinybird migrates the target by replaying `traces` through this pipe: the
+	// backfill that crashed the maple_us deploy with an internal error. `alter`
+	// adds the columns at promotion with no data movement. Held off while the
+	// RetentionDays rollout copies `traces` (see retention-rollout.ts).
+	...ALTER_AFTER_RETENTION_ROLLOUT,
 	nodes: [
 		node({
 			name: "ai_trace_index_mv_node",
@@ -1607,8 +1615,9 @@ export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
 	description:
 		"Populates scanner_requests with Server spans whose path matches a probe signature or whose user agent names a scanning tool, pre-extracting the signature, scanner, host, path, status, client address and user agent.",
 	datasource: scannerRequests,
-	// No `alter`: the RetentionDays deploy copies `traces`, and Tinybird refuses a pending `alter`
-	// then. The target's forward query keeps its rows; restore `alter` when it is removed.
+	// A catalog change only renames new rows; without this Tinybird replays 30 days of `traces`.
+	// Held off while the RetentionDays rollout copies `traces` (see retention-rollout.ts).
+	...ALTER_AFTER_RETENTION_ROLLOUT,
 	nodes: [
 		node({
 			name: "scanner_requests_mv_node",

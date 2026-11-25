@@ -40,8 +40,23 @@ The row-level projections of `traces` (`trace_index`, `trace_list_mv`, `service_
 `scanner_requests`) copy the span's `RetentionDays` and expire the same way, so a trace never
 outlives its index or the other way round. Rollups keep their fixed periods. `product_events`
 expires at the source's `events` period: direct rows carry the gateway's stamp, and the two views
-copy `EventsRetentionDays` from the `session_events` or `traces` row (365, the default, until the
-gateway stamps it), never that row's own `RetentionDays`.
+copy `EventsRetentionDays` from the `session_events` or `traces` row, which the gateway stamps
+with the source's events period (`events_retention_days`), never that row's own `RetentionDays`.
+
+### Follow-up: end the RetentionDays rollout
+
+The deploy that partitions the raw tables by `RetentionDays` carries one-shot config, all keyed off
+`RETENTION_ROLLOUT_PENDING` in `packages/domain/src/tinybird/retention-rollout.ts`:
+
+- `SELECT *` forward queries on every datasource fed from a raw table,
+- `SELECT *, toUInt16(30) AS RetentionDays` on the span projections and
+  `SELECT *, toUInt16(365) AS RetentionDays` on `product_events`,
+- no `deploymentMethod: "alter"` on `service_overview_spans_mv`, `ai_trace_index_mv` and
+  `scanner_requests_mv`.
+
+Once that deploy is live in every workspace, set the flag to `false` in the next PR and run
+`bun run tinybird:manifest`. Left on, the next deploy that copies one of these tables resets
+every stamped row to the default period. `retention-rollout.test.ts` holds the config to the flag.
 
 Self-managed ClickHouse and Maple Local keep one period per table: their inserts never write the
 column (`SELF_MANAGED_INSERT_OMITTED_COLUMNS`), so the DDL emitter turns the row-level layout back
