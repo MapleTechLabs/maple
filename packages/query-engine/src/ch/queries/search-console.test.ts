@@ -95,7 +95,7 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		expect(flat).toContain("Grain = 'query'")
 		expect(flat).toContain("Country = 'deu'")
 		expect(flat).toContain("Device = 'mobile'")
-		expect(flat).toContain("Page = 'https://acme.dev/docs'")
+		expect(flat).toContain("Page IN ('https://acme.dev/docs', 'https://acme.dev/docs/')")
 		// Filters narrow the rows, never which import is newest: the day's max is taken unfiltered.
 		expect(flat).toMatch(
 			/AS ingestedAt FROM search_console_daily WHERE (?:(?!Country).)*GROUP BY date\) AS newest/,
@@ -124,7 +124,7 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		const flat = oneLine(
 			compileUnsafe(searchConsoleTopPagesQuery({ page: "https://acme.dev/docs" }), params).sql,
 		)
-		expect(flat).toContain("Page = 'https://acme.dev/docs'")
+		expect(flat).toContain("Page IN ('https://acme.dev/docs', 'https://acme.dev/docs/')")
 		expect(flat).not.toContain("Country =")
 		expect(flat).not.toContain("Device =")
 	})
