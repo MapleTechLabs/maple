@@ -53,6 +53,16 @@ export const permissions = {
 		description: "Traces, logs, metrics, errors, sessions, incidents and the service map.",
 		action: "read telemetry",
 	},
+	// What a role limited to namespaces holds in place of Read telemetry (`data-scope.ts`). Nothing
+	// implies it and it implies nothing, so whatever checks `telemetry:read` refuses its holder.
+	"telemetry:read_scoped": {
+		code: 52,
+		group: "read",
+		label: "Read telemetry in chosen namespaces",
+		description: "Traces, logs, metrics and services, only from the namespaces the role names.",
+		action: "read telemetry in the role's namespaces",
+		readsNoTelemetry: true,
+	},
 	"query:sql": {
 		code: 37,
 		group: "read",

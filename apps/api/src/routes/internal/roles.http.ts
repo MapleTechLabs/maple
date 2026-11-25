@@ -31,6 +31,7 @@ const auditedFields = (role: CustomRoleResponse) => ({
 	name: role.name,
 	description: role.description,
 	permissions: role.permissions,
+	namespaces: role.namespaces ?? [],
 })
 
 // Every member reads the roles (the Members page names each member's role); only Admin changes them.
@@ -47,12 +48,17 @@ export const HttpRolesLive = HttpApiBuilder.group(MapleInternalApi, "roles", (ha
 				Effect.gen(function* () {
 					const tenant = yield* requirePermission("roles:manage")
 					const role = yield* roles.create(tenant, payload)
+					const namespaces = role.namespaces ?? []
+					const created = {
+						roleId: role.id,
+						name: role.name,
+						permissions: Arr.join(role.permissions, ","),
+					}
 					yield* recordHttpAudit("role.created", {
-						metadata: {
-							roleId: role.id,
-							name: role.name,
-							permissions: Arr.join(role.permissions, ","),
-						},
+						metadata:
+							namespaces.length === 0
+								? created
+								: { ...created, namespaces: Arr.join(namespaces, ",") },
 					})
 					return role
 				}),

@@ -13,11 +13,33 @@ import { RoleWriteLock } from "./RoleWriteLock"
 // memberships with `memberships`, and every call is recorded.
 const clerkApi = vi.hoisted(() => {
 	const calls: Array<string> = []
-	const state = { publicMetadata: {}, memberships: [] as Array<unknown>, calls }
+	const state = {
+		publicMetadata: {},
+		memberships: [] as Array<unknown>,
+		calls,
+		/** The body of every membership metadata write, in order. */
+		metadataWrites: [] as Array<unknown>,
+	}
 	globalThis.fetch = async (input, init) => {
 		const request = input instanceof Request ? input : new Request(String(input), init)
 		const url = new URL(request.url)
 		state.calls.push(`${request.method} ${url.pathname}`)
+		if (
+			request.method === "PATCH" &&
+			url.pathname === "/v1/organizations/org_roles/memberships/user_jane/metadata"
+		) {
+			state.metadataWrites.push(await request.json())
+			return Response.json({
+				object: "organization_membership",
+				id: "orgmem_written",
+				role: "org:custom",
+				permissions: [],
+				public_metadata: {},
+				organization: { object: "organization", id: "org_roles", name: "Roles", slug: "roles" },
+				created_at: 0,
+				updated_at: 0,
+			})
+		}
 		if (request.method === "GET" && url.pathname === "/v1/organizations/org_roles") {
 			return Response.json({
 				object: "organization",
@@ -135,6 +157,29 @@ describe("ClerkRolesGateway", () => {
 					identifier: "user_john@example.com",
 					imageUrl: "https://img.example/user_john",
 				},
+			])
+		}).pipe(Effect.provide(gateway)),
+	)
+
+	// Clerk merges nested metadata and only `null` removes a key: a role that dropped its limit
+	// has to say so, or the namespaces stay on every membership that held it.
+	it.effect("clears a membership's namespaces when its role no longer names any", () =>
+		Effect.gen(function* () {
+			clerkApi.metadataWrites.length = 0
+			const clerk = yield* ClerkRolesGateway
+			const id = Policy.CustomRoleId.make("role_abcdefabcdef")
+			const member = Schema.decodeSync(UserId)("user_jane")
+			yield* clerk.setMembershipCustomRole(ORG, member, {
+				id,
+				permissions: [52],
+				namespaces: ["checkout"],
+			})
+			yield* clerk.setMembershipCustomRole(ORG, member, { id, permissions: [36] })
+			yield* clerk.setMembershipCustomRole(ORG, member, null)
+			assert.deepStrictEqual(clerkApi.metadataWrites, [
+				{ public_metadata: { maple_role: { id, permissions: [52], namespaces: ["checkout"] } } },
+				{ public_metadata: { maple_role: { id, permissions: [36], namespaces: null } } },
+				{ public_metadata: { maple_role: null } },
 			])
 		}).pipe(Effect.provide(gateway)),
 	)

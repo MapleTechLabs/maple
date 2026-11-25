@@ -450,6 +450,7 @@ describe("RolesService.update", () => {
 				adminTenant,
 				ON_CALL,
 				new UpdateRoleRequest({
+					namespaces: [],
 					expectedUpdatedAt: 1,
 					name: "On-call",
 					description: "",
@@ -492,6 +493,7 @@ describe("RolesService.update", () => {
 				adminTenant,
 				ON_CALL,
 				new UpdateRoleRequest({
+					namespaces: [],
 					expectedUpdatedAt: 1,
 					name: "On-call",
 					description: "",
@@ -514,6 +516,7 @@ describe("RolesService.update", () => {
 				adminTenant,
 				ON_CALL,
 				new UpdateRoleRequest({
+					namespaces: [],
 					expectedUpdatedAt: 1,
 					name: "Responders",
 					description: "",
@@ -542,6 +545,7 @@ describe("RolesService.update", () => {
 				adminTenant,
 				ON_CALL,
 				new UpdateRoleRequest({
+					namespaces: [],
 					expectedUpdatedAt: 1,
 					name: "On-call",
 					description: "",
@@ -570,6 +574,7 @@ describe("RolesService.update, from a stale editor", () => {
 					adminTenant,
 					ON_CALL,
 					new UpdateRoleRequest({
+						namespaces: [],
 						expectedUpdatedAt: 0,
 						name: "On-call",
 						description: "",
@@ -602,6 +607,7 @@ describe("RolesService.update, racing a stale writer", () => {
 					adminTenant,
 					ON_CALL,
 					new UpdateRoleRequest({
+						namespaces: [],
 						expectedUpdatedAt: 1,
 						name: "On-call",
 						description: "",
@@ -632,6 +638,7 @@ describe("RolesService.update, racing a narrowing save", () => {
 				adminTenant,
 				ON_CALL,
 				new UpdateRoleRequest({
+					namespaces: [],
 					expectedUpdatedAt: 1,
 					name: "On-call",
 					description: "",
@@ -661,6 +668,7 @@ describe("RolesService.update, racing a narrowing save", () => {
 					adminTenant,
 					ON_CALL,
 					new UpdateRoleRequest({
+						namespaces: [],
 						expectedUpdatedAt: 1,
 						name: "On-call",
 						description: "",
@@ -669,6 +677,303 @@ describe("RolesService.update, racing a narrowing save", () => {
 				),
 			)
 			assert.strictEqual(reason, "concurrent_edit")
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService, roles limited to namespaces", () => {
+	const SCOPED = roleId("role_scoped000000")
+	const scopedCodes = Policy.encodePermissions([Policy.SCOPED_READ, "support:join"])
+	const scopedRole = (namespaces: ReadonlyArray<string>): Policy.StoredCustomRole => ({
+		...stored(SCOPED, "Checkout team", [Policy.SCOPED_READ, "support:join"]),
+		namespaces,
+	})
+	const scopedHolder = (userId: string, namespaces: ReadonlyArray<string>): FakeMember => ({
+		userId,
+		role: Policy.CUSTOM_ROLE_CLERK_KEY,
+		custom: { id: SCOPED, permissions: scopedCodes, namespaces },
+	})
+	const save = (namespaces: ReadonlyArray<string>, permissions: ReadonlyArray<Policy.Permission>) =>
+		new UpdateRoleRequest({
+			expectedUpdatedAt: 1,
+			name: "Checkout team",
+			description: "",
+			permissions,
+			namespaces,
+		})
+
+	it.effect("stores the scoped read in place of Read telemetry, with the namespaces sorted", () => {
+		const { clerk, layer } = setup([], [])
+		return Effect.gen(function* () {
+			const role = yield* (yield* RolesService).create(
+				adminTenant,
+				new CreateRoleRequest({
+					name: "Checkout team",
+					permissions: ["support:join"],
+					namespaces: ["payments", "checkout", "payments"],
+				}),
+			)
+			assert.deepStrictEqual(role.permissions, [Policy.SCOPED_READ, "support:join"])
+			assert.deepStrictEqual(role.namespaces, ["checkout", "payments"])
+			assert.deepStrictEqual(clerk.state.roles[0]?.permissions, scopedCodes)
+			assert.deepStrictEqual(clerk.state.roles[0]?.namespaces, ["checkout", "payments"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("stores no namespaces for a role that names none", () => {
+		const { clerk, layer } = setup([], [])
+		return Effect.gen(function* () {
+			const role = yield* (yield* RolesService).create(
+				adminTenant,
+				new CreateRoleRequest({ name: "Auditor", permissions: ["telemetry:read"], namespaces: [] }),
+			)
+			assert.deepStrictEqual(role.namespaces, [])
+			assert.isFalse("namespaces" in (clerk.state.roles[0] ?? {}))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses a limited role a permission that needs every namespace, writing nothing", () => {
+		const { clerk, layer } = setup([], [])
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			// Billing reads the org's usage from the warehouse, so it is refused too.
+			const reasons = yield* Effect.forEach(
+				[["telemetry:read"], ["query:sql"], ["alerts:manage"], ["billing:manage"]] as const,
+				(permissions) =>
+					conflictReason(
+						roles.create(
+							adminTenant,
+							new CreateRoleRequest({
+								name: "Checkout team",
+								permissions,
+								namespaces: ["checkout"],
+							}),
+						),
+					),
+			)
+			assert.deepStrictEqual(Arr.dedupe(reasons), ["needs_all_telemetry"])
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses the scoped read as a ticked permission: only namespaces set it", () => {
+		const { clerk, layer } = setup([], [])
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			const reasons = yield* Effect.forEach([[], ["checkout"]], (namespaces) =>
+				conflictReason(
+					roles.create(
+						adminTenant,
+						new CreateRoleRequest({
+							name: "Checkout team",
+							permissions: [Policy.SCOPED_READ],
+							namespaces,
+						}),
+					),
+				),
+			)
+			assert.deepStrictEqual(reasons, ["not_grantable", "not_grantable"])
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("hands a new member the role's namespaces on the membership", () => {
+		const { clerk, layer } = setup(
+			[scopedRole(["checkout"])],
+			[
+				{ userId: "user_admin", role: "org:admin" },
+				{ userId: "user_ana", role: "org:member" },
+			],
+		)
+		return Effect.gen(function* () {
+			const change = yield* (yield* RolesService).setMemberRole(adminTenant, user("user_ana"), {
+				_tag: "Custom",
+				id: SCOPED,
+			})
+			assert.deepStrictEqual(change.member.permissions, [Policy.SCOPED_READ, "support:join"])
+			assert.deepStrictEqual(clerk.customOf("user_ana"), {
+				id: SCOPED,
+				permissions: scopedCodes,
+				namespaces: ["checkout"],
+			})
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("rewrites and demotes every holder when only the namespaces change", () => {
+		const { clerk, revocation, layer } = setup(
+			[scopedRole(["checkout", "payments"])],
+			[
+				scopedHolder("user_cat", ["checkout", "payments"]),
+				scopedHolder("user_dan", ["checkout", "payments"]),
+			],
+		)
+		return Effect.gen(function* () {
+			const { before, role } = yield* (yield* RolesService).update(
+				adminTenant,
+				SCOPED,
+				save(["checkout"], ["support:join"]),
+			)
+			assert.deepStrictEqual(before.namespaces, ["checkout", "payments"])
+			assert.deepStrictEqual(role.namespaces, ["checkout"])
+			assert.deepStrictEqual(clerk.customOf("user_cat")?.namespaces, ["checkout"])
+			assert.deepStrictEqual(clerk.customOf("user_dan")?.namespaces, ["checkout"])
+			// The demotion is what evicts each holder's cached membership.
+			assert.deepStrictEqual(
+				Arr.sort(
+					Arr.map(revocation.demoted, (entry) => entry.userId),
+					Order.String,
+				),
+				["user_cat", "user_dan"],
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("limits a role that read everything, taking Read telemetry from its holders", () => {
+		const { clerk, revocation, layer } = setup(
+			[stored(SCOPED, "Checkout team", ["telemetry:read", "support:join"])],
+			[
+				{
+					userId: "user_cat",
+					role: Policy.CUSTOM_ROLE_CLERK_KEY,
+					custom: {
+						id: SCOPED,
+						permissions: Policy.encodePermissions(["telemetry:read", "support:join"]),
+					},
+				},
+			],
+		)
+		return Effect.gen(function* () {
+			yield* (yield* RolesService).update(adminTenant, SCOPED, save(["checkout"], ["support:join"]))
+			assert.deepStrictEqual(clerk.customOf("user_cat"), {
+				id: SCOPED,
+				permissions: scopedCodes,
+				namespaces: ["checkout"],
+			})
+			assert.deepStrictEqual(revocation.demoted, [
+				{ userId: "user_cat", grants: [Policy.SCOPED_READ, "support:join"] },
+			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("lifts the limit when a save names no namespaces and ticks Read telemetry", () => {
+		const { clerk, layer } = setup([scopedRole(["checkout"])], [scopedHolder("user_cat", ["checkout"])])
+		return Effect.gen(function* () {
+			const { role } = yield* (yield* RolesService).update(
+				adminTenant,
+				SCOPED,
+				save([], ["telemetry:read", "support:join"]),
+			)
+			assert.deepStrictEqual(role.namespaces, [])
+			assert.deepStrictEqual(role.permissions, ["telemetry:read", "support:join"])
+			assert.isFalse("namespaces" in (clerk.state.roles[0] ?? {}))
+			assert.deepStrictEqual(clerk.customOf("user_cat"), {
+				id: SCOPED,
+				permissions: Policy.encodePermissions(["telemetry:read", "support:join"]),
+			})
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("leaves a role with no telemetry at all when a save only drops the namespaces", () => {
+		const { clerk, layer } = setup([scopedRole(["checkout"])], [])
+		return Effect.gen(function* () {
+			const { role } = yield* (yield* RolesService).update(
+				adminTenant,
+				SCOPED,
+				save([], ["support:join"]),
+			)
+			assert.deepStrictEqual(role.permissions, ["support:join"])
+			assert.deepStrictEqual(
+				clerk.state.roles[0]?.permissions,
+				Policy.encodePermissions(["support:join"]),
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	// An editor that predates namespaces sends none: its rename must not lift the limit.
+	it.effect("keeps the limit when a save says nothing about namespaces", () => {
+		const { clerk, layer } = setup([scopedRole(["checkout"])], [scopedHolder("user_cat", ["checkout"])])
+		return Effect.gen(function* () {
+			const { role } = yield* (yield* RolesService).update(
+				adminTenant,
+				SCOPED,
+				new UpdateRoleRequest({
+					expectedUpdatedAt: 1,
+					name: "Checkout contractors",
+					description: "",
+					permissions: ["support:join"],
+				}),
+			)
+			assert.strictEqual(role.name, "Checkout contractors")
+			assert.deepStrictEqual(role.namespaces, ["checkout"])
+			assert.deepStrictEqual(role.permissions, [Policy.SCOPED_READ, "support:join"])
+			assert.deepStrictEqual(clerk.customOf("user_cat")?.namespaces, ["checkout"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("settles a membership whose namespaces are wider than its role's", () => {
+		const { clerk, layer } = setup(
+			[scopedRole(["checkout"])],
+			[scopedHolder("user_cat", ["checkout", "payments"])],
+		)
+		return Effect.gen(function* () {
+			const held = clerk.customOf("user_cat")
+			assert.isDefined(held)
+			if (held === undefined) return
+			const permissions = yield* (yield* RolesService).settleMembership(ORG, user("user_cat"), held)
+			assert.deepStrictEqual(permissions, [Policy.SCOPED_READ, "support:join"])
+			assert.deepStrictEqual(clerk.customOf("user_cat")?.namespaces, ["checkout"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses a save the organization's metadata could not hold", () => {
+		const long = Arr.makeBy(
+			Policy.MAX_ROLE_NAMESPACES,
+			(index) =>
+				`${Str.repeat(Policy.ROLE_NAMESPACE_MAX - 3)("n")}-${Str.padStart(2, "0")(String(index))}`,
+		)
+		const full = Arr.makeBy(5, (index) => ({
+			...stored(roleId(`role_full0000000${index}`), `Team ${index}`, [Policy.SCOPED_READ]),
+			namespaces: long,
+		}))
+		const { clerk, layer } = setup(full, [])
+		return Effect.gen(function* () {
+			const reason = yield* conflictReason(
+				(yield* RolesService).create(
+					adminTenant,
+					new CreateRoleRequest({ name: "One more", permissions: [], namespaces: long }),
+				),
+			)
+			assert.strictEqual(reason, "limit_reached")
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+
+	// Definitions already past the cap still fit Clerk: an edit that does not grow them goes through.
+	it.effect("still saves an edit that does not grow definitions already past the cap", () => {
+		const long = Arr.makeBy(
+			Policy.MAX_ROLE_NAMESPACES,
+			(index) =>
+				`${Str.repeat(Policy.ROLE_NAMESPACE_MAX - 3)("n")}-${Str.padStart(2, "0")(String(index))}`,
+		)
+		const full = Arr.makeBy(6, (index) => ({
+			...stored(roleId(`role_full0000000${index}`), `Team ${index}`, [Policy.SCOPED_READ]),
+			namespaces: long,
+		}))
+		const first = roleId("role_full00000000")
+		const { layer } = setup(full, [])
+		return Effect.gen(function* () {
+			const { role } = yield* (yield* RolesService).update(
+				adminTenant,
+				first,
+				new UpdateRoleRequest({
+					expectedUpdatedAt: 1,
+					name: "Renamed",
+					description: "",
+					permissions: [],
+					namespaces: long.slice(0, 1),
+				}),
+			)
+			assert.strictEqual(role.name, "Renamed")
 		}).pipe(Effect.provide(layer))
 	})
 })
@@ -921,6 +1226,7 @@ describe("RolesService concurrent and partial writes", () => {
 
 	const narrowed: ReadonlyArray<Policy.Permission> = ["telemetry:read", "incidents:respond"]
 	const narrow = new UpdateRoleRequest({
+		namespaces: [],
 		expectedUpdatedAt: 1,
 		name: "On-call",
 		description: "",

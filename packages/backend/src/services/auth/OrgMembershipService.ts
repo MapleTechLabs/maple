@@ -83,6 +83,8 @@ const CachedMemberships = Schema.Struct({
 			role: RoleName,
 			// An `org:custom` membership's permission codes, from its public metadata.
 			permissionCodes: Schema.optionalKey(Schema.Array(Schema.Int)),
+			// The namespaces that membership is limited to, when its role names some.
+			namespaces: Schema.optionalKey(Schema.Array(Schema.String)),
 		}),
 	),
 	truncated: Schema.Boolean,
@@ -132,16 +134,17 @@ const decodeMembershipRow = (row: ClerkMembershipRow): Option.Option<CachedMembe
 		Option.all({ orgId: decodeOrgIdOption(row.organization.id), role: decodeRoleNameOption(row.role) }),
 		(membership): CachedMembership =>
 			membership.role === Policy.CUSTOM_ROLE_CLERK_KEY
-				? {
-						...membership,
-						permissionCodes: Option.match(
-							Policy.membershipRoleFromMetadata(row.public_metadata),
-							{
-								onNone: () => [],
-								onSome: (role) => role.permissions,
-							},
-						),
-					}
+				? Option.match(Policy.membershipRoleFromMetadata(row.public_metadata), {
+						onNone: () => ({ ...membership, permissionCodes: [] }),
+						onSome: (role) =>
+							role.namespaces === undefined
+								? { ...membership, permissionCodes: role.permissions }
+								: {
+										...membership,
+										permissionCodes: role.permissions,
+										namespaces: role.namespaces,
+									},
+					})
 				: membership,
 	)
 
@@ -149,6 +152,7 @@ const toVerified = (membership: CachedMembership): VerifiedOrgMembership => ({
 	orgId: membership.orgId,
 	role: membership.role,
 	customPermissions: Policy.decodeCustomPermissions(membership.permissionCodes ?? []),
+	customNamespaces: membership.namespaces ?? [],
 })
 
 /**

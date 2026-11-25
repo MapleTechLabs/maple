@@ -232,3 +232,137 @@ describe("custom role metadata", () => {
 		).toBe(true)
 	})
 })
+
+describe("namespace-limited roles", () => {
+	const scopedGrants = Policy.grantsOf(
+		[Policy.CUSTOM_ROLE_CLERK_KEY],
+		Policy.decodeCustomPermissions(Policy.encodePermissions([Policy.SCOPED_READ, "support:join"])),
+	)
+
+	it("holds the scoped read without Read telemetry, so a telemetry:read check refuses it", () => {
+		expect(scopedGrants).toEqual([Policy.SCOPED_READ, "support:join"])
+		expect(Policy.can(scopedGrants, "telemetry:read")).toBe(false)
+		expect(Policy.isScoped(scopedGrants)).toBe(true)
+	})
+
+	// Only the roles API keeps the two apart when a role is saved; stored codes are not trusted to.
+	it("stays limited when its stored codes also name a permission that needs all telemetry", () => {
+		const codes = Policy.encodePermissions([
+			Policy.SCOPED_READ,
+			"telemetry:read",
+			"alerts:manage",
+			"support:join",
+		])
+		expect(Policy.decodeCustomPermissions(codes)).toEqual([Policy.SCOPED_READ, "support:join"])
+	})
+
+	it("is never reached through another permission", () => {
+		for (const permission of Policy.allPermissions) {
+			if (permission === Policy.SCOPED_READ) continue
+			expect(Policy.withImplied([permission])).not.toContain(Policy.SCOPED_READ)
+		}
+		expect(Policy.withImplied([Policy.SCOPED_READ])).toEqual([Policy.SCOPED_READ])
+	})
+
+	it("keeps the built-in roles below Admin off the scoped read", () => {
+		for (const role of ["org:analyst", "org:member", "org:engineer"]) {
+			expect(Policy.can(presetOf(role), Policy.SCOPED_READ)).toBe(false)
+		}
+	})
+
+	it("lets a limited role hold only what reads no telemetry", () => {
+		expect(Policy.holdableWhenScoped("support:join")).toBe(true)
+		expect(Policy.holdableWhenScoped("devices:connect")).toBe(true)
+		// Billing reads the org's usage from the warehouse, whole.
+		expect(Policy.holdableWhenScoped("billing:manage")).toBe(false)
+		expect(Policy.holdableWhenScoped("telemetry:read")).toBe(false)
+		expect(Policy.holdableWhenScoped("query:sql")).toBe(false)
+		expect(Policy.holdableWhenScoped("ingest_keys:roll")).toBe(false)
+		expect(Policy.holdableWhenScoped(Policy.SCOPED_READ)).toBe(false)
+	})
+
+	it("reads everything with Read telemetry, whatever namespaces travel along", () => {
+		expect(Policy.dataScopeOf({ permissions: presetOf("org:admin"), namespaces: ["checkout"] })).toEqual(
+			Policy.ALL_DATA,
+		)
+	})
+
+	it("reads its namespaces with the scoped read, and none when they did not travel with it", () => {
+		expect(
+			Policy.dataScopeOf({ permissions: scopedGrants, namespaces: ["payments", "checkout"] }),
+		).toEqual({
+			_tag: "Namespaces",
+			namespaces: ["checkout", "payments"],
+		})
+		expect(Policy.dataScopeOf({ permissions: scopedGrants })).toEqual({
+			_tag: "Namespaces",
+			namespaces: [],
+		})
+	})
+
+	it("does not limit a caller that holds neither: the endpoint decides what it may call", () => {
+		expect(Policy.dataScopeOf({ permissions: ["billing:manage"], namespaces: ["checkout"] })).toEqual(
+			Policy.ALL_DATA,
+		)
+	})
+
+	it("narrows two scopes to the namespaces both name", () => {
+		const a: Policy.DataScope = { _tag: "Namespaces", namespaces: ["checkout", "payments"] }
+		const b: Policy.DataScope = { _tag: "Namespaces", namespaces: ["payments", "search"] }
+		expect(Policy.narrowDataScope(a, b)).toEqual({ _tag: "Namespaces", namespaces: ["payments"] })
+		expect(Policy.narrowDataScope(Policy.ALL_DATA, a)).toEqual(a)
+		expect(Policy.narrowDataScope(a, Policy.ALL_DATA)).toEqual(a)
+		expect(Policy.narrowDataScope(Policy.ALL_DATA, Policy.ALL_DATA)).toEqual(Policy.ALL_DATA)
+	})
+
+	it("keys two scopes alike only when they read the same namespaces", () => {
+		const key = (namespaces: ReadonlyArray<string>) =>
+			Policy.dataScopeKey({ _tag: "Namespaces", namespaces })
+		expect(key(["b", "a"])).toBe(key(["a", "b", "a"]))
+		// One namespace whose text reads like two is not the two.
+		expect(key(["a,b"])).not.toBe(key(["a", "b"]))
+		expect(key([])).not.toBe(Policy.dataScopeKey(Policy.ALL_DATA))
+	})
+
+	it("reads a membership's namespaces beside its permissions", () => {
+		const metadata = {
+			[Policy.MEMBERSHIP_ROLE_METADATA_KEY]: {
+				id: "role_abcdefabcdef",
+				permissions: Policy.encodePermissions([Policy.SCOPED_READ]),
+				namespaces: ["checkout"],
+			},
+		}
+		expect(Policy.customPermissionsFromMembershipMetadata(metadata)).toEqual([Policy.SCOPED_READ])
+		expect(Policy.namespacesFromMembershipMetadata(metadata)).toEqual(["checkout"])
+		expect(Policy.namespacesFromMembershipMetadata({})).toEqual([])
+	})
+
+	it("grants nothing when a membership's namespaces do not decode", () => {
+		const metadata = {
+			[Policy.MEMBERSHIP_ROLE_METADATA_KEY]: {
+				id: "role_abcdefabcdef",
+				permissions: Policy.encodePermissions(["telemetry:read"]),
+				namespaces: "checkout",
+			},
+		}
+		expect(Policy.customPermissionsFromMembershipMetadata(metadata)).toEqual([])
+		expect(Policy.namespacesFromMembershipMetadata(metadata)).toEqual([])
+	})
+
+	it("refuses more namespaces than a role may name", () => {
+		const tooMany = Arr.makeBy(Policy.MAX_ROLE_NAMESPACES + 1, (index) => `ns-${index}`)
+		expect(Schema.is(Policy.RoleNamespaces)(tooMany)).toBe(false)
+		expect(Schema.is(Policy.RoleNamespaces)(tooMany.slice(1))).toBe(true)
+		expect(Schema.is(Policy.RoleNamespaces)([" padded "])).toBe(false)
+	})
+
+	it("refuses a namespace that could not be written into a warehouse filter", () => {
+		for (const hostile of ["it's", "back\\slash", "semi;colon", "paren)", "new\nline", "a,b"]) {
+			expect(Policy.isScopeValue(hostile)).toBe(false)
+			expect(Schema.is(Policy.RoleNamespace)(hostile)).toBe(false)
+		}
+		for (const fine of ["checkout", "team/payments", "eu-west.prod_2", "søk", "a b", "x:y@z+1"]) {
+			expect(Schema.is(Policy.RoleNamespace)(fine)).toBe(true)
+		}
+	})
+})

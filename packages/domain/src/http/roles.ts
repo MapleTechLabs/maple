@@ -9,6 +9,7 @@ import {
 	CustomRoleId,
 	CustomRoleName,
 	PermissionName,
+	RoleNamespaces,
 } from "../policy"
 import { EndpointAccess, requires } from "./endpoint-access"
 import { SessionAuthorization } from "./current-tenant"
@@ -50,6 +51,8 @@ export class CustomRoleResponse extends Schema.Class<CustomRoleResponse>("Custom
 	name: Schema.String,
 	description: Schema.String,
 	permissions: Schema.Array(PermissionName),
+	/** The `service.namespace` values the role is limited to; absent or empty when it reads every namespace. */
+	namespaces: Schema.optionalKey(Schema.Array(Schema.String)),
 	memberCount: Schema.Number,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
@@ -73,6 +76,8 @@ export class CreateRoleRequest extends Schema.Class<CreateRoleRequest>("CreateRo
 	name: CustomRoleName,
 	description: Schema.optionalKey(CustomRoleDescription),
 	permissions: Schema.Array(PermissionName),
+	/** Limit the role to these namespaces. It then holds `telemetry:read_scoped`, not `telemetry:read`. */
+	namespaces: Schema.optionalKey(RoleNamespaces),
 }) {}
 
 /** The whole role as the editor saves it. */
@@ -80,6 +85,8 @@ export class UpdateRoleRequest extends Schema.Class<UpdateRoleRequest>("UpdateRo
 	name: CustomRoleName,
 	description: CustomRoleDescription,
 	permissions: Schema.Array(PermissionName),
+	/** Empty lifts the limit. Absent keeps it, so an editor that predates namespaces cannot lift one. */
+	namespaces: Schema.optionalKey(RoleNamespaces),
 	/** The `updatedAt` the editor loaded: another save since is a `concurrent_edit`, not overwritten. */
 	expectedUpdatedAt: Schema.Number,
 }) {}
@@ -154,7 +161,8 @@ export class RoleMemberNotFoundError extends HttpTaggedError<RoleMemberNotFoundE
 
 /**
  * The request is well formed but cannot be done: a taken name, the role limit, a role still held,
- * or other admins changing the roles at the same moment.
+ * a namespace-limited role given a permission that needs all telemetry, or other admins changing
+ * the roles at the same moment.
  */
 export class RoleConflictError extends HttpTaggedError<RoleConflictError>()(
 	"@maple/http/roles/RoleConflictError",
@@ -165,6 +173,7 @@ export class RoleConflictError extends HttpTaggedError<RoleConflictError>()(
 			"limit_reached",
 			"in_use",
 			"not_grantable",
+			"needs_all_telemetry",
 			"last_admin",
 			"self",
 			"concurrent_edit",

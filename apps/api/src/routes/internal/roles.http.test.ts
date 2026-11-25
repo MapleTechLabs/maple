@@ -31,6 +31,7 @@ const created = new CustomRoleResponse({
 	name: "On-call",
 	description: "",
 	permissions: ["telemetry:read"],
+	namespaces: [],
 	memberCount: 0,
 	createdAt: 1,
 	updatedAt: 1,
@@ -145,6 +146,7 @@ describe("/internal/roles", () => {
 			name: "Responders",
 			description: "",
 			permissions: ["telemetry:read"],
+			namespaces: [],
 			expectedUpdatedAt: 1,
 		})
 		expect(response.status).toBe(200)
@@ -155,6 +157,18 @@ describe("/internal/roles", () => {
 				metadata: { roleId: "role_oncall000000", name: "Responders", memberCount: 0 },
 			},
 		])
+	})
+
+	// An editor that predates namespaces sends none: the service then keeps the role's limit.
+	it("accepts an update that says nothing about namespaces", async () => {
+		const harness = makeHarness("org:admin")
+		const response = await harness.send("PATCH", "/role_oncall000000", {
+			name: "Responders",
+			description: "",
+			permissions: ["telemetry:read"],
+			expectedUpdatedAt: 1,
+		})
+		expect(response.status).toBe(200)
 	})
 
 	it("refuses an update that leaves a field out", async () => {
