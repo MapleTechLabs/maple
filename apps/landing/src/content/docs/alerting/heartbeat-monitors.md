@@ -82,7 +82,7 @@ A new monitor starts as **pending** and waits for its first ping. The monitor's 
 - **Failure ping.** A ping to `/fail` puts the monitor down at once, with the error "The job reported a failure".
 - **Recovery.** The next success ping puts the monitor back up.
 
-Maple checks each heartbeat every minute. A down monitor opens an [incident](/docs/alerting/incidents) and notifies its destinations, then notifies them again every 30 minutes while it stays down. Maple resolves the incident on the next check after a success ping.
+Maple checks each heartbeat every minute. A down monitor opens an [incident](/docs/alerting/incidents) and notifies its destinations, then notifies them again every 30 minutes while it stays down and nobody has acknowledged the incident. Maple resolves the incident on the next check after a success ping.
 
 When the job pings at its end, the grace period has to cover how long the job runs. A job on `0 2 * * *` that runs for 40 minutes pings at 02:40, so with a 30-minute grace period the monitor goes down at 02:30 every night and recovers at 02:40. Set the grace period above the job's longest run.
 
