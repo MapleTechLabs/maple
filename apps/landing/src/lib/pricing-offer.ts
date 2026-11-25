@@ -252,13 +252,13 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 	hasTrial: true,
 	trialDuration: 14,
 	allotments: [
-		{ featureId: "logs", label: labels.logs, unit: "gb", included: 100, rate: 0.3, rateUnits: 1 },
+		{ featureId: "logs", label: labels.logs, unit: "gb", included: 100, rate: 0.15, rateUnits: 1 },
 		{
 			featureId: "traces",
 			label: labels.traces,
 			unit: "gb",
 			included: 100,
-			rate: 0.3,
+			rate: 0.15,
 			rateUnits: 1,
 		},
 		{
@@ -266,7 +266,7 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 			label: labels.metrics,
 			unit: "gb",
 			included: 100,
-			rate: 0.3,
+			rate: 0.15,
 			rateUnits: 1,
 		},
 		{

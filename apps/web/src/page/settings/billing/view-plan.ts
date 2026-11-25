@@ -309,7 +309,7 @@ const offerPanel = (
 					]),
 					h.p(
 						[h.Class("mt-3 text-2xs leading-relaxed text-muted-foreground")],
-						["Everything in Maple. Pay per GB past what's included."],
+						["Everything in Maple. Pay per GB past what's included, and per GB-month stored."],
 					),
 				],
 			),

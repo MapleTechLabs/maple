@@ -46,7 +46,7 @@ const rateText = (a: Allotment): string => {
 	return m.pricing_rate_gb({ rate })
 }
 
-/** "Traces: 100 GB included, then $0.30 / GB". */
+/** "Traces: 100 GB included, then $0.15 / GB". */
 export const meterLine = (a: Allotment): string =>
 	`${a.label}: ${m.pricing_rate_included({ amount: volume(a, a.included) })}, ${rateText(a)}`
 

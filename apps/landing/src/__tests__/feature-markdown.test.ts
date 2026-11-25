@@ -31,7 +31,7 @@ describe("feature page markdown twins", () => {
 
 	it("quotes the per-GB rate on a metered feature and the retention period", async () => {
 		const text = await renderFeature("log-management")
-		expect(text).toContain("Logs: 100 GB included, then $0.30 / GB")
+		expect(text).toContain("Logs: 100 GB included, then $0.15 / GB")
 		expect(text).toMatch(/- \*\*retention\*\*: Log lines 30 days/)
 		expect(text).toContain("](https://maple.dev/docs/explore/logs.md)")
 	})
