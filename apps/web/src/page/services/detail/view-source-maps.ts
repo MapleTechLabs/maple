@@ -71,7 +71,8 @@ export const sourceMapsPanel = (h: H, model: Model, clock: Clock): Html => {
 	const commit = repositoryCommit(model, release.version)
 	// Any of the service's maps, not only the newest release's: older builds still serve clients.
 	const lastUsed = lastUsedOf(maps)
-	const fileCount = `${release.maps.length}${maps.length === SERVICE_SOURCE_MAPS_LIMIT && release.maps.length === maps.length ? "+" : ""}`
+	// A full page may hold back more of the release: a re-upload interleaves it with older builds.
+	const fileCount = `${release.maps.length}${maps.length === SERVICE_SOURCE_MAPS_LIMIT ? "+" : ""}`
 	const header: PanelHeaderOptions = {
 		title: "Source maps",
 		scope: typography(h, { size: "2xs", tone: "subtle" }, ["stack traces map to your code"]),

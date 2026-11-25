@@ -127,6 +127,22 @@ describe("service detail, Source maps card", () => {
 		)
 	})
 
+	test("a full page mixing releases marks the newest release's count as possibly incomplete", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withSourceMaps([
+					sourceMap(SHA, 0),
+					...Array.from({ length: SERVICE_SOURCE_MAPS_LIMIT - 1 }, (_, index) =>
+						sourceMap(OLD_SHA, index + 1),
+					),
+				]),
+			),
+			...mounted,
+			expectView(text("1+")).toExist(),
+		)
+	})
+
 	test("unversioned uploads show no release and no file count", () => {
 		scene(
 			{ update: pageUpdate, view },
