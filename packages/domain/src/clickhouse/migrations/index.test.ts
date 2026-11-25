@@ -377,15 +377,13 @@ describe("migration 0076: span projections and product events carry their retent
 	const creates = Arr.filter(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
 	const viewName = (stmt: string) => Arr.getUnsafe(Str.split(" ")(stmt), 6)
 
-	it("adds the columns, then drops each view before creating it as the schema ships it", () => {
-		const kinds = Arr.map(statements, (stmt) =>
-			Str.startsWith("ALTER TABLE")(stmt) ? 0 : Str.startsWith("DROP VIEW")(stmt) ? 1 : 2,
-		)
-		expect(kinds).toEqual([...kinds].sort())
-		const drops = Arr.filter(statements, (stmt) => Str.startsWith("DROP VIEW")(stmt))
-		expect(Arr.map(drops, (stmt) => Str.replace("DROP VIEW IF EXISTS ", "")(stmt))).toEqual(
-			Arr.map(creates, viewName),
-		)
+	it("adds the columns, then drops each view right before creating it as the schema ships it", () => {
+		const alters = Arr.takeWhile(statements, (stmt) => Str.startsWith("ALTER TABLE")(stmt))
+		// Each view is recreated in the next statement, so its gap is one statement wide.
+		const pairs = Arr.chunksOf(Arr.drop(statements, alters.length), 2)
+		expect(
+			Arr.map(pairs, ([drop, create]) => [drop, create === undefined ? "" : viewName(create)]),
+		).toEqual(Arr.map(creates, (create) => [`DROP VIEW IF EXISTS ${viewName(create)}`, viewName(create)]))
 		for (const create of creates) {
 			expect(latestSnapshotStatements, viewName(create)).toContain(create)
 		}
