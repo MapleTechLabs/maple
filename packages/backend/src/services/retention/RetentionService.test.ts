@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Fiber, Layer, Result, Schema } from "effect"
+import { Array as Arr, Deferred, Effect, Fiber, Layer, Result, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, SourceId, UserId } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
@@ -305,6 +305,35 @@ describe("RetentionService.readHorizon", () => {
 				const reads = database.calls
 				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, ["traces"])
 				assert.strictEqual(database.calls, reads)
+			}),
+		),
+	)
+
+	it.effect("a write's slower read-back does not undo a write that landed beside it", () =>
+		withSwitchableDb((database, db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const first = yield* source(db, ORG, "nodejs")
+				const second = yield* source(db, ORG, "python")
+				yield* retention.readHorizon(ORG)
+				// Hold what the slow write reads back: the policy from before the other write.
+				const parked = yield* Deferred.make<void>()
+				const release = yield* Deferred.make<void>()
+				const readBack = database.calls + 2
+				database.afterCall = (call) =>
+					call === readBack
+						? Effect.andThen(Deferred.succeed(parked, undefined), Deferred.await(release))
+						: Effect.void
+				const slow = yield* Effect.forkChild(retention.setSource(ORG, ANA, second, { logs: 400 }))
+				yield* Deferred.await(parked)
+				yield* retention.setSource(ORG, ANA, first, { traces: 90 })
+				yield* Deferred.succeed(release, undefined)
+				yield* Fiber.join(slow)
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).days, {
+					...DEFAULT_RETENTION_DAYS,
+					traces: 90,
+					logs: 400,
+				})
 			}),
 		),
 	)

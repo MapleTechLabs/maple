@@ -78,6 +78,10 @@ export const Sources = PG.table("sources", {
 		PG.uniqueIndex<SourcesColumns>("sources_org_default_kind_unique", ["orgId"], {
 			where: ($) => $.kind.eq("default"),
 		}),
+		// The read path loads every source that keeps a signal for a period of its own.
+		PG.index<SourcesColumns>("sources_retention_overrides_idx", ["orgId"], {
+			where: ($) => $.retentionDays.neq({}),
+		}),
 	],
 	tenantColumn: "orgId",
 })

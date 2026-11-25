@@ -109,11 +109,16 @@ export interface ReadHorizonMemoState {
 	refreshStartedAt: number | undefined
 	/** This isolate's own policy writes, kept until a snapshot read after them is loaded. */
 	readonly written: Map<string, { readonly horizon: RetentionReadHorizon; readonly atMs: number }>
+	/** Read-backs after a write, numbered as they start, and the latest started per organization. */
+	readBacks: number
+	readonly latestReadBack: Map<string, number>
 }
 export const makeReadHorizonMemo = (): ReadHorizonMemoState => ({
 	known: undefined,
 	refreshStartedAt: undefined,
 	written: new Map(),
+	readBacks: 0,
+	latestReadBack: new Map(),
 })
 const isolateReadHorizonMemo = makeReadHorizonMemo()
 
@@ -386,13 +391,23 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 			/**
 			 * A write is read back by its own instance at once. The shared entry is dropped, so
 			 * the others follow as their own copy expires, within the TTL.
+			 *
+			 * Two writes to one organization can commit side by side, each from a snapshot
+			 * without the other, so the policy is read again after the commit and the
+			 * read-back that started last is the one kept.
 			 */
-			const rememberPolicy = (orgId: OrgId, policy: RetentionPolicy) =>
+			const rememberPolicy = (orgId: OrgId, written: RetentionPolicy) =>
 				Effect.gen(function* () {
-					const horizon = readHorizonOf(policy)
-					state.written.set(orgId, { horizon, atMs: yield* Clock.currentTimeMillis })
-					if (horizon.configured.length > 0) state.known?.byOrg.set(orgId, horizon)
-					else state.known?.byOrg.delete(orgId)
+					state.readBacks += 1
+					const readBack = state.readBacks
+					state.latestReadBack.set(orgId, readBack)
+					const policy = yield* Effect.orElseSucceed(get(orgId), () => written)
+					if (state.latestReadBack.get(orgId) === readBack) {
+						const horizon = readHorizonOf(policy)
+						state.written.set(orgId, { horizon, atMs: yield* Clock.currentTimeMillis })
+						if (horizon.configured.length > 0) state.known?.byOrg.set(orgId, horizon)
+						else state.known?.byOrg.delete(orgId)
+					}
 					yield* edgeCache.invalidate({
 						bucket: READ_HORIZON_CACHE_BUCKET,
 						key: READ_HORIZON_CACHE_KEY,
