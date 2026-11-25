@@ -7,6 +7,7 @@ import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import * as Policy from "@maple/domain/policy"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
+import { latestRelease, SERVICE_SOURCE_MAPS_LIMIT } from "../../kit/source-maps"
 import { ENDPOINTS_LIMIT } from "./service-endpoints"
 import { buildServiceOpenIssuesQuery } from "../../../data/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
@@ -42,6 +43,7 @@ import {
 	FetchProfile,
 	FetchRefinement,
 	FetchUptimeMonitors,
+	FetchSourceMaps,
 	FetchUsage,
 	FetchWorkloads,
 	FetchRuntimes,
@@ -222,7 +224,13 @@ const overviewShas = (model: Model): ReadonlyArray<string> => {
 		railOrder(deployChecksOf(model)).slice(0, model.isDeploysExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL),
 		(check) => check.sha,
 	)
-	return [...new Set([...markers, ...Arr.filter(rows, isResolvableSha)])]
+	// The Source maps card links its release's commit, which may predate the window's deploys.
+	const release = Option.match(AsyncData.getData(model.sourceMaps.data), {
+		onNone: () => undefined,
+		onSome: (page) => latestRelease(page.maps)?.version,
+	})
+	const uploaded = release === undefined || release === null ? [] : [release]
+	return [...new Set([...markers, ...Arr.filter([...rows, ...uploaded], isResolvableSha)])]
 }
 
 export const DEPLOYS_RAIL = 8
@@ -330,6 +338,17 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 			mode,
 			(uptimeMonitors) => ({ uptimeMonitors }),
 			(key) => FetchUptimeMonitors({ key }),
+		),
+	// Not windowed either: uploads come with deploys, not with the time range.
+	(model) =>
+		keyed(
+			model.sourceMaps,
+			requestKey(context.orgId, "sourceMaps.list", {
+				query: { service: model.serviceName, limit: SERVICE_SOURCE_MAPS_LIMIT },
+			}),
+			mode,
+			(sourceMaps) => ({ sourceMaps }),
+			(key) => FetchSourceMaps({ key, serviceName: model.serviceName }),
 		),
 ]
 
@@ -661,6 +680,7 @@ export const init = (
 		usage: Keyed.idle(),
 		uptimeMonitors: Keyed.idle(),
 		canCreateUptimeMonitors: false,
+		sourceMaps: Keyed.idle(),
 		workloads: Keyed.idle(),
 		runtimes: Keyed.idle(),
 		dependencies: Keyed.idle(),
@@ -953,6 +973,8 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				canCreateUptimeMonitors: Policy.can(grants, "uptime_monitors:manage"),
 			},
 		}),
+		CompletedFetchSourceMaps: ({ key, result }) =>
+			sync({ ...model, sourceMaps: Keyed.accept(model.sourceMaps, key, result) }, context, "Load"),
 		CompletedFetchRuntimes: ({ key, result }) => ({
 			model: { ...model, runtimes: Keyed.accept(model.runtimes, key, result) },
 		}),

@@ -24,12 +24,14 @@ import { footprintPanel } from "./view-footprint"
 import { deployCallout, healthStrip } from "./view-health"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
 import { uptimePanel } from "./view-uptime"
+import { sourceMapsPanel } from "./view-source-maps"
 import { vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { CHART_TOKENS } from "../../kit/service-metrics/grid"
 
 // The Overview tab, in triage order: the deploy that needs a look, the signals now, the charts,
-// what broke and what shipped, the busiest operations, then where the service runs.
+// what broke and what shipped, the busiest operations, then uptime, source maps and where the
+// service runs.
 
 type H = HtmlBuilder<Message>
 
@@ -100,8 +102,11 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 			ISSUES_DETAIL_LIMIT_MS
 	const clock = { nowMs, timeZone: context.timeZone }
 	const deploys = deployChecksOf(model)
-	const uptime = uptimePanel(h, model)
-	const footprint = footprintPanel(h, model, envFilterActive)
+	// The optional cards share one two-column row; alone, a card takes the full width.
+	const sideCards = Arr.filter(
+		[uptimePanel(h, model), sourceMapsPanel(h, model, clock), footprintPanel(h, model, envFilterActive)],
+		(card) => card !== null,
+	)
 	return vstack(h, { gap: "3" }, [
 		deployCallout(h, model, deploys),
 		healthStrip(h, model, isDetailLoading),
@@ -123,7 +128,7 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 			deploysPanel(h, model, clock),
 		]),
 		topOperationsPanel(h, model, model.themeColors),
-		uptime === null ? footprint : grid(h, { lg: 2, gap: "3" }, [uptime, footprint]),
+		sideCards.length <= 1 ? (sideCards[0] ?? null) : grid(h, { lg: 2, gap: "3" }, sideCards),
 		deployDrawer(h, model, context, deploys),
 	])
 }
