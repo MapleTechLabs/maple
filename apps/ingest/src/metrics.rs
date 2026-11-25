@@ -1097,6 +1097,7 @@ pub fn native_sampled_dropped(signal: &str, count: u64) {
 pub fn tinybird_export_succeeded(
     destination: &str,
     datasource: &str,
+    retention_days: Option<u16>,
     duration_secs: f64,
     rows: u64,
 ) {
@@ -1113,17 +1114,31 @@ pub fn tinybird_export_succeeded(
         &[
             KeyValue::new("destination", destination.to_owned()),
             KeyValue::new("datasource", datasource.to_owned()),
+            KeyValue::new("retention_days", retention_days_label(retention_days)),
         ],
     );
 }
 
+/// The stamp a batch's rows carry: one of the ten ladder periods, or `none` for a
+/// table no retention policy reaches.
+fn retention_days_label(retention_days: Option<u16>) -> String {
+    retention_days.map_or_else(|| "none".to_owned(), |days| days.to_string())
+}
+
 /// Rows dropped while exporting to Tinybird (`status` is an HTTP code or `retries_exhausted`).
-pub fn tinybird_export_dropped(destination: &str, datasource: &str, status: &str, rows: u64) {
+pub fn tinybird_export_dropped(
+    destination: &str,
+    datasource: &str,
+    retention_days: Option<u16>,
+    status: &str,
+    rows: u64,
+) {
     TINYBIRD_EXPORT_DROPPED_TOTAL.add(
         rows,
         &[
             KeyValue::new("destination", destination.to_owned()),
             KeyValue::new("datasource", datasource.to_owned()),
+            KeyValue::new("retention_days", retention_days_label(retention_days)),
             KeyValue::new("status", status.to_owned()),
         ],
     );

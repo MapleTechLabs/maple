@@ -101,11 +101,12 @@ const claimVisit = (visitor: string, token: string) =>
 	`INSERT INTO cookieless_visits AS v (org_id, visitor_id, visit_token, last_seen_at) VALUES ('o', '${visitor}', '${token}', now()) ON CONFLICT (org_id, visitor_id) DO UPDATE SET visit_token = CASE WHEN v.last_seen_at < now() - 1920000::bigint * interval '1 millisecond' THEN EXCLUDED.visit_token ELSE v.visit_token END, last_seen_at = now() RETURNING visit_token = '${token}' AS new_visit`
 
 const gatewayStatements = [
-	"SELECT k.org_id, s.sync_status, ds.id FROM org_ingest_keys k LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.kind = 'default' WHERE k.private_key_hash = 'x' LIMIT 1",
-	"SELECT k.id, k.allowed_signals, s.sync_status FROM sources k LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id WHERE k.key_hash = 'x' LIMIT 1",
-	"SELECT c.org_id, src.id FROM cloudflare_logpush_connectors c LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id LEFT JOIN sources src ON src.id = c.source_id AND src.org_id = c.org_id WHERE c.id = 'x' LIMIT 1",
-	"SELECT c.org_id, c.project_id FROM gcp_connectors c LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id WHERE c.id = 'x' LIMIT 1",
-	"SELECT c.org_id FROM aws_connections c LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id WHERE c.id = 'x' LIMIT 1",
+	"SELECT k.org_id, s.sync_status, ds.id, ds.retention_days::text, rp.retention_days::text FROM org_ingest_keys k LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.kind = 'default' LEFT JOIN org_retention_policies rp ON rp.org_id = k.org_id WHERE k.private_key_hash = 'x' LIMIT 1",
+	"SELECT k.id, k.allowed_signals, s.sync_status, k.retention_days::text, rp.retention_days::text FROM sources k LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id LEFT JOIN org_retention_policies rp ON rp.org_id = k.org_id WHERE k.key_hash = 'x' LIMIT 1",
+	"SELECT id, retention_days::text FROM sources WHERE org_id = 'o' AND id = ANY(ARRAY['x']) AND kind = 'integration'",
+	"SELECT c.org_id, src.id, src.retention_days::text, rp.retention_days::text FROM cloudflare_logpush_connectors c LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id LEFT JOIN sources src ON src.id = c.source_id AND src.org_id = c.org_id LEFT JOIN org_retention_policies rp ON rp.org_id = c.org_id WHERE c.id = 'x' LIMIT 1",
+	"SELECT c.org_id, c.project_id, src.retention_days::text, rp.retention_days::text FROM gcp_connectors c LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id LEFT JOIN sources src ON src.id = c.source_id AND src.org_id = c.org_id LEFT JOIN org_retention_policies rp ON rp.org_id = c.org_id WHERE c.id = 'x' LIMIT 1",
+	"SELECT c.org_id, src.retention_days::text, rp.retention_days::text FROM aws_connections c LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id LEFT JOIN sources src ON src.id = c.source_id AND src.org_id = c.org_id LEFT JOIN org_retention_policies rp ON rp.org_id = c.org_id WHERE c.id = 'x' LIMIT 1",
 	"SELECT trace_sample_ratio FROM org_ingest_sampling_policies WHERE org_id = 'x' LIMIT 1",
 	"SELECT source_key, target_key FROM org_ingest_attribute_mappings WHERE org_id = 'x' AND enabled = true",
 	"SELECT project_id, name FROM vercel_projects WHERE org_id = 'x'",
@@ -129,6 +130,7 @@ const outsideTheGateway = [
 	"SELECT count(*) FROM api_keys",
 	"UPDATE org_ingest_keys SET private_key_hash = 'x' WHERE org_id = 'x'",
 	"DELETE FROM sources WHERE id = 'x'",
+	"UPDATE org_retention_policies SET retention_days = '{}' WHERE org_id = 'x'",
 	"INSERT INTO sources SELECT * FROM sources WHERE false",
 	"TRUNCATE org_ingest_rule_stats",
 	"CREATE TABLE public.injected (id int)",

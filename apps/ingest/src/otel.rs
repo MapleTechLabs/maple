@@ -500,6 +500,8 @@ pub fn export_client_span(
         "maple.ingest.datasource" = datasource,
         "maple.ingest.attempt" = attempt,
         "maple.ingest.row_count" = rows,
+        // The one stamp a Tinybird batch's rows carry; unset for unstamped tables.
+        "maple.ingest.retention_days" = Empty,
         "maple.ingest.outcome" = Empty,
         "maple.org_id" = Empty,
     )

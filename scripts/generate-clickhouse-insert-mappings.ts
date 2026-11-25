@@ -8,7 +8,7 @@ import { clickHouseSchemaVersion } from "../packages/domain/src/clickhouse/migra
 import { projectRevision as clickHouseProjectRevision } from "../packages/domain/src/generated/clickhouse-schema"
 import {
 	INGEST_INSERT_DATASOURCES,
-	INGEST_UNWRITTEN_COLUMNS,
+	SELF_MANAGED_INSERT_OMITTED_COLUMNS,
 	INGEST_WRITTEN_DATASOURCES,
 } from "../packages/domain/src/tinybird/ingest-token"
 import { buildTinybirdProjectManifest } from "../packages/domain/src/tinybird/project-manifest"
@@ -166,10 +166,10 @@ function buildMapping(
 		if (
 			jsonPath === null ||
 			(hasDefaultExpression && isComputedIdentityPath) ||
-			INGEST_UNWRITTEN_COLUMNS.has(column)
+			SELF_MANAGED_INSERT_OMITTED_COLUMNS.has(column)
 		) {
-			// No JSON path, a computed DEFAULT column the gateway never emits, or one it does not
-			// write yet. Omit it so ClickHouse/Tinybird computes the default expression.
+			// No JSON path, a computed DEFAULT column the gateway never emits, or one it leaves
+			// out for self-managed clusters. Omit it so ClickHouse/Tinybird computes the default expression.
 			continue
 		}
 		const leaf = jsonLeaf(table, column, jsonPath)

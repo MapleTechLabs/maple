@@ -2,7 +2,8 @@
 //! A row repeats its resource, scope and metric strings, so the rows are not bounded
 //! by the request's size. Mirrors `telemetry`'s encoders: never below what they write.
 
-use crate::telemetry::{self, AttributeMappingRule, RowKind, SamplingPolicy};
+use crate::retention::RetentionSignal;
+use crate::telemetry::{self, AttributeMappingRule, RowKind, SamplingPolicy, SourceStamps};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
@@ -337,6 +338,8 @@ pub struct RowPiece {
     pub start: usize,
     pub end: usize,
     pub estimate: RowEstimate,
+    /// The `retention_days` every row of the piece is stamped with.
+    pub retention_days: u16,
 }
 
 /// A request's rows, split into pieces that are each built, reserved and written alone.
@@ -369,6 +372,8 @@ struct Open {
     resource_work: u64,
     scope_work: u64,
     row_work: u64,
+    /// What its rows are stamped with; set by its first row.
+    retention_days: u16,
 }
 
 struct Tally {
@@ -380,24 +385,37 @@ struct Tally {
     index: usize,
     resource_work: u64,
     scope_work: u64,
+    /// What the current resource's rows are stamped with.
+    retention_days: u16,
 }
 
 impl Tally {
-    fn new(piece_bytes: u64) -> Self {
+    /// `retention_days` is what a request with no resource is stamped with.
+    fn new(piece_bytes: u64, retention_days: u16) -> Self {
         Self {
             piece_bytes: piece_bytes.max(1),
             total: RowEstimate::default(),
             pieces: Vec::new(),
-            open: Open::default(),
+            open: Open {
+                retention_days,
+                ..Open::default()
+            },
             index: 0,
             resource_work: 0,
             scope_work: 0,
+            retention_days,
         }
     }
 
     /// Entering a resource or a scope: its map is built by every piece that reaches it.
-    fn resource(&mut self, work: u64) {
+    /// A resource stored for another period than the open piece's rows ends that piece:
+    /// a piece becomes a frame per datasource, and a frame holds one period.
+    fn resource(&mut self, work: u64, retention_days: u16) {
         self.resource_work = work;
+        self.retention_days = retention_days;
+        if self.open.estimate.rows > 0 && self.open.retention_days != retention_days {
+            self.close();
+        }
     }
 
     fn scope(&mut self, work: u64) {
@@ -425,6 +443,7 @@ impl Tally {
             self.close();
         }
         self.touch();
+        self.open.retention_days = self.retention_days;
         for estimate in [&mut self.open.estimate, &mut self.total] {
             let slot = &mut estimate.payload_bytes[kind.slot()];
             *slot = slot.saturating_add(len);
@@ -449,8 +468,10 @@ impl Tally {
             start: open.start,
             end: self.index,
             estimate,
+            retention_days: open.retention_days,
         });
         self.open.start = self.index;
+        self.open.retention_days = self.retention_days;
     }
 
     fn finish(mut self, routing_key: u64) -> RowPlan {
@@ -473,23 +494,26 @@ pub fn trace_rows(
     policy: &SamplingPolicy,
     mappings: &[AttributeMappingRule],
 ) -> RowEstimate {
-    trace_plan(org_id, request, policy, mappings, u64::MAX).total
+    let stamps = SourceStamps::uniform(RetentionSignal::Traces.default_stamp());
+    trace_plan(org_id, request, policy, mappings, u64::MAX, stamps).total
 }
 
-/// `trace_rows`, split into pieces of about `piece_bytes` of rows each.
+/// `trace_rows`, split into pieces of about `piece_bytes` of rows each, and where
+/// `stamps` stores a resource for another period than the one before it.
 pub fn trace_plan(
     org_id: &str,
     request: &ExportTraceServiceRequest,
     policy: &SamplingPolicy,
     mappings: &[AttributeMappingRule],
     piece_bytes: u64,
+    stamps: SourceStamps<'_>,
 ) -> RowPlan {
     let sampling = policy.samples();
     let mappings = Mappings::of(mappings);
-    let mut tally = Tally::new(piece_bytes);
+    let mut tally = Tally::new(piece_bytes, stamps.of(None));
     for resource_spans in &request.resource_spans {
         let resource = resource_cost(resource_spans.resource.as_ref(), &resource_spans.schema_url);
-        tally.resource(resource.work);
+        tally.resource(resource.work, stamps.of(resource_spans.resource.as_ref()));
         for scope_spans in &resource_spans.scope_spans {
             let scope = scope_cost(scope_spans.scope.as_ref(), &scope_spans.schema_url);
             tally.scope(scope.work);
@@ -541,15 +565,21 @@ pub fn trace_plan(
 
 /// The rows `request` encodes to: one per log record.
 pub fn log_rows(request: &ExportLogsServiceRequest) -> RowEstimate {
-    log_plan("", request, u64::MAX).total
+    let stamps = SourceStamps::uniform(RetentionSignal::Logs.default_stamp());
+    log_plan("", request, u64::MAX, stamps).total
 }
 
-/// `log_rows`, split into pieces of about `piece_bytes` of rows each.
-pub fn log_plan(org_id: &str, request: &ExportLogsServiceRequest, piece_bytes: u64) -> RowPlan {
-    let mut tally = Tally::new(piece_bytes);
+/// `log_rows`, split into pieces as `trace_plan` splits spans.
+pub fn log_plan(
+    org_id: &str,
+    request: &ExportLogsServiceRequest,
+    piece_bytes: u64,
+    stamps: SourceStamps<'_>,
+) -> RowPlan {
+    let mut tally = Tally::new(piece_bytes, stamps.of(None));
     for resource_logs in &request.resource_logs {
         let resource = resource_cost(resource_logs.resource.as_ref(), &resource_logs.schema_url);
-        tally.resource(resource.work);
+        tally.resource(resource.work, stamps.of(resource_logs.resource.as_ref()));
         for scope_logs in &resource_logs.scope_logs {
             let scope = scope_cost(scope_logs.scope.as_ref(), &scope_logs.schema_url);
             tally.scope(scope.work);
@@ -612,22 +642,24 @@ fn exemplars_cost(exemplars: &[Exemplar]) -> Cost {
 /// The rows `request` encodes to: one per data point, each repeating its metric's
 /// name, description and unit. Summaries are not stored.
 pub fn metric_rows(request: &ExportMetricsServiceRequest) -> RowEstimate {
-    metric_plan("", request, u64::MAX).total
+    let stamps = SourceStamps::uniform(RetentionSignal::Metrics.default_stamp());
+    metric_plan("", request, u64::MAX, stamps).total
 }
 
-/// `metric_rows`, split into pieces of about `piece_bytes` of rows each.
+/// `metric_rows`, split into pieces as `trace_plan` splits spans.
 pub fn metric_plan(
     org_id: &str,
     request: &ExportMetricsServiceRequest,
     piece_bytes: u64,
+    stamps: SourceStamps<'_>,
 ) -> RowPlan {
-    let mut tally = Tally::new(piece_bytes);
+    let mut tally = Tally::new(piece_bytes, stamps.of(None));
     for resource_metrics in &request.resource_metrics {
         let resource = resource_cost(
             resource_metrics.resource.as_ref(),
             &resource_metrics.schema_url,
         );
-        tally.resource(resource.work);
+        tally.resource(resource.work, stamps.of(resource_metrics.resource.as_ref()));
         for scope_metrics in &resource_metrics.scope_metrics {
             let scope = scope_cost(scope_metrics.scope.as_ref(), &scope_metrics.schema_url);
             tally.scope(scope.work);

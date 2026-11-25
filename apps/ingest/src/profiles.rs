@@ -95,6 +95,8 @@ pub struct ResourceStamps {
     pub defaults: Vec<(String, String)>,
     /// Set whatever the sender sent.
     pub set: Vec<(String, String)>,
+    /// The period the rows' source keeps profiles for, written on every row.
+    pub retention_days: Option<u16>,
 }
 
 /// A source's resource overrides: `set` replaces whatever the sender sent, `defaults` fill a
@@ -282,6 +284,7 @@ pub fn flatten<'a>(
         meter,
         new_profile_id,
         max_row_bytes,
+        retention_days: stamps.retention_days,
         rows: Vec::new(),
         dropped_rows: 0,
         rejected_profiles: 0,
@@ -1013,10 +1016,12 @@ struct Row<'r, 'a> {
     trace_id: String,
     span_id: String,
     sample_attributes: Attributes<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retention_days: Option<u16>,
 }
 
 /// The keys, ids and numbers of a row, before anything the sender sized.
-const ROW_FIXED_BYTES: usize = 640;
+const ROW_FIXED_BYTES: usize = 672;
 /// A resolved stack or a group in its map, beyond what its frames take.
 const ENTRY_BYTES: usize = 256;
 
@@ -1027,6 +1032,8 @@ struct Flattener<'a, 'r> {
     meter: Meter<'r>,
     new_profile_id: &'r mut dyn FnMut() -> [u8; 16],
     max_row_bytes: usize,
+    /// What every row is stamped with; the gateway's, never the sender's.
+    retention_days: Option<u16>,
     rows: Vec<Vec<u8>>,
     dropped_rows: usize,
     rejected_profiles: usize,
@@ -1198,6 +1205,7 @@ impl<'a> Flattener<'a, '_> {
                 trace_id: id(|link| &link.trace_id, TRACE_ID_BYTES, "link.traceId")?,
                 span_id: id(|link| &link.span_id, SPAN_ID_BYTES, "link.spanId")?,
                 sample_attributes,
+                retention_days: self.retention_days,
             };
             let mut line = Vec::with_capacity(row_len);
             serde_json::to_writer(&mut line, &row)
@@ -2342,6 +2350,7 @@ mod tests {
                 ("team".to_owned(), "payments".to_owned()),
             ],
             set: vec![("maple_org_id".to_owned(), "org_real".to_owned())],
+            retention_days: None,
         };
         let rows = rows_with(&decode(&request), &stamps);
         let attributes = &rows[0]["resource_attributes"];
