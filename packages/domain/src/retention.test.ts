@@ -38,6 +38,35 @@ describe("retention defaults", () => {
 	})
 })
 
+describe("the RetentionDays column", () => {
+	const columnDefault = (datasource: string): number | undefined =>
+		Option.getOrUndefined(
+			Option.flatMap(
+				Arr.findFirst(
+					tinybirdProjectManifest.datasources,
+					(candidate) => candidate.name === datasource,
+				),
+				(found) =>
+					Option.map(
+						Option.fromNullishOr(
+							/\bRetentionDays UInt16 [^\n]*DEFAULT (\d+)/.exec(found.content),
+						),
+						(match) => Number(match[1]),
+					),
+			),
+		)
+
+	it("defaults to the days each raw table keeps, so an unstamped row expires as it does today", () => {
+		for (const signal of RETENTION_SIGNALS) {
+			for (const datasource of RETENTION_SIGNAL_DATASOURCES[signal]) {
+				// `product_events` gets the column when it is rebuilt.
+				if (datasource === "product_events") continue
+				expect(columnDefault(datasource), datasource).toBe(ttlDays(datasource))
+			}
+		}
+	})
+})
+
 describe("retention time columns", () => {
 	it("name the column each raw table's own expiry is keyed on", () => {
 		for (const signal of RETENTION_SIGNALS) {
