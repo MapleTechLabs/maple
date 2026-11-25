@@ -134,7 +134,11 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 				sourceId: SourceId,
 				overrides: RetentionOverrides,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId, sourceId })
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"tenant.userId": userId,
+					"maple.source.id": sourceId,
+				})
 				const now = yield* Clock.currentTimeMillis
 				const updated = yield* dbExecute((db) =>
 					db.run(
