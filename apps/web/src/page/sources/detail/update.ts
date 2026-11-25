@@ -30,6 +30,7 @@ import {
 import {
 	initEmbedded,
 	AwsMessage,
+	GcpMessage,
 	awsConnectionsOf,
 	gcpConnectors,
 	Message as IntegrationMessage,
@@ -370,9 +371,11 @@ const afterConnectionWrite = (
 	step: Return,
 	context: PageContext,
 ): Return => {
-	// Scrape-target and AWS writes come wrapped for their module.
+	// Scrape-target, AWS and Google Cloud writes come wrapped for their module.
 	const child =
-		message._tag === "GotPrometheusMessage" || message._tag === "GotAwsMessage"
+		message._tag === "GotPrometheusMessage" ||
+		message._tag === "GotAwsMessage" ||
+		message._tag === "GotGcpMessage"
 			? message.message
 			: message
 	// An AWS check rewrites the source's health; a background one only matters once it verifies. A
@@ -459,7 +462,7 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 		model,
 		Integrations.update(
 			model.connection,
-			IntegrationMessage.ClickedGcpDisconnect({ id: focus }),
+			IntegrationMessage.GotGcpMessage({ message: GcpMessage.ClickedGcpDisconnect({ id: focus }) }),
 			context,
 		),
 	)

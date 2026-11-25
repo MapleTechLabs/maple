@@ -1,7 +1,6 @@
 import { readClock } from "@maple/views/data/timing"
 import { Effect, type Result, Schema } from "effect"
 import { Command } from "foldkit"
-import { IntegrationStatuses } from "../../data/integration-statuses"
 import { type LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { Message, type StatusName } from "./message"
@@ -21,6 +20,7 @@ import { CHAT_STATUS_READ } from "./chat"
 import { GITHUB_STATUS_READ } from "./github"
 import { SCRAPE_TARGETS_STATUS_READ } from "./prometheus"
 import { AWS_STATUS_READ } from "../infra-integrations/aws/integration/aws"
+import { GCP_STATUS_READ } from "../infra-integrations/gcp/integration/gcp"
 import { VERCEL_STATUS_READ } from "../infra-integrations/vercel/integration/vercel"
 import { PLANETSCALE_STATUS_READ } from "../infra-integrations/planetscale/integration/planetscale"
 import { CLOUDFLARE_STATUS_READ } from "../infra-integrations/cloudflare/integration/cloudflare"
@@ -70,9 +70,7 @@ export const STATUS_READS = {
 		Message.CompletedLoadPlanetscale,
 		PLANETSCALE_STATUS_READ.read,
 	),
-	gcp: statusRead("LoadIntegrationsGcpStatus", Message.CompletedLoadGcp, (refresh) =>
-		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.gcp({ refresh })),
-	),
+	gcp: statusRead(GCP_STATUS_READ.name, Message.CompletedLoadGcp, GCP_STATUS_READ.read),
 	supabase: statusRead(SUPABASE.statusRead.name, Message.CompletedLoadSupabase, SUPABASE.statusRead.read),
 	aws: statusRead(AWS_STATUS_READ.name, Message.CompletedLoadAws, AWS_STATUS_READ.read),
 	/** The poller's inventory of PlanetScale databases. */

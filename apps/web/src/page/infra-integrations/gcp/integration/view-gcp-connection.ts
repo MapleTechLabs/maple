@@ -29,13 +29,14 @@ import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { relativeTime } from "../../../kit/relative-time"
 import { gcpMessage } from "../gcp-message"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { gcpCommand, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
 import { gcpInfraHref, gcpLogsHref } from "./update-gcp"
 import { metricsAvailable } from "./update-gcp-configure"
 import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import { type FeatureNote, featureList } from "../../../kit/feature-list"
-import { gcpCommand } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
@@ -65,9 +66,11 @@ const runScript = (h: H, connector: V2GcpConnector, label: string): Html =>
 			size: "sm",
 			attributes: [
 				h.OnClick(
-					Message.ClickedGcpConfigure({
-						target: { _tag: "Connection", id: connector.id, stage: "apply" },
-					}),
+					toHub(
+						GcpMessage.ClickedGcpConfigure({
+							target: { _tag: "Connection", id: connector.id, stage: "apply" },
+						}),
+					),
 				),
 			],
 		},
@@ -262,7 +265,7 @@ const connectionFeatures = (
 				isChecked: connector[flag],
 				isDisabled:
 					!IS_ADMIN || gcpCollectLock(connector, capability, metricsAvailable(model)) !== null,
-				onToggle: Message.ToggledGcpFeature({ id: connector.id, capability }),
+				onToggle: toHub(GcpMessage.ToggledGcpFeature({ id: connector.id, capability })),
 				...(note !== undefined && { note }),
 			}
 		}),
@@ -429,7 +432,7 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		model: model.gcpCard.menus[menuId] ?? Menu.init(menuId),
 		label: `Actions for ${label}`,
 		entries: menuEntries,
-		toParentMessage: (message) => Message.GotGcpMenuMessage({ id: connector.id, message }),
+		toParentMessage: (message) => toHub(GcpMessage.GotGcpMenuMessage({ id: connector.id, message })),
 	})
 	const ago = (value: string) => relativeTime(h, { value, nowMs: model.nowMs, timeZone })
 	// The same row in every state: dot, name and kind, subtitle. Issues add their notes below it.

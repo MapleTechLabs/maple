@@ -29,7 +29,9 @@ import { collectsLabel, flowConnector, gcpFlow, scopeCheck } from "./flow-gcp"
 import { createRequest } from "./gcp-configure-derive"
 import { DOCS, SCOPES } from "./gcp-configure-copy"
 import type { ConfigureModel, SetupMethod } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { GcpMessage } from "./gcp"
+import { toHub } from "./view-gcp-parts"
 import type { Model } from "../../../integrations/model"
 import { gcpConnectors, gcpInfraHref, gcpLogsHref } from "./update-gcp"
 import { metricsAvailable } from "./update-gcp-configure"
@@ -85,7 +87,7 @@ const methodChoice = (h: H, configure: ConfigureModel): Html =>
 				description: method.description,
 				tag: method.tag ?? undefined,
 				isSelected: configure.method === method.value,
-				onSelect: Message.ClickedGcpMethod({ method: method.value }),
+				onSelect: toHub(GcpMessage.ClickedGcpMethod({ method: method.value })),
 			})),
 		),
 	])
@@ -244,7 +246,7 @@ const chooseStep = (h: H, model: Model, configure: ConfigureModel): Html => {
 						className: "w-fit",
 						isLoading: configure.isCreating,
 						isDisabled: Option.isNone(createRequest(configure)),
-						attributes: [h.OnClick(Message.SubmittedGcpCreate())],
+						attributes: [h.OnClick(toHub(GcpMessage.SubmittedGcpCreate()))],
 					},
 					["Create connection"],
 				),

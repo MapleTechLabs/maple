@@ -10,9 +10,12 @@ import {
 	GithubInstallationSelection,
 } from "@maple/domain/http"
 import {
+	encodePublicId,
+	PublicIdPrefixes,
 	Timestamp,
 	type V2AwsConnection,
 	V2ChatConnectorList,
+	V2GcpIntegration,
 	V2PlanetScaleIntegration,
 	V2ScrapeTarget,
 } from "@maple/domain/http/v2"
@@ -20,7 +23,9 @@ import { AwsMetricStream } from "@maple/domain/aws"
 import { AwsAccountId, AwsConnectionId, SupabaseProjectRef } from "@maple/primitives"
 import { Array as Arr, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
+import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Menu from "@maple/views/ui/menu"
 import * as Field from "@maple/views/ui/field"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
@@ -33,6 +38,7 @@ import type { Model } from "./model"
 import {
 	AWS_PROVIDER,
 	CHAT_PROVIDER,
+	GCP_PROVIDER,
 	GITHUB_PROVIDER,
 	PROMETHEUS_PROVIDER,
 	providerModuleOf,
@@ -50,6 +56,8 @@ import { clickedConnect, closedPopup, receivedCallback, receivedRelay } from "./
 import { GithubMessage } from "./github"
 import { PrometheusMessage } from "./prometheus"
 import { AwsMessage } from "../infra-integrations/aws/integration/aws"
+import { GcpMessage } from "../infra-integrations/gcp/integration/gcp"
+import { view as pageView } from "./view"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -69,6 +77,7 @@ const vercel = (message: VercelMessage) => Message.GotVercelMessage({ message })
 const planetscale = (message: PlanetscaleMessage) => Message.GotPlanetscaleMessage({ message })
 const scrape = (message: PrometheusMessage) => Message.GotPrometheusMessage({ message })
 const aws = (message: AwsMessage) => Message.GotAwsMessage({ message })
+const gcp = (message: GcpMessage) => Message.GotGcpMessage({ message })
 
 const planetscaleStatus = (connected: boolean) =>
 	Schema.decodeSync(V2PlanetScaleIntegration)({
@@ -307,7 +316,7 @@ describe("provider modules", () => {
 		expect(providerModuleOf("github")?.id).toBe("github")
 		expect(providerModuleOf("prometheus")?.id).toBe("prometheus")
 		expect(providerModuleOf("warpstream")?.id).toBe("prometheus")
-		expect(providerModuleOf("gcp")).toBeUndefined()
+		expect(providerModuleOf("gcp")?.id).toBe("gcp")
 		expect(providerModuleOf(null)).toBeUndefined()
 	})
 
@@ -496,6 +505,97 @@ describe("provider modules", () => {
 				title: "Cost turned on",
 				description: "Run the setup again in AWS to grant it.",
 			}),
+		)
+	})
+
+	test("Google Cloud is a module: its status polls, the cleanup and run polls, its badges and header", () => {
+		const connector = (id: string, over: Readonly<Record<string, unknown>>) => ({
+			id: encodePublicId(
+				PublicIdPrefixes.gcpConnector,
+				`00000000-0000-4000-8000-00000000040${id === "one" ? 1 : 2}`,
+			),
+			object: "gcp_connector",
+			scope_type: "project",
+			scope_id: `acme-${id}`,
+			project_id: `acme-${id}`,
+			logs_enabled: true,
+			metrics_enabled: false,
+			created_at: "2026-09-01T00:00:00.000Z",
+			last_log_received_at: "2026-10-01T11:58:00.000Z",
+			last_log_error: null,
+			applied_logs_enabled: true,
+			applied_metrics_enabled: false,
+			setup_reported_at: "2026-09-01T00:05:00.000Z",
+			last_metrics_received_at: null,
+			last_metrics_error: null,
+			discovered_project_count: 1,
+			last_resources_error: null,
+			...over,
+		})
+		const withGcp = (model: Model, connectors: ReadonlyArray<Readonly<Record<string, unknown>>>) => {
+			const clocked = pageUpdate(model, Message.CompletedReadClock({ nowMs: NOW })).model
+			return pageUpdate(
+				clocked,
+				Message.CompletedLoadGcp({
+					key: clocked.statuses.gcp.key ?? "",
+					result: Result.succeed(
+						Schema.decodeUnknownSync(V2GcpIntegration)({
+							object: "gcp_integration",
+							metrics_available: true,
+							connectors,
+						}),
+					),
+				}),
+			).model
+		}
+		const page = init({ search: { integration: "gcp" } }, context).model
+		const [settlingPoll, steadyPoll, cleanupPoll, runPoll] = GCP_PROVIDER.tickers
+		// A connection that needs attention is read every 10 s; a healthy one every minute.
+		const settling = withGcp(page, [connector("one", { last_log_error: "denied" })])
+		expect([settlingPoll?.isActive(settling), steadyPoll?.isActive(settling)]).toEqual([true, false])
+		const healthy = withGcp(page, [connector("one", {})])
+		expect([settlingPoll?.isActive(healthy), steadyPoll?.isActive(healthy)]).toEqual([false, true])
+		const hub = withGcp(init({ search: {} }, context).model, [connector("one", {})])
+		expect([settlingPoll?.isActive(hub), steadyPoll?.isActive(hub)]).toEqual([false, false])
+		// A tick re-reads the status and the clock.
+		const ticked = names(steadyPoll === undefined ? [] : pageUpdate(healthy, steadyPoll.tick).commands)
+		expect(ticked).toContain("LoadIntegrationsGcpStatus")
+		expect(ticked).toContain("ReadIntegrationsClock")
+		// The cleanup dialog of a reported connection keeps reading the status while it is open.
+		expect(cleanupPoll?.isActive(healthy)).toBe(false)
+		const shownId = AsyncData.getOrElse(
+			AsyncData.map(healthy.statuses.gcp.data, (status) => status.connectors),
+			() => [],
+		)[0]?.id
+		const cleanup =
+			shownId === undefined
+				? healthy
+				: pageUpdate(
+						healthy,
+						gcp(
+							GcpMessage.GotGcpMenuMessage({
+								id: shownId,
+								message: Menu.Message.ClickedItem({
+									index: 0,
+									item: { kind: "Item", value: "disconnect" },
+								}),
+							}),
+						),
+					).model
+		expect(cleanupPoll?.isActive(cleanup)).toBe(true)
+		// The wizard's run step polls until the run is confirmed.
+		expect(runPoll?.isActive(healthy)).toBe(false)
+		expect(cardStatusOf(healthy.statuses, "gcp", NOW)).toEqual({ label: "1 connection", variant: "ok" })
+		expect(overviewOf(healthy.statuses, NOW, "gcp")).toMatchObject({
+			kind: "connected",
+			health: "healthy",
+			context: "Project acme-one",
+		})
+		// The header names how many connections share the worst state.
+		scene(
+			{ update: pageUpdate, view: withViewInputs(pageView, { context })() },
+			given(withGcp(page, [connector("one", {}), connector("two", { last_log_error: "denied" })])),
+			expectView(text(" · 1 of 2 connections")).toExist(),
 		)
 	})
 

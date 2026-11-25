@@ -12,6 +12,7 @@ import { isScopeReady, runConfirmed } from "./gcp-configure-derive"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import type { Model } from "../../../integrations/model"
 import { configureConnector } from "./update-gcp-configure"
+import { gcpConnectors } from "./update-gcp"
 import { String as Str } from "effect"
 
 // Google Cloud's place in the connect flow: a scope by ID, what to collect, then the setup in
@@ -22,7 +23,7 @@ export const flowConnector = (model: Model): V2GcpConnector | null => {
 	const configure = model.gcpCard.configure
 	return configure === null || configure.target._tag === "New"
 		? null
-		: (configureConnector(model, configure) ?? null)
+		: (configureConnector(gcpConnectors(model), configure) ?? null)
 }
 
 /** What a connection collects, in a few words: "Logs + metrics". */

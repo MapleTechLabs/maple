@@ -1,6 +1,5 @@
-import { Duration, Effect, Option, Queue, Record as Rec, Schema, Stream, Array as Arr } from "effect"
-import { AsyncData, Subscription } from "foldkit"
-import { gcpConnectionState } from "../infra-integrations/gcp/connector-state"
+import { Duration, Effect, Queue, Record as Rec, Schema, Stream, Array as Arr } from "effect"
+import { Subscription } from "foldkit"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { integrationOfSearch } from "./catalog"
@@ -9,9 +8,6 @@ import { Message } from "./message"
 import { openerReturns, relayedReturns } from "./connect-returns"
 import type { Model } from "./model"
 import { type MountedProvider, PROVIDER_MODULES } from "./provider-modules"
-import { CAPABILITIES, CAPABILITY_IDS } from "../infra-integrations/gcp/integration/gcp-configure-copy"
-import { runConfirmed } from "../infra-integrations/gcp/integration/gcp-configure-derive"
-import { configureConnector } from "../infra-integrations/gcp/integration/update-gcp-configure"
 import { backoffPollTicks, pollTicks, whenPresent } from "../../data/poll"
 
 /** The popup's document could not be written: it is already on the provider's cross-origin page. */
@@ -167,35 +163,6 @@ const delayedStream = (
 		Stream.flatMap(() => Stream.flatMap(whenPresent(), () => Stream.fromIterable(delayed.fire(version)))),
 	)
 
-const gcpRefreshInterval = (model: Model): number | null => {
-	if (integrationOfSearch(model.search.integration) !== "gcp") return null
-	const connectors = Option.match(AsyncData.getData(model.statuses.gcp.data), {
-		onNone: () => [],
-		onSome: (status) => status.connectors,
-	})
-	if (connectors.length === 0) return null
-	const settling = Arr.some(
-		connectors,
-		(connector) => gcpConnectionState(connector, model.nowMs) !== "healthy",
-	)
-	return settling ? 10_000 : 60_000
-}
-
-/** The Set up step is open and Maple has not confirmed the run, or the first data. */
-const isAwaitingRun = (model: Model): boolean => {
-	const configure = model.gcpCard.configure
-	if (configure === null || configure.opened === null) return false
-	const connector = configureConnector(model, configure)
-	if (connector === undefined) return false
-	if (configure.method === "script") return !runConfirmed(connector, configure.opened, model.nowMs)
-	// Until each capability's first data, or its removal, is confirmed.
-	return Arr.some(CAPABILITY_IDS, (capability) => {
-		const applied =
-			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
-		return connector[CAPABILITIES[capability].flag] ? applied !== true : applied === true
-	})
-}
-
 /** The provider whose callback messages this page listens for. */
 const listeningProvider = (model: Model): ConnectProvider | null => {
 	const integration = integrationOfSearch(model.search.integration)
@@ -227,36 +194,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: phase === "popup"
 							? popupFlow(attempt)
 							: grace(attempt),
-			},
-		),
-		gcpRefresh: entry(
-			{ intervalMs: Schema.NullOr(Schema.Number) },
-			{
-				modelToDependencies: ({ model }) => ({ intervalMs: gcpRefreshInterval(model) }),
-				dependenciesToStream: ({ intervalMs }) =>
-					intervalMs === null ? Stream.empty : every(intervalMs, () => Message.TickedGcpRefresh()),
-			},
-		),
-		/** The Google Cloud status every 10 s while its disconnect dialog is open. */
-		gcpDisconnectRefresh: entry(
-			{ isOpen: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({
-					isOpen:
-						model.gcpCard.disconnectDialog.isOpen &&
-						model.gcpCard.disconnectDialog.kind === "dialog",
-				}),
-				dependenciesToStream: ({ isOpen }) =>
-					isOpen ? every(10_000, () => Message.TickedGcpRefresh()) : Stream.empty,
-			},
-		),
-		/** The Google Cloud status every 10 s until the run is confirmed. */
-		gcpApplyRefresh: entry(
-			{ isWaiting: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isWaiting: isAwaitingRun(model) }),
-				dependenciesToStream: ({ isWaiting }) =>
-					isWaiting ? every(10_000, () => Message.TickedGcpRefresh()) : Stream.empty,
 			},
 		),
 		/** Each provider module's one-shot (GitHub's force-poll window), fired once the tab is back. */

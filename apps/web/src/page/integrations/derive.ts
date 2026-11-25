@@ -1,34 +1,14 @@
 import * as Policy from "@maple/domain/policy"
 import { type AwsStreamState, awsStreamState } from "@maple/domain/aws"
 import type { V2AwsConnection } from "@maple/domain/http/v2"
-import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import {
-	GCP_CONNECTION_LABEL,
-	gcpConnectionState,
-	gcpScopeLabel,
-	gcpWorstState,
-} from "../infra-integrations/gcp/connector-state"
-import { Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
 import { providerModuleOf } from "./provider-modules"
-import {
-	type CardStatus,
-	fold,
-	type IntegrationOverview,
-	isoMs,
-	type LastSync,
-	lastSyncOf,
-	maxMs,
-	NOT_CONNECTED,
-	SET_UP,
-	unavailableOverview,
-	unavailableStatus,
-} from "./overview"
+import { type CardStatus, type IntegrationOverview, isoMs, type LastSync } from "./overview"
 
 export {
 	type AvailableOverview,
@@ -105,86 +85,12 @@ export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
 	`${lastSync.verb} ${formatRelativeTime(lastSync.at, nowMs)}`
 
 /** The header badge per integration; `null` while loading. */
-export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
-	const provider = providerModuleOf(id)
-	if (provider !== undefined) return provider.cardStatus(statuses, { id, nowMs })
-	switch (id) {
-		case "gcp":
-			return fold(
-				statuses.gcp,
-				(status): CardStatus =>
-					status.connectors.length === 0
-						? NOT_CONNECTED
-						: { label: countLabel(status.connectors.length, "connection"), variant: "ok" },
-				unavailableStatus,
-			)
-		default:
-			return null
-	}
-}
-
-const gcpOverview = (statuses: Statuses, nowMs: number) =>
-	fold(
-		statuses.gcp,
-		(status): IntegrationOverview => {
-			const connectors = status.connectors
-			if (connectors.length === 0) return SET_UP
-			const states = Arr.map(connectors, (connector) => gcpConnectionState(connector, nowMs))
-			const count = (state: (typeof states)[number]) =>
-				Arr.filter(states, (entry) => entry === state).length
-			const worst = gcpWorstState(states)
-			const lastData = maxMs(
-				Arr.map(
-					Arr.flatMap(connectors, (connector) => [
-						connector.logs_enabled ? connector.last_log_received_at : null,
-						connector.metrics_enabled ? connector.last_metrics_received_at : null,
-					]),
-					isoMs,
-				),
-			)
-			return {
-				kind: "connected",
-				health: worst === "attention" || worst === "healthy" ? worst : "pending",
-				stateLabel: GCP_CONNECTION_LABEL[worst],
-				context:
-					connectors.length === 1 && connectors[0] !== undefined
-						? gcpScopeLabel(connectors[0])
-						: countLabel(connectors.length, "connection"),
-				stat: Arr.join(
-					Arr.filter(
-						[
-							Arr.some(connectors, (connector) => connector.logs_enabled) ? "Logs" : null,
-							Arr.some(connectors, (connector) => connector.metrics_enabled)
-								? "Metrics and resources"
-								: null,
-						],
-						(part) => part !== null,
-					),
-					" · ",
-				),
-				lastSync: worst === "waiting" ? null : lastSyncOf(lastData, "last data"),
-				issue:
-					worst === "attention"
-						? `${countLabel(count("attention"), "connection")} failing`
-						: worst === "setup-pending" || worst === "changes-pending"
-							? "Finish setup"
-							: null,
-			}
-		},
-		unavailableOverview,
-	)
+export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null =>
+	providerModuleOf(id)?.cardStatus(statuses, { id, nowMs }) ?? null
 
 /** One integration's overview; `null` while its status loads. */
-export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview => {
-	const provider = providerModuleOf(id)
-	if (provider !== undefined) return provider.overview(statuses, { id, nowMs })
-	switch (id) {
-		case "gcp":
-			return gcpOverview(statuses, nowMs)
-		default:
-			return null
-	}
-}
+export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview =>
+	providerModuleOf(id)?.overview(statuses, { id, nowMs }) ?? null
 
 /** `useVisibleSettingsSections()` on `/integrations`: the session's admin flag and the BYOC add-on. */
 export const settingsNavVisibility = (

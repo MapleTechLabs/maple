@@ -19,6 +19,7 @@ import { FLEET } from "./fleet/fleet-provider"
 import { GITHUB } from "./github-provider"
 import { PROMETHEUS } from "./prometheus-provider"
 import { AWS } from "../infra-integrations/aws/integration/aws-provider"
+import { GCP } from "../infra-integrations/gcp/integration/gcp-provider"
 import { ReadClock, TrackConnected, TrackDisconnected } from "./command"
 import type { FlowContext, FlowSpec, FlowStage } from "./flow"
 import { Message } from "./message"
@@ -154,6 +155,11 @@ const applyRequest =
 				return { model, commands: [TrackDisconnected({ provider: request.provider })] }
 			case "TrackConnected":
 				return { model, commands: [TrackConnected({ provider: request.provider })] }
+			case "Navigate":
+				return {
+					model,
+					outMessage: PageOutMessage.RequestedNavigation({ url: request.url, isReplace: false }),
+				}
 		}
 	}
 
@@ -396,7 +402,16 @@ export const AWS_PROVIDER = mount({
 	toHub: (message) => Message.GotAwsMessage({ message }),
 })
 
-/** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
+export const GCP_PROVIDER = mount({
+	module: GCP,
+	statusName: "gcp",
+	slot: (statuses) => statuses.gcp,
+	get: (model) => model.gcpCard,
+	set: (model, gcpCard) => ({ ...model, gcpCard }),
+	toHub: (message) => Message.GotGcpMessage({ message }),
+})
+
+/** Every provider, each a module the hub mounts and delegates to. */
 export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	RAILWAY_PROVIDER,
 	SUPABASE_PROVIDER,
@@ -410,6 +425,7 @@ export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	GITHUB_PROVIDER,
 	PROMETHEUS_PROVIDER,
 	AWS_PROVIDER,
+	GCP_PROVIDER,
 ]
 
 export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>

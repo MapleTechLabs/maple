@@ -5,7 +5,6 @@ import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
 	FleetIntegrationStatus,
-	GcpResourcesResponse,
 	GithubIntegrationStatus,
 	GithubInstallationSelection,
 	LinearIntegrationStatus,
@@ -18,36 +17,22 @@ import {
 	V2AwsIntegration,
 	V2ChatConnectorList,
 	V2DataSource,
-	V2GcpConnector,
 	V2GcpIntegration,
-	V2GcpSetupScripts,
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
 	V2ScrapeTarget,
 } from "@maple/domain/http/v2"
-import { GcpConnectorId, GcpLogRuntime } from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
-import * as Field from "@maple/views/ui/field"
-import * as Menu from "@maple/views/ui/menu"
-import * as Select from "@maple/views/ui/select"
-import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { ConnectProvider } from "./connect"
 import { OAuthReturnOutcome } from "./oauth-return"
-import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseMessage } from "../infra-integrations/supabase/integration/supabase"
 import { RailwayMessage } from "../infra-integrations/railway/integration/railway"
 import { SearchConsoleMessage } from "./search-console"
 import { ChatMessage } from "./chat"
-import { Capability, GcpFlags, SetupMethod } from "../infra-integrations/gcp/integration/gcp-configure-schema"
-import {
-	ConfigureTarget,
-	LogVolume,
-	RemovedConnector,
-} from "../infra-integrations/gcp/integration/gcp-schema"
+import { GcpMessage } from "../infra-integrations/gcp/integration/gcp"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import { LinearMessage } from "./linear"
 import { FleetMessage } from "./fleet/fleet"
@@ -156,79 +141,8 @@ export const Message = defineMessageUnion({
 	/** A message for the scrape-target module (Prometheus and WarpStream). */
 	GotPrometheusMessage: { message: PrometheusMessage },
 	GotAwsMessage: { message: AwsMessage },
-	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
-	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
-	CompletedGcpInventory: result(GcpResourcesResponse),
-	GotWorkloadFilterMessage: { message: ToggleGroup.Message },
-	GotGcpMenuMessage: { id: GcpConnectorId, message: Menu.Message },
-	GotGcpDisconnectDialogMessage: { message: Dialog.Message },
-	ConfirmedGcpDisconnect: {},
-	/** A Google Cloud source's Delete: opens the removal dialog for its connector. */
-	ClickedGcpDisconnect: { id: Schema.String },
-	CompletedGcpDisconnect: {
-		id: GcpConnectorId,
-		cleanupScript: Schema.NullOr(Schema.String),
-		failure: Schema.NullOr(LoadFailure),
-	},
-	CompletedReadGcpRemoved: { removed: Schema.Array(RemovedConnector) },
-	CompletedWriteGcpRemoved: {},
-	ClickedDismissCleanup: { id: Schema.String },
-	GotGcpDismissDialogMessage: { message: Dialog.Message },
-	ConfirmedDismissCleanup: {},
-	GotGcpCopyMessage: { id: Schema.String, message: CopyButton.Message },
-	CompletedGcpScripts: { key: Schema.String, result: Schema.Result(V2GcpSetupScripts, LoadFailure) },
-	ClickedGcpScriptToggle: {},
-	ClickedGcpScriptRetry: {},
-	ClickedGcpConfigure: { target: ConfigureTarget },
-	/** Cancel, Close and Done: the wizard unmounts at once. */
-	ClosedGcpConfigure: {},
-	GotGcpConfigureDialogMessage: { message: Dialog.Message },
-	GotGcpScopeTypeMessage: { message: ToggleGroup.Message },
-	GotGcpScopeFieldMessage: { field: Schema.Literals(["scopeId", "hostProjectId"]), message: Field.Message },
-	/** The scope step's form submit (Continue or Enter). */
-	SubmittedGcpCreate: {},
-	ToggledGcpCollect: { capability: Capability },
-	/** A connection's feature switch: Edit data opens with that change drafted, to save from there. */
-	ToggledGcpFeature: { id: Schema.String, capability: Capability },
-	ClickedGcpLogFilter: {},
-	GotGcpFilterModeMessage: { message: Select.Message },
-	ClickedGcpForwardOutput: {},
-	ClickedGcpUseOpenTelemetry: {},
-	ToggledGcpRuntime: { runtime: GcpLogRuntime },
-	CompletedGcpCreate: {
-		opens: Schema.Number,
-		connector: Schema.NullOr(V2GcpConnector),
-		failure: Schema.NullOr(LoadFailure),
-	},
-	/** The data step's Continue, Save or "Save and continue". */
-	ClickedGcpChooseApply: {},
-	GotGcpConfirmDialogMessage: { message: Dialog.Message },
-	ConfirmedGcpSave: {},
-	CompletedGcpUpdate: {
-		opens: Schema.Number,
-		id: GcpConnectorId,
-		flags: GcpFlags,
-		failure: Schema.NullOr(LoadFailure),
-	},
-	ClickedGcpRunEdit: {},
-	CompletedGcpConfigureScripts: {
-		key: Schema.String,
-		result: Schema.Result(V2GcpSetupScripts, LoadFailure),
-	},
-	ClickedGcpConfigureScriptRetry: {},
-	ClickedGcpScriptExpand: {},
-	/** The Method step: a row, or the code flavour under it. */
-	ClickedGcpMethod: { method: SetupMethod },
-	GotGcpFlavourMessage: { message: ToggleGroup.Message },
-	ClickedGcpMethodContinue: {},
-	ClickedGcpManualStep: { title: Schema.String, firstTitle: Schema.NullOr(Schema.String) },
-	ClickedGcpCopyPrompt: { prompt: Schema.String },
-	CompletedGcpPromptCopy: { isCopied: Schema.Boolean },
-	ClickedGcpPromptBack: {},
-	ClickedGcpConfirmRemoval: {},
-	CompletedGcpConfirmRemoval: { failure: Schema.NullOr(LoadFailure) },
-	/** The status poll: 10 s while a connection settles, else every minute. */
-	TickedGcpRefresh: {},
+	/** A message for the Google Cloud module, its configure wizard's among them. */
+	GotGcpMessage: { message: GcpMessage },
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

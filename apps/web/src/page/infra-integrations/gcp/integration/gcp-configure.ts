@@ -16,7 +16,7 @@ import * as Select from "@maple/views/ui/select"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type ConfigureModel, GcpFlags } from "./gcp-configure-schema"
 import type { ConfigureTarget } from "./gcp-schema"
-import { Message } from "../../../integrations/message"
+import { GcpMessage } from "./gcp"
 
 export const CONFIGURE_DIALOG_ID = "gcp-configure"
 
@@ -76,7 +76,7 @@ export const initConfigure = (
 
 export const CreateConnector = Command.define("CreateGcpConnector", {
 	args: { opens: Schema.Number, request: V2GcpCreateConnectorRequest },
-	messages: [Message.CompletedGcpCreate],
+	messages: [GcpMessage.CompletedGcpCreate],
 	execute: ({ opens, request }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -87,8 +87,8 @@ export const CreateConnector = Command.define("CreateGcpConnector", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedGcpCreate({ opens, connector: null, failure: toLoadFailure(error) }),
-				onSuccess: (connector) => Message.CompletedGcpCreate({ opens, connector, failure: null }),
+					GcpMessage.CompletedGcpCreate({ opens, connector: null, failure: toLoadFailure(error) }),
+				onSuccess: (connector) => GcpMessage.CompletedGcpCreate({ opens, connector, failure: null }),
 			}),
 		),
 })
@@ -96,7 +96,7 @@ export const CreateConnector = Command.define("CreateGcpConnector", {
 /** Only what changed is sent: an omitted capability stays as it is. */
 export const UpdateConnector = Command.define("UpdateGcpConnector", {
 	args: { opens: Schema.Number, id: GcpConnectorId, payload: V2GcpUpdateConnectorRequest, flags: GcpFlags },
-	messages: [Message.CompletedGcpUpdate],
+	messages: [GcpMessage.CompletedGcpUpdate],
 	execute: ({ opens, id, payload, flags }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -104,8 +104,8 @@ export const UpdateConnector = Command.define("UpdateGcpConnector", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedGcpUpdate({ opens, id, flags, failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedGcpUpdate({ opens, id, flags, failure: null }),
+					GcpMessage.CompletedGcpUpdate({ opens, id, flags, failure: toLoadFailure(error) }),
+				onSuccess: () => GcpMessage.CompletedGcpUpdate({ opens, id, flags, failure: null }),
 			}),
 		),
 })
@@ -117,7 +117,7 @@ export const LoadConfigureScripts = Command.define("LoadGcpConfigureScripts", {
 		id: GcpConnectorId,
 		applicationLogs: Schema.NullOr(Schema.Array(GcpLogRuntime)),
 	},
-	messages: [Message.CompletedGcpConfigureScripts],
+	messages: [GcpMessage.CompletedGcpConfigureScripts],
 	execute: ({ key, id, applicationLogs }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -125,28 +125,29 @@ export const LoadConfigureScripts = Command.define("LoadGcpConfigureScripts", {
 				params: { id },
 				payload: applicationLogs === null ? {} : { application_logs: applicationLogs },
 			})
-		}).pipe(settleTo((result) => Message.CompletedGcpConfigureScripts({ key, result }))),
+		}).pipe(settleTo((result) => GcpMessage.CompletedGcpConfigureScripts({ key, result }))),
 })
 
 /** `confirmRemoval`: records, on the admin's word, that what was switched off is gone. */
 export const ConfirmRemoval = Command.define("ConfirmGcpRemoval", {
 	args: { id: GcpConnectorId },
-	messages: [Message.CompletedGcpConfirmRemoval],
+	messages: [GcpMessage.CompletedGcpConfirmRemoval],
 	execute: ({ id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.gcpIntegration.confirmRemoval({ params: { id } })
 		}).pipe(
 			Effect.match({
-				onFailure: (error) => Message.CompletedGcpConfirmRemoval({ failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedGcpConfirmRemoval({ failure: null }),
+				onFailure: (error) =>
+					GcpMessage.CompletedGcpConfirmRemoval({ failure: toLoadFailure(error) }),
+				onSuccess: () => GcpMessage.CompletedGcpConfirmRemoval({ failure: null }),
 			}),
 		),
 })
 
 export const CopyPrompt = Command.define("CopyGcpPrompt", {
 	args: { text: Schema.String },
-	messages: [Message.CompletedGcpPromptCopy],
+	messages: [GcpMessage.CompletedGcpPromptCopy],
 	execute: ({ text }) =>
-		Effect.map(writeClipboard(text), (isCopied) => Message.CompletedGcpPromptCopy({ isCopied })),
+		Effect.map(writeClipboard(text), (isCopied) => GcpMessage.CompletedGcpPromptCopy({ isCopied })),
 })
