@@ -69,7 +69,7 @@ const detectionAuditDiff = auditDiff({
 const requireAuditLogRead = Effect.gen(function* () {
 	const tenant = yield* CurrentTenant.Context
 	yield* Policy.check(
-		tenant.roles,
+		tenant.permissions,
 		"audit_log:read",
 		(denial) => new AuditTrailForbiddenError({ message: denial.message }),
 	)

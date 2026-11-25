@@ -59,6 +59,7 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 		}),
 		aliases: { since: "start_time", until: "end_time" },
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading alert check history"],
 		handler: Effect.fn("McpTool.listAlertChecks")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

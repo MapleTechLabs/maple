@@ -55,6 +55,7 @@ export function registerErrorGroupingTools(server: McpToolRegistrar) {
 		parameters: Schema.Struct({ issue_id: issueIdParam() }),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Checking how errors were grouped"],
 		handler: Effect.fn("McpTool.explainErrorGrouping")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -122,6 +123,7 @@ export function registerErrorGroupingTools(server: McpToolRegistrar) {
 		parameters: Schema.Struct({ issue_id: issueIdParam() }),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Looking for duplicate issues"],
 		handler: Effect.fn("McpTool.listSimilarErrorIssues")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -189,6 +191,7 @@ export function registerErrorGroupingTools(server: McpToolRegistrar) {
 			fingerprint: P.text("The fingerprint to split off, from explain_error_grouping"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "error_issues:triage",
 		phrases: ["Detaching a fingerprint"],
 		handler: Effect.fn("McpTool.detachErrorFingerprint")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

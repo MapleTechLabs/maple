@@ -37,6 +37,7 @@ import {
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { runWeeklyDigestTick } from "./weekly-digest-tick"
 
@@ -102,6 +103,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 			const env = yield* Env
 			const warehouse = yield* WarehouseQueryService
 			const edgeCache = yield* EdgeCacheService
+			const memberships = yield* OrgMembershipService
 			const linkConfig = {
 				secret: Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 				appBaseUrl: env.MAPLE_APP_BASE_URL,
@@ -490,6 +492,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 									}
 								: undefined,
 						),
+					memberships,
 					failureMessage: "Web analytics digest failed for org",
 					logQuarantine: false,
 				})
@@ -505,6 +508,8 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, EmailService.layer)),
+		Layer.provide(
+			Layer.mergeAll(WarehouseQueryService.layer, EmailService.layer, OrgMembershipService.layer),
+		),
 	)
 }

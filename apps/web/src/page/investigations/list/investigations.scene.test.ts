@@ -104,7 +104,7 @@ describe("investigations list", () => {
 		)
 	})
 
-	test("the budget notice offers Raise the limit to org admins, and shows it locked to anyone else", () => {
+	test("the budget notice offers Raise the limit to roles with ai_triage:configure, and shows it locked to anyone else", () => {
 		const entered = init({ search: {} }, context).model
 		const budget: TriageBudget = {
 			enabled: true,
@@ -123,11 +123,22 @@ describe("investigations list", () => {
 			given(member),
 			measured(),
 			expectView(role("button", { name: "Raise the limit" })).toBeDisabled(),
-			expectView(
-				role("group", { name: "Only org admins can manage the organization's model provider keys." }),
-			).toExist(),
+			expectView(role("group", { name: Policy.denialFor("ai_triage:configure").message })).toExist(),
 		)
-		// The limit is on the AI settings tab, which an engineer cannot open.
+		// The model provider key is a different permission: it does not raise the triage limit.
+		const keysOnly = pageUpdate(
+			member,
+			Message.CompletedReadGrants({
+				orgId: context.orgId,
+				grants: ["telemetry:read", "llm_keys:manage"],
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(keysOnly),
+			measured(),
+			expectView(role("button", { name: "Raise the limit" })).toBeDisabled(),
+		)
 		const engineer = pageUpdate(
 			member,
 			Message.CompletedReadGrants({ orgId: context.orgId, grants: Policy.grantsOf(["org:engineer"]) }),
@@ -135,19 +146,6 @@ describe("investigations list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(engineer),
-			measured(),
-			expectView(role("button", { name: "Raise the limit" })).toBeDisabled(),
-			expectView(
-				role("group", { name: "Only org admins can manage the organization's model provider keys." }),
-			).toExist(),
-		)
-		const admin = pageUpdate(
-			member,
-			Message.CompletedReadGrants({ orgId: context.orgId, grants: Policy.grantsOf(["org:admin"]) }),
-		).model
-		scene(
-			{ update: pageUpdate, view },
-			given(admin),
 			measured(),
 			expectView(role("link", { name: "Raise the limit" })).toExist(),
 		)

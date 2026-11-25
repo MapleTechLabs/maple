@@ -19,6 +19,7 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 			search: P.optionalText("Filter dashboards by name (case-insensitive contains)"),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing dashboards"],
 		handler: Effect.fn("McpTool.listDashboards")(function* ({ search }) {
 			const tenant = yield* CurrentMcpTenant

@@ -11,6 +11,7 @@ import { fetchVariableOptions } from "../kit/variables"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { GeneratedIdPurpose, Message } from "./message"
 import { fetchSuggestions, SuggestionLookup } from "./suggestions"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 /** One funnel suggestion lookup over the preview's window. */
 export const FetchSuggestions = Command.define("FetchWidgetEditorSuggestions", {
@@ -119,3 +120,8 @@ export const FetchAutocomplete = Command.define("FetchWidgetEditorAutocomplete",
 			settleTo((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
 		),
 })
+
+export const FetchWidgetSession = fetchSessionGrants(
+	"FetchWidgetEditorSession",
+	Message.CompletedFetchSession,
+)

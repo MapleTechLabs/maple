@@ -169,6 +169,23 @@ export class ShareWrongOrgError extends HttpTaggedError<ShareWrongOrgError>()(
 	},
 ) {}
 
+/** Signed in to the owning org, on a role that cannot read telemetry: an org link shows it. */
+export class ShareForbiddenError extends HttpTaggedError<ShareForbiddenError>()(
+	"@maple/http/errors/ShareForbiddenError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 403,
+		code: "share_forbidden",
+		title: "Permission required",
+		message: "Your role cannot read telemetry, which this dashboard shows.",
+		retry: "never",
+		recovery: "request_access",
+		exposure: "public_message",
+	},
+) {}
+
 export class ShareWidgetNotFoundError extends HttpTaggedError<ShareWidgetNotFoundError>()(
 	"@maple/http/errors/ShareWidgetNotFoundError",
 	{

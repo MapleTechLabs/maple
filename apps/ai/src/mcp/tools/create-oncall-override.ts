@@ -32,6 +32,7 @@ export const addOnCallOverrideAction = (family: McpToolFamilyBuilder<"manage_onc
 			ends_at: timestamp("When the cover ends"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "oncall:manage",
 		handler: Effect.fn("McpTool.createOnCallOverride")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
 			const request = yield* decodeCreateRequest({
@@ -58,7 +59,7 @@ export const addOnCallOverrideAction = (family: McpToolFamilyBuilder<"manage_onc
 				}),
 			)
 			const override = yield* schedules
-				.createOverride(tenant.orgId, tenant.userId, tenant.roles, scheduleId, request)
+				.createOverride(tenant.orgId, tenant.userId, tenant.permissions, scheduleId, request)
 				.pipe(Effect.catchTags(createOverrideErrors))
 			const names = yield* memberNames(tenant.orgId)
 			return { scheduleName: schedule.name, override: toOverrideRow(override, names) }

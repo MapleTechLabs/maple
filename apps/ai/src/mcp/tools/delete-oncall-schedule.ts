@@ -13,6 +13,7 @@ export const deleteOnCallScheduleAction = (family: McpToolFamilyBuilder<"manage_
 			schedule_id: P.resourceId("oncallSchedule", "On-call schedule to delete"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "oncall:manage",
 		handler: Effect.fn("McpTool.deleteOnCallSchedule")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
 			const tenant = yield* CurrentMcpTenant
@@ -27,7 +28,7 @@ export const deleteOnCallScheduleAction = (family: McpToolFamilyBuilder<"manage_
 				}),
 			)
 			yield* schedules
-				.delete(tenant.orgId, tenant.roles, scheduleId)
+				.delete(tenant.orgId, tenant.permissions, scheduleId)
 				.pipe(Effect.catchTags(deleteScheduleErrors))
 			return { id: schedule.id, name: schedule.name }
 		}),

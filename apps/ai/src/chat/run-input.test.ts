@@ -8,6 +8,7 @@
  * investigation's opening prompt came to render as an escaped blob.
  */
 import { OrgId, UserId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import { Effect, Layer, Schema, Stream, Array as Arr } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
@@ -24,6 +25,7 @@ const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
 	userId: Schema.decodeSync(UserId)("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process"
+import * as Policy from "@maple/domain/policy"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -35,6 +36,7 @@ it("historical replay reads its head but cannot read a future fix or execute git
 			orgId: Schema.decodeSync(OrgId)("org_eval"),
 			userId: Schema.decodeSync(UserId)("internal-service"),
 			roles: [],
+			permissions: Policy.grantsOf([]),
 			authMode: "self_hosted" as const,
 		}
 		const call = (name: string, args: Record<string, unknown>) =>

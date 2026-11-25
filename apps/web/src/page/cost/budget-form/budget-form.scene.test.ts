@@ -420,7 +420,7 @@ describe("cost budget editor", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(fold(init().model, [grantsRead(MEMBER)])),
-			expectView(text("Only org admins and engineers can create or change budgets")).toExist(),
+			expectView(text(Policy.denialFor("slos:manage").message)).toExist(),
 			expectView(create).toBeAbsent(),
 		)
 	})
@@ -430,7 +430,7 @@ describe("cost budget editor", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(fold(init().model, [grantsRead(Policy.grantsOf(["org:analyst"]))])),
-			expectView(text("Only org admins and engineers can create or change budgets")).toExist(),
+			expectView(text(Policy.denialFor("slos:manage").message)).toExist(),
 			expectView(create).toBeAbsent(),
 		)
 	})
@@ -450,7 +450,7 @@ describe("cost budget editor", () => {
 						() => Message.CompletedSave({ result: Result.fail(toLoadFailure(refusal)) }),
 					]),
 				),
-				expectView(text("Only org admins and engineers can create or change budgets")).toExist(),
+				expectView(text(Policy.denialFor("slos:manage").message)).toExist(),
 				expectView(create).toBeAbsent(),
 			),
 		)

@@ -66,6 +66,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Opening an agent session"],
 		handler: Effect.fn("McpTool.getAgentSession")(
 			function* (params) {

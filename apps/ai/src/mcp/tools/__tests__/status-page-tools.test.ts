@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { RoleName } from "@maple/domain/http"
-import { permissions } from "@maple/domain/policy"
 import {
 	ApplyStatusPageConfigOutput,
 	CreateStatusPageOutput,
@@ -315,9 +315,9 @@ describe("status page tools", () => {
 
 	describe("config", () => {
 		const PAGE = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1e01"
-		const withRole = (role: string) => ({
+		const withRole = (role: string, permissions: Policy.Grants = Policy.grantsOf([role])) => ({
 			...rt,
-			tenant: { ...rt.tenant, roles: [Schema.decodeSync(RoleName)(role)] },
+			tenant: { ...rt.tenant, roles: [Schema.decodeSync(RoleName)(role)], permissions },
 		})
 		const admin = () => withRole("org:admin")
 		beforeAll(async () => {
@@ -482,12 +482,8 @@ describe("status page tools", () => {
 		})
 
 		it("asks for the access permission, beyond the edit one, when a config changes who can read the page", async () => {
-			// Engineers hold both today, so the two checks only tell apart with access raised to admins.
-			const held = permissions["status_pages:access"]
-			onTestFinished(() => void Reflect.set(permissions, "status_pages:access", held))
-			Reflect.set(permissions, "status_pages:access", { ...held, min: "admin" })
-
-			const engineer = withRole("org:engineer")
+			// Engineers hold both, so the two checks only tell apart on a custom role holding the edit one.
+			const engineer = withRole("org:custom", ["telemetry:read", "status_pages:edit"])
 			const read = await readConfig(rt, "config-page")
 			const { config } = read.structuredContent
 			const refused = await runToolDirect(engineer, "apply_status_page_config", {
@@ -496,7 +492,7 @@ describe("status page tools", () => {
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"manage_status_page would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
+				`manage_status_page would change who can read the page. ${Policy.denialFor("status_pages:access").message} Leave \`visibility\` as it is, or ask someone who can.`,
 			)
 			expect((await readConfig(rt, "config-page")).structuredContent.config).toEqual(config)
 
@@ -528,9 +524,7 @@ describe("status page tools", () => {
 				config: read.structuredContent.config,
 			})
 			expect(refused.isError).toBe(true)
-			expect(markdown(refused)).toContain(
-				"manage_status_page changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.",
-			)
+			expect(markdown(refused)).toContain(Policy.denialFor("status_pages:edit").message)
 
 			const other = await readConfig(rt, "acme-status")
 			const stolen = other.structuredContent.config.components[0].id
@@ -551,7 +545,11 @@ describe("status page tools", () => {
 
 const asRole = (runtime: EvalRuntime, role: string): EvalRuntime => ({
 	...runtime,
-	tenant: { ...runtime.tenant, roles: [Schema.decodeSync(RoleName)(role)] },
+	tenant: {
+		...runtime.tenant,
+		roles: [Schema.decodeSync(RoleName)(role)],
+		permissions: Policy.grantsOf([role]),
+	},
 })
 
 describe("setting a status page up", () => {
@@ -620,8 +618,8 @@ describe("setting a status page up", () => {
 		]
 		for (const [name, params] of calls) {
 			const result = await runToolDirect(setup, name, params)
-			expect(result.failureCategory, name).toBe("unavailable")
-			expect(markdown(result)).toContain("only org admins and engineers may do")
+			expect(result.failureCategory, name).toBe("permission")
+			expect(markdown(result)).toContain(Policy.denialFor("status_pages:edit").message)
 		}
 	})
 

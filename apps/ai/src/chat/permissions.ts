@@ -1,6 +1,7 @@
 /** The rulesets Maple's chat agents run under. */
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
 import { mapleToolCatalog } from "../mcp/tools/registry"
+import type { McpToolPermission } from "../mcp/tools/types"
 import { Array as Arr } from "effect"
 
 /**
@@ -12,6 +13,15 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set(
 		Arr.filter(mapleToolCatalog, (definition) => !definition.hints.readOnly),
 		(definition) => definition.name,
 	),
+)
+
+/** Every read-only tool and the permission it asks for, which the chat checks before offering it. */
+export const READ_TOOL_PERMISSIONS: ReadonlyArray<{
+	readonly name: string
+	readonly permission: McpToolPermission
+}> = Arr.map(
+	Arr.filter(mapleToolCatalog, (definition) => definition.hints.readOnly),
+	(definition) => ({ name: definition.name, permission: definition.permission }),
 )
 
 /**

@@ -1,7 +1,13 @@
 import { OrgId } from "@maple/domain"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { publicHttpErrorBody, ShareForbiddenError } from "@maple/domain/http"
+import { MapleApiV2 } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
+import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/http"
+import { HttpApiClient } from "effect/http-api"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { MapleApiV2Client } from "../../platform/api-clients"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import type { PageContext } from "../contract"
 import { FetchBatch, ResolveReloadClock, ResolveShare } from "./command"
@@ -227,6 +233,37 @@ describe("share", () => {
 			Mount.resolve(ResolveThemeColors, Message.ResolvedThemeColors({ colors: {} })),
 			expectView(text("Platform overview")).toExist(),
 			expectView(text("This dashboard has no charts yet")).toExist(),
+		)
+	})
+
+	test("a signed-in viewer whose role can't read telemetry is told so, with the server's denial", async () => {
+		const denial = Policy.denialFor("telemetry:read").message
+		const http = HttpClient.make((request) =>
+			Effect.succeed(
+				HttpClientResponse.fromWeb(
+					request,
+					Response.json(
+						{ error: publicHttpErrorBody(new ShareForbiddenError({ message: denial })) },
+						{ status: 403 },
+					),
+				),
+			),
+		)
+		const client = Layer.effect(
+			MapleApiV2Client,
+			HttpApiClient.make(MapleApiV2, { baseUrl: "https://api.test" }),
+		).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http)))
+		const resolvedMessage = await Effect.runPromise(
+			ResolveShare({ token: "tok_org_only" }).effect.pipe(Effect.provide(client)),
+		)
+
+		scene(
+			{ update: (model, message) => update(model, message), view },
+			given(update(init({ token: "tok_org_only", search: {} }).model, resolvedMessage).model),
+			Mount.resolve(ResolveThemeColors, Message.ResolvedThemeColors({ colors: {} })),
+			expectView(text("Your role can't view this dashboard")).toExist(),
+			expectView(text(denial)).toExist(),
+			expectView(text("This link isn't available")).not.toExist(),
 		)
 	})
 })

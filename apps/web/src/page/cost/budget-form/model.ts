@@ -16,12 +16,12 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { CostBudgetNewSearch } from "../../../route/search"
 import { LiveRows, LoadOutcome } from "../../kit/load-schemas"
-import { canManageAlerts, SessionGrants } from "../../kit/session-grants"
+import { canManageSlos, SessionGrants } from "../../kit/session-grants"
 import { CostFacets } from "../message"
 import { Form, TextField } from "./form"
 
 // `/cost/budgets/new`: the editor of one cost budget, new or (`?budgetId=`) existing. Whoever
-// manages alerts (`alerts:manage`) opens it.
+// manages SLOs and budgets (`slos:manage`) opens it.
 
 /** What the form offers to pick from: the org's billing currencies and each dimension's largest values. */
 export const FormOptions = Schema.Struct({
@@ -61,10 +61,10 @@ export type Model = typeof Model.Type
 
 /**
  * What the session says. An analyst holds no permission at all, so an answer without
- * `alerts:manage` is a refusal, as it is in the SLO and uptime editors.
+ * `slos:manage` is a refusal, as it is in the SLO and uptime editors.
  */
 export const accessOf = (model: Pick<Model, "grants" | "isGrantsRead">): "unknown" | "ask" | "denied" =>
-	!model.isGrantsRead ? "unknown" : canManageAlerts(model) ? "ask" : "denied"
+	!model.isGrantsRead ? "unknown" : canManageSlos(model) ? "ask" : "denied"
 
 /**
  * A new budget waits for the options: until they answer its currency is a guess, and a budget in

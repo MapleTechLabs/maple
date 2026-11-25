@@ -14,6 +14,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
 import { isWriteBlocked } from "./mode"
+import { gatedEntries } from "../../kit/gated-controls"
+import { gatedControl } from "../../kit/session-grants"
 import { variableSelects } from "./view-variables"
 import type { PageContext } from "../../contract"
 import { hstack } from "@maple/views/ui/stack"
@@ -30,7 +32,8 @@ const refreshControls = (h: H, model: Model): Html =>
 		toMenuMessage: (message) => Message.GotRefreshMenuMessage({ message }),
 	})
 
-const moreEntries = (isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
+/** Share writes a link, so it needs `dashboards:share`; the rest only read or sit behind edit mode. */
+const moreEntries = (model: Model, isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	...(isEdit
 		? ([
 				{
@@ -71,7 +74,9 @@ const moreEntries = (isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 		className: "whitespace-nowrap",
 	},
 	{ _tag: "Separator" },
-	{ _tag: "Item", value: "share", label: "Share…", icon: "LinkIcon", className: "whitespace-nowrap" },
+	...gatedEntries(model, "dashboards:share", [
+		{ _tag: "Item", value: "share", label: "Share…", icon: "LinkIcon", className: "whitespace-nowrap" },
+	]),
 	{
 		_tag: "Item",
 		value: "export",
@@ -85,7 +90,7 @@ const moreMenu = (h: H, model: Model): Html =>
 	rowActionsMenu(h, {
 		slotId: model.moreMenu.id,
 		model: model.moreMenu,
-		entries: moreEntries(isEditing(model)),
+		entries: moreEntries(model, isEditing(model)),
 		label: "More dashboard actions",
 		toParentMessage: (message) => Message.GotMoreMenuMessage({ message }),
 	})
@@ -149,25 +154,27 @@ export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 							),
 						]
 					: []),
-				button(
-					h,
-					{
-						variant: isEdit ? "default" : "outline",
-						size: "sm",
-						isDisabled: isReadOnly,
-						attributes: [
-							// One element across Edit and Done, so focus survives the toggle.
-							h.Key("toggle-edit"),
-							h.AriaLabel(isEdit ? "Done editing" : "Edit dashboard"),
-							h.OnClick(Message.ClickedToggleEdit()),
+				gatedControl(h, model, "dashboards:edit", (isLocked) =>
+					button(
+						h,
+						{
+							variant: isEdit ? "default" : "outline",
+							size: "sm",
+							isDisabled: isReadOnly || isLocked,
+							attributes: [
+								// One element across Edit and Done, so focus survives the toggle.
+								h.Key("toggle-edit"),
+								h.AriaLabel(isEdit ? "Done editing" : "Edit dashboard"),
+								h.OnClick(Message.ClickedToggleEdit()),
+							],
+						},
+						[
+							icon(h, isEdit ? "CheckIcon" : "PencilIcon", {
+								attributes: [h.DataAttribute("icon", "inline-start")],
+							}),
+							h.span([h.Class("hidden @min-[560px]/page:inline")], [isEdit ? "Done" : "Edit"]),
 						],
-					},
-					[
-						icon(h, isEdit ? "CheckIcon" : "PencilIcon", {
-							attributes: [h.DataAttribute("icon", "inline-start")],
-						}),
-						h.span([h.Class("hidden @min-[560px]/page:inline")], [isEdit ? "Done" : "Edit"]),
-					],
+					),
 				),
 				moreMenu(h, model),
 			]),

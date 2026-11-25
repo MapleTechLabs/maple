@@ -76,6 +76,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			...agentToolSelectionParams,
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Checking agent tool usage"],
 		handler: Effect.fn("McpTool.getAgentToolsOverview")(function* (params) {
 			const { st, et } = yield* AGENT_TOOL_WINDOW.resolve(params, "get_agent_tools_overview")

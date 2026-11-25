@@ -13,9 +13,9 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { GcpCostSourceService } from "@maple/backend/services/cost/GcpCostSourceService"
 
 // A cost source is a connection like any other: the role that manages integrations manages it.
-const requireIntegrationsManager = (roles: CurrentTenant.TenantSchema["roles"]) =>
+const requireIntegrationsManager = (permissions: CurrentTenant.TenantSchema["permissions"]) =>
 	Policy.check(
-		roles,
+		permissions,
 		"integrations:manage",
 		(denial) => new IntegrationsForbiddenError({ message: denial.message }),
 	)
@@ -35,7 +35,7 @@ export const HttpGcpCostLive = HttpApiBuilder.group(MapleInternalApi, "gcpCost",
 			.handle("add", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.roles)
+					yield* requireIntegrationsManager(tenant.permissions)
 					const added = yield* sources.add(
 						tenant.orgId,
 						tenant.userId,
@@ -54,7 +54,7 @@ export const HttpGcpCostLive = HttpApiBuilder.group(MapleInternalApi, "gcpCost",
 			.handle("remove", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.roles)
+					yield* requireIntegrationsManager(tenant.permissions)
 					const removed = yield* sources.remove(tenant.orgId, params.exportId)
 					if (removed.removed) {
 						yield* recordHttpAudit("cost_source.deleted", { metadata: { provider: "gcp" } })

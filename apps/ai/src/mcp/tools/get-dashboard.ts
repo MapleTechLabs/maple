@@ -18,6 +18,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 			dashboard_id: P.resourceId("dashboard", "Dashboard ID"),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Opening a dashboard", "Loading a dashboard"],
 		handler: Effect.fn("McpTool.getDashboard")(function* ({ dashboard_id }) {
 			const dashboard = yield* loadDashboard(dashboard_id, TOOL)

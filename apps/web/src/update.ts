@@ -523,9 +523,9 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 					maybeOrganization: inputs.maybeOrganization,
 					memberships: inputs.memberships,
 					customer: customerOf(model.customer),
-					maybeRole: Option.flatMap(
+					maybeGrants: Option.flatMap(
 						Option.fromNullishOr(model.clerkSnapshot),
-						(snapshot) => snapshot.maybeRole,
+						(snapshot) => snapshot.maybeGrants,
 					),
 				}),
 			})
@@ -780,8 +780,8 @@ const flagRedirectOf = (model: Model): Option.Option<Redirect> =>
 const roleRedirectOf = (model: Model): Option.Option<Redirect> =>
 	isClerkAuthEnabled
 		? Option.flatMap(
-				Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeRole),
-				(role) => securityRouteRedirect(model.route, Policy.can([role], "security:manage")),
+				Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeGrants),
+				(grants) => securityRouteRedirect(model.route, Policy.can(grants, "security:manage")),
 			)
 		: Option.none()
 

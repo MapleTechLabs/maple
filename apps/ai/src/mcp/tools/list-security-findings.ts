@@ -19,7 +19,6 @@ import {
 	readDependencies,
 	readExposure,
 	readRuntimes,
-	requireSecurityReader,
 	repositoryCoverage,
 	repositoryServicesOf,
 	runtimeArea,
@@ -109,10 +108,10 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			...WINDOW.fields,
 		}),
 		hints: { readOnly: true },
+		permission: "security:manage",
 		phrases: ["Checking security findings", "Reading the Security Center"],
 		handler: Effect.fn("McpTool.listSecurityFindings")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			yield* requireSecurityReader(tenant)
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const window = { startTime: st, endTime: et }
 			// A repository filter has nothing to keep in the per-service telemetry areas, so the overview skips them.
@@ -257,14 +256,8 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 		render: (output) => {
 			const matched = Arr.reduce(output.areas, 0, (n, area) => n + area.matched)
 			const nextCalls: Array<NextCall> = []
-			// A caller who could not read the code audit must not be told a repository is "not set up".
 			const codeState = output.areas.find((area) => area.area === "code")?.state
-			const auditUnknown =
-				codeState === "forbidden"
-					? "admins and engineers only"
-					: codeState === "not_enabled"
-						? "not enabled"
-						: "unknown"
+			const auditUnknown = codeState === "not_enabled" ? "not enabled" : "unknown"
 			// Telemetry ids resolve over a window: hand inspect the one this listing read.
 			const inspectArgs = (row: Output["findings"][number]) =>
 				row.area === "exposure" || row.area === "runtimes"

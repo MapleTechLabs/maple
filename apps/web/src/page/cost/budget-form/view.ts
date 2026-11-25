@@ -353,7 +353,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (isRefused(model))
 		return managersOnlyPage(h, {
 			header,
-			title: "Only org admins and engineers can create or change budgets",
+			permission: "slos:manage",
 			back: BACK,
 		})
 	if (model.isMissing)

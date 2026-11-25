@@ -172,7 +172,7 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 				// The log carries every member's activity, denial history, and origin
 				// IP for the whole retention window — org admins only. Scoped API keys
 				// are additionally gated by `audit_log:read`.
-				yield* Policy.check(tenant.roles, "audit_log:read", (denial) =>
+				yield* Policy.check(tenant.permissions, "audit_log:read", (denial) =>
 					V2InsufficientPermissions.make(denial.message),
 				)
 				const identity =

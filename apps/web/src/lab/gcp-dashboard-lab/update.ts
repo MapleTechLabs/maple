@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import { DashboardDocument, DashboardVariableSchema } from "@maple/domain/http"
 import { Array as Arr, Option, Result, Schema } from "effect"
 import { fromString as urlFromString } from "foldkit/url"
@@ -68,6 +69,15 @@ const answer = (model: Model, commands: Commands): Step =>
 						),
 				},
 			)
+		// The lab's viewer may do everything the board offers.
+		if (command.name === "FetchDashboardSession")
+			return then(
+				acc,
+				step(
+					acc.model,
+					Message.CompletedFetchSession({ orgId: CONTEXT.orgId, grants: Policy.allPermissions }),
+				),
+			)
 		return DROPPED.has(command.name) ? acc : { ...acc, commands: [...acc.commands, command] }
 	})
 
@@ -95,9 +105,10 @@ export const update = (model: Model, message: Message): Step => step(model, mess
 
 export const init = (): Step => {
 	const started = pageInit({ dashboardId: DASHBOARD_ID, search: {} }, CONTEXT)
+	const answered = answer(started.model, started.commands ?? [])
 	const loaded = step(
-		started.model,
+		answered.model,
 		Message.UpdatedDashboard({ orgId: CONTEXT.orgId, maybeDocument: Option.some(DASHBOARD) }),
 	)
-	return { model: loaded.model, commands: [...(started.commands ?? []), ...loaded.commands] }
+	return { model: loaded.model, commands: [...answered.commands, ...loaded.commands] }
 }

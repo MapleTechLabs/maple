@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import {
 	ApiSchemaErrors,
@@ -17,6 +18,7 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
 import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -72,6 +74,7 @@ const authorizationStub = Layer.succeed(
 					orgId: ORG_ID,
 					userId: USER_ID,
 					roles: [],
+					permissions: Policy.grantsOf([]),
 					authMode: "clerk",
 				}),
 			),
@@ -85,6 +88,8 @@ const makeHarness = (verifiedEmail: string | null) => {
 		Layer.succeed(EmailService, { isConfigured: false, send: () => Effect.void }),
 		Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub()),
 		Layer.succeed(EdgeCacheService, makeEdgeCacheService(makeMemoryBackend())),
+		// Self-hosted: no directory, so every subscriber receives the digest.
+		Layer.mock(OrgMembershipService)({ directory: "none" }),
 		SecureRandom.layerWebCrypto,
 	)
 	const services = Layer.mergeAll(

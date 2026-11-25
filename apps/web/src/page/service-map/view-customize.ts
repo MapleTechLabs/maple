@@ -8,6 +8,8 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import type * as Policy from "@maple/domain/policy"
+import { gatedControl } from "../kit/session-grants"
 import { BUILDINGS, buildingsFor, defaultBuilding } from "./factory/catalog"
 import { canRedo, canUndo, ResetAll, ResetBuilding, SetBuildingType } from "./factory/edits"
 import { sceneToCell } from "./factory/grid"
@@ -55,6 +57,7 @@ const saveStatus = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Mes
 export const customizeControls = <M>(
 	h: HtmlBuilder<M>,
 	model: Model,
+	grants: ReadonlyArray<Policy.Permission>,
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Html> => {
 	if (model.worldState === "failed")
@@ -78,16 +81,18 @@ export const customizeControls = <M>(
 	if (!model.isEditing)
 		return [
 			...(needsAttention ? [saveStatus(h, model, toMessage)] : []),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "ghost",
-					className: "text-xs",
-					isDisabled: model.worldState !== "ready" || model.isFailed,
-					attributes: [h.OnClick(toMessage(Message.ClickedCustomize()))],
-				},
-				[icon(h, "PencilIcon"), "Customize"],
+			gatedControl(h, { grants }, "service_map:edit", (isLocked) =>
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "ghost",
+						className: "text-xs",
+						isDisabled: isLocked || model.worldState !== "ready" || model.isFailed,
+						attributes: [h.OnClick(toMessage(Message.ClickedCustomize()))],
+					},
+					[icon(h, "PencilIcon"), "Customize"],
+				),
 			),
 		]
 	const edits = model.world.value

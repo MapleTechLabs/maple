@@ -79,6 +79,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Comparing log patterns", "Diffing logs across a deploy"],
 		handler: Effect.fn("McpTool.compareLogPatterns")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

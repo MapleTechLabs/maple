@@ -3,6 +3,7 @@
  * typed output on `structuredContent`, the rendered text, and input errors naming the parameter.
  */
 import { describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import {
 	AlertChecksListResponse,
@@ -181,6 +182,8 @@ interface Seen {
 	queryTiming?: Record<string, unknown>
 	/** The calling key's scopes; unset is a full-access caller. */
 	scopes?: ReadonlyArray<string>
+	/** The caller's permissions; unset holds every one. */
+	permissions?: Policy.Grants
 	/** Filled with the scope family of each monitor or SLO listing a tool reads. */
 	routingReads?: Array<string>
 	/** A raw-SQL preview whose range was too heavy to chart: no series. */
@@ -193,6 +196,8 @@ const layer = (seen: Seen) =>
 			orgId: Schema.decodeSync(OrgId)("org_tools"),
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
+			// The services are mocked; what a role may change is the registry's, tested on its own.
+			permissions: seen.permissions ?? Policy.allPermissions,
 			authMode: "self_hosted",
 			...(seen.scopes === undefined ? undefined : { scopes: seen.scopes }),
 		} as never),
@@ -1141,6 +1146,19 @@ describe("alert tools", () => {
 		expect(output.evaluation?.current[0]).toMatchObject({ groupKey: "__total__", status: "skipped" })
 		expect(text(result)).toContain("First scheduled evaluation by")
 		expect(text(result)).toContain("skipped (no_data)")
+	})
+
+	it("create_alert_rule shows no window values to a caller who cannot read telemetry", async () => {
+		const seen: Seen = { permissions: ["alerts:manage"] }
+		const result = await ok(
+			"create_alert_rule",
+			{ name: "Errors", template: "high_error_rate", destination_ids: [DEST_ID] },
+			seen,
+		)
+		const output = Schema.decodeUnknownSync(CreateAlertRuleOutput)(result.structuredContent)
+		expect(seen.previewed).toBeUndefined()
+		expect(output.evaluation?.current).toEqual([])
+		expect(output.evaluation?.previewSkipped).toContain("can't read telemetry")
 	})
 
 	it("get_alert_rule names its destinations", async () => {

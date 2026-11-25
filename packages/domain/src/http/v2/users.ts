@@ -12,6 +12,7 @@ import { V2WarehouseReadErrors } from "./query-errors"
 import { ErrorIssuePublicId } from "./resource-ids"
 import { SessionReplayPublicId } from "./session-replays"
 import { V2TelemetryRangeTooLarge } from "./telemetry"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 // End users: the people an org's own apps identified with `identify()` or a `user.id` attribute.
 // A user's id is the app's own opaque string, so it passes through like a trace id, never prefixed.
@@ -429,4 +430,5 @@ export class V2UsersApiGroup extends HttpApiGroup.make("users")
 			description:
 				"The end users of your own apps, identified with `identify()` or a `user.id` attribute: who they are, what they did, and the errors they hit.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

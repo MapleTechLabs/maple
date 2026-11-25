@@ -46,6 +46,8 @@ export const ClerkOrganizationMembershipData = Schema.Struct({
 	organization: Schema.Struct({ id: Schema.String }),
 	public_user_data: Schema.Struct({ user_id: Schema.String }),
 	role: Schema.optionalKey(Schema.String),
+	/** Carries a custom role's permissions (`maple_role`); read with `Policy.customPermissionsFromMembershipMetadata`. */
+	public_metadata: Schema.optionalKey(Schema.Unknown),
 })
 export type ClerkOrganizationMembershipData = Schema.Schema.Type<typeof ClerkOrganizationMembershipData>
 

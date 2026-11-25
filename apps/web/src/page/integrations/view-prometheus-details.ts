@@ -26,6 +26,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { gatedControl } from "../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -210,47 +211,57 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 					),
 					badge(h, { variant: toneBadge(status.tone) }, [status.label]),
 				]),
+				// Every write here, a test probe included, needs `scrape_targets:manage`.
 				hstack(h, { gap: "2", wrap: true }, [
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isLoading: card.probing.includes(target.id),
-							attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }))],
-						},
-						[icon(h, "BoltIcon"), "Test"],
+					gatedControl(h, model, "scrape_targets:manage", (isLocked) =>
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: isLocked,
+								isLoading: card.probing.includes(target.id),
+								attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }))],
+							},
+							[icon(h, "BoltIcon"), "Test"],
+						),
 					),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isDisabled: isManaged,
-							attributes: [h.OnClick(Message.ClickedEditTarget({ id: target.id }))],
-						},
-						[icon(h, "PencilIcon"), "Edit"],
+					gatedControl(h, model, "scrape_targets:manage", (isLocked) =>
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: isManaged || isLocked,
+								attributes: [h.OnClick(Message.ClickedEditTarget({ id: target.id }))],
+							},
+							[icon(h, "PencilIcon"), "Edit"],
+						),
 					),
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "sm",
-							isDisabled: card.toggling.includes(target.id),
-							attributes: [h.OnClick(Message.ClickedToggleTarget({ id: target.id }))],
-						},
-						[target.enabled ? "Disable" : "Enable"],
+					gatedControl(h, model, "scrape_targets:manage", (isLocked) =>
+						button(
+							h,
+							{
+								variant: "ghost",
+								size: "sm",
+								isDisabled: card.toggling.includes(target.id) || isLocked,
+								attributes: [h.OnClick(Message.ClickedToggleTarget({ id: target.id }))],
+							},
+							[target.enabled ? "Disable" : "Enable"],
+						),
 					),
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "sm",
-							className: "text-destructive",
-							isDisabled: isManaged,
-							attributes: [h.OnClick(Message.ClickedDeleteTarget({ id: target.id }))],
-						},
-						[icon(h, "TrashIcon"), "Delete scrape target"],
+					gatedControl(h, model, "scrape_targets:manage", (isLocked) =>
+						button(
+							h,
+							{
+								variant: "ghost",
+								size: "sm",
+								className: "text-destructive",
+								isDisabled: isManaged || isLocked,
+								attributes: [h.OnClick(Message.ClickedDeleteTarget({ id: target.id }))],
+							},
+							[icon(h, "TrashIcon"), "Delete scrape target"],
+						),
 					),
 				]),
 			],

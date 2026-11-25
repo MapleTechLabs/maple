@@ -127,6 +127,7 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 25, max: MAX_LIMIT, noun: "queries" }),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading Search Console queries", "Checking search queries"],
 		handler: Effect.fn("McpTool.searchConsoleQueries")(function* (params) {
 			const site = yield* resolveSearchConsoleSite(TOOL, params.site)

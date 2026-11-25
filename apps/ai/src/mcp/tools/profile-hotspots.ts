@@ -75,6 +75,7 @@ export function registerProfileHotspotsTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading profiles", "Finding hot functions"],
 		handler: Effect.fn("McpTool.profileHotspots")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "profile_hotspots")

@@ -118,6 +118,7 @@ export const updateMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 		}),
 		aliases: { service_names: "services", start_time: "start_time_of_day" },
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "alerts:manage",
 		handler: Effect.fn("McpTool.updateMaintenanceWindow")(function* (params) {
 			const windowId = yield* P.decodeResourceId(
 				"alertMaintenanceWindow",
@@ -184,7 +185,7 @@ export const updateMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 				)
 			})
 			const window = yield* windows
-				.revise(tenant.orgId, tenant.userId, tenant.roles, windowId, changeFor)
+				.revise(tenant.orgId, tenant.userId, tenant.permissions, windowId, changeFor)
 				.pipe(Effect.catchTags({ ...createWindowErrors, ...deleteWindowErrors }))
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

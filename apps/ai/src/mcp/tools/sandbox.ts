@@ -210,6 +210,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			context_lines: P.optionalNumber("Lines of context shown around each match"),
 		}),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: AGENT,
 		phrases: ["Searching the repository", "Grepping the code"],
 		handler: Effect.fn("McpTool.sandboxGrep")(function* ({
@@ -316,6 +317,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			ref: P.optionalText(REF_DESCRIPTION),
 		}),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: AGENT,
 		phrases: ["Listing files"],
 		handler: Effect.fn("McpTool.sandboxListFiles")(function* ({ repository, path, glob, ref }) {
@@ -377,6 +379,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			end_line: P.optionalNumber(`Last line to return; at most ${MAX_FILE_LINES} lines per call`),
 		}),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: AGENT,
 		phrases: ["Reading a file"],
 		handler: Effect.fn("McpTool.sandboxReadFile")(function* ({
@@ -506,6 +509,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			),
 		}),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: AGENT,
 		phrases: ["Running a command"],
 		handler: Effect.fn("McpTool.sandboxExec")(function* ({

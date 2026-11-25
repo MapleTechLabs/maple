@@ -12,6 +12,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { switchControl } from "@maple/views/ui/switch"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { managersOnlyPage } from "../../kit/form-section"
 import { draftProblems } from "./form"
 import { ingestionHref } from "./hrefs"
 import { Message } from "./message"
@@ -131,14 +132,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		description: "Drop, parse or redact telemetry before Maple stores or bills it.",
 	}
 	if (model.isSessionLoaded && !canManage(model))
-		return dashboardPage(h, header, [
-			alert(h, { variant: "info" }, [
-				icon(h, "ShieldIcon"),
-				alertTitle(h, ["Only org admins and engineers can create or change ingest rules"]),
-				alertDescription(h, ["Ask an admin to make this change."]),
-			]),
-			backLink(h),
-		])
+		return managersOnlyPage(h, {
+			header,
+			permission: "ingest_rules:manage",
+			back: { href: ingestionHref(), label: "Back to ingestion" },
+		})
 	if (model.isBadId)
 		return dashboardPage(h, header, [
 			alert(h, { variant: "warn" }, [

@@ -23,6 +23,7 @@ export function registerWhoIsOnCallTool(server: McpToolRegistrar) {
 			at: P.optionalTimestamp("The instant to ask about (default now)"),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Checking who is on call"],
 		handler: Effect.fn("McpTool.whoIsOnCall")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

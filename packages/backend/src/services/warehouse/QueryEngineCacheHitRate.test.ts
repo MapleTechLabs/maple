@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { strict as assert } from "node:assert"
@@ -37,6 +38,7 @@ const tenant: TenantContext = {
 	orgId: asOrgId("org_test"),
 	userId: asUserId("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

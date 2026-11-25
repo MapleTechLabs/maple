@@ -1,4 +1,6 @@
 import type { AlertSignalType, AnomalySignalType } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { denialTooltip } from "../../kit/session-grants"
 import { ANOMALY_SIGNAL_LABELS, ANOMALY_SIGNALS } from "@maple/web-data/alerts/anomaly-rule"
 import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
 import { signalTypeToKind } from "@maple/web-data/alerts/rule-modes"
@@ -38,6 +40,7 @@ type QueryView = SqlView &
 	Pick<
 		Model,
 		| "kindNotice"
+		| "grants"
 		| "queryPanels"
 		| "combos"
 		| "traceFacets"
@@ -450,9 +453,18 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 
 const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	const kind = signalTypeToKind(form.signalType)
+	// A SQL rule runs as the org on every evaluation, so writing one needs `query:sql`.
+	const sqlLock =
+		kind !== "raw_query" && !Policy.can(model.grants, "query:sql")
+			? denialTooltip("query:sql")
+			: undefined
 	const kinds = model.isDefaultAnomaly
 		? Arr.map(KIND_OPTIONS, (option) => ({ ...option, isDisabled: option.value !== "anomaly" }))
-		: KIND_OPTIONS
+		: Arr.map(KIND_OPTIONS, (option) =>
+				option.value === "raw_query" && sqlLock !== undefined
+					? { ...option, isDisabled: true, lockedReason: sqlLock }
+					: option,
+			)
 	return h.div(
 		[h.Class("space-y-2")],
 		[
@@ -488,6 +500,7 @@ const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming 
 const slot = createLazy()
 const viewOf = stableSlice((model: Model): QueryView => ({
 	kindNotice: model.kindNotice,
+	grants: model.grants,
 	queryPanels: model.queryPanels,
 	combos: model.combos,
 	traceFacets: model.traceFacets,

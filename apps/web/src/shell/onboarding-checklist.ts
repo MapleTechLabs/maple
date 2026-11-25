@@ -39,7 +39,7 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 /** The viewer may claim the onboarding credit (`billing:manage`). */
-export const canClaim = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "billing:manage")
+export const canClaim = (model: Pick<Model, "grants">): boolean => Policy.can(model.grants, "billing:manage")
 
 export const init = (): Model => ({
 	checklist: null,
@@ -97,7 +97,7 @@ export const LoadViewer = Command.define("LoadOnboardingChecklistViewer", {
 		const tenant = yield* (yield* SessionTenant).get
 		const seenKey = `${SEEN_PREFIX}${tenant.orgId}:${tenant.userId}`
 		return Message.LoadedViewer({
-			grants: Policy.grantsOf(tenant.roles),
+			grants: tenant.permissions,
 			seenKey,
 			isSeen: Option.contains(readLocalStorage(seenKey), "true"),
 		})

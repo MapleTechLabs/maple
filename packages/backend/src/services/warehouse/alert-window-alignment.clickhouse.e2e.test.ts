@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 // An alert evaluates the sliding window [end - W, end) at every tick, with `end`
 // on a minute, not on a multiple of W. These run the real evaluate path against
 // ClickHouse at a tick that is NOT W-aligned and compare it with the window's rows.
@@ -23,6 +24,7 @@ const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_alert_window"),
 	userId: Schema.decodeSync(UserId)("user_alert_window"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

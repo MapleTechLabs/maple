@@ -220,6 +220,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing error issues", "Checking open issues"],
 		handler: Effect.fn("McpTool.listErrorIssues")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

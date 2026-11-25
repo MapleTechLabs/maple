@@ -38,6 +38,7 @@ export function registerListMapleFeedbackTool(server: McpToolRegistrar) {
 		}),
 		aliases: { since: "start_time" },
 		hints: { readOnly: true },
+		permission: "agent_feedback:triage",
 		phrases: ["Reading agent feedback"],
 		handler: Effect.fn("McpTool.listMapleFeedback")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

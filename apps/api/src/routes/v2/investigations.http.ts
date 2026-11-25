@@ -205,10 +205,12 @@ const serializeInvestigation = (doc: InvestigationDocument) =>
 export const manualStarter = (tenant: {
 	readonly userId: ManualStarter["userId"]
 	readonly roles: ManualStarter["roles"]
+	readonly permissions: ManualStarter["permissions"]
 	readonly scopes?: ReadonlyArray<string> | undefined
 }): ManualStarter => ({
 	userId: tenant.userId,
 	roles: tenant.roles,
+	permissions: tenant.permissions,
 	mayReadDataSources: scopeAllows(tenant.scopes, { family: "data_sources", access: "read" }),
 })
 

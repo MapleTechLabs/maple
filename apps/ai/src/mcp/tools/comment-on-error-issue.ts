@@ -26,6 +26,7 @@ export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "error_issues:triage",
 		phrases: ["Commenting on an issue"],
 		handler: Effect.fn("McpTool.commentOnErrorIssue")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

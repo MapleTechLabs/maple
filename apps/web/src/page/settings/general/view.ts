@@ -268,7 +268,7 @@ const loaded = (h: H, model: Model, org: OrgInfo, isKnownMember: boolean): Html 
 	settingsSections(h, [
 		...adminOnlyNotice(h, {
 			isKnownMember: isKnownMember && !canManage(model),
-			subject: "organization settings",
+			permission: "organization:manage",
 			adminName: AsyncData.getOrElse(
 				AsyncData.map(model.admins, (admins) => admins.firstAdminName),
 				() => null,

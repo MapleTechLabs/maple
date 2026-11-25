@@ -28,7 +28,7 @@ import { Message } from "./message"
 import { type Model, type OverrideDraft } from "./model"
 import { msIso } from "../../kit/alert-time"
 import { acceptGrants } from "../../kit/session-grants"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageOnCall } from "../../kit/session-grants"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type Return = PageReturn<Model, Message>
@@ -439,7 +439,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFocusGap: () => ({ model }),
 		// An ended shift has nothing left to cover; a running one is covered from now to its end.
 		ClickedShift: ({ startMs, endMs }) =>
-			canManageAlerts(model) && endMs > (model.nowMs ?? 0)
+			canManageOnCall(model) && endMs > (model.nowMs ?? 0)
 				? openOverride(model, startMs, endMs)
 				: { model },
 		ClickedNewOverride: () => {
@@ -482,7 +482,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}),
 		ClickedDeleteOverride: ({ overrideId }) =>
-			model.deletingOverrideId !== null || !canManageAlerts(model)
+			model.deletingOverrideId !== null || !canManageOnCall(model)
 				? { model }
 				: updateDeleteDialog(
 						{ ...model, confirmDeleteOverrideId: overrideId },

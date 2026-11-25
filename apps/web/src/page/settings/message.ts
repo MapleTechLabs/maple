@@ -7,6 +7,7 @@ import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
 import { Message as AiMessage } from "./ai/model"
 import { Message as BillingMessage } from "./billing/model"
 import { Message as MembersMessage } from "./members/model"
+import { Message as RolesMessage } from "./roles/model"
 import { Message as GeneralMessage } from "./general/model"
 import { Message as DomainsMessage } from "./domains/model"
 import { Message as SsoMessage } from "./sso/model"
@@ -32,6 +33,7 @@ export const Message = defineMessageUnion({
 	GotAiMessage: { message: AiMessage },
 	GotBillingMessage: { message: BillingMessage },
 	GotMembersMessage: { message: MembersMessage },
+	GotRolesMessage: { message: RolesMessage },
 	GotGeneralMessage: { message: GeneralMessage },
 	GotDomainsMessage: { message: DomainsMessage },
 	GotSsoMessage: { message: SsoMessage },

@@ -103,6 +103,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 			),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Checking instrumentation"],
 		handler: Effect.fn("McpTool.getInstrumentationRecommendations")(function* ({
 			status,

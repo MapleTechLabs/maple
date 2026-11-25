@@ -132,7 +132,7 @@ const menuEntries = (
 						}),
 					},
 				]
-	const chat = Arr.flatMap(connectors, (connector): ReadonlyArray<MenuView.MenuItemEntry> => {
+	const chat = Arr.flatMap(connectors, (connector): ReadonlyArray<MenuView.MenuEntry> => {
 		const mark = logo(h, model, "chat", connector.id, "flex shrink-0")
 		if (connector.workspaces.length > 0)
 			return Arr.map(connector.workspaces, (workspace) => ({
@@ -153,7 +153,8 @@ const menuEntries = (
 				],
 			}))
 		if (!connector.available || connector.id === "discord") return []
-		return [
+		// Connecting installs the workspace, which needs `integrations:manage` too.
+		return gatedEntries(model, "integrations:manage", [
 			{
 				_tag: "Item",
 				value: `connect:${connector.id}`,
@@ -164,7 +165,7 @@ const menuEntries = (
 					typography(h, { size: "xs", tone: "muted" }, ["Connect"]),
 				],
 			},
-		]
+		])
 	})
 	const created: ReadonlyArray<MenuView.MenuItemEntry> = Arr.map(newTypes, (type) => ({
 		_tag: "Item",

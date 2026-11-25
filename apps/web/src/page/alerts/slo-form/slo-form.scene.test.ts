@@ -290,11 +290,11 @@ describe("SLO form", () => {
 		})
 	})
 
-	test("a member is told only admins and engineers change SLOs", () => {
+	test("a member is told which permission changes SLOs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(fresh({}, MEMBER)),
-			expectView(text("Only org admins and engineers can create or change SLOs")).toExist(),
+			expectView(text(Policy.denialFor("slos:manage").message)).toExist(),
 			expectView(role("button", { name: "Create SLO" })).not.toExist(),
 		)
 	})

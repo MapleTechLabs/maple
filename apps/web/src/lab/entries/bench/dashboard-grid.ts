@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { DashboardDocument, withWidgets } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
@@ -182,13 +183,19 @@ const Flags = Schema.Struct({ count: Schema.Number })
 const init = (flags: typeof Flags.Type) => {
 	const started = pageInit({ dashboardId: DASHBOARD_ID, search: { mode: "edit" } }, CONTEXT)
 	const empty: BenchModel = { board: started.model, mountKey: 0, layoutCommits: 0, lastCommitSize: 0 }
-	const loaded = boardStep(
+	// The bench's viewer may edit: the session read is answered here, not sent.
+	const granted = boardStep(
 		empty,
+		Message.CompletedFetchSession({ orgId: CONTEXT.orgId, grants: Policy.allPermissions }),
+	)
+	const loaded = boardStep(
+		granted.model,
 		Message.UpdatedDashboard({ orgId: CONTEXT.orgId, maybeDocument: Option.some(boardOf(flags.count)) }),
 	)
+	const local = Arr.filter(started.commands ?? [], (command) => command.name !== "FetchDashboardSession")
 	return {
 		model: loaded.model,
-		commands: [...Command.mapMessages(started.commands ?? [], toBoard), ...loaded.commands],
+		commands: [...Command.mapMessages(local, toBoard), ...granted.commands, ...loaded.commands],
 	}
 }
 

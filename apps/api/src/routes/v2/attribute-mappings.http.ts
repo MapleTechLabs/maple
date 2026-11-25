@@ -41,12 +41,11 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 		// need attribute_mappings:manage; the reads stay open to any member.
 		const requireMappingWrite = (tenant: CurrentTenant.TenantSchema) =>
 			Policy.check(
-				tenant.roles,
+				tenant.permissions,
 				"attribute_mappings:manage",
 				(denial) =>
 					new IngestAttributeMappingForbiddenError({
 						message: denial.message,
-						...(tenant.roles.length > 0 ? { roles: [...tenant.roles] } : undefined),
 					}),
 			)
 

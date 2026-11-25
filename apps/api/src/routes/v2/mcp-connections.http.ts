@@ -24,7 +24,10 @@ const currentViewer = Effect.gen(function* () {
 	const tenant = yield* CurrentTenant.Context
 	return {
 		orgId: tenant.orgId,
-		viewer: { userId: tenant.userId, seesAll: Policy.can(tenant.roles, "mcp_connections:view_all") },
+		viewer: {
+			userId: tenant.userId,
+			seesAll: Policy.can(tenant.permissions, "mcp_connections:view_all"),
+		},
 	}
 })
 

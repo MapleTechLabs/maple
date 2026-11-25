@@ -28,6 +28,7 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Loading the service map", "Mapping service dependencies"],
 		handler: Effect.fn("McpTool.serviceMap")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "service_map")

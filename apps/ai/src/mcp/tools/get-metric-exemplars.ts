@@ -48,6 +48,7 @@ export function registerGetMetricExemplarsTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Finding the traces behind a metric", "Reading metric exemplars"],
 		handler: Effect.fn("McpTool.getMetricExemplars")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

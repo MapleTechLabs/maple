@@ -310,7 +310,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (isRefused(model))
 		return managersOnlyPage(h, {
 			header,
-			title: "Only org admins can create or change detections",
+			permission: "audit_log:read",
 			back: BACK,
 		})
 	if (model.isMissing)

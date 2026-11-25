@@ -352,7 +352,7 @@ export type IncidentBodyInputs<M> = Readonly<{
 	anomaly?: AnomalyEvidenceInputs<M> | null
 }>
 
-/** Where an audit detection's events are listed; only org admins can open it. */
+/** Where an audit detection's events are listed; only roles with `audit_log:read` can open it. */
 const auditLogHref = () => hrefOf(AppRoute.SecurityAuditLog({ search: {} }))
 
 /**
@@ -430,7 +430,7 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 													})
 												: incident.signalType === "audit"
 													? sourceNote(h, {
-															text: `This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. ${inputs.canReadAuditLog === false ? "The audit log lists the events; only org admins can open it." : "The audit log lists the events."}`,
+															text: `This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. ${inputs.canReadAuditLog === false ? "The audit log lists the events; your role can't open it." : "The audit log lists the events."}`,
 															href:
 																inputs.canReadAuditLog === true
 																	? auditLogHref()

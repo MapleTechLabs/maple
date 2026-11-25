@@ -55,6 +55,8 @@ const CATEGORY_BY_RESOURCE = {
 	cost_source_key: "credential",
 	member: "membership",
 	organization: "configuration",
+	// A custom role is a set of grants.
+	role: "permission",
 	scrape_target: "configuration",
 	uptime_monitor: "configuration",
 	slo: "configuration",

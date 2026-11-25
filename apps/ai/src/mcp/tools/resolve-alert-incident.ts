@@ -20,6 +20,7 @@ export function registerResolveAlertIncidentTool(server: McpToolRegistrar) {
 			incident_id: P.resourceId("alertIncident", "Alert incident ID"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "incidents:respond",
 		phrases: ["Resolving an alert incident"],
 		handler: Effect.fn("McpTool.resolveAlertIncident")(function* (params) {
 			const incidentId = yield* P.decodeResourceId("alertIncident", "incident_id")(params.incident_id)

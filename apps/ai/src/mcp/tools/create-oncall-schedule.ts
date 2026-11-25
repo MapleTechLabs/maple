@@ -29,6 +29,7 @@ export const createOnCallScheduleAction = (family: McpToolFamilyBuilder<"manage_
 			description: P.optionalText("Free-form notes"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "oncall:manage",
 		handler: Effect.fn("McpTool.createOnCallSchedule")(function* (params) {
 			const request = yield* decodeCreateRequest({
 				name: params.name,
@@ -47,7 +48,7 @@ export const createOnCallScheduleAction = (family: McpToolFamilyBuilder<"manage_
 			const tenant = yield* CurrentMcpTenant
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules
-				.create(tenant.orgId, tenant.userId, tenant.roles, request)
+				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
 				.pipe(Effect.catchTags(createScheduleErrors))
 			const names = yield* memberNames(tenant.orgId)
 			return { schedule: toScheduleRow(schedule, names) }

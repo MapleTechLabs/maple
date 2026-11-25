@@ -323,6 +323,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 		parameters: CreateAlertRuleParameters,
 		aliases: { service_names: "services" },
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "alerts:manage",
 		phrases: ["Creating an alert rule"],
 		handler: Effect.fn("McpTool.createAlertRule")(function* (params) {
 			const request = yield* buildAlertRuleRequest(params)
@@ -335,15 +336,17 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const alerts = yield* AlertRulesService
 
-			const rule = yield* alerts.createRule(tenant.orgId, tenant.userId, tenant.roles, decoded).pipe(
-				Effect.catchTags(ruleWriteInputErrors),
-				Effect.catchTags({
-					"@maple/http/errors/AlertForbiddenError": (error) =>
-						Effect.fail(toMcpHttpError("create_alert_rule")(error)),
-					"@maple/http/errors/AlertPersistenceError": (error) =>
-						Effect.fail(toMcpHttpError("create_alert_rule")(error)),
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(tenant.orgId, tenant.userId, tenant.permissions, decoded)
+				.pipe(
+					Effect.catchTags(ruleWriteInputErrors),
+					Effect.catchTags({
+						"@maple/http/errors/AlertForbiddenError": (error) =>
+							Effect.fail(toMcpHttpError("create_alert_rule")(error)),
+						"@maple/http/errors/AlertPersistenceError": (error) =>
+							Effect.fail(toMcpHttpError("create_alert_rule")(error)),
+					}),
+				)
 
 			const evaluated = yield* firstEvaluation(decoded, rule.enabled)
 			const warnings = [...ruleConfigWarnings(rule), ...evaluated.warnings]

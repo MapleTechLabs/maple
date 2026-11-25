@@ -12,6 +12,7 @@ import {
 } from "../dependency-scan"
 import { SessionAuthorization } from "./current-tenant"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"
+import { EndpointAccess } from "./endpoint-access"
 
 // The Security Center's Dependencies tab: known vulnerable packages in connected repositories'
 // lockfiles. Dashboard only, served by the api Worker.
@@ -173,4 +174,5 @@ export class DependencyScanApiGroup extends HttpApiGroup.make("dependencyScan")
 		}),
 	)
 	.prefix("/internal/dependency-scan")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

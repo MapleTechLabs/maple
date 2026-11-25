@@ -3,6 +3,7 @@
  * what reaches the executor, for an asker Maple can name and for one it cannot.
  */
 import { OrgId, UserId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import {
 	ChatConnectorId,
 	ChatConversationKey,
@@ -32,6 +33,7 @@ const TENANT: TenantContext = {
 	orgId: ORG,
 	userId: Schema.decodeSync(UserId)("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 const SESSION = connectorSessionId(
@@ -50,7 +52,12 @@ const ANONYMOUS: ChatTurnOrigin = {
 }
 const LINKED: ChatTurnOrigin = { ...ANONYMOUS, actingUserId: Schema.decodeSync(UserId)("user_ada") }
 /** The tenant a linked asker's turn runs as: their own membership, here an engineer's. */
-const LINKED_TENANT: TenantContext = { ...TENANT, roles: [Schema.decodeSync(RoleName)("org:engineer")] }
+/** An admin, who holds every permission: the linked asker is offered the whole bot catalog. */
+const LINKED_TENANT: TenantContext = {
+	...TENANT,
+	roles: [Schema.decodeSync(RoleName)("org:admin")],
+	permissions: Policy.grantsOf(["org:admin"]),
+}
 
 const USAGE = { inputTokens: { total: 1, uncached: 1 }, outputTokens: { total: 1, text: 1 } }
 

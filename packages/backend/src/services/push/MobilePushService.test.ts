@@ -2,7 +2,9 @@ import { assert, describe, expect, it } from "@effect/vitest"
 import { encodePublicId } from "@maple/domain/http/v2"
 import { MobileDevicePersistenceError } from "@maple/domain/http"
 import { MobileDeviceId, OrgId, UserId } from "@maple/primitives"
-import { Effect, Layer, Schema, Array as Arr } from "effect"
+import { AuthorizationUnavailableError, RoleName } from "@maple/domain/http"
+import { Effect, Layer, Order, Schema, Array as Arr } from "effect"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import {
 	ApnsClient,
 	type ApnsBackgroundPush,
@@ -89,6 +91,9 @@ interface LiveActivityRecorder {
 	readonly ended: Array<string>
 }
 
+/** Self-hosted: no membership directory, so every device's owner reads. */
+const noDirectory = Layer.mock(OrgMembershipService)({ directory: "none" })
+
 /** Every silent widget wake-up a run produced. */
 const background: Array<ApnsBackgroundPush> = []
 
@@ -106,10 +111,12 @@ const makeLayer = (
 		outcome: "sent",
 		apnsId: null,
 	}),
+	directory: Layer.Layer<OrgMembershipService> = noDirectory,
 ) =>
 	Layer.effect(MobilePushService, MobilePushService.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				directory,
 				Layer.succeed(ApnsClient, {
 					isConfigured: configured,
 					send: (push) => {
@@ -475,6 +482,62 @@ describe("MobilePushService.notifyIncident", () => {
 				makeLayer([device(1)], () => ({ outcome: "sent", apnsId: null }), sent, [], true, live, [
 					activity(1),
 				]),
+			),
+		)
+	})
+
+	it.effect("skips the phones of an owner who no longer reads telemetry, and ends their activity", () => {
+		const sent: Array<ApnsPush> = []
+		const live: LiveActivityRecorder = { pushes: [], ended: [] }
+		const READER = Schema.decodeSync(UserId)("user_reader")
+		const DEMOTED = Schema.decodeSync(UserId)("user_demoted")
+		const UNREADABLE = Schema.decodeSync(UserId)("user_clerk_down")
+		const directory = Layer.mock(OrgMembershipService)({
+			directory: "clerk",
+			verify: (userId, orgId) =>
+				userId === UNREADABLE
+					? Effect.fail(new AuthorizationUnavailableError({ message: "Clerk is down" }))
+					: Effect.succeedSome({
+							orgId,
+							role: Schema.decodeSync(RoleName)("org:custom"),
+							customPermissions: userId === READER ? ["telemetry:read"] : ["billing:manage"],
+						}),
+		})
+		return Effect.gen(function* () {
+			const push = yield* MobilePushService
+			const summary = yield* push.notifyIncident(event({ eventType: "resolve" }))
+			// A lookup that failed keeps the phone: an outage must not silence paging.
+			assert.deepStrictEqual(summary, { sent: 2, failed: 0, unregistered: 0, skipped: 1 })
+			assert.deepStrictEqual(
+				Arr.map(sent, (p) => p.deviceToken),
+				["token-1", "token-3"],
+			)
+			// Nothing reaches the demoted owner's Lock Screen; the row is closed instead.
+			assert.deepStrictEqual(
+				Arr.map(live.pushes, (p) => p.pushToken),
+				["update-1"],
+			)
+			assert.deepStrictEqual(Arr.sort(live.ended, Order.String), [
+				"act-1:incident_resolved",
+				"act-2:device_unregistered",
+			])
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					[
+						device(1, { userId: READER }),
+						device(2, { userId: DEMOTED }),
+						device(3, { userId: UNREADABLE }),
+					],
+					() => ({ outcome: "sent", apnsId: null }),
+					sent,
+					[],
+					true,
+					live,
+					[activity(1), activity(2)],
+					undefined,
+					directory,
+				),
 			),
 		)
 	})

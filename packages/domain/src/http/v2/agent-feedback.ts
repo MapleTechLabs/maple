@@ -12,7 +12,7 @@ import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
 import { AgentFeedbackPublicId } from "./resource-ids"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess } from "../endpoint-access"
 
 const isNotBlank = Schema.makeFilter((value: string) => Str.trim(value).length > 0, {
 	description: "Must contain a non-whitespace character",
@@ -136,7 +136,7 @@ export class V2AgentFeedbackApiGroup extends HttpApiGroup.make("agentFeedback")
 			success: V2AgentFeedback,
 			error: [persistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "createAgentFeedback",

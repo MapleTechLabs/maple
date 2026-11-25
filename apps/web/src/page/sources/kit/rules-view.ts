@@ -2,13 +2,12 @@ import { relativeTime } from "../../kit/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import * as Checkbox from "@maple/views/ui/checkbox"
+import { checkboxCard } from "@maple/views/ui/control-card"
 import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { input } from "@maple/views/ui/input"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
-import { label } from "@maple/views/ui/label"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import {
 	type AttributeDraft,
@@ -58,27 +57,19 @@ const signalCard = <P>(
 ): Html => {
 	const isChecked = config.model.signals.includes(signal.value)
 	const inputId = `${config.idPrefix}-signal-${signal.value}`
-	return label(
+	return checkboxCard(
 		h,
 		{
-			// A card: the kit label's centring and medium weight stay off.
-			className: cn(
-				"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal",
-				isChecked
-					? "border-primary-a4 bg-primary-a1"
-					: "hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-			attributes: [h.Key(signal.value), h.Id(Checkbox.labelId(inputId))],
-		},
-		[
-			...Checkbox.view(h, {
+			config: {
 				model: { isChecked },
 				toParentMessage: () =>
 					config.toParentMessage(Message.ToggledSignal({ signal: signal.value })),
 				id: `${inputId}-root`,
 				inputId,
-				className: "mt-0.5",
-			}),
+			},
+			tone: "primary",
+		},
+		[
 			vstack(h, { gap: "0.5", as: "span" }, [
 				h.span([h.Class(cn("text-sm", !isChecked && "text-muted-foreground"))], [signal.label]),
 				typography(h, { size: "2xs", tone: "muted", mono: true }, [signal.hint]),

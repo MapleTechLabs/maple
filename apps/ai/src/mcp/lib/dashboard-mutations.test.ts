@@ -11,6 +11,7 @@
 // tests drive the real production paths and assert they succeed.
 
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { ConfigProvider, Effect, Layer, Ref, Schema, Array as Arr } from "effect"
 import { DashboardDocument, OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
 import {
@@ -71,6 +72,7 @@ const makeLayer = (
 			orgId: Schema.decodeSync(OrgId)(ORG),
 			userId: Schema.decodeSync(UserId)("internal-service"),
 			roles: [],
+			permissions: Policy.grantsOf([]),
 			authMode: "self_hosted",
 		}),
 	).pipe(Layer.provide(testDb.layer), Layer.provideMerge(Env.layer), Layer.provide(testConfig()))

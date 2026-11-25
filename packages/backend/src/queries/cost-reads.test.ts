@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
@@ -35,6 +36,7 @@ const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)(ORG),
 	userId: Schema.decodeSync(UserId)("user_cost_reads"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

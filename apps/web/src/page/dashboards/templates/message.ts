@@ -7,6 +7,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import { WidgetFailure } from "../kit/widget-data"
 import { MetricSeen, ReadinessFilter } from "./model"
+import { SessionGrants } from "../../kit/session-grants"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -15,6 +16,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 
 export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
+	CompletedFetchSession: SessionGrants,
 	CompletedFetchTemplates: result(Schema.Array(V2DashboardTemplate)),
 	CompletedFetchMetrics: result(Schema.Array(MetricSeen)),
 	ElapsedPreviewDelay: { generation: Schema.Number },

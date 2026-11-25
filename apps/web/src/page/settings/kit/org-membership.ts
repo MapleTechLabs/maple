@@ -1,23 +1,23 @@
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, String as Str } from "effect"
 
-/** A role the Members page can give, by its Clerk key. */
+/** A built-in role the Members page can give, by its Clerk key. */
 export type OrgRole = Policy.ClerkRoleKey
 
-/** The assignable Clerk role keys, lowest role first. */
-export const orgRoleKeys: ReadonlyArray<OrgRole> = Arr.map(Policy.assignableRoles, (entry) => entry.clerkKey)
+/** The built-in roles' Clerk keys, lowest role first. */
+export const orgRoleKeys: ReadonlyArray<OrgRole> = Arr.map(Policy.builtInRoles, (entry) => entry.clerkKey)
 
-// `root`, which Clerk never assigns, has no entry of its own and shows as a member.
-const memberEntry = Policy.assignableRoles[1]
+const analystEntry = Policy.builtInRoles[0]
+const memberEntry = Policy.builtInRoles[1]
 
-/** A Clerk role string's entry, read through `Policy.roleOf` (unknown roles are analysts). */
-const entryOf = (role: string): Policy.AssignableRole => {
-	const policyRole = Policy.roleOf(role)
-	return Option.getOrElse(
-		Arr.findFirst(Policy.assignableRoles, (entry) => entry.role === policyRole),
-		(): Policy.AssignableRole => memberEntry,
-	)
-}
+/**
+ * A Clerk role string's built-in entry. `root`, which Clerk never assigns, shows as a member; any
+ * other role this build does not know reads as an analyst, as `Policy.grantsOf` reads it.
+ */
+const entryOf = (role: string): Policy.BuiltInRole =>
+	role === "root"
+		? memberEntry
+		: Option.getOrElse(Policy.builtInRoleOf(role), (): Policy.BuiltInRole => analystEntry)
 
 export function toOrgRole(role: string): OrgRole {
 	return entryOf(role).clerkKey

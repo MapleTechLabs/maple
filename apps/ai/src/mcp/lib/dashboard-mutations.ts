@@ -30,11 +30,12 @@ import {
 	withWidgets,
 } from "@maple/domain/http"
 import type { DashboardRow } from "@maple/domain/mcp-outputs"
-import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
+import * as Policy from "@maple/domain/policy"
+import { addsRawSql, WIDGET_DATA_SOURCE_KINDS, type WidgetDataSources } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "../tenant"
 import { stringifyJson } from "./json"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
-import { McpInvalidInputError, McpQueryError } from "../tools/types"
+import { McpAuthInvalidError, McpInvalidInputError, McpQueryError } from "../tools/types"
 
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 
@@ -215,11 +216,18 @@ type DashboardServiceError =
 	| DashboardStoredConfigInvalidError
 	| DashboardConcurrencyError
 
-/** Persistence failures as MCP errors: a missing or rejected document is the caller's to fix, the rest are ours. */
+/**
+ * Persistence failures as MCP errors: a missing or rejected document is the caller's to fix, the rest
+ * are ours. A refused raw SQL write passes through.
+ */
 export const toMcpDashboardError =
 	(tool: string) =>
-	(error: DashboardServiceError): McpInvalidInputError | McpQueryError => {
+	(
+		error: DashboardServiceError | McpAuthInvalidError,
+	): McpInvalidInputError | McpQueryError | McpAuthInvalidError => {
 		switch (error._tag) {
+			case "@maple/mcp/errors/McpAuthInvalidError":
+				return error
 			case "@maple/http/errors/DashboardNotFoundError":
 				return dashboardNotFound(error.dashboardId)
 			case "@maple/http/errors/DashboardValidationError":
@@ -233,6 +241,24 @@ export const toMcpDashboardError =
 				return new McpQueryError({ message: error.message, pipeName: tool, cause: error })
 		}
 	}
+
+/**
+ * Raw SQL on a dashboard runs as the org on every read of it, so writing SQL the board did not
+ * already have needs `query:sql`.
+ */
+export const requireRawSqlPermission = (
+	permissions: Policy.Grants,
+	before: ReadonlyArray<WidgetDataSources>,
+	after: ReadonlyArray<WidgetDataSources>,
+): Effect.Effect<void, McpAuthInvalidError> =>
+	addsRawSql(before, after)
+		? Policy.check(
+				permissions,
+				"query:sql",
+				(denial) =>
+					new McpAuthInvalidError({ message: denial.message, reason: "insufficient_permission" }),
+			)
+		: Effect.void
 
 export const generateWidgetId = (): string => randomUUID()
 
@@ -301,7 +327,7 @@ export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashbo
 	tool: string,
 	transform: (
 		existingWidgets: ReadonlyArray<DashboardWidget>,
-	) => Effect.Effect<ReadonlyArray<DashboardWidget>, McpInvalidInputError>,
+	) => Effect.Effect<ReadonlyArray<DashboardWidget>, McpInvalidInputError | McpAuthInvalidError>,
 ) {
 	const tenant = yield* CurrentMcpTenant
 	const persistence = yield* DashboardPersistenceService
@@ -320,6 +346,7 @@ export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashbo
 		.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
 			Effect.gen(function* () {
 				const nextWidgets = yield* transform(existing.widgets)
+				yield* requireRawSqlPermission(tenant.permissions, existing.widgets, nextWidgets)
 				const nowMillis = yield* Clock.currentTimeMillis
 				const now = decodeIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe(nowMillis)))
 

@@ -1,5 +1,6 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { Schema, Array as Arr, Record as Rec } from "effect"
+import type { Permission } from "./policy"
 
 /**
  * The server-pinned shape whitelist and the predicates over it.
@@ -28,16 +29,17 @@ import { Schema, Array as Arr, Record as Rec } from "effect"
 // is why the errors vertical (error_issues / actors / open_error_incidents) and
 // scrape_target_checks are gone (20260727105910_electric_publication_prune).
 const SUBSCRIPTIONS = {
-	dashboards: { table: "dashboards" },
-	alert_rules: { table: "alert_rules" },
-	alert_rule_states: { table: "alert_rule_states" },
-	alert_incidents: { table: "alert_incidents" },
+	dashboards: { table: "dashboards", permission: "telemetry:read" },
+	alert_rules: { table: "alert_rules", permission: "telemetry:read" },
+	alert_rule_states: { table: "alert_rule_states", permission: "telemetry:read" },
+	alert_incidents: { table: "alert_incidents", permission: "telemetry:read" },
 	// API key hashes and agent metadata are authentication material/internal
 	// configuration and must never reach the browser. The dashboard needs only
 	// the safe display fields below; `id` + `org_id` are required for identity
 	// and tenant scoping.
 	api_keys: {
 		table: "api_keys",
+		permission: "telemetry:read",
 		columns: [
 			"id",
 			"org_id",
@@ -63,6 +65,7 @@ const SUBSCRIPTIONS = {
 	// why Maple stopped delivering.
 	alert_destinations_v2: {
 		table: "alert_destinations",
+		permission: "telemetry:read",
 		columns: [
 			"id",
 			"org_id",
@@ -87,6 +90,7 @@ const SUBSCRIPTIONS = {
 	// shape and a full re-sync, cheap here since a browser holds one row of it.
 	investigation_v2: {
 		table: "investigations",
+		permission: "telemetry:read",
 		scope: "id",
 		columns: [
 			"id",
@@ -122,6 +126,8 @@ export interface SubscriptionDefinition {
 	 * `scope` query param, bound positionally as `$2`.
 	 */
 	readonly scope?: string
+	/** What the caller must hold to stream it, the same permission its HTTP reads need. */
+	readonly permission?: Permission
 }
 
 export type SubscriptionName = keyof typeof SUBSCRIPTIONS
@@ -163,6 +169,10 @@ export const isSubscriptionName: (value: unknown) => value is SubscriptionName =
 /** The pinned definition for a shape. Total — `ShapeName` is proof of membership. */
 export const lookupSubscription = (subscription: SubscriptionName): SubscriptionDefinition =>
 	SUBSCRIPTION_DEFS[subscription]
+
+/** The permission a shape needs, or null when every member may stream it. */
+export const subscriptionPermission = (subscription: SubscriptionName): Permission | null =>
+	lookupSubscription(subscription).permission ?? null
 
 /** The column a shape narrows to a single client-supplied value, or null if it is org-wide. */
 export const subscriptionScopeColumn = (subscription: SubscriptionName): string | null =>

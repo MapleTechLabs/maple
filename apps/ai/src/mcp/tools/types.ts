@@ -1,5 +1,5 @@
 import type { Effect } from "effect"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type {
 	McpToolFamilyActions,
@@ -9,7 +9,9 @@ import type {
 } from "@maple/domain/mcp-outputs"
 import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
+import type { TenantContext } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { mayQueryDataSources, queryCallerOf } from "@maple/backend/services/data-sources/query-caller"
 
 export class McpAuthMissingError extends Schema.TaggedError<McpAuthMissingError>()(
 	"@maple/mcp/errors/McpAuthMissingError",
@@ -129,18 +131,6 @@ export const FEEDBACK_TOOL = "send_maple_feedback"
 export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
 	!readOnly && name !== FEEDBACK_TOOL
 
-/** The tools that build dashboards: the only changes an analyst's role reaches. */
-export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
-	"create_dashboard",
-	"update_dashboard",
-	"delete_dashboard",
-	"add_dashboard_widget",
-	"update_dashboard_widget",
-	"remove_dashboard_widget",
-	"reorder_dashboard_widgets",
-	"replace_dashboard_widgets",
-])
-
 /** The tools that read an org's connected data sources: absent for an org without that feature. */
 export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_sources", "query_data_source"])
 
@@ -148,29 +138,48 @@ export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_source
 export const LLM_EVALS_TOOLS: ReadonlySet<string> = new Set(["list_evaluations", "get_evaluation_scores"])
 
 /**
- * Writes an analyst's role reaches all the same: `onboarding_status_update` changes only the
- * caller's own run (v2's `personal`), and `get_ingest_setup` only creates the org's keys the way
- * the v2 public-key read every member may make already does.
+ * The permission a tool asks of the caller, or `null` for one anybody may call ({@link FEEDBACK_TOOL}).
+ * Declared on every tool; the registry hides and refuses a tool whose permission the caller lacks.
+ * A family whose actions ask for different ones lists them: it is shown to a caller holding any,
+ * and each action is then checked for its own.
  */
-export const ANALYST_ALLOWED_WRITE_TOOLS: ReadonlySet<string> = new Set([
-	"onboarding_status_update",
-	"get_ingest_setup",
-])
+export type McpToolPermission = Policy.Permission | Arr.NonEmptyReadonlyArray<Policy.Permission> | null
 
-/** Whether an analyst is refused this tool: one that changes data, unless a dashboard or an allowed write. */
-export const refusesAnalyst = (name: string, readOnly: boolean): boolean =>
-	refusesReadOnlyCredential(name, readOnly) &&
-	!DASHBOARD_AUTHORING_TOOLS.has(name) &&
-	!ANALYST_ALLOWED_WRITE_TOOLS.has(name)
+/**
+ * Whether the tenant holds `permission` for a tool call. A data source query in an unattended turn
+ * answers for whoever caused the turn, as the data source service judges it (`queryCallerOf`): the
+ * turn's own grants are Maple's agent's, not theirs.
+ */
+export const holdsToolPermission = (
+	tenant: Pick<TenantContext, "permissions" | "turnOrigin" | "turnStarter">,
+	permission: McpToolPermission,
+): boolean => {
+	if (permission === null) return true
+	return Arr.some(Arr.ensure(permission), (one) =>
+		one === "data_sources:query"
+			? mayQueryDataSources(queryCallerOf(tenant))
+			: Policy.can(tenant.permissions, one),
+	)
+}
 
-/** Why this caller is refused the tool, and so never shown it: their key, their role, or nothing. */
+/** Why this caller is refused the tool, and so never shown it: a permission they lack, their key, or nothing. */
+export type McpToolRefusal =
+	| { readonly _tag: "permission"; readonly permission: Policy.Permission }
+	| { readonly _tag: "read_only_key" }
+
 export const refusalFor = (
-	tenant: { readonly readOnly?: true; readonly roles: ReadonlyArray<string> },
-	name: string,
-	readOnly: boolean,
-): "analyst" | "read_only_key" | undefined => {
-	if (Policy.isAnalyst(tenant.roles) && refusesAnalyst(name, readOnly)) return "analyst"
-	if (tenant.readOnly === true && refusesReadOnlyCredential(name, readOnly)) return "read_only_key"
+	tenant: Pick<TenantContext, "permissions" | "readOnly" | "turnOrigin" | "turnStarter">,
+	tool: { readonly name: string; readonly permission: McpToolPermission; readonly readOnly: boolean },
+): McpToolRefusal | undefined => {
+	if (tool.permission !== null && !holdsToolPermission(tenant, tool.permission)) {
+		return {
+			_tag: "permission",
+			permission: typeof tool.permission === "string" ? tool.permission : tool.permission[0],
+		}
+	}
+	if (tenant.readOnly === true && refusesReadOnlyCredential(tool.name, tool.readOnly)) {
+		return { _tag: "read_only_key" }
+	}
 	return undefined
 }
 
@@ -305,6 +314,8 @@ export interface McpToolSpec<
 	readonly description: string
 	readonly parameters: P
 	readonly hints: McpToolHints
+	/** What the caller must hold to see and call the tool (`telemetry:read` for a plain read). */
+	readonly permission: McpToolPermission
 	/** Defaults to `public`. */
 	readonly audience?: McpToolAudience
 	/**
@@ -351,6 +362,8 @@ export interface McpToolActionSpec<
 	readonly description: string
 	readonly parameters: P
 	readonly hints: McpToolHints
+	/** What the caller must hold to run this action; the registry checks it once the action is known. */
+	readonly permission: Policy.Permission
 	/** In place of the family's, for an action a narrower key may run on its own. */
 	readonly scopeFamily?: string | ReadonlyArray<string>
 	readonly aliases?: Readonly<Record<string, string>>

@@ -265,12 +265,12 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 
 const dialogSlot = createLazy()
 
-const destinationDialog = (h: H, dialog: Model["destinationDialog"]): Html =>
+const destinationDialog = (h: H, dialog: Model["destinationDialog"], grants: Model["grants"]): Html =>
 	h.submodel({
 		slotId: "alert-rule-destination",
 		model: dialog,
 		view: DestinationDialogView.view,
-		viewInputs: { id: "alert-rule-destination" },
+		viewInputs: { id: "alert-rule-destination", grants },
 		toParentMessage: (message) => Message.GotDestinationDialogMessage({ message }),
 	})
 
@@ -292,7 +292,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 									: formSkeleton(h),
 						],
 			),
-			dialogSlot(destinationDialog, [h, model.destinationDialog]),
+			dialogSlot(destinationDialog, [h, model.destinationDialog, model.grants]),
 		],
 	)
 })

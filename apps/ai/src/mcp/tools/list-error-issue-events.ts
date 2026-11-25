@@ -23,6 +23,7 @@ export function registerListErrorIssueEventsTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading issue history"],
 		handler: Effect.fn("McpTool.listErrorIssueEvents")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

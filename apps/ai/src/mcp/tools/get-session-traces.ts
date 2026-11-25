@@ -20,6 +20,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Loading session traces"],
 		handler: Effect.fn("McpTool.getSessionTraces")(function* ({ session_id, limit }) {
 			const tenant = yield* CurrentMcpTenant

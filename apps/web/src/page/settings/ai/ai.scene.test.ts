@@ -1,6 +1,7 @@
+import * as Policy from "@maple/domain/policy"
 import { AiTriageSettingsDocument, AttachResult, OpenRouterKeyDocument } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message } from "./model"
 import { init, isLimitsDirty, update } from "./update"
@@ -102,7 +103,7 @@ describe("ai tab", () => {
 		).model
 		const picked = update(unentitled, Message.PickedProvider({ provider: "openrouter" })).model
 		scene(
-			{ update, view: withViewInputs(aiView, {})() },
+			{ update, view: withViewInputs(aiView, { grants: Policy.grantsOf(["org:admin"]) })() },
 			given(picked),
 			expectView(role("button", { name: "Add to plan" })).toExist(),
 		)
@@ -129,5 +130,22 @@ describe("ai tab", () => {
 			_tag: "RequestedCustomerRefresh",
 			toast: { type: "success", title: "Add-on added" },
 		})
+	})
+
+	test("the model provider follows llm_keys:manage and auto-triage follows ai_triage:configure", () => {
+		const as = (grants: ReadonlyArray<Policy.Permission>) => withViewInputs(aiView, { grants })()
+		scene(
+			{ update, view: as(["telemetry:read", "llm_keys:manage"]) },
+			given(loaded()),
+			expectView(role("switch", { name: "Investigate new incidents" })).toBeDisabled(),
+			expectView(text(Policy.denialFor("ai_triage:configure").message)).toExist(),
+			expectView(text(Policy.denialFor("llm_keys:manage").message)).not.toExist(),
+		)
+		scene(
+			{ update, view: as(["telemetry:read", "ai_triage:configure"]) },
+			given(loaded()),
+			expectView(role("switch", { name: "Investigate new incidents" })).toBeEnabled(),
+			expectView(text(Policy.denialFor("llm_keys:manage").message)).toExist(),
+		)
 	})
 })

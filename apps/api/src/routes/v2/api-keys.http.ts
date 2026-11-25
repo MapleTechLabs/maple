@@ -16,6 +16,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import * as Policy from "@maple/domain/policy"
+import { pinAuthority } from "@maple/backend/services/auth/pinned-authority"
 
 const beyondCallerScopes = () =>
 	V2InsufficientPermissions.make("A scoped API key cannot manage a key with broader access than its own")
@@ -93,23 +94,23 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 
 		/**
 		 * Null for a signed-in session. For an API key caller, whatever its role: that key's
-		 * expiry (null when it never expires), which no key it mints or rolls may pass. Revoking the
+		 * expiry (null when it never expires), which no key it mints or rolls may pass, and its
+		 * pinned permissions (none for an unpinned key). Revoking the
 		 * parent does not reach its children; demoting or removing their creator does (they are pinned).
 		 */
 		const callerKey = Effect.fnUntraced(function* (tenant: CurrentTenant.TenantContext) {
 			const actor = yield* CurrentAuditActor
 			if (actor?.type !== "api_key" || actor.apiKeyId === undefined) return null
 			// Gone since it authenticated this request: it was revoked, so it mints nothing.
+			const revoked = () =>
+				Effect.fail(V2InsufficientPermissions.make("The calling API key is no longer valid."))
 			const caller = yield* apiKeysService
 				.get(tenant.orgId, actor.apiKeyId)
-				.pipe(
-					Effect.catchTag("@maple/http/errors/ApiKeyNotFoundError", () =>
-						Effect.fail(
-							V2InsufficientPermissions.make("The calling API key is no longer valid."),
-						),
-					),
-				)
-			return { expiresAt: caller.expiresAt }
+				.pipe(Effect.catchTag("@maple/http/errors/ApiKeyNotFoundError", revoked))
+			const pinned = yield* apiKeysService
+				.pinnedGrants(tenant.orgId, actor.apiKeyId)
+				.pipe(Effect.catchTag("@maple/http/errors/ApiKeyNotFoundError", revoked))
+			return { expiresAt: caller.expiresAt, pinned }
 		})
 
 		return handlers
@@ -131,18 +132,25 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					// MCP keys are per-developer credentials any member may mint for
-					// themselves. Admins create standard keys with any access; engineers
-					// create restricted ones, limited to the scopes they could use. Both
-					// non-admin kinds pin the creator's roles onto the key so it carries no
-					// more authority than they have (an unpinned key resolves as `root`).
+					// MCP keys are per-developer credentials (`api_keys:create_mcp`). Admins create
+					// standard keys with any access; engineers create restricted ones, limited to
+					// the scopes they could use. Both non-admin kinds pin the creator's roles (and a
+					// custom role's permissions) onto the key so it carries no more authority than
+					// they have (an unpinned key resolves as `root`).
 					const isMcpKey = payload.kind === "mcp"
-					const canManageKeys = Policy.can(tenant.roles, "api_keys:manage")
-					if (!isMcpKey && !canManageKeys) {
-						yield* Policy.check(tenant.roles, "api_keys:create_restricted", (denial) =>
+					if (isMcpKey) {
+						yield* Policy.check(tenant.permissions, "api_keys:create_mcp", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
-						if (!Policy.canGrantScopes((p) => Policy.can(tenant.roles, p), payload.scopes)) {
+					}
+					const canManageKeys = Policy.can(tenant.permissions, "api_keys:manage")
+					if (!isMcpKey && !canManageKeys) {
+						yield* Policy.check(tenant.permissions, "api_keys:create_restricted", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
+						)
+						if (
+							!Policy.canGrantScopes((p) => Policy.can(tenant.permissions, p), payload.scopes)
+						) {
 							return yield* V2InsufficientPermissions.make(
 								"Only org admins can create an API key with full access or with these scopes. Pick the resource families you can use yourself.",
 							)
@@ -185,7 +193,7 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 						scopes: payload.scopes,
 						createdByEmail,
 						...(pinnedSource !== null
-							? { metadataJson: { source: pinnedSource, roles: [...tenant.roles] } }
+							? { metadataJson: { source: pinnedSource, ...pinAuthority(tenant) } }
 							: undefined),
 					})
 					yield* recordHttpAudit("api_key.created", {
@@ -201,26 +209,25 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 					const existing = yield* apiKeysService.get(tenant.orgId, params.id)
 					// An engineer may roll a standard key they created, when it carries no more
 					// than their role now holds: a key made while they were admin stays an admin's.
-					if (!Policy.can(tenant.roles, "api_keys:manage")) {
+					if (!Policy.can(tenant.permissions, "api_keys:manage")) {
 						const isOwnStandardKey =
 							existing.kind === "standard" && existing.createdBy === tenant.userId
 						if (!isOwnStandardKey) {
-							yield* Policy.check(tenant.roles, "api_keys:manage", (denial) =>
+							yield* Policy.check(tenant.permissions, "api_keys:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
 						}
-						yield* Policy.check(tenant.roles, "api_keys:create_restricted", (denial) =>
+						yield* Policy.check(tenant.permissions, "api_keys:create_restricted", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
-						const pinned = yield* apiKeysService.pinnedRoles(tenant.orgId, params.id)
+						const pinned = yield* apiKeysService.pinnedGrants(tenant.orgId, params.id)
 						const withinRole = Option.match(pinned, {
 							onNone: () => false,
-							onSome: (roles) =>
-								!Policy.outranks(Policy.highestRole(roles), Policy.highestRole(tenant.roles)),
+							onSome: (grants) => !Policy.exceeds(grants, tenant.permissions),
 						})
 						if (
 							!withinRole ||
-							!Policy.canGrantScopes((p) => Policy.can(tenant.roles, p), existing.scopes)
+							!Policy.canGrantScopes((p) => Policy.can(tenant.permissions, p), existing.scopes)
 						) {
 							return yield* V2InsufficientPermissions.make(
 								"Only org admins can roll a key with more access than your role has.",
@@ -238,15 +245,16 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 							"An expiring API key cannot roll a key that outlives it. Roll it from a signed-in session.",
 						)
 					}
-					// An API key may only take over a key carrying no more than its own roles (an
-					// unpinned key resolves as `root`), or the successor would escape its demotion.
-					if (caller !== null) {
-						const pinned = yield* apiKeysService.pinnedRoles(tenant.orgId, params.id)
-						const existingRole = Option.match(pinned, {
-							onNone: (): Policy.Role => "root",
-							onSome: Policy.highestRole,
+					// An API key may only take over a key carrying no more than its own permissions, or the
+					// successor would escape its demotion. An unpinned key answers to no member, so only
+					// another unpinned key may roll it.
+					if (caller !== null && Option.isSome(caller.pinned)) {
+						const pinned = yield* apiKeysService.pinnedGrants(tenant.orgId, params.id)
+						const outlivesCaller = Option.match(pinned, {
+							onNone: () => true,
+							onSome: (grants) => Policy.exceeds(grants, tenant.permissions),
 						})
-						if (Policy.outranks(existingRole, Policy.highestRole(tenant.roles))) {
+						if (outlivesCaller) {
 							return yield* V2InsufficientPermissions.make(
 								"An API key cannot roll a key with more access than its own roles. Roll it from a signed-in session.",
 							)
@@ -277,9 +285,9 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 						(existing.kind === "mcp" ||
 							existing.kind === "device" ||
 							(existing.kind === "standard" &&
-								Policy.can(tenant.roles, "api_keys:create_restricted")))
+								Policy.can(tenant.permissions, "api_keys:create_restricted")))
 					if (!isOwnSelfServiceKey) {
-						yield* Policy.check(tenant.roles, "api_keys:manage", (denial) =>
+						yield* Policy.check(tenant.permissions, "api_keys:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
 					}

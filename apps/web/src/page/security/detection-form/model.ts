@@ -18,7 +18,7 @@ import { SessionGrants } from "../../kit/session-grants"
 import { Form, SelectField, TextField } from "./form"
 
 // `/security/detections/new`: the editor of one audit log detection, new or (`?detectionId=`)
-// existing. Only org admins (`audit_log:read`) open it.
+// existing. Only roles with `audit_log:read` open it.
 
 export const Model = Schema.Struct({
 	search: SecurityDetectionNewSearch,

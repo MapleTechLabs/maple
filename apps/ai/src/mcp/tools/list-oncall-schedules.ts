@@ -21,6 +21,7 @@ export function registerListOnCallSchedulesTool(server: McpToolRegistrar) {
 			"Shows each schedule's layers, participants and who is on call right now. Ask about one instant with who_is_on_call.",
 		parameters: Schema.Struct({}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing on-call schedules"],
 		handler: Effect.fn("McpTool.listOnCallSchedules")(function* () {
 			const tenant = yield* CurrentMcpTenant

@@ -19,9 +19,11 @@ import {
 	type ChatProposalApproval,
 } from "@maple/domain/chat-session"
 import { OrgId, UserId } from "@maple/primitives"
+import * as Policy from "@maple/domain/policy"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
+import { approvalPermission } from "./approval-permission"
 import { canonicalToolName } from "../mcp/tools/tool-name-aliases"
 import { chatPlatformLayer, type ChatRuntimeInput, chatTelemetry, releaseChatRuntime } from "./do-runtime"
 import { LinkedUserNotPermitted, linkedUserTenant, toTenantContext } from "./turn-actor"
@@ -71,11 +73,22 @@ const actingUser = (input: Extract<ApplyChatProposalInput, { readonly actingUser
 
 /**
  * Who the change runs as, which the caller decided before the session was ever reached: always a
- * Maple user. A person in the app acts as themselves, and a connector approver as the user their
- * chat account is linked to (see `ChatConnector.identity`).
+ * Maple user holding what approving the tool needs (`approvalPermission`). A person in the app acts
+ * as themselves, and a connector approver as the user their chat account is linked to (see
+ * `ChatConnector.identity`).
  */
 export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
-	// The route authenticated them and resolved their roles; the audit entry names them.
+	const tenant = yield* approverTenant(orgId, input)
+	yield* Policy.check(
+		tenant.permissions,
+		approvalPermission(input.tool),
+		(denial) => new LinkedUserNotPermitted({ reason: "not_permitted", message: denial.message }),
+	)
+	return tenant
+})
+
+const approverTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
+	// The route authenticated them and resolved their permissions; the audit entry names them.
 	if ("tenant" in input) {
 		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "app")
 		return toTenantContext(input.tenant, input.approver)

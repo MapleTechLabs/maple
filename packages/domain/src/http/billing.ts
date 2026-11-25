@@ -15,7 +15,7 @@ import {
 	LinkBillingOrgRequest,
 } from "./billing-account"
 import { WarehouseQueryError } from "./warehouse-errors"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess } from "./endpoint-access"
 
 // Contract for raw Autumn proxy responses. Schemas model only consumed fields
 // and tolerate additive upstream fields.
@@ -680,35 +680,36 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getCustomer", "/customer", {
 			success: BillingCustomer,
 			error: [...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("getUsage", "/usage", {
 			query: BillingUsageQuery,
 			success: BillingUsage,
 			error: [...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("getAiCreditUsage", "/ai-credit-usage", {
 			success: AiCreditUsageResponse,
 			error: [...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("listInvoices", "/invoices", {
 			success: BillingInvoicesResponse,
 			error: [BillingManagedByBillingOrgError, ...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	// Warehouse-backed, unlike every other read in this group: Autumn only knows
 	// cycle totals, so the daily shape behind the spend chart comes from
-	// `service_usage` + `session_replays`.
+	// `service_usage` + `session_replays`. The handler asks for billing:manage or
+	// telemetry:read.
 	.add(
 		HttpApiEndpoint.get("getDailySpend", "/daily-spend", {
 			success: DailySpendResponse,
-			error: [...billingTransportErrors, WarehouseQueryError],
-		}),
+			error: [BillingForbiddenError, ...billingTransportErrors, WarehouseQueryError],
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.put("updateBillingControls", "/billing-controls", {
@@ -729,7 +730,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 			payload: PreviewAttachRequest,
 			success: PreviewAttachResult,
 			error: [BillingManagedByBillingOrgError, ...billingRequestErrors],
-		}).annotate(AnalystAccess, "read"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("openCustomerPortal", "/portal", {
@@ -745,7 +746,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getBillingProfile", "/profile", {
 			success: BillingProfile,
 			error: [BillingManagedByBillingOrgError, ...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.put("updateBillingProfile", "/profile", {
@@ -788,13 +789,13 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getBillingAccount", "/account", {
 			success: BillingAccount,
 			error: [...billingTransportErrors],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("getBillingAccountUsage", "/account/usage", {
 			success: BillingAccountUsageResponse,
 			error: [BillingForbiddenError, ...billingTransportErrors, WarehouseQueryError],
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("linkBillingOrg", "/account/link", {
@@ -811,7 +812,8 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		}),
 	)
 	.prefix("/internal/billing")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}
 
 // The plan catalog is global, so `listPlans` stays public — a transient
 // onboarding token gap serves the catalog instead of a 401. The handler still

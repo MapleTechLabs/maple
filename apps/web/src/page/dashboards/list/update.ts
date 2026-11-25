@@ -21,6 +21,7 @@ import {
 	WaitSearchDebounce,
 	FocusTagSearch,
 	FetchDashboardsFallback,
+	FetchListSession,
 } from "./command"
 import { countLabel } from "@maple/ui/lib/format"
 import * as TagEditor from "../kit/tag-editor"
@@ -28,6 +29,7 @@ import { displayName, queryOf, sectionsOf, tagsOf } from "./derive"
 import { focusedIndexOf, listKeyAction, scrollFocusedRowCommand } from "../../kit/list-keys"
 import * as Combobox from "@maple/views/ui/combobox"
 import { INITIAL_LOCALE } from "@maple/views/lib/locale"
+import { acceptGrants } from "../../kit/session-grants"
 import { type CreatedDashboard, Message, type WriteFailure } from "./message"
 import type { ListDashboard, Model } from "./model"
 
@@ -40,9 +42,10 @@ const IMPORT_REPORT_DIALOG_ID = "dashboard-import-report-dialog"
 export const TAG_FILTER_ID = "dashboards-tag-filter"
 export const rowMenuIdOf = (id: string): string => `dashboard-row-menu-${id}`
 
-export const init = (route: Route, _context: PageContext): Return => ({
+export const init = (route: Route, context: PageContext): Return => ({
 	model: {
 		search: route.search,
+		grants: [],
 		dashboards: null,
 		nowMs: null,
 		locale: INITIAL_LOCALE,
@@ -67,7 +70,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		fallback: { _tag: "Idle" },
 		focusedId: null,
 	},
-	commands: [ReadClock(), LoadPreferences()],
+	commands: [ReadClock(), LoadPreferences(), FetchListSession({ orgId: context.orgId })],
 })
 
 /** An outside change to `q` replaces the search input, its own echo does not. */
@@ -328,6 +331,7 @@ const failedWrite = (model: Model, failure: WriteFailure, orgId: string): Return
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs, locale }) => ({ model: { ...model, nowMs, locale } }),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedLoadPreferences: ({ favorites, sort }) => ({
 			model: { ...model, favorites, storedSort: sort, isPrefsLoaded: true },
 		}),

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { MapleInternalApi } from "@maple/domain/http"
@@ -289,6 +290,7 @@ describe("recordMcpToolAudit", () => {
 					orgId: ORG,
 					userId: CONNECTOR_PLACEHOLDER_USER,
 					roles: [],
+					permissions: Policy.grantsOf([]),
 					authMode: "self_hosted",
 					actorId: CONNECTOR_ACTOR,
 					// The display name is the platform's, so its length is not Maple's to trust.
@@ -420,6 +422,7 @@ describe("recordMcpToolAudit", () => {
 					orgId: ORG,
 					userId: SERVICE_USER,
 					roles: [],
+					permissions: Policy.grantsOf([]),
 					authMode: "self_hosted",
 					turnOrigin: { kind: "autonomous" },
 					chatMode: "pr-review",

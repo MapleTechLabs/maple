@@ -9,6 +9,7 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 } from "./integrations"
+import { EndpointAccess } from "./endpoint-access"
 
 /** The Vercel team the org's connection reads: its id at Vercel, and how the Cost page names it. */
 export const VercelCostTeam = Schema.Struct({ id: Schema.String, name: Schema.String, slug: Schema.String })
@@ -69,4 +70,5 @@ export class VercelCostApiGroup extends HttpApiGroup.make("vercelCost")
 		}),
 	)
 	.prefix("/internal/cost/vercel")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

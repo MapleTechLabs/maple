@@ -1,3 +1,4 @@
+import { EndpointAccess } from "./endpoint-access"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
@@ -24,7 +25,7 @@ export class McpToolsApiGroup extends HttpApiGroup.make("mcpTools")
 	.add(
 		HttpApiEndpoint.get("list", "/tools", {
 			success: McpToolCatalogResponse,
-		}),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.prefix("/internal/mcp")
 	.middleware(SessionAuthorization) {}

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	DeleteSloOutput,
@@ -83,7 +84,14 @@ let admin: EvalRuntime
 beforeAll(() => {
 	installFakeWarehouse(fixtures, (sql) => failStatusReads && Str.includes("AS serviceName")(sql))
 	member = makeEvalRuntime()
-	admin = { ...member, tenant: { ...member.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
+	admin = {
+		...member,
+		tenant: {
+			...member.tenant,
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
+			permissions: Policy.grantsOf(["org:admin"]),
+		},
+	}
 })
 afterAll(async () => {
 	restoreWarehouse()
@@ -93,7 +101,7 @@ afterAll(async () => {
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
-const DENIED = "only org admins and engineers"
+const DENIED = Policy.denialFor("slos:manage").message
 
 describe("create_slo", () => {
 	it("is refused for a member who is not an admin or engineer", async () => {

@@ -4,6 +4,7 @@ import {
 	dataSourceQuerySet,
 	dataSourceRawSql,
 	dataSourceRouteParams,
+	holdsRawSql,
 	isQueryDataSource,
 } from "./access"
 
@@ -167,5 +168,14 @@ describe("isQueryDataSource", () => {
 		]) {
 			expect(isQueryDataSource(source)).toBe(dataSourceQuerySet(source) !== null)
 		}
+	})
+})
+
+describe("holdsRawSql", () => {
+	const sql = { kind: "raw_sql", sql: "SELECT 1" }
+	it("finds raw SQL in a tile and in a stat's sparkline", () => {
+		expect(holdsRawSql([{ dataSource: sql }])).toBe(true)
+		expect(holdsRawSql([{ dataSource: {}, display: { sparkline: { dataSource: sql } } }])).toBe(true)
+		expect(holdsRawSql([{ dataSource: {} }, { display: {} }])).toBe(false)
 	})
 })

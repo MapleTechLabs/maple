@@ -22,6 +22,7 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 			environment: P.environment(),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing services", "Checking which services are reporting"],
 		handler: Effect.fn("McpTool.listServices")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "list_services")

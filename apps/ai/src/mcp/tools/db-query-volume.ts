@@ -28,6 +28,7 @@ export function registerDbQueryVolumeTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Ranking database queries"],
 		handler: Effect.fn("McpTool.dbQueryVolume")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

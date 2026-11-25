@@ -21,6 +21,7 @@ export function registerMergeErrorIssuesTool(server: McpToolRegistrar) {
 		}),
 		// Unmerge hands fingerprints back but not the closed incidents or cleared leases.
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "error_issues:triage",
 		phrases: ["Merging duplicate issues"],
 		handler: Effect.fn("McpTool.mergeErrorIssues")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

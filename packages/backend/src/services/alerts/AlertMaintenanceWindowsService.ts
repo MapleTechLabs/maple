@@ -12,7 +12,6 @@ import {
 	type AlertMaintenanceWindowUpdateRequest,
 	type AlertSilenceMatchers,
 	type OrgId,
-	type RoleName,
 	type StoredAlertMaintenanceSchedule,
 	type UserId,
 } from "@maple/domain/http"
@@ -78,7 +77,7 @@ export interface AlertMaintenanceWindowsServiceApi {
 	readonly create: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		request: AlertMaintenanceWindowCreateRequest,
 	) => Effect.Effect<
 		AlertMaintenanceWindowDocument,
@@ -87,7 +86,7 @@ export interface AlertMaintenanceWindowsServiceApi {
 	readonly update: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		windowId: AlertMaintenanceWindowId,
 		request: AlertMaintenanceWindowUpdateRequest,
 	) => Effect.Effect<
@@ -104,7 +103,7 @@ export interface AlertMaintenanceWindowsServiceApi {
 	readonly revise: <E>(
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		windowId: AlertMaintenanceWindowId,
 		change: MaintenanceWindowChange<E>,
 	) => Effect.Effect<
@@ -119,7 +118,7 @@ export interface AlertMaintenanceWindowsServiceApi {
 	readonly delete: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		windowId: AlertMaintenanceWindowId,
 	) => Effect.Effect<
 		AlertMaintenanceWindowDocument,
@@ -143,14 +142,13 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 		const runtime = yield* AlertRuntime
 		const dbExecute = makeDbExecute(database, "AlertMaintenanceWindowsService", makePersistenceError)
 
-		const requireManage = (roles: ReadonlyArray<RoleName>) =>
+		const requireManage = (permissions: Policy.Grants) =>
 			Policy.check(
-				roles,
+				permissions,
 				"alerts:manage",
 				(denial) =>
 					new AlertForbiddenError({
 						message: denial.message,
-						...(roles.length > 0 ? { roles: [...roles] } : undefined),
 					}),
 			)
 
@@ -265,10 +263,10 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 		const create = Effect.fn("AlertMaintenanceWindowsService.create")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			request: AlertMaintenanceWindowCreateRequest,
 		) {
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			const nowMs = yield* runtime.now
 			const schedule = toStoredMaintenanceSchedule(request.schedule)
 			yield* validateSchedule(schedule, nowMs)
@@ -427,11 +425,11 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 		const revise = <E>(
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			windowId: AlertMaintenanceWindowId,
 			change: MaintenanceWindowChange<E>,
 		) =>
-			requireManage(roles).pipe(
+			requireManage(permissions).pipe(
 				Effect.andThen(reviseAttempt(orgId, userId, windowId, change, REVISE_ATTEMPTS)),
 				Effect.withSpan("AlertMaintenanceWindowsService.update"),
 			)
@@ -439,18 +437,18 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 		const update = (
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			windowId: AlertMaintenanceWindowId,
 			request: AlertMaintenanceWindowUpdateRequest,
-		) => revise(orgId, userId, roles, windowId, () => Effect.succeed(request))
+		) => revise(orgId, userId, permissions, windowId, () => Effect.succeed(request))
 
 		const remove = Effect.fn("AlertMaintenanceWindowsService.delete")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			windowId: AlertMaintenanceWindowId,
 		) {
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			const nowMs = yield* runtime.now
 			const current = yield* findRow(orgId, windowId)
 			yield* dbExecute((db) =>

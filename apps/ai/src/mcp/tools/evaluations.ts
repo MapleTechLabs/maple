@@ -46,6 +46,7 @@ export function registerListEvaluationsTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({ ...WINDOW.fields }),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing evaluations"],
 		handler: Effect.fn("McpTool.listEvaluations")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "list_evaluations")
@@ -135,6 +136,7 @@ export function registerGetEvaluationScoresTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading evaluation scores"],
 		handler: Effect.fn("McpTool.getEvaluationScores")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "get_evaluation_scores")

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Effect, Schema, Array as Arr } from "effect"
 import {
 	DeleteUptimeMonitorOutput,
@@ -22,7 +23,14 @@ let member: EvalRuntime
 let admin: EvalRuntime
 beforeAll(() => {
 	member = makeEvalRuntime()
-	admin = { ...member, tenant: { ...member.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
+	admin = {
+		...member,
+		tenant: {
+			...member.tenant,
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
+			permissions: Policy.grantsOf(["org:admin"]),
+		},
+	}
 })
 afterAll(async () => {
 	await member.dispose()
@@ -41,7 +49,7 @@ describe("create_uptime_monitor", () => {
 			url: "https://api.acme.dev/health",
 		})
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("only org admins")
+		expect(markdown(result)).toContain(Policy.denialFor("uptime_monitors:manage").message)
 	})
 
 	it("creates an http check expecting 2xx and points at the monitor list", async () => {
@@ -330,7 +338,7 @@ describe("delete_uptime_monitor", () => {
 			confirm: false,
 		})
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("only org admins")
+		expect(markdown(result)).toContain(Policy.denialFor("uptime_monitors:manage").message)
 		expect(markdown(result)).not.toContain("confirm=true")
 	})
 

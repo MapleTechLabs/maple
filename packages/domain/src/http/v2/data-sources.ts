@@ -25,6 +25,7 @@ import {
 import { ListOf, ListQuery } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
+import { EndpointAccess } from "../endpoint-access"
 
 export * from "./data-sources-wire"
 
@@ -172,4 +173,5 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			description:
 				"Databases and APIs your organization connects so Maple and its agents can query them in place. Nothing is imported. Members can read sources and catalogs; connecting, editing, testing and curating take an admin.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

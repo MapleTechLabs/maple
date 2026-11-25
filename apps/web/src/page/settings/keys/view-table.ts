@@ -91,7 +91,7 @@ const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (is
 	const isDead = row.status === "revoked" || row.status === "expired"
 	const can = apiKeyRowPermissions(key, {
 		canManageKeys: canManage(model),
-		canCreateRestricted: Policy.has(model.grants, "api_keys:create_restricted"),
+		canCreateRestricted: Policy.can(model.grants, "api_keys:create_restricted"),
 		userId: model.userId,
 	})
 	// A live key always lists Roll and Revoke; the ones the viewer may not use are locked with the reason.
@@ -244,7 +244,7 @@ const deviceRow = (
 	const key: V2ApiKey = row.key
 	const can = apiKeyRowPermissions(key, {
 		canManageKeys: canManage(model),
-		canCreateRestricted: Policy.has(model.grants, "api_keys:create_restricted"),
+		canCreateRestricted: Policy.can(model.grants, "api_keys:create_restricted"),
 		userId: model.userId,
 	})
 	const entries: ReadonlyArray<MenuView.MenuEntry> = key.revoked

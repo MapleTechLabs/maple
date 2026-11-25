@@ -107,6 +107,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Computing a funnel", "Querying a funnel"],
 		handler: Effect.fn("McpTool.queryFunnel")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

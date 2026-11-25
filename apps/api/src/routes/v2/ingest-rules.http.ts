@@ -54,12 +54,11 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 		// A rule drops or rewrites the whole org's telemetry, so writes need ingest_rules:manage.
 		const requireRuleWrite = (tenant: CurrentTenant.TenantSchema) =>
 			Policy.check(
-				tenant.roles,
+				tenant.permissions,
 				"ingest_rules:manage",
 				(denial) =>
 					new IngestRuleForbiddenError({
 						message: denial.message,
-						...(tenant.roles.length > 0 ? { roles: [...tenant.roles] } : undefined),
 					}),
 			)
 

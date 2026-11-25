@@ -1,4 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -7,6 +8,7 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testin
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { CurrentMcpTenant } from "../tenant"
 import { parameterOfProblem, previewNotes, previewOver, registerIngestRuleTools } from "./ingest-rules"
+import { executeRegisteredMcpToolUnscoped } from "./registry"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
@@ -74,6 +76,7 @@ const layerFor = (testDb: TestDb, roles: ReadonlyArray<string>) =>
 			orgId: Schema.decodeSync(OrgId)("org_mcp_rules"),
 			userId: Schema.decodeSync(UserId)("user_mcp_rules"),
 			roles: Arr.map(roles, (role) => Schema.decodeSync(RoleName)(role)),
+			permissions: Policy.grantsOf(Arr.map(roles, (role) => Schema.decodeSync(RoleName)(role))),
 			authMode: "self_hosted",
 		}),
 	).pipe(
@@ -119,8 +122,15 @@ describe("ingest rule MCP tools", () => {
 		const call = tools()
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const refused = yield* call("manage_ingest_rule create", dropDebug).pipe(Effect.flip)
-			assert.strictEqual(refused._tag, "@maple/mcp/errors/McpUnavailableError")
+			const refused = yield* executeRegisteredMcpToolUnscoped(
+				"manage_ingest_rule",
+				{ action: "create", ...dropDebug },
+				"mcp",
+			).pipe(Effect.flip)
+			assert.deepInclude(refused, {
+				_tag: "@maple/mcp/errors/McpAuthInvalidError",
+				message: Policy.denialFor("ingest_rules:manage").message,
+			})
 		}).pipe(
 			Effect.provide(layerFor(testDb, ["org:member"])),
 			Effect.andThen(

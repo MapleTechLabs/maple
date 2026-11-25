@@ -49,6 +49,8 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
 const MEMBER = Policy.grantsOf(["org:member"])
+/** A custom role that holds Manage on-call schedules and nothing else. */
+const ONCALL_ONLY = Policy.grantsOf(["org:custom"], ["oncall:manage"])
 const SCHEDULES = populatedSchedules(ONCALL_NOW)
 
 const onTab = (
@@ -161,9 +163,18 @@ describe("alerts hub, on-call schedules", () => {
 			expectView(text("Checkout primary")).toExist(),
 			expectView(role("link", { name: "New schedule" })).not.toExist(),
 			expectView(role("button", { name: "New schedule" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("oncall:manage").message })).toExist(),
 			// The row menu stays, its items disabled with the same reason.
 			expectView(role("button", { name: "Actions for Checkout primary" })).toExist(),
+		)
+	})
+
+	test("a custom role holding only Manage on-call schedules can create and change schedules", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(onTab("on-call", ONCALL_ONLY, SCHEDULES)),
+			expectView(role("link", { name: "New schedule" })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("oncall:manage").message })).not.toExist(),
 		)
 	})
 

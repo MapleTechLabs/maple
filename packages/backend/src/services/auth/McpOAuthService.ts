@@ -33,6 +33,8 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { McpOAuthRateLimit } from "@maple/backend/platform/bindings"
 import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
+import type * as Policy from "@maple/domain/policy"
+import { pinAuthority } from "./pinned-authority"
 
 const AUTHORIZATION_REQUEST_TTL_MS = 10 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
@@ -56,6 +58,7 @@ type ApprovalIdentity = {
 	readonly orgId: OrgId
 	readonly userId: UserId
 	readonly roles: ReadonlyArray<RoleName>
+	readonly permissions: Policy.Grants
 	readonly userEmail: string | null
 }
 
@@ -234,9 +237,15 @@ const verifyPkce = (verifier: string, challenge: string) => {
 	return actual.length === expected.length && timingSafeEqual(actual, expected)
 }
 
-const oauthKeyMetadata = (roles: ReadonlyArray<string>, clientId: string, resource: string) => ({
+const oauthKeyMetadata = (
+	roles: ReadonlyArray<string>,
+	permissions: ReadonlyArray<number> | null,
+	clientId: string,
+	resource: string,
+) => ({
 	source: "maple_mcp_oauth",
 	roles: [...roles],
+	...(permissions === null ? undefined : { permissions: [...permissions] }),
 	clientId,
 	resource,
 })
@@ -539,6 +548,7 @@ export class McpOAuthService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			const code = makeOpaqueToken("mcp_code_")
+			const pinned = pinAuthority(identity)
 			const updated = yield* dbExecute((db) =>
 				db.run(
 					PG.update(McpOAuthAuthorizations)
@@ -550,7 +560,8 @@ export class McpOAuthService extends Context.Service<
 							),
 							approvedOrgId: identity.orgId,
 							approvedUserId: identity.userId,
-							approvedRoles: [...identity.roles],
+							approvedRoles: pinned.roles,
+							approvedPermissions: pinned.permissions ?? null,
 							approvedUserEmail: identity.userEmail,
 							approvedAt: now,
 							expiresAt: now + AUTHORIZATION_CODE_TTL_MS,
@@ -676,7 +687,7 @@ export class McpOAuthService extends Context.Service<
 						"Authorization code is invalid, expired, or already used",
 					)
 				}
-				const { approvedOrgId, approvedUserId, approvedRoles } = row
+				const { approvedOrgId, approvedUserId, approvedRoles, approvedPermissions } = row
 				const values = makeTokenValues({
 					clientId: row.clientId,
 					clientName: row.clientName,
@@ -711,7 +722,12 @@ export class McpOAuthService extends Context.Service<
 									keyPrefix: Str.slice(0, 12)(values.accessToken) + "...",
 									kind: "mcp",
 									scopes: row.scopes,
-									metadataJson: oauthKeyMetadata(approvedRoles, row.clientId, row.resource),
+									metadataJson: oauthKeyMetadata(
+										approvedRoles,
+										approvedPermissions,
+										row.clientId,
+										row.resource,
+									),
 									expiresAt: now + ACCESS_TOKEN_TTL_MS,
 									createdAt: now,
 									createdBy: approvedUserId,
@@ -733,6 +749,7 @@ export class McpOAuthService extends Context.Service<
 									orgId: approvedOrgId,
 									userId: approvedUserId,
 									roles: approvedRoles,
+									permissions: approvedPermissions,
 									userEmail: row.approvedUserEmail,
 									accessKeyId: values.accessKeyId,
 									createdAt: now,
@@ -866,7 +883,12 @@ export class McpOAuthService extends Context.Service<
 									keyPrefix: Str.slice(0, 12)(values.accessToken) + "...",
 									kind: "mcp",
 									scopes: requestedScopes,
-									metadataJson: oauthKeyMetadata(row.roles, row.clientId, row.resource),
+									metadataJson: oauthKeyMetadata(
+										row.roles,
+										row.permissions,
+										row.clientId,
+										row.resource,
+									),
 									expiresAt: now + ACCESS_TOKEN_TTL_MS,
 									createdAt: now,
 									createdBy: row.userId,
@@ -888,6 +910,7 @@ export class McpOAuthService extends Context.Service<
 									orgId: row.orgId,
 									userId: row.userId,
 									roles: row.roles,
+									permissions: row.permissions,
 									userEmail: row.userEmail,
 									accessKeyId: values.accessKeyId,
 									createdAt: now,

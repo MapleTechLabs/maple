@@ -146,6 +146,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Tracing paths", "Following what people did next"],
 		handler: Effect.fn("McpTool.queryPaths")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

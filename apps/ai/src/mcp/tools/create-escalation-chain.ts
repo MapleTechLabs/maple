@@ -33,6 +33,7 @@ export const createEscalationChainAction = (family: McpToolFamilyBuilder<"manage
 			description: P.optionalText("Free-form notes"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "oncall:manage",
 		handler: Effect.fn("McpTool.createEscalationChain")(function* (params) {
 			const steps = yield* toStepsRequest(params.steps)
 			const request = yield* decodeCreateRequest({
@@ -44,7 +45,7 @@ export const createEscalationChainAction = (family: McpToolFamilyBuilder<"manage
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
 			const chain = yield* chains
-				.create(tenant.orgId, tenant.userId, tenant.roles, request)
+				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
 				.pipe(Effect.catchTags(createChainErrors))
 			const directory = yield* targetDirectory(tenant.orgId)
 			return { chain: toEscalationChainRow(chain, directory) }

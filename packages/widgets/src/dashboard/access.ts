@@ -142,6 +142,37 @@ export const dataSourceRawSql = (dataSource: unknown): RawSqlDataSource | null =
 	}
 }
 
+/** Where a widget can hold a data source: the tile itself, and a stat's sparkline. */
+export interface WidgetDataSources {
+	readonly dataSource?: unknown
+	readonly display?: { readonly sparkline?: { readonly dataSource?: unknown } | undefined } | undefined
+}
+
+/** Every raw SQL text on these widgets, tiles and sparklines alike. */
+const rawSqlTexts = (widgets: ReadonlyArray<WidgetDataSources>): ReadonlyArray<string> =>
+	Arr.flatMap(widgets, (widget) =>
+		Arr.flatMap([widget.dataSource, widget.display?.sparkline?.dataSource], (dataSource) => {
+			const rawSql = dataSourceRawSql(dataSource)
+			return rawSql === null ? [] : [rawSql.sql]
+		}),
+	)
+
+/** Whether any of these widgets runs raw SQL, in its tile or a stat's sparkline. */
+export const holdsRawSql = (widgets: ReadonlyArray<WidgetDataSources>): boolean =>
+	rawSqlTexts(widgets).length > 0
+
+/**
+ * Whether `after` holds raw SQL that `before` did not: a new SQL widget, or a changed text. Saving
+ * SQL a board already had is not writing SQL; who may write it is the caller's rule.
+ */
+export const addsRawSql = (
+	before: ReadonlyArray<WidgetDataSources>,
+	after: ReadonlyArray<WidgetDataSources>,
+): boolean => {
+	const existing = new Set(rawSqlTexts(before))
+	return Arr.some(rawSqlTexts(after), (sql) => !existing.has(sql))
+}
+
 export interface PromqlDataSource {
 	query: string
 	legendFormat?: string

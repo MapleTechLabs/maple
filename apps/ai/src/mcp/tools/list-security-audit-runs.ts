@@ -33,6 +33,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 100, noun: "runs" }),
 		}),
 		hints: { readOnly: true },
+		permission: "security:manage",
 		phrases: ["Reading security audit runs"],
 		handler: Effect.fn("McpTool.listSecurityAuditRuns")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

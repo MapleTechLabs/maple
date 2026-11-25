@@ -145,7 +145,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 					const created = yield* schedules.create(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						request,
 					)
 					yield* recordHttpAudit("oncall_schedule.created", {
@@ -172,7 +172,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 					const updated = yield* schedules.update(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 						request,
 					)
@@ -191,7 +191,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* schedules.delete(tenant.orgId, tenant.roles, params.id)
+					yield* schedules.delete(tenant.orgId, tenant.permissions, params.id)
 					yield* recordHttpAudit("oncall_schedule.deleted", { resourceId: params.id })
 					const deleted: V2OnCallScheduleDeleteResponse = {
 						id: params.id,
@@ -204,9 +204,14 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("createCalendarFeed", ({ params, query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const feed = yield* schedules.createCalendarFeed(tenant.orgId, tenant.roles, params.id, {
-						replace: query.replace === "true",
-					})
+					const feed = yield* schedules.createCalendarFeed(
+						tenant.orgId,
+						tenant.permissions,
+						params.id,
+						{
+							replace: query.replace === "true",
+						},
+					)
 					// The link is a credential: the audit entry names the schedule, never the token.
 					yield* recordHttpAudit("oncall_schedule.calendar_feed_created", { resourceId: params.id })
 					const created: V2OnCallCalendarFeed = {
@@ -221,7 +226,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("deleteCalendarFeed", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* schedules.deleteCalendarFeed(tenant.orgId, tenant.roles, params.id)
+					yield* schedules.deleteCalendarFeed(tenant.orgId, tenant.permissions, params.id)
 					yield* recordHttpAudit("oncall_schedule.calendar_feed_deleted", { resourceId: params.id })
 					const deleted: V2OnCallCalendarFeedDeleteResponse = {
 						object: "oncall_calendar_feed",
@@ -286,7 +291,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 					const created = yield* schedules.createOverride(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 						request,
 					)
@@ -305,7 +310,12 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("deleteOverride", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* schedules.deleteOverride(tenant.orgId, tenant.roles, params.id, params.override_id)
+					yield* schedules.deleteOverride(
+						tenant.orgId,
+						tenant.permissions,
+						params.id,
+						params.override_id,
+					)
 					yield* recordHttpAudit("oncall_override.deleted", {
 						resourceId: params.override_id,
 						metadata: { scheduleId: params.id },

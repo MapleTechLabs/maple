@@ -14,12 +14,14 @@ import type { DashboardsTemplatesSearch } from "../../../route/search"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as Dialog from "@maple/views/ui/dialog"
 import { planWidget } from "../kit/widget-data"
+import { acceptGrants } from "../../kit/session-grants"
 import {
 	AwaitCreated,
 	CreateFromTemplate,
 	FetchMetrics,
 	FetchPreview,
 	FetchTemplates,
+	FetchTemplatesSession,
 	FetchWidget,
 	ReadClock,
 	WaitParameterDebounce,
@@ -51,6 +53,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	return {
 		model: {
 			search: route.search,
+			grants: [],
 			nowMs: null,
 			templates: { key: templates, data: AsyncData.Loading() },
 			metrics: { key: metrics, data: AsyncData.Loading() },
@@ -77,6 +80,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			ReadClock(),
 			FetchTemplates({ key: templates }),
 			FetchMetrics({ key: metrics }),
+			FetchTemplatesSession({ orgId: context.orgId }),
 			loadChartRuntime,
 		],
 	}
@@ -221,6 +225,7 @@ const sortStep = (model: Model, widgetId: string, field: string, isText: boolean
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) => planPreview({ ...model, nowMs }, context),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchTemplates: ({ key, result }) => {
 			const next = { ...model, templates: Keyed.accept(model.templates, key, result) }
 			// The panel mounts once the list resolves the selection; its arming delay starts then.

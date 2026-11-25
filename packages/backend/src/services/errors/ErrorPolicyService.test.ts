@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import {
@@ -27,8 +28,8 @@ const asDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const asEscalationId = Schema.decodeUnknownSync(IssueEscalationId)
 const asRoleName = Schema.decodeUnknownSync(RoleName)
-const ADMIN_ROLES = [asRoleName("org:admin")]
-const MEMBER_ROLES = [asRoleName("org:member")]
+const ADMIN_ROLES = Policy.grantsOf([asRoleName("org:admin")])
+const MEMBER_ROLES = Policy.grantsOf([asRoleName("org:member")])
 
 const ORG = asOrgId("org_error_policy_service_test")
 const OTHER_ORG = asOrgId("org_error_policy_service_other")

@@ -6,6 +6,7 @@
  * model, the agent engine or any of the graph `turn-runner` pulls in at module scope.
  */
 import {
+	ANONYMOUS_CONNECTOR_GRANTS,
 	decodeChatTurnTenant,
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
@@ -18,7 +19,7 @@ import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembership
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import * as Policy from "@maple/domain/policy"
 import { RoleName } from "@maple/primitives"
-import { Cause, Effect, Option, Schema } from "effect"
+import { Array as Arr, Cause, Effect, Option, Schema } from "effect"
 
 /**
  * Decode the wire projection back into the `apps/api` tenant type.
@@ -36,6 +37,13 @@ export const toTenantContext = (encoded: ChatTurnTenantEncoded, origin: ChatTurn
 		orgId: tenant.orgId,
 		userId: tenant.userId,
 		roles: [...tenant.roles],
+		// Never wider than the roles: a turn recorded before permissions holds what its roles grant,
+		// and a connector turn nobody is named on (from a host that predates its grants) only reads.
+		permissions:
+			tenant.permissions ??
+			(origin.kind === "connector" && origin.actingUserId === undefined
+				? ANONYMOUS_CONNECTOR_GRANTS
+				: Policy.grantsOf(tenant.roles)),
 		authMode: tenant.authMode,
 		turnOrigin: origin,
 		...(!(tenant.actorId === undefined) ? { actorId: tenant.actorId } : undefined),
@@ -92,16 +100,17 @@ export class LinkedUserNotPermitted extends Schema.TaggedError<LinkedUserNotPerm
 	{
 		message: Schema.String,
 		/** Which one it was. They read much the same to the person in the channel, not to an operator. */
-		reason: Schema.Literals(["not_a_member", "unavailable", "not_linked"]),
+		reason: Schema.Literals(["not_a_member", "unavailable", "not_linked", "not_permitted"]),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
 
 /**
- * Act as the Maple user a chat account is linked to, under the roles they hold in the org now.
+ * Act as the Maple user a chat account is linked to, under the permissions they hold in the org now.
  *
- * Roles come from the membership directory, never frozen at link time. That read is cached (a
- * per-isolate memo, then a shared tier), so a demotion lands within the cache's revocation window;
+ * Their role, and a custom role's permissions, come from the membership directory, never frozen at
+ * link time. That read is cached (a per-isolate memo, then a shared tier), so a demotion lands
+ * within the cache's revocation window;
  * the membership webhook closes it from the other side. No `actorId`: a real user acted, so the
  * audit log names them, and `turnOrigin` records which chat account it was.
  */
@@ -131,6 +140,7 @@ export const linkedUserTenant = Effect.fn("ChatTurnActor.linkedUserTenant")(func
 		orgId,
 		userId,
 		roles: [membership.value.role],
+		permissions: Policy.grantsOf([membership.value.role], membership.value.customPermissions),
 		authMode: "self_hosted" as const,
 		turnOrigin: origin,
 	} satisfies TenantContext
@@ -138,16 +148,19 @@ export const linkedUserTenant = Effect.fn("ChatTurnActor.linkedUserTenant")(func
 
 const decodeUserId = Schema.decodeUnknownOption(UserId)
 const decodeRoles = Schema.decodeUnknownOption(Schema.Array(RoleName))
+const decodePermissions = Schema.decodeUnknownOption(Schema.Array(Policy.PermissionName))
 
 type AutonomousOrigin = Extract<ChatTurnOrigin, { readonly kind: "autonomous" }>
 
 /** A person nobody can name or confirm: they answer for the pass, holding nothing. */
-const NOBODY = { kind: "person", roles: [] } as const satisfies NonNullable<TenantContext["turnStarter"]>
+const NOBODY = { kind: "person", roles: [], permissions: [] } as const satisfies NonNullable<
+	TenantContext["turnStarter"]
+>
 
 /**
- * Who answers for an unattended pass. A person does so with the lower of the roles they hold in the
- * org now and the roles their credential held when they started it, and with none when that
- * credential could not read data sources. An unreadable membership answers as nobody.
+ * Who answers for an unattended pass. A person does so with only what they hold both in the org now
+ * and on the credential they started it with, and with nothing when that credential could not read
+ * data sources. An unreadable membership answers as nobody.
  */
 export const turnStarterOf = Effect.fn("ChatTurnActor.turnStarterOf")(function* (
 	orgId: OrgId,
@@ -155,14 +168,21 @@ export const turnStarterOf = Effect.fn("ChatTurnActor.turnStarterOf")(function* 
 ) {
 	const startedBy = origin.startedBy
 	if (startedBy?.kind === "producer") return { kind: "producer" } as const
-	// What the starter's roles gate here is a query on a data source, so a credential whose scopes
-	// did not reach them answers as nobody, whatever role it held.
+	// What the starter's permissions gate here is a query on a data source, so a credential whose
+	// scopes did not reach them answers as nobody, whatever it held.
 	if (startedBy?.mayReadDataSources !== true) return NOBODY
-	const then = decodeRoles(startedBy.roles)
-	if (Option.isNone(then)) return NOBODY
+	const roles = decodeRoles(startedBy.roles)
+	if (Option.isNone(roles)) return NOBODY
+	// A start recorded before permissions holds what its roles grant, never more.
+	const held =
+		startedBy.permissions === undefined
+			? Option.some(Policy.grantsOf(roles.value))
+			: decodePermissions(startedBy.permissions)
+	if (Option.isNone(held)) return NOBODY
+	const then = { kind: "person", roles: roles.value, permissions: held.value } as const
 	const memberships = yield* OrgMembershipService
-	// No directory to ask (self-hosted): the roles the credential held are the only answer there is.
-	if (memberships.directory === "none") return { kind: "person", roles: then.value } as const
+	// No directory to ask (self-hosted): what the credential held is the only answer there is.
+	if (memberships.directory === "none") return then
 	const userId = Option.flatMap(Option.fromNullishOr(startedBy.userId), decodeUserId)
 	if (Option.isNone(userId)) return NOBODY
 	const membership = yield* memberships
@@ -175,10 +195,11 @@ export const turnStarterOf = Effect.fn("ChatTurnActor.turnStarterOf")(function* 
 			),
 		)
 	if (Option.isNone(membership)) return NOBODY
-	const now = [membership.value.role]
+	const now = Policy.grantsOf([membership.value.role], membership.value.customPermissions)
 	return {
 		kind: "person",
-		roles: Policy.outranks(Policy.highestRole(now), Policy.highestRole(then.value)) ? then.value : now,
+		roles: [membership.value.role],
+		permissions: Arr.intersection(then.permissions, now),
 	} as const
 })
 
@@ -203,6 +224,12 @@ export const turnTenant = Effect.fn("ChatTurnActor.turnTenant")(function* (
 			})
 		}
 		const linked: TenantContext = yield* linkedUserTenant(tenant.orgId, userId.value, origin)
+		// Someone who may not ask Maple AI in the app is not answered in a channel either.
+		yield* Policy.check(
+			linked.permissions,
+			"ai:ask",
+			(denial) => new LinkedUserNotPermitted({ reason: "not_permitted", message: denial.message }),
+		)
 		return linked
 	}
 	if (origin.kind === "autonomous") {

@@ -69,6 +69,7 @@ export const HttpV2OnboardingAgentRunLive = HttpApiBuilder.group(
 								orgId: tenant.orgId,
 								userId: tenant.userId,
 								roles: tenant.roles,
+								permissions: tenant.permissions,
 								userEmail,
 							})
 							.pipe(

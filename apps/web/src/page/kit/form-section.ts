@@ -1,3 +1,4 @@
+import type * as Policy from "@maple/domain/policy"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,6 +10,7 @@ import { dividedList } from "@maple/views/ui/rule"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { dashboardPage } from "./dashboard-page"
+import { denialReason } from "./session-grants"
 
 /**
  * One row of a form card, what it sets on the left (a title and an optional hint)
@@ -157,23 +159,23 @@ export const formActionBar = <M>(
 	)
 
 /**
- * What a form shows a member who may not save it: a note naming who can and a way back to where
- * they came from.
+ * What a form shows a viewer whose role lacks the `permission` saving it needs: the denial, which
+ * names the permission and the built-in roles holding it, and a way back to where they came from.
  */
 export const managersOnlyPage = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
 		header: Readonly<{ title: string; description: string }>
-		/** Who may make the change, e.g. "Only org admins and engineers can create or change SLOs". */
-		title: string
+		/** The permission the API checks on the form's write. */
+		permission: Policy.Permission
 		back: Readonly<{ href: string; label: string }>
 	}>,
 ): Html =>
 	dashboardPage(h, options.header, [
 		alert(h, { variant: "info" }, [
 			icon(h, "ShieldIcon"),
-			alertTitle(h, [options.title]),
-			alertDescription(h, ["Ask an admin to make this change."]),
+			alertTitle(h, ["Your role can't change this"]),
+			alertDescription(h, [denialReason(options.permission)]),
 		]),
 		h.div([], [linkButton(h, { variant: "outline", href: options.back.href }, [options.back.label])]),
 	])

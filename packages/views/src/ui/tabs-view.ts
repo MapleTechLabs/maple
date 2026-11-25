@@ -15,6 +15,7 @@ import { Option, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineView } from "foldkit/submodel"
 import { type IndicatorRect, MeasureTabIndicator, Message, type Model, panelId, TabKey, tabId } from "./tabs"
+import { tooltipTrigger } from "./tooltip-host"
 
 // Base UI's Tabs DOM: the same data attributes, roles, roving tabindex and `useId` ids.
 
@@ -42,6 +43,11 @@ export interface TabsViewInputs {
 	readonly panel: (value: string) => ReadonlyArray<Html | string> | undefined
 	/** Which values have a panel, without building them (a panel holding a Submodel renders once). */
 	readonly hasPanel?: (value: string) => boolean
+	/**
+	 * Why the viewer may not pick a value's tab, or `undefined` when they may: a locked tab stays
+	 * focusable but does not select, and shows the reason as its tooltip. The selected tab never locks.
+	 */
+	readonly lockedReason?: (value: string) => string | undefined
 }
 
 type H = HtmlBuilder<Message>
@@ -77,14 +83,16 @@ const tab = (
 	hasPanel: boolean,
 	className: string | undefined,
 	content: TabsViewInputs["tabContent"],
+	lockedReason: string | undefined,
 ): Html => {
 	const value = model.values[index]
 	const isActive = value === model.selected
 	const isHighlighted = index === model.highlightedIndex
+	const isLocked = lockedReason !== undefined
 	return h.button(
 		[
 			...(isActive && hasPanel ? [h.AriaControls(panelId(model))] : []),
-			h.AriaDisabled(false),
+			h.AriaDisabled(isLocked),
 			h.AriaSelected(isActive),
 			h.Attribute("class", cn(tabsTabStyles, className)),
 			...stateAttributes(h, model),
@@ -95,7 +103,7 @@ const tab = (
 			h.Role("tab"),
 			h.Attribute("tabindex", isHighlighted ? "0" : "-1"),
 			h.Type("button"),
-			h.OnClick(Message.ClickedTab({ index })),
+			...(isLocked ? tooltipTrigger(h, lockedReason) : [h.OnClick(Message.ClickedTab({ index }))]),
 			h.OnKeyDownPreventDefault(toTabKey),
 		],
 		content === undefined || value === undefined ? [label] : content(value, label),
@@ -147,6 +155,7 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 					panelValues.includes(value),
 					inputs.tabClassName,
 					inputs.tabContent,
+					value === model.selected ? undefined : inputs.lockedReason?.(value),
 				),
 			),
 			indicator(h, model, variant),

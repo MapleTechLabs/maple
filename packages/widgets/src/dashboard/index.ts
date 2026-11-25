@@ -28,6 +28,8 @@ export {
 	migrateToLatest,
 } from "./migrations"
 export {
+	addsRawSql,
+	holdsRawSql,
 	dataSourceEndpoint,
 	dataSourceQuerySet,
 	dataSourcePromql,
@@ -40,6 +42,7 @@ export {
 	type PromqlDataSource,
 	RAW_SQL_ENDPOINT,
 	type RawSqlDataSource,
+	type WidgetDataSources,
 	type WidgetQuerySet,
 } from "./access"
 export { toWidgetRequest, type WidgetRequest } from "./request"

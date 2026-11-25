@@ -36,6 +36,8 @@ import { tagFilterView } from "./view-tag-filter"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { gatedEntries } from "../../kit/gated-controls"
+import { gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -148,24 +150,32 @@ const READ_ONLY_NOTE: ReadonlyArray<MenuView.MenuEntry> = [
 	},
 ]
 
-/** Export reads what the list holds, so it survives a write failure; the rest write, so they don't. */
-const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> => [
+/**
+ * Export reads what the list holds, so it survives a write failure and needs no permission; the rest
+ * write, so they don't, and need `dashboards:edit`.
+ */
+const rowMenuEntries = (model: Model, isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	{
 		_tag: "Group",
-		entries: [
-			{ _tag: "Item", value: "export", label: "Export JSON" },
-			{ _tag: "Item", value: "duplicate", label: "Duplicate", isDisabled: isReadOnly },
-			{ _tag: "Item", value: "tags", label: "Edit tags…", isDisabled: isReadOnly },
-			{ _tag: "Separator" },
-			{
-				_tag: "Item",
-				value: "delete",
-				label: "Delete",
-				variant: "destructive",
-				isDisabled: isReadOnly,
-			},
-			...(isReadOnly ? READ_ONLY_NOTE : []),
-		],
+		entries: gatedEntries(
+			model,
+			"dashboards:edit",
+			[
+				{ _tag: "Item", value: "export", label: "Export JSON" },
+				{ _tag: "Item", value: "duplicate", label: "Duplicate", isDisabled: isReadOnly },
+				{ _tag: "Item", value: "tags", label: "Edit tags…", isDisabled: isReadOnly },
+				{ _tag: "Separator" },
+				{
+					_tag: "Item",
+					value: "delete",
+					label: "Delete",
+					variant: "destructive",
+					isDisabled: isReadOnly,
+				},
+				...(isReadOnly ? READ_ONLY_NOTE : []),
+			],
+			["export"],
+		),
 	},
 ]
 
@@ -175,7 +185,7 @@ const rowMenu = (h: H, model: Model, dashboard: ListDashboard): Html => {
 	return rowActionsMenu(h, {
 		slotId: `row-menu-${dashboard.id}`,
 		model: menu,
-		entries: rowMenuEntries(isReadOnly(model)),
+		entries: rowMenuEntries(model, isReadOnly(model)),
 		label: `More actions for ${displayName(dashboard.name)}`,
 		className: "text-muted-foreground",
 		toParentMessage: (message) => Message.GotRowMenuMessage({ rowId: dashboard.id, message }),
@@ -330,41 +340,52 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 }
 
 /** Pinned below the list so a filter can never make it read as a result. */
-const createRow = (h: H, isReadOnly: boolean): Html =>
-	cardButton(
+const createRow = (h: H, model: Model, isReadOnly: boolean): Html =>
+	gatedControl(
 		h,
-		{
-			onClick: Message.ClickedCreate(),
-			isDisabled: isReadOnly,
-			className:
-				"mt-4 flex w-full shrink-0 items-center gap-3 border-dashed border-input py-3 pr-4 pl-3",
-		},
-		[
-			hstack(h, { align: "center", justify: "center", as: "span", className: "size-5.5 shrink-0" }, [
-				icon(h, "PlusIcon", { size: 14, className: "text-primary" }),
-			]),
-			hstack(
+		model,
+		"dashboards:edit",
+		(isLocked) =>
+			cardButton(
 				h,
 				{
-					align: "baseline",
-					wrap: true,
-					shrink: true,
-					as: "span",
-					className: "grow gap-x-2.5 gap-y-0.5",
+					onClick: Message.ClickedCreate(),
+					isDisabled: isReadOnly || isLocked,
+					className:
+						"mt-4 flex w-full shrink-0 items-center gap-3 border-dashed border-input py-3 pr-4 pl-3",
 				},
 				[
-					typography(h, { size: "sm", tone: "foreground", weight: "medium" }, ["New dashboard"]),
-					typography(h, { size: "2xs", tone: "muted" }, [
-						"Start blank, or pick a template already wired to metrics you send.",
-					]),
+					hstack(
+						h,
+						{ align: "center", justify: "center", as: "span", className: "size-5.5 shrink-0" },
+						[icon(h, "PlusIcon", { size: 14, className: "text-primary" })],
+					),
+					hstack(
+						h,
+						{
+							align: "baseline",
+							wrap: true,
+							shrink: true,
+							as: "span",
+							className: "grow gap-x-2.5 gap-y-0.5",
+						},
+						[
+							typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
+								"New dashboard",
+							]),
+							typography(h, { size: "2xs", tone: "muted" }, [
+								"Start blank, or pick a template already wired to metrics you send.",
+							]),
+						],
+					),
+					icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 				],
 			),
-			icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
-		],
+		{ className: "w-full" },
 	)
 
 /** Templates lead, a blank canvas second. */
-const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
+const firstRunEmpty = (h: H, model: Model, isReadOnly: boolean): Html =>
 	empty(
 		h,
 		[
@@ -379,15 +400,17 @@ const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
 				linkButton(h, { size: "sm", href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })) }, [
 					"Browse templates",
 				]),
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						isDisabled: isReadOnly,
-						attributes: [h.OnClick(Message.ClickedCreate())],
-					},
-					["Create blank dashboard"],
+				gatedControl(h, model, "dashboards:edit", (isLocked) =>
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							isDisabled: isReadOnly || isLocked,
+							attributes: [h.OnClick(Message.ClickedCreate())],
+						},
+						["Create blank dashboard"],
+					),
 				),
 				docsLink(h, "dashboards"),
 			]),
@@ -487,7 +510,7 @@ export const listBody = (
 	const isWriteDisabled = isReadOnly(model)
 	const context: RowContext = { model, nowMs, timeZone }
 	const body: ReadonlyArray<Html> = isNothingAtAll
-		? [firstRunEmpty(h, isWriteDisabled)]
+		? [firstRunEmpty(h, model, isWriteDisabled)]
 		: sections.matched === 0
 			? [nothingMatched(h, model)]
 			: sections.scoped === 0
@@ -517,7 +540,7 @@ export const listBody = (
 										dashboardRow(h, context, dashboard, false),
 									),
 								]),
-						createRow(h, isWriteDisabled),
+						createRow(h, model, isWriteDisabled),
 					]
 	return vstack(h, { className: "shrink-0 pb-6" }, [
 		toolbar(h, model, dashboards, sections.scoped),

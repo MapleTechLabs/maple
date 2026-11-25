@@ -71,7 +71,7 @@ type Return = PageReturn<Model, Message>
 
 /** The viewer may change the grouping rules (`error_policy:manage`), as the server checks. */
 export const canManageGrouping = (grants: ReadonlyArray<Policy.Permission>): boolean =>
-	Policy.has(grants, "error_policy:manage")
+	Policy.can(grants, "error_policy:manage")
 
 /** `details` reads `<rule id>: <problem>`; a line naming no rule in the list stays org-wide. */
 export const problemsOf = (

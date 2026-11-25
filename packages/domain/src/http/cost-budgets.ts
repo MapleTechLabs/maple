@@ -7,6 +7,7 @@ import { CostBudgetAmount, CostBudgetBasis, CostBudgetPeriod, CostBudgetProgress
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { CloudCostPersistenceError, costEndpointErrors } from "./query-engine"
+import { EndpointAccess, requires } from "./endpoint-access"
 
 // Cost budgets: an amount per calendar period over a slice of the org's spend. Each one is a
 // hidden `cost_budget` alert rule, so its incidents and notifications are the alerting ones.
@@ -147,10 +148,11 @@ const budgetWriteErrors = [CloudCostPersistenceError, CostBudgetForbiddenError] 
 
 export class CostBudgetsApiGroup extends HttpApiGroup.make("costBudgets")
 	.add(
+		// Each budget carries its current spend.
 		HttpApiEndpoint.get("list", "/", {
 			success: CostBudgetListResponse,
 			error: costEndpointErrors,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("get", "/:id", {
@@ -182,4 +184,5 @@ export class CostBudgetsApiGroup extends HttpApiGroup.make("costBudgets")
 		}),
 	)
 	.prefix("/internal/cost/budgets")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

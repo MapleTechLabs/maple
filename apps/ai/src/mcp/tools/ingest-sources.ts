@@ -8,10 +8,9 @@ import { parseWarehouseDateTime } from "@maple/query-engine"
 import { SourceSignal, type OrgId } from "@maple/primitives"
 import { type Source, UpdateSourceRequest } from "@maple/domain/http"
 import type { SourceConfigRow } from "@maple/domain/mcp-outputs"
-import * as Policy from "@maple/domain/policy"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
-import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -20,20 +19,6 @@ import { toolAudit } from "../lib/tool-audit"
 const TOOL = "manage_ingest_source"
 
 const decodeUpdate = Schema.decodeEffect(UpdateSourceRequest)
-
-const permitted = Effect.gen(function* () {
-	const tenant = yield* CurrentMcpTenant
-	yield* Policy.check(
-		tenant.roles,
-		"sources:manage",
-		(denial) =>
-			new McpUnavailableError({
-				message: `${TOOL}: ${denial.message} Ask someone who can, or change it in Sources.`,
-				capability: "org_admin",
-			}),
-	)
-	return tenant
-})
 
 /** A refused change says why in the service's words; anything else is a failed write. */
 const toMcpSourceError = (error: {
@@ -141,8 +126,9 @@ export function registerIngestSourceTools(server: McpToolRegistrar) {
 				),
 			}),
 			hints: { readOnly: false, destructive: false, idempotent: true },
+			permission: "sources:manage",
 			handler: Effect.fn("McpTool.pauseIngestSource")(function* (params) {
-				const tenant = yield* permitted
+				const tenant = yield* CurrentMcpTenant
 				const service = yield* SourcesService
 				const source = yield* resolveSource(tenant.orgId, params.source)
 				const untilMs =
@@ -176,8 +162,9 @@ export function registerIngestSourceTools(server: McpToolRegistrar) {
 				source: P.text("The source's name or `src_…` id"),
 			}),
 			hints: { readOnly: false, destructive: false, idempotent: true },
+			permission: "sources:manage",
 			handler: Effect.fn("McpTool.resumeIngestSource")(function* (params) {
-				const tenant = yield* permitted
+				const tenant = yield* CurrentMcpTenant
 				const service = yield* SourcesService
 				const source = yield* resolveSource(tenant.orgId, params.source)
 				const resumed = yield* service
@@ -212,8 +199,9 @@ export function registerIngestSourceTools(server: McpToolRegistrar) {
 				clear_rate_limit: P.optionalFlag("Remove the rate limit"),
 			}),
 			hints: { readOnly: false, destructive: false, idempotent: true },
+			permission: "sources:manage",
 			handler: Effect.fn("McpTool.updateIngestSource")(function* (params) {
-				const tenant = yield* permitted
+				const tenant = yield* CurrentMcpTenant
 				const service = yield* SourcesService
 				const source = yield* resolveSource(tenant.orgId, params.source)
 				const request = yield* decodeUpdate({
@@ -271,8 +259,9 @@ export function registerIngestSourceTools(server: McpToolRegistrar) {
 				confirm: P.flag("Must be true. There is no undo."),
 			}),
 			hints: { readOnly: false, destructive: true, idempotent: false },
+			permission: "sources:manage",
 			handler: Effect.fn("McpTool.deleteIngestSource")(function* (params) {
-				const tenant = yield* permitted
+				const tenant = yield* CurrentMcpTenant
 				if (params.confirm !== true) {
 					return yield* new McpInvalidInputError({
 						message: `Deletion not confirmed. Re-call ${TOOL} action=delete with confirm=true to delete "${params.source}", or stop it for a while with ${TOOL} action=pause.`,

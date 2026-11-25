@@ -10,7 +10,7 @@ import { SessionGrants } from "../../kit/session-grants"
 import * as Select from "@maple/views/ui/select"
 
 // `/security/audit-log`: audit events from every connected platform and Maple itself, newest
-// first. The filters live in the URL; only org admins (`audit_log:read`) read the list.
+// first. The filters live in the URL; only roles with `audit_log:read` read the list.
 
 export type Search = SecurityAuditLogSearch
 

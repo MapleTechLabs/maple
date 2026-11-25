@@ -40,6 +40,8 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
+import type * as Policy from "@maple/domain/policy"
+import { gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -113,6 +115,7 @@ const providerTile = (
 		isSelected: boolean
 		/** The tile's popup is out: it disables and spins. */
 		isBusy?: boolean
+		isLocked?: boolean
 		onSelect: Message
 	}>,
 ): Html => {
@@ -122,7 +125,7 @@ const providerTile = (
 		{
 			onClick: options.onSelect,
 			isSelected: options.isSelected,
-			isDisabled: options.isBusy === true,
+			isDisabled: options.isBusy === true || options.isLocked === true,
 			// Selection takes the provider's accent; a busy tile stays solid so its spinner reads.
 			className: cn(
 				"relative flex flex-col items-start gap-2 overflow-hidden p-3 disabled:opacity-100",
@@ -159,8 +162,8 @@ const providerTile = (
 	)
 }
 
-/** Linked chat workspaces first, then the provider types. */
-const providerPicker = (h: H, model: Model): Html => {
+/** Linked chat workspaces first, then the provider types. Linking a workspace installs it: `integrations:manage`. */
+const providerPicker = (h: H, model: Model, grants: ReadonlyArray<Policy.Permission>): Html => {
 	const connectors = model.connectors ?? []
 	const isDiscordLinked = Arr.some(connectors, (c) => c.id === "discord" && c.workspaces.length > 0)
 	return grid(h, { cols: 2, gap: "2" }, [
@@ -187,18 +190,26 @@ const providerPicker = (h: H, model: Model): Html => {
 			// Not linked yet: the tile links a workspace in a popup, the form stays as it is.
 			const isWaiting = waitingFor(model.chatConnect) === connector.id
 			return [
-				providerTile(h, model, {
-					key: connector.id,
-					type: "chat",
-					chatConnector: connector.id,
-					label: connector.name,
-					description: isWaiting
-						? `Finish in the ${connector.name} window. This form stays as it is.`
-						: `Connect a ${connector.name} workspace, then pick a channel.`,
-					isSelected: false,
-					isBusy: isWaiting,
-					onSelect: Message.ClickedConnectChat({ connector: connector.id }),
-				}),
+				gatedControl(
+					h,
+					{ grants },
+					"integrations:manage",
+					(isLocked) =>
+						providerTile(h, model, {
+							key: connector.id,
+							type: "chat",
+							chatConnector: connector.id,
+							label: connector.name,
+							description: isWaiting
+								? `Finish in the ${connector.name} window. This form stays as it is.`
+								: `Connect a ${connector.name} workspace, then pick a channel.`,
+							isSelected: false,
+							isBusy: isWaiting,
+							isLocked,
+							onSelect: Message.ClickedConnectChat({ connector: connector.id }),
+						}),
+					{ className: "w-full" },
+				),
 			]
 		}),
 		...Arr.map(destinationTypesFor(isDiscordLinked), (type) =>
@@ -649,7 +660,12 @@ const fieldHelper = (h: H, type: AlertDestinationType): ReadonlyArray<Html> => {
 			]
 }
 
-export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>>((model, inputs, h) => {
+/** `grants`: the opener's permissions, which decide whether a chat workspace may be linked from here. */
+export const view = Submodel.defineView<
+	Model,
+	Message,
+	Readonly<{ id: string; grants: ReadonlyArray<Policy.Permission> }>
+>((model, inputs, h) => {
 	const isEditing = model.editingId !== null
 	const provider = destinationProvider(model.form.type, model.form.chatConnector)
 	const nameIds = ids("name")
@@ -708,7 +724,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 												),
 											],
 										)
-									: providerPicker(h, model),
+									: providerPicker(h, model, inputs.grants),
 							],
 						),
 					]),

@@ -26,6 +26,7 @@ import {
 	ErrorIssuePublicId,
 	InvestigationPublicId,
 } from "./resource-ids"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 export { ErrorIssuePublicId, InvestigationPublicId } from "./resource-ids"
 
@@ -530,28 +531,32 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 			payload: V2InvestigationCreateParams,
 			success: V2Investigation,
 			error: investigationStartErrors,
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "createInvestigation",
-				summary: "Open an investigation",
-				description:
-					"Opens an investigation over an incident or an ad-hoc question. Incident-anchored investigations return the existing war-room if one is already open. Requires the `investigations:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("investigations:run"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "createInvestigation",
+					summary: "Open an investigation",
+					description:
+						"Opens an investigation over an incident or an ad-hoc question. Incident-anchored investigations return the existing war-room if one is already open. Requires the `investigations:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("restart", "/:id/restart", {
 			params: { id: InvestigationPublicId },
 			success: V2Investigation,
 			error: [investigationNotFound, investigationTransition, ...investigationStartErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "restartInvestigation",
-				summary: "Restart an investigation",
-				description:
-					"Starts a replacement autonomous pass while retaining the previous report until a new diagnosis lands. A run still `investigating` cannot be restarted (409). Requires the `investigations:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("investigations:run"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "restartInvestigation",
+					summary: "Restart an investigation",
+					description:
+						"Starts a replacement autonomous pass while retaining the previous report until a new diagnosis lands. A run still `investigating` cannot be restarted (409). Requires the `investigations:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("updateStatus", "/:id/status", {
@@ -564,14 +569,16 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 				investigationTransition,
 				investigationDataCorruption,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "updateInvestigationStatus",
-				summary: "Update investigation status",
-				description:
-					"Resolves a finished investigation (`diagnosed`, `inconclusive` or `failed` to `resolved`), or reopens a resolved one back to the verdict its run reached. Any other move, or a run still `investigating`, is a 409. Requires the `investigations:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("investigations:run"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "updateInvestigationStatus",
+					summary: "Update investigation status",
+					description:
+						"Resolves a finished investigation (`diagnosed`, `inconclusive` or `failed` to `resolved`), or reopens a resolved one back to the verdict its run reached. Any other move, or a run still `investigating`, is a 409. Requires the `investigations:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/investigations")
 	.middleware(AuthorizationV2)
@@ -581,4 +588,5 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 			description:
 				"Durable investigation war-rooms — autonomous or human-opened diagnostic sessions over incidents and ad-hoc questions, each carrying its structured AI diagnosis.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

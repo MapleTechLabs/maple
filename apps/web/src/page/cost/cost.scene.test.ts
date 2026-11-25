@@ -2120,16 +2120,14 @@ describe("cost page", () => {
 			expectView(role("button", { name: /^Replace/ })).toBeDisabled(),
 			expectView(role("button", { name: /^Remove/ })).toBeDisabled(),
 			expectView(role("link", { name: /^Manage/ })).not.toExist(),
-			expectView(
-				role("group", { name: "Only org admins and engineers can manage integrations." }),
-			).toExist(),
+			expectView(role("group", { name: Policy.denialFor("integrations:manage").message })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(asMember(entered({}, []).model)),
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
-			expectView(text("Only organization admins and engineers can add a cost source.")).toExist(),
+			expectView(text(Policy.denialFor("integrations:manage").message)).toExist(),
 			expectView(role("button", { name: "Add a cost source" })).toBeDisabled(),
 		)
 		// Before the viewer's roles are known the page neither offers the button nor says who can add.
@@ -2138,7 +2136,7 @@ describe("cost page", () => {
 			given({ ...entered({}, []).model, grants: null }),
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
-			expectView(text(/Only organization admins/)).not.toExist(),
+			expectView(text(Policy.denialFor("integrations:manage").message)).not.toExist(),
 			expectView(role("button", { name: "Add a cost source" })).not.toExist(),
 		)
 		// An engineer is offered them.

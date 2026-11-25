@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { VcsInstallationId } from "../vcs"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
+import { EndpointAccess } from "./endpoint-access"
 
 /**
  * Whether a GitHub installation can supply cost. `user_account`: GitHub has a billing report for
@@ -141,4 +142,5 @@ export class GithubCostApiGroup extends HttpApiGroup.make("githubCost")
 		}),
 	)
 	.prefix("/internal/cost/github")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

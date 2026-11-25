@@ -257,6 +257,6 @@ const isSecurityRoute = AppRoute.isAnyOf([
 	"SecurityFinding",
 ])
 
-/** The Security Center is for org admins and engineers: anyone else opening it goes home. */
+/** The Security Center needs `security:manage`: anyone else opening it goes home. */
 export const securityRouteRedirect = (route: AppRoute, canReadSecurity: boolean): Option.Option<Redirect> =>
 	!canReadSecurity && isSecurityRoute(route) ? redirect(AppRoute.Home({ search: {} }), true) : Option.none()

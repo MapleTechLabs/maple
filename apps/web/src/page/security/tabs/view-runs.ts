@@ -42,7 +42,7 @@ import { BUCKET_LABEL, type BucketCounts, SCORED_BUCKETS } from "../kit/findings
 import { bucketDot } from "../kit/findings-view"
 import { meter } from "@maple/views/ui/meter"
 import { Message, type Model } from "./model"
-import { gatedControl } from "../../kit/session-grants"
+import { denialReason, gatedControl } from "../../kit/session-grants"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
@@ -89,7 +89,7 @@ const findingsCell = (
 	counts: Readonly<{ buckets: BucketCounts; unverified: number }> | null,
 	run: SecurityAuditRun,
 ): Html => {
-	if (counts === null) return muted(h, "", "Findings are visible to org admins and engineers only")
+	if (counts === null) return muted(h, "", denialReason("security:manage"))
 	const { buckets, unverified } = counts
 	const shown = Arr.filter(SCORED_BUCKETS, (bucket) => buckets[bucket] > 0)
 	if (shown.length === 0) return muted(h, isLive(run) ? "" : "None")

@@ -9,6 +9,7 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { awaitTxid } from "../kit/store"
 import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadClock = readClock("ReadTemplatesClock", Message.CompletedReadClock)
 
@@ -154,3 +155,8 @@ export const MeasurePreview = Mount.defineStream("MeasureTemplatePreview", {
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
 })
+
+export const FetchTemplatesSession = fetchSessionGrants(
+	"FetchDashboardTemplatesSession",
+	Message.CompletedFetchSession,
+)

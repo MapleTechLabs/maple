@@ -14,9 +14,8 @@ import {
 	type OrgId,
 } from "@maple/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
-import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
-import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
@@ -30,21 +29,6 @@ import {
 	updateUptimeConfig,
 	type UptimeConfigFields,
 } from "../lib/uptime-monitors"
-
-const adminOnly = (tool: string) =>
-	Effect.gen(function* () {
-		const tenant = yield* CurrentMcpTenant
-		yield* Policy.check(
-			tenant.roles,
-			"uptime_monitors:manage",
-			() =>
-				new McpUnavailableError({
-					message: `${tool} changes the organization's uptime monitors, which only org admins and engineers may do. Ask an admin or engineer, or change it in Alerts → Uptime.`,
-					capability: "org_admin",
-				}),
-		)
-		return tenant
-	})
 
 const decodeInterval = (raw: number | undefined) =>
 	raw === undefined
@@ -258,6 +242,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		permission: "telemetry:read",
 		scopeFamily: "uptime_monitors",
 		phrases: ["Checking uptime monitors"],
 		handler: Effect.fn("McpTool.listUptimeMonitors")(function* (params) {
@@ -369,8 +354,9 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			}),
 			aliases: ALIASES,
 			hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+			permission: "uptime_monitors:manage",
 			handler: Effect.fn("McpTool.createUptimeMonitor")(function* (params) {
-				const tenant = yield* adminOnly("manage_uptime_monitor")
+				const tenant = yield* CurrentMcpTenant
 				yield* refuseProbeSettingsForHeartbeat(params.kind, params)
 				const service = yield* UptimeMonitorsService
 				const config = yield* buildUptimeConfig(params.kind, configFields(params))
@@ -426,8 +412,9 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			// A field this tool lacks (`steps`, say) is refused, never dropped while the rest applies.
 			rejectUnknownKeys: true,
 			hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+			permission: "uptime_monitors:manage",
 			handler: Effect.fn("McpTool.updateUptimeMonitor")(function* (params) {
-				const tenant = yield* adminOnly("manage_uptime_monitor")
+				const tenant = yield* CurrentMcpTenant
 				const service = yield* UptimeMonitorsService
 				const current = yield* resolveMonitor("manage_uptime_monitor", tenant.orgId, params.monitor)
 				yield* refuseProbeSettingsForHeartbeat(current.kind, params)
@@ -478,9 +465,10 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 				confirm: P.flag("Must be true. There is no undo."),
 			}),
 			hints: { readOnly: false, destructive: true, idempotent: false },
+			permission: "uptime_monitors:manage",
 			handler: Effect.fn("McpTool.deleteUptimeMonitor")(function* (params) {
 				// A member is refused before being asked to confirm, as create and update are.
-				const tenant = yield* adminOnly("manage_uptime_monitor")
+				const tenant = yield* CurrentMcpTenant
 				if (params.confirm !== true) {
 					return yield* new McpInvalidInputError({
 						message: `Deletion not confirmed. Re-call manage_uptime_monitor action=delete with confirm=true to delete "${params.monitor}", or pause it with manage_uptime_monitor action=update enabled=false.`,

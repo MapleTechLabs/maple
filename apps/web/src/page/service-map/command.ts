@@ -21,6 +21,7 @@ import {
 	Stored,
 	type StoredKeys,
 } from "@maple/views/service-map/map/state"
+import { fetchSessionGrants } from "../kit/session-grants"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { ApplyWorldOpsRequest, WorldOp } from "@maple/domain/http"
 import { Applied, type BatchOutcome, Conflicted, Rejected } from "./factory/edits"
@@ -216,6 +217,11 @@ export const LoadSignalPresence = Command.define("LoadServiceMapSignalPresence",
 })
 
 export const CompleteReloadSpin = reloadSpin("CompleteServiceMapReloadSpin", Message.CompletedReloadSpin)
+
+export const FetchServiceMapSession = fetchSessionGrants(
+	"FetchServiceMapSession",
+	Message.CompletedFetchSession,
+)
 
 /** The org's shared factory world, for the 3D viewport. */
 export const LoadWorld = Command.define("LoadServiceMapWorld", {

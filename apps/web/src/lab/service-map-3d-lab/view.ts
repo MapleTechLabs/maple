@@ -1,4 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option } from "effect"
 import { pageBody, pageContent } from "../../page/kit/dashboard-page"
 import { viewportView } from "../../page/service-map/view-scene3d"
@@ -73,6 +74,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 										selectedId: model.selectedId,
 										reducedMotion: model.reducedMotion,
 										sample: true,
+										grants: Policy.allPermissions,
 										toMessage: (message) => Message.GotSceneMessage({ message }),
 									}),
 								],

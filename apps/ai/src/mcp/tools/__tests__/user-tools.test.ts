@@ -1,4 +1,5 @@
 import { noFailedRequestsText } from "../inspect-user"
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "vitest"
 import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import {
@@ -222,6 +223,7 @@ const tenantWith = (scopes?: ReadonlyArray<string>) =>
 		orgId: Schema.decodeSync(OrgId)("org_user_tools"),
 		userId: Schema.decodeSync(UserId)("user_user_tools"),
 		roles: [Schema.decodeSync(RoleName)("org:member")],
+		permissions: Policy.grantsOf([Schema.decodeSync(RoleName)("org:member")]),
 		authMode: "self_hosted",
 		...(scopes === undefined ? undefined : { scopes }),
 	})

@@ -27,4 +27,4 @@ export type Model = typeof Model.Type
 
 /** The viewer may change what this page edits (`status_pages:edit`). */
 export const canManage = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "status_pages:edit")
+	Policy.can(model.grants, "status_pages:edit")

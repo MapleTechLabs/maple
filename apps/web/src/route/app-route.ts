@@ -42,6 +42,8 @@ export const AppRoute = defineRouteUnion({
 	IngestRuleNew: { search: Search.IngestRuleNewSearch },
 	IngestRule: { ruleId: Schema.String },
 	BillingAiCredits: {},
+	/** `roleId`: a custom role's id, or a built-in role's name (`engineer`), which opens read-only. */
+	RoleEditor: { roleId: Schema.String },
 	AlertsStatusPage: { pageId: Schema.String, search: Search.AlertsStatusPageSearch },
 	StatusPages: {},
 	StatusPageNew: { search: Search.StatusPageNewSearch },

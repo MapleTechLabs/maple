@@ -196,13 +196,13 @@ const publishFailed = (error: { readonly message: string }) =>
 
 /** Changing who can read a page needs `status_pages:access`, whichever endpoint carries it. */
 const checkVisibilityChange = (
-	roles: ReadonlyArray<string>,
+	permissions: Policy.Grants,
 	current: StatusPageVisibility,
 	next: StatusPageVisibility | undefined,
 ) =>
 	next === undefined || next === current
 		? Effect.void
-		: Policy.check(roles, "status_pages:access", (denial) =>
+		: Policy.check(permissions, "status_pages:access", (denial) =>
 				V2InsufficientPermissions.make(denial.message),
 			)
 
@@ -287,7 +287,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const created = yield* service.create(tenant.orgId, {
@@ -373,11 +373,11 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
-					yield* checkVisibilityChange(tenant.roles, current.visibility, payload.visibility)
+					yield* checkVisibilityChange(tenant.permissions, current.visibility, payload.visibility)
 					const updated = yield* service.update(tenant.orgId, params.id, {
 						...(payload.name === undefined ? undefined : { name: payload.name }),
 						...(payload.slug === undefined ? undefined : { slug: payload.slug }),
@@ -424,7 +424,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
@@ -483,7 +483,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("publish", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					// A draft goes public first, so the publish below writes it.
@@ -521,7 +521,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("rotateBreakGlass", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:break_glass", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:break_glass", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const token = yield* service.rotateBreakGlassToken(tenant.orgId, params.id)
@@ -537,7 +537,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("revokeBreakGlass", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:break_glass", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:break_glass", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					yield* service.revokeBreakGlassToken(tenant.orgId, params.id)
@@ -549,7 +549,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("setPassword", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:access", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:access", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const page = yield* service.setPassword(tenant.orgId, params.id, payload.password)
@@ -560,7 +560,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("removePassword", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:access", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:access", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const page = yield* service.removePassword(tenant.orgId, params.id)
@@ -578,7 +578,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("setCustomDomain", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const before = yield* customDomains.get(tenant.orgId, params.id)
@@ -596,7 +596,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("removeCustomDomain", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const before = yield* customDomains.get(tenant.orgId, params.id)
@@ -611,7 +611,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("checkCustomDomain", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const view = yield* customDomains.check(tenant.orgId, params.id)
@@ -627,11 +627,11 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("applyConfig", ({ params, query, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
-					yield* checkVisibilityChange(tenant.roles, current.visibility, payload.visibility)
+					yield* checkVisibilityChange(tenant.permissions, current.visibility, payload.visibility)
 					const { previous, config, changes } = yield* service.applyConfig(
 						tenant.orgId,
 						params.id,
@@ -667,7 +667,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("createComponent", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const created = yield* service.createComponent(tenant.orgId, params.id, {
@@ -694,7 +694,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("reorderComponents", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const components = yield* service.reorderComponents(
@@ -714,7 +714,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("updateComponent", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* requireComponentOnPage(
@@ -751,7 +751,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("deleteComponent", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+					yield* Policy.check(tenant.permissions, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* requireComponentOnPage(

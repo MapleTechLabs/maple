@@ -39,6 +39,7 @@ export const createAlertSilenceAction = (family: McpToolFamilyBuilder<"manage_al
 		}),
 		aliases: { service_names: "services" },
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "alerts:manage",
 		handler: Effect.fn("McpTool.createAlertSilence")(function* (params) {
 			if ((params.duration_minutes === undefined) === (params.ends_at === undefined)) {
 				return yield* new McpInvalidInputError({
@@ -103,7 +104,7 @@ export const createAlertSilenceAction = (family: McpToolFamilyBuilder<"manage_al
 			const tenant = yield* CurrentMcpTenant
 			const silences = yield* AlertSilencesService
 			const silence = yield* silences
-				.create(tenant.orgId, tenant.userId, tenant.roles, request)
+				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
 				.pipe(Effect.catchTags(createSilenceErrors))
 
 			return { silence: toAlertSilenceRow(silence) }

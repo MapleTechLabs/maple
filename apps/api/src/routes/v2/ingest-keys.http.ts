@@ -24,7 +24,7 @@ export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys
 			.handle("retrieve", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "ingest_keys:view", (denial) =>
+					yield* Policy.check(tenant.permissions, "ingest_keys:view", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const keys = yield* ingestKeys.getOrCreate(tenant.orgId, tenant.userId)
@@ -35,7 +35,7 @@ export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys
 			.handle("retrievePublic", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "ingest_keys:view_public", (denial) =>
+					yield* Policy.check(tenant.permissions, "ingest_keys:view_public", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const keys = yield* ingestKeys.getOrCreate(tenant.orgId, tenant.userId)
@@ -50,7 +50,7 @@ export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys
 			.handle("rollPublic", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "ingest_keys:roll", (denial) =>
+					yield* Policy.check(tenant.permissions, "ingest_keys:roll", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const keys = yield* ingestKeys.rerollPublic(tenant.orgId, tenant.userId)
@@ -64,7 +64,7 @@ export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys
 			.handle("rollPrivate", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "ingest_keys:roll", (denial) =>
+					yield* Policy.check(tenant.permissions, "ingest_keys:roll", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const keys = yield* ingestKeys.rerollPrivate(tenant.orgId, tenant.userId)

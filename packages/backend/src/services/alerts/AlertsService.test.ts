@@ -24,7 +24,7 @@ import {
 	makeLayer,
 	asOrgId,
 	asUserId,
-	adminRoles,
+	adminGrants,
 	createWebhookDestination,
 	createErrorRateRule,
 	okFetch,
@@ -70,7 +70,7 @@ describe("AlertsService", () => {
 				alerts.createRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new AlertRuleUpsertRequest({
 						name: `Capped rule ${index}`,
 						severity: "warning",
@@ -292,7 +292,7 @@ describe("AlertsService", () => {
 				.updateRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					rule.id,
 					new AlertRuleUpsertRequest({
 						name: rule.name,
@@ -364,7 +364,7 @@ describe("AlertsService", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Checkout error rate",
 					severity: "critical",
@@ -498,7 +498,7 @@ describe("AlertsService", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Zero throughput",
 					severity: "warning",
@@ -721,7 +721,7 @@ describe("AlertsService", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Checkout error rate (prod)",
 					severity: "critical",
@@ -768,7 +768,7 @@ describe("AlertsService", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Custom query",
 					severity: "warning",
@@ -876,7 +876,7 @@ describe("AlertsService", () => {
 				const warnHook = yield* alerts.createDestination(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new WebhookAlertDestinationConfig({
 						type: "webhook",
 						name: "Team channel",
@@ -888,7 +888,7 @@ describe("AlertsService", () => {
 				const pageHook = yield* alerts.createDestination(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new WebhookAlertDestinationConfig({
 						type: "webhook",
 						name: "Pager",
@@ -900,7 +900,7 @@ describe("AlertsService", () => {
 				const rule = yield* alerts.createRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new AlertRuleUpsertRequest({
 						name: "Checkout error rate tiers",
 						enabled: true,
@@ -1159,7 +1159,7 @@ describe("AlertsService", () => {
 				yield* alerts.updateRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					rule.id,
 					new AlertRuleUpsertRequest({
 						name: rule.name,
@@ -1208,7 +1208,7 @@ describe("AlertsService", () => {
 				yield* alerts.updateRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					rule.id,
 					new AlertRuleUpsertRequest({
 						name: rule.name,
@@ -1271,7 +1271,7 @@ describe("AlertsService", () => {
 				yield* alerts.updateRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					rule.id,
 					new AlertRuleUpsertRequest({
 						name: rule.name,
@@ -1319,7 +1319,7 @@ describe("AlertsService", () => {
 				yield* alerts.updateRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					rule.id,
 					new AlertRuleUpsertRequest({
 						name: "Renamed",
@@ -1370,7 +1370,7 @@ describe("AlertsService", () => {
 						consecutiveBreachesRequired: 2,
 						breachesOutOf: 5,
 					})
-				const rule = yield* alerts.createRule(orgId, userId, adminRoles, request(5))
+				const rule = yield* alerts.createRule(orgId, userId, adminGrants, request(5))
 				const tick = Effect.gen(function* () {
 					yield* TestClock.adjust(Duration.minutes(1))
 					yield* alerts.runSchedulerTick()
@@ -1380,7 +1380,7 @@ describe("AlertsService", () => {
 				yield* alerts.runSchedulerTick()
 				state.tracesAggregateRows = errorRateRows(1)
 				yield* tick
-				yield* alerts.updateRule(orgId, userId, adminRoles, rule.id, request(15))
+				yield* alerts.updateRule(orgId, userId, adminGrants, rule.id, request(15))
 
 				// A single breach of the new threshold is one of five, not two.
 				state.tracesAggregateRows = errorRateRows(30)
@@ -1434,7 +1434,7 @@ describe("AlertsService", () => {
 					.createRule(
 						orgId,
 						userId,
-						adminRoles,
+						adminGrants,
 						new AlertRuleUpsertRequest({
 							name: "Inverted tiers",
 							signalType: "error_rate",
@@ -1582,7 +1582,7 @@ describe("AlertsService", () => {
 			yield* alerts.updateRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				rule.id,
 				new AlertRuleUpsertRequest({
 					name: "Checkout error rate",
@@ -1640,7 +1640,7 @@ describe("AlertsService", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Checkout error rate",
 					severity: "critical",
@@ -1725,7 +1725,7 @@ describe("AlertsService", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Checkout error rate",
 					severity: "critical",
@@ -1968,7 +1968,7 @@ describe("AlertsService", () => {
 			const orgId = asOrgId("org_test_destination")
 			const userId = asUserId("user_test_destination")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
 
 			assert.isTrue(response.success)
 			assert.lengthOf(requests, 1)
@@ -2462,7 +2462,7 @@ describe("AlertsService", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Immediate trigger",
 					severity: "critical",

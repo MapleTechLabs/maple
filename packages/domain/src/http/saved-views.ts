@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SavedViewId, UserId } from "@maple/primitives"
 import { SavedViewName, SavedViewState, SavedViewSurface, SavedViewVisibility } from "../saved-views"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess } from "./endpoint-access"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
@@ -130,7 +130,7 @@ export class SavedViewsApiGroup extends HttpApiGroup.make("savedViews")
 			payload: CreateSavedViewRequest,
 			success: SavedViewResponse,
 			error: [SavedViewPersistenceError, SavedViewNameTakenError, SavedViewLimitError],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.patch("update", "/:viewId", {
@@ -143,14 +143,14 @@ export class SavedViewsApiGroup extends HttpApiGroup.make("savedViews")
 				SavedViewForbiddenError,
 				SavedViewNameTakenError,
 			],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.delete("delete", "/:viewId", {
 			params: { viewId: SavedViewId },
 			success: Schema.Void,
 			error: [SavedViewPersistenceError, SavedViewNotFoundError, SavedViewForbiddenError],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.prefix("/internal/saved-views")
 	.middleware(SessionAuthorization) {}

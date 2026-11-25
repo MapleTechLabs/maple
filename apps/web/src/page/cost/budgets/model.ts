@@ -15,7 +15,7 @@ import { LoadOutcome } from "../../kit/load-schemas"
 import { SessionGrants } from "../../kit/session-grants"
 
 // `/cost/budgets`: the org's cost budgets, each a hidden alert rule that measures a slice of spend
-// against an amount per period. Every member reads them; `alerts:manage` changes them.
+// against an amount per period. Every member reads them; `slos:manage` changes them.
 
 export const Model = Schema.Struct({
 	grants: Schema.Array(Policy.PermissionName),

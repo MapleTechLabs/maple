@@ -25,6 +25,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Finding slow traces", "Looking for slow requests"],
 		handler: Effect.fn("McpTool.findSlowTraces")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "find_slow_traces")

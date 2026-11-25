@@ -30,6 +30,7 @@ import {
 	type TenantContext,
 } from "@maple/domain/http"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
+import * as Policy from "@maple/domain/policy"
 import {
 	computeBreakdownStats,
 	computeFlags,
@@ -365,7 +366,7 @@ export type InspectionOutcome =
 	  }
 	| {
 			kind: "skipped"
-			reason: "no_params" | "no_enabled_queries" | "too_many_queries" | "decode_failed"
+			reason: "no_params" | "no_enabled_queries" | "too_many_queries" | "decode_failed" | "denied"
 			detail: string
 	  }
 	| { kind: "inspection_error"; message: string }
@@ -519,6 +520,14 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		})
 
 		if (dataSourceRawSql(widget.dataSource) !== null) {
+			// Its stored SQL runs as the org, as `run_sql` would.
+			if (!Policy.can(tenant.permissions, "query:sql")) {
+				return {
+					kind: "skipped",
+					reason: "denied",
+					detail: Policy.denialFor("query:sql").message,
+				} satisfies InspectionOutcome
+			}
 			const variables = yield* resolveVariables
 			return yield* inspectRawSqlWidget(tenant, widget, timeRange, variables)
 		}

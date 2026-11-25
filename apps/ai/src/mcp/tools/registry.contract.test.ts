@@ -5,6 +5,8 @@
 import { describe, expect, it } from "vitest"
 import { mapleCallEntries, mapleToolCatalog, inputSchemaOf, toOutputSchema } from "./registry"
 import { McpToolOutputs } from "@maple/domain/mcp-outputs"
+import * as Policy from "@maple/domain/policy"
+import { FEEDBACK_TOOL } from "./types"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 import { MCP_INSTRUCTIONS } from "../resources/instructions"
 import * as Prompts from "../../chat/prompts"
@@ -48,6 +50,22 @@ describe("MCP tool catalog contract", () => {
 			(tool) => tool.name,
 		)
 		expect(legacy).toEqual([])
+	})
+
+	// The registry hides and refuses a tool whose permission the caller lacks, so a tool that changes
+	// data must name what it changes: a read permission on one would open it to every reader.
+	it("declares the permission every tool needs, and a change permission for every tool that changes data", () => {
+		const READS: ReadonlyArray<Policy.Permission> = ["telemetry:read", "query:sql"]
+		const undeclared = Arr.filter(mapleToolCatalog, (tool) => tool.permission === undefined)
+		const openToAnyone = Arr.filter(mapleToolCatalog, (tool) => tool.permission === null)
+		const writesBehindARead = Arr.filter(
+			mapleToolCatalog,
+			(tool) =>
+				!tool.hints.readOnly && tool.permission !== null && Arr.contains(READS, tool.permission),
+		)
+		expect(Arr.map(undeclared, (tool) => tool.name)).toEqual([])
+		expect(Arr.map(openToAnyone, (tool) => tool.name)).toEqual([FEEDBACK_TOOL])
+		expect(Arr.map(writesBehindARead, (tool) => tool.name)).toEqual([])
 	})
 
 	// Directory listings (Claude's connector directory) reject tools without a title.

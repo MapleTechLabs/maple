@@ -121,7 +121,7 @@ const levelOf = (model: Model, family: string): ScopeLevel => model.scopeLevels[
 
 /** Whether the opener may create a full-access key, not only a restricted one. */
 export const canGrantFullAccess = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "api_keys:manage")
+	Policy.can(model.grants, "api_keys:manage")
 
 /** Whether the opener may put `level` on `family`; `none` always. */
 export const canGrantLevel = (
@@ -131,7 +131,7 @@ export const canGrantLevel = (
 ): boolean =>
 	level === "none" ||
 	canGrantFullAccess(model) ||
-	Policy.canGrantFamily((permission) => Policy.has(model.grants, permission), family, level)
+	Policy.canGrantFamily((permission) => Policy.can(model.grants, permission), family, level)
 
 /** The most of `level` the opener may put on `family`: write falls back to read, then none. */
 const grantableLevel = (model: Model, family: Policy.ApiKeyScopeFamily, level: ScopeLevel): ScopeLevel =>
@@ -193,7 +193,7 @@ export const open = (
 ): Return => {
 	const fresh = init(model.dialog.id)
 	const kept = { isCreating: model.isCreating, created: model.created }
-	const accessMode: AccessMode = Policy.has(grants, "api_keys:manage") ? "full" : "restricted"
+	const accessMode: AccessMode = Policy.can(grants, "api_keys:manage") ? "full" : "restricted"
 	return liftDialog(
 		{ ...fresh, ...kept, kind, grants, accessMode, dialog: model.dialog },
 		Dialog.open(model.dialog),

@@ -5,7 +5,7 @@ import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess, requires } from "./endpoint-access"
 import { AuditedRead } from "./audit-log"
 import { EVALUATION_NAME_MAX } from "../gen-ai-evaluation"
 
@@ -183,7 +183,7 @@ export class AiEvaluationsInternalApiGroup extends HttpApiGroup.make("aiEvaluati
 	)
 	.prefix("/internal/ai-evaluations")
 	.middleware(SessionAuthorization)
-	// Every endpoint here only reads, so an analyst may call it.
-	.annotate(AnalystAccess, "read")
+	// Every endpoint here only reads telemetry.
+	.annotate(EndpointAccess, requires("telemetry:read"))
 	// Explanations quote prompts and completions, which are customer telemetry.
 	.annotate(AuditedRead, "telemetry.read") {}

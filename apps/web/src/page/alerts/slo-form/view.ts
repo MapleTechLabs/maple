@@ -41,7 +41,7 @@ import { budgetDowntime, formIssues, MAX_TARGET, targetOf } from "./derive"
 import { type Form, TARGET_PRESETS, type TextField, THRESHOLDS, type Tier, WINDOW_DAYS } from "./form"
 import { Message } from "./message"
 import { type Model } from "./model"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageSlos } from "../../kit/session-grants"
 import { ALERT_SEVERITY_LABEL } from "../shared/badges"
 
 type H = HtmlBuilder<Message>
@@ -367,7 +367,7 @@ const actionBar = (h: H, model: Model): Html => {
 				h,
 				{
 					// Until the session says this is a manager, a click would be dropped by `save`.
-					isDisabled: issues.length > 0 || !canManageAlerts(model),
+					isDisabled: issues.length > 0 || !canManageSlos(model),
 					isLoading: model.isSaving,
 					attributes: [h.OnClick(Message.ClickedSave())],
 				},
@@ -381,7 +381,7 @@ const actionBar = (h: H, model: Model): Html => {
 const notAllowedPage = (h: H, model: Model, header: Readonly<{ title: string; description: string }>) =>
 	managersOnlyPage(h, {
 		header,
-		title: "Only org admins and engineers can create or change SLOs",
+		permission: "slos:manage",
 		back:
 			model.editingId === null
 				? { href: slosTabHref(), label: "Back to SLOs" }
@@ -394,7 +394,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		title: isEdit ? "Edit SLO" : "New SLO",
 		description: "The share of a service's requests that must be good, and the error budget that leaves.",
 	}
-	if (model.isSessionLoaded && !canManageAlerts(model)) return notAllowedPage(h, model, header)
+	if (model.isSessionLoaded && !canManageSlos(model)) return notAllowedPage(h, model, header)
 	if (isEdit && AsyncData.isFailure(model.existing.data))
 		return dashboardPage(h, header, [
 			errorState(h, { failure: model.existing.data.error, title: "Couldn't load the SLO" }),

@@ -9,6 +9,7 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
@@ -50,6 +51,7 @@ const devicesAs = async (role: string) => {
 							orgId: ORG_ID,
 							userId: USER_ID,
 							roles: [Schema.decodeSync(RoleName)(role)],
+							permissions: Policy.grantsOf([role]),
 							authMode: "clerk",
 						}),
 					),

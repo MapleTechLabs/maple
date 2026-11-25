@@ -55,7 +55,7 @@ import {
 	makeLayer,
 	asOrgId,
 	asUserId,
-	adminRoles,
+	adminGrants,
 	createWebhookDestination,
 	createErrorRateRule,
 	okFetch,
@@ -73,7 +73,7 @@ describe("AlertsService evaluation cadence", () => {
 				alerts.createRule(
 					orgId,
 					asUserId("user_cadence"),
-					adminRoles,
+					adminGrants,
 					new AlertRuleUpsertRequest({
 						name: `Cadence ${windowMinutes}m`,
 						severity: "warning",
@@ -149,7 +149,7 @@ describe("AlertsService evaluation cadence", () => {
 			yield* alerts.updateRule(
 				orgId,
 				asUserId("user_cadence"),
-				adminRoles,
+				adminGrants,
 				rule.id,
 				new AlertRuleUpsertRequest({
 					name: "Edited",
@@ -197,7 +197,7 @@ describe("AlertsService check intervals", () => {
 				alerts.createRule(
 					orgId,
 					asUserId("user_interval"),
-					adminRoles,
+					adminGrants,
 					new AlertRuleUpsertRequest({
 						name: `Interval ${rule.signalType} ${rule.evaluationIntervalMinutes}`,
 						severity: "warning",
@@ -469,7 +469,7 @@ describe("AlertsService check intervals", () => {
 			yield* alerts.updateRule(
 				orgId,
 				asUserId("user_interval"),
-				adminRoles,
+				adminGrants,
 				created.id,
 				new AlertRuleUpsertRequest({
 					name: "Faster query",
@@ -536,7 +536,7 @@ describe("AlertsService scheduler pool", () => {
 						alerts.createRule(
 							orgAt(index),
 							asUserId("user_pool"),
-							adminRoles,
+							adminGrants,
 							new AlertRuleUpsertRequest({
 								name: "Pool rule",
 								severity: "warning",
@@ -1004,7 +1004,7 @@ describe("AlertsService claim fence", () => {
 				const rule = yield* alerts.createRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new AlertRuleUpsertRequest({
 						name: "Grouped error rate",
 						severity: "critical",
@@ -1189,7 +1189,7 @@ describe("AlertsService post-evaluation writes", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Grouped error rate",
 					severity: "warning",
@@ -1278,7 +1278,7 @@ describe("AlertsService post-evaluation writes", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Grouped error rate",
 					severity: "warning",
@@ -1357,7 +1357,7 @@ describe("AlertsService post-evaluation writes", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Grouped error rate",
 					severity: "warning",
@@ -1426,7 +1426,7 @@ describe("AlertsService investigation starts", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Every service error rate",
 					severity: "critical",
@@ -1566,7 +1566,7 @@ describe("AlertsService investigation starts", () => {
 							alerts.createRule(
 								otherOrg,
 								asUserId("user_other"),
-								adminRoles,
+								adminGrants,
 								new AlertRuleUpsertRequest({
 									name: `Other rule ${index}`,
 									severity: "warning",

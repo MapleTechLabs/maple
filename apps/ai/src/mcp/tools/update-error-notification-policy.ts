@@ -40,6 +40,7 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 		}),
 		// Setting the same fields again changes nothing; omitted fields are left as they are.
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "error_policy:manage",
 		phrases: ["Updating the notification policy"],
 		handler: Effect.fn("McpTool.updateErrorNotificationPolicy")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -80,7 +81,7 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 			)
 
 			const policy = yield* policies
-				.upsertNotificationPolicy(tenant.orgId, tenant.userId, tenant.roles, patch)
+				.upsertNotificationPolicy(tenant.orgId, tenant.userId, tenant.permissions, patch)
 				.pipe(
 					Effect.catchTags({
 						"@maple/http/errors/ErrorForbiddenError": (error) =>

@@ -83,6 +83,7 @@ export function registerIngestUsageTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Measuring ingest volume"],
 		handler: Effect.fn("McpTool.ingestUsage")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

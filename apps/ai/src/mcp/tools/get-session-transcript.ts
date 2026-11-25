@@ -94,6 +94,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading a session transcript"],
 		handler: Effect.fn("McpTool.getSessionTranscript")(function* (params) {
 			const types: ReadonlyArray<EventType> = [...new Set(params.event_types ?? [])]

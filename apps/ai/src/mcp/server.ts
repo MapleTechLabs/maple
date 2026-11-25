@@ -8,17 +8,12 @@ import {
 	McpToolsUnavailableError,
 } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./tenant"
-import {
-	DATA_SOURCE_TOOLS,
-	LLM_EVALS_TOOLS,
-	refusesAnalyst,
-	refusesReadOnlyCredential,
-	type McpToolResult,
-} from "./tools/types"
+import { DATA_SOURCE_TOOLS, LLM_EVALS_TOOLS, refusalFor, type McpToolResult } from "./tools/types"
+import type { McpToolModule } from "./tools/registry-core"
+import { MCP_TOOL_MODULES } from "./tool-modules.generated"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 import { enumSpelling } from "./tools/tool-name-aliases"
-import * as Policy from "@maple/domain/policy"
 
 /**
  * The text blocks are what a model reads; `structuredContent` is the typed output the tool's
@@ -94,41 +89,44 @@ const annotateToolFailure = (result: McpToolResult) =>
 			})
 		: Effect.void
 
-/**
- * Hides a tool from the `tools/list` of a caller the registry would refuse, and answers a call to
- * it as unknown: a listed tool invites the call.
- */
-const hiddenFrom = (isRefused: (tenant: { readOnly?: true; roles: ReadonlyArray<string> }) => boolean) =>
-	EffectMcpServer.visibility(() =>
-		Effect.gen(function* () {
-			const tenant = yield* CurrentMcpRequestTenant
-			return tenant === undefined || !isRefused(tenant)
-		}),
-	)
+const toolsByName: ReadonlyMap<string, McpToolModule> = new Map(
+	Arr.map(MCP_TOOL_MODULES, (entry) => [entry.name, entry]),
+)
 
 /**
- * Hides the data source tools from an org outside the `dataSources` rollout: it has none to list.
- * Flags that cannot be read in time hide nothing: the tools still refuse an org without the rollout.
+ * Hides a tool from the `tools/list` of a caller the registry would refuse (a permission they lack,
+ * a read-only key on a tool that changes data), and answers a call to it as unknown: a listed tool
+ * invites the call. The data source and LLM evaluation tools are also hidden from an org outside the
+ * `dataSources` / `llmEvals` rollout; flags that cannot be read in time hide nothing, since those
+ * tools still refuse such an org.
  */
-const hiddenWithoutFlag = (flag: "dataSources" | "llmEvals") =>
-	EffectMcpServer.visibility(
-		Effect.map(
-			OrganizationFeatureFlagsService,
-			(featureFlags) => () =>
+const HiddenFromRefusedCallers = EffectMcpServer.visibility(
+	Effect.map(
+		OrganizationFeatureFlagsService,
+		(featureFlags) =>
+			({ target }: { readonly target: string }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentMcpRequestTenant
+					const tool = toolsByName.get(target)
+					if (
+						tenant !== undefined &&
+						tool !== undefined &&
+						refusalFor(tenant, tool) !== undefined
+					) {
+						return false
+					}
+					const flag = DATA_SOURCE_TOOLS.has(target)
+						? "dataSources"
+						: LLM_EVALS_TOOLS.has(target)
+							? "llmEvals"
+							: undefined
+					if (flag === undefined) return true
 					if (tenant === undefined) return false
 					const flags = yield* flagsInTime(featureFlags, tenant.orgId)
 					return Option.isNone(flags) || flags.value[flag]
 				}),
-		),
-	)
-const HiddenWithoutDataSources = hiddenWithoutFlag("dataSources")
-/** The same for the LLM evaluation tools and the `llmEvals` rollout. */
-const HiddenWithoutLlmEvals = hiddenWithoutFlag("llmEvals")
-
-const HiddenFromReadOnlyKeys = hiddenFrom((tenant) => tenant.readOnly === true)
-const HiddenFromAnalysts = hiddenFrom((tenant) => tenant.readOnly === true || Policy.isAnalyst(tenant.roles))
+	),
+)
 
 const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message: string }) =>
 	toCallToolResult({
@@ -155,21 +153,11 @@ export class McpToolRegistration extends Context.Service<
 	make: Effect.gen(function* () {
 		const server = yield* EffectMcpServer.McpServer
 		const loader = yield* McpToolExecutorLoader
-		const keyGate = yield* Layer.build(HiddenFromReadOnlyKeys.layer)
-		const analystGate = yield* Layer.build(HiddenFromAnalysts.layer)
-		const dataSourcesGate = yield* Layer.build(HiddenWithoutDataSources.layer)
-		const llmEvalsGate = yield* Layer.build(HiddenWithoutLlmEvals.layer)
-		// A dashboard tool is hidden from read-only keys alone; every other change from analysts too.
-		const gateFor = (name: string, readOnly: boolean) => {
-			if (DATA_SOURCE_TOOLS.has(name)) return { services: dataSourcesGate }
-			if (LLM_EVALS_TOOLS.has(name)) return { services: llmEvalsGate }
-			if (refusesAnalyst(name, readOnly)) return { services: analystGate }
-			return refusesReadOnlyCredential(name, readOnly) ? { services: keyGate } : undefined
-		}
+		const gate = yield* Layer.build(HiddenFromRefusedCallers.layer)
 		const addTool = (descriptor: McpToolDescriptor) => {
 			const actions = publishedActionsOf(descriptor)
 			return server.addTool({
-				...gateFor(descriptor.name, descriptor.annotations?.readOnlyHint === true),
+				services: gate,
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
 					title: descriptor.title,

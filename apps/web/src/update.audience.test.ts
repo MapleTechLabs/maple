@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId, UserId } from "@maple/domain"
 import { Option, Schema } from "effect"
 import { describe, expect, test, vi } from "vitest"
@@ -39,6 +40,7 @@ const snapshotOf = (role: string | null): ClerkSnapshot => ({
 	maybeOrganization: Option.none(),
 	memberships: [],
 	maybeRole: Option.fromNullishOr(role),
+	maybeGrants: Option.map(Option.fromNullishOr(role), (known) => Policy.grantsOf([known])),
 	maybePendingTask: Option.none(),
 })
 

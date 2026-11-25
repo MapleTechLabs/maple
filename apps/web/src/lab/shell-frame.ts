@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Option } from "effect"
 import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -27,7 +28,7 @@ export const ANALYST_CLERK: ShellClerk = {
 	maybeOrganization: Option.none(),
 	memberships: [],
 	customer: undefined,
-	maybeRole: Option.some("org:analyst"),
+	maybeGrants: Option.some(Policy.grantsOf(["org:analyst"])),
 }
 
 /** The frame around the page, then the mobile sheet and menu layers (the root's `shellRoute`). */

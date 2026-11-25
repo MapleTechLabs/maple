@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Array as Arr, Effect, Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
+import { Array as Arr, Effect, Layer, Schema } from "effect"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { McpToolExecutor } from "../../dispatcher"
@@ -39,9 +40,13 @@ let seeded: EvalRuntime
 let capped: EvalRuntime
 let flaggedOff: EvalRuntime
 beforeAll(async () => {
-	flaggedOff = makeEvalRuntime(
-		OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
-		fakeDataSources(makeDataSourceWorld()),
+	// An engineer, who may query sources: what stops them is the rollout alone.
+	flaggedOff = asCaller(
+		makeEvalRuntime(
+			OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+			fakeDataSources(makeDataSourceWorld()),
+		),
+		ENGINEER_CALLER,
 	)
 	await flaggedOff.runtime.runPromise(seedDataSources)
 	// An engineer by default: a query takes that role, and each test that asks who may says who.
@@ -274,7 +279,7 @@ describe("who may run query_data_source", () => {
 		const before = world.runs
 		const result = await runToolDirect(asCaller(seeded, caller), "query_data_source", query)
 		expect(result.failureCategory).toBe("permission")
-		expect(markdown(result)).toContain("Only org admins and engineers can query connected data sources.")
+		expect(markdown(result)).toContain(Policy.denialFor("data_sources:query").message)
 		expect(world.runs).toBe(before)
 	})
 
@@ -303,10 +308,13 @@ describe("an investigation's own pass and query_data_source", () => {
 		const origin = { kind: "autonomous", startedBy } as const
 		const turnStarter = await Effect.runPromise(
 			turnStarterOf(seeded.tenant.orgId, origin).pipe(
-				Effect.provideService(OrgMembershipService, {
-					directory: "clerk",
-					verify: (_userId, orgId) => Effect.succeedSome({ orgId, role: role(holdsNow) }),
-				}),
+				Effect.provide(
+					Layer.mock(OrgMembershipService)({
+						directory: "clerk",
+						verify: (_userId, orgId) =>
+							Effect.succeedSome({ orgId, role: role(holdsNow), customPermissions: [] }),
+					}),
+				),
 			),
 		)
 		return asCaller(seeded, { roles: [], turnOrigin: origin, turnStarter })
@@ -328,7 +336,7 @@ describe("an investigation's own pass and query_data_source", () => {
 			query,
 		)
 		expect(result.failureCategory).toBe("permission")
-		expect(markdown(result)).toContain("This run was started by someone without that role")
+		expect(markdown(result)).toContain(Policy.denialFor("data_sources:query").message)
 		expect(world.runs).toBe(before)
 	})
 
@@ -441,7 +449,7 @@ describe("an investigation's own pass and the data source catalog", () => {
 })
 
 describe("a chat connector nobody is linked in", () => {
-	it("is told Maple cannot check who is asking", async () => {
+	it("is refused the query: nobody named holds the permission", async () => {
 		const unlinked = asCaller(seeded, {
 			userId: CONNECTOR_TENANT_USER_ID,
 			roles: [],
@@ -460,7 +468,7 @@ describe("a chat connector nobody is linked in", () => {
 			"bot",
 		)
 		expect(result.failureCategory).toBe("permission")
-		expect(markdown(result)).toContain("Maple cannot tell which Maple user is asking in this chat")
+		expect(markdown(result)).toContain(Policy.denialFor("data_sources:query").message)
 	})
 })
 

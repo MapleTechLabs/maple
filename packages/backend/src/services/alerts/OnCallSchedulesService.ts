@@ -35,7 +35,6 @@ import {
 	type OnCallScheduleId,
 	type OnCallScheduleUpdateRequest,
 	type OrgId,
-	type RoleName,
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -96,20 +95,20 @@ export interface OnCallSchedulesServiceApi {
 	readonly create: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		request: OnCallScheduleCreateRequest,
 	) => Effect.Effect<OnCallScheduleDocument, ScheduleWriteError>
 	readonly update: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 		request: OnCallScheduleUpdateRequest,
 	) => Effect.Effect<OnCallScheduleDocument, ScheduleWriteError | OnCallScheduleNotFoundError>
 	/** Deletes the schedule's overrides with it. */
 	readonly delete: (
 		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError | OnCallScheduleInUseError>
 	/** Overrides that end after `fromMs` (default now), by start. */
@@ -121,13 +120,13 @@ export interface OnCallSchedulesServiceApi {
 	readonly createOverride: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 		request: OnCallOverrideCreateRequest,
 	) => Effect.Effect<OnCallOverrideDocument, ScheduleWriteError | OnCallScheduleNotFoundError>
 	readonly deleteOverride: (
 		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 		overrideId: OnCallOverrideId,
 	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError | OnCallOverrideNotFoundError>
@@ -151,7 +150,7 @@ export interface OnCallSchedulesServiceApi {
 	 */
 	readonly createCalendarFeed: (
 		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 		options: { readonly replace: boolean },
 	) => Effect.Effect<
@@ -160,7 +159,7 @@ export interface OnCallSchedulesServiceApi {
 	>
 	readonly deleteCalendarFeed: (
 		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError>
 	/** The feed a token opens, as an iCalendar body; none when no schedule holds the token. */
@@ -336,14 +335,13 @@ export class OnCallSchedulesService extends Context.Service<
 		const orgMembers = yield* OrgMembersService
 		const dbExecute = makeDbExecute(database, "OnCallSchedulesService", makePersistenceError)
 
-		const requireManage = (roles: ReadonlyArray<RoleName>) =>
+		const requireManage = (permissions: Policy.Grants) =>
 			Policy.check(
-				roles,
-				"alerts:manage",
+				permissions,
+				"oncall:manage",
 				(denial) =>
 					new AlertForbiddenError({
 						message: denial.message,
-						...(roles.length > 0 ? { roles: [...roles] } : undefined),
 					}),
 			)
 
@@ -518,10 +516,10 @@ export class OnCallSchedulesService extends Context.Service<
 		const create = Effect.fn("OnCallSchedulesService.create")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			request: OnCallScheduleCreateRequest,
 		) {
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			yield* requireMembers(orgId, participantsOf(request.layers))
 			const nowMs = yield* runtime.now
 			const id = decodeScheduleIdSync(runtime.makeUuid())
@@ -571,12 +569,12 @@ export class OnCallSchedulesService extends Context.Service<
 		const update = Effect.fn("OnCallSchedulesService.update")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 			request: OnCallScheduleUpdateRequest,
 		) {
 			yield* annotate(scheduleId)
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			if (request.layers !== undefined) {
 				yield* requireMembers(orgId, participantsOf(request.layers))
 				// The check above read the directory fresh; the answer must not come from an older read
@@ -615,11 +613,11 @@ export class OnCallSchedulesService extends Context.Service<
 
 		const remove = Effect.fn("OnCallSchedulesService.delete")(function* (
 			orgId: OrgId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 		) {
 			yield* annotate(scheduleId)
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
@@ -722,12 +720,12 @@ export class OnCallSchedulesService extends Context.Service<
 		const createOverride = Effect.fn("OnCallSchedulesService.createOverride")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 			request: OnCallOverrideCreateRequest,
 		) {
 			yield* annotate(scheduleId)
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			const nowMs = yield* runtime.now
 			if (request.endsAt <= request.startsAt) {
 				return yield* validationError("An override must end after it starts")
@@ -786,12 +784,12 @@ export class OnCallSchedulesService extends Context.Service<
 
 		const deleteOverride = Effect.fn("OnCallSchedulesService.deleteOverride")(function* (
 			orgId: OrgId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 			overrideId: OnCallOverrideId,
 		) {
 			yield* annotate(scheduleId)
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			yield* dbExecute((db) =>
 				Effect.gen(function* () {
 					yield* findRow(db, orgId, scheduleId)
@@ -874,13 +872,13 @@ export class OnCallSchedulesService extends Context.Service<
 		/** Turns the feed on, or with `replace` swaps its link: the old one stops working at once. */
 		const createCalendarFeed = Effect.fn("OnCallSchedulesService.createCalendarFeed")(function* (
 			orgId: OrgId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 			options: { readonly replace: boolean },
 		) {
 			yield* annotate(scheduleId)
 			yield* Effect.annotateCurrentSpan("maple.oncall.calendar_feed_replace", options.replace)
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			const nowMs = yield* runtime.now
 			const token = newCalendarFeedToken()
 			const updated = yield* dbExecute((db) =>
@@ -921,11 +919,11 @@ export class OnCallSchedulesService extends Context.Service<
 
 		const deleteCalendarFeed = Effect.fn("OnCallSchedulesService.deleteCalendarFeed")(function* (
 			orgId: OrgId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 		) {
 			yield* annotate(scheduleId)
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			const updated = yield* dbExecute((db) =>
 				db.run(
 					PG.update(OnCallSchedules)

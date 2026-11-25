@@ -1,4 +1,5 @@
 import { DashboardDocument } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -150,6 +151,8 @@ export type Snapshot = typeof Snapshot.Type
 export const Model = Schema.Struct({
 	dashboardId: Schema.String,
 	search: DashboardSearch,
+	/** The viewer's permissions; empty until the session answers. */
+	grants: Schema.Array(Policy.PermissionName),
 	status: Status,
 	document: Schema.NullOr(DashboardDocument),
 	/** The live board never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */

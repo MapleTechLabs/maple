@@ -31,7 +31,7 @@ const toV2SourceMap = (row: SourceMapFileRow): V2SourceMap => ({
 // Uploads decide what every member sees in stack traces, so they take the role that manages
 // ingest keys; listing stays open to members.
 const requireUpload = (tenant: CurrentTenant.TenantSchema) =>
-	Policy.check(tenant.roles, "source_maps:upload", (denial) =>
+	Policy.check(tenant.permissions, "source_maps:upload", (denial) =>
 		V2InsufficientPermissions.make(denial.message),
 	)
 

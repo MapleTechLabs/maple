@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { CurrentTenant } from "@maple/domain/http"
 import { Effect, Ref, Schema } from "effect"
 import { describe, expect, test } from "vitest"
@@ -7,6 +8,7 @@ const tenant = Schema.decodeSync(CurrentTenant.TenantSchema)({
 	orgId: "org_parity",
 	userId: "user_ada",
 	roles: ["root"],
+	permissions: Policy.allPermissions,
 	authMode: "self_hosted",
 })
 
@@ -31,5 +33,18 @@ describe("session tenant cache", () => {
 		expect(outcome.isFirstFailure).toBe(true)
 		expect(outcome.second.userId).toBe("user_ada")
 		expect(outcome.reads).toBe(2)
+	})
+})
+
+describe("session read", () => {
+	test("keeps the permissions this build knows and drops ones a newer API added", () => {
+		const read = Schema.decodeSync(CurrentTenant.SessionTenantResponse)({
+			orgId: "org_parity",
+			userId: "user_ada",
+			roles: ["org:member"],
+			permissions: ["telemetry:read", "reports:schedule", "alerts:manage"],
+			authMode: "clerk",
+		})
+		expect(read.permissions).toEqual(["telemetry:read", "alerts:manage"])
 	})
 })

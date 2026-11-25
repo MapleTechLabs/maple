@@ -31,7 +31,8 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { dashboardSections } from "./view-grid"
-import { isWriteBlocked } from "./mode"
+import { canEditDashboard, isWriteBlocked } from "./mode"
+import { gatedControl } from "../../kit/session-grants"
 import { snapshotBanner } from "../kit/live-sync"
 import * as TagEditor from "../kit/tag-editor"
 import * as VariablesManagerView from "../kit/variables-manager/view"
@@ -51,7 +52,7 @@ type H = HtmlBuilder<Message>
 
 /** The heading, or its input while renaming. */
 const title = (h: H, model: Model, name: string): Html => {
-	const isReadOnly = isWriteBlocked(model) || model.history.previewed !== null
+	const isReadOnly = !canEditDashboard(model) || isWriteBlocked(model) || model.history.previewed !== null
 	if (model.titleDraft !== null && !isReadOnly)
 		return h.form(
 			[h.OnSubmit(Message.SubmittedTitle())],
@@ -143,7 +144,7 @@ const GRID_PREVIEW = [
 	{ glyph: "TextWrapIcon", className: "h-16 w-10" },
 ] as const
 
-const blankDashboard = (h: H, isReadOnly: boolean): Html =>
+const blankDashboard = (h: H, model: Model, isReadOnly: boolean): Html =>
 	empty(
 		h,
 		[
@@ -173,14 +174,16 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 				h,
 				[
 					hstack(h, { gap: "2", justify: "center", wrap: true }, [
-						button(
-							h,
-							{
-								size: "sm",
-								isDisabled: isReadOnly,
-								attributes: [h.OnClick(Message.ClickedAddWidget())],
-							},
-							[icon(h, "PlusIcon"), "Add your first widget"],
+						gatedControl(h, model, "dashboards:edit", (isLocked) =>
+							button(
+								h,
+								{
+									size: "sm",
+									isDisabled: isReadOnly || isLocked,
+									attributes: [h.OnClick(Message.ClickedAddWidget())],
+								},
+								[icon(h, "PlusIcon"), "Add your first widget"],
+							),
 						),
 						linkButton(
 							h,
@@ -194,7 +197,7 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 						docsLink(h, "dashboards"),
 					]),
 					typography(h, { size: "2xs", tone: "muted", mono: true, as: "p" }, [
-						isReadOnly
+						isReadOnly || !canEditDashboard(model)
 							? "Read-only. You can't add widgets to this dashboard."
 							: "Templates create a new dashboard from this org's data.",
 					]),
@@ -276,7 +279,7 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 			canDismiss: !isWriteBlocked(model),
 		}),
 		isBlank
-			? blankDashboard(h, isWriteBlocked(model))
+			? blankDashboard(h, model, isWriteBlocked(model))
 			: dashboardSections(
 					h,
 					{ model, timeZone, variables: variablesOf(model, context).values },

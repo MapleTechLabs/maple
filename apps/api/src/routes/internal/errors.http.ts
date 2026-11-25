@@ -272,7 +272,7 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 					yield* Policy.check(
-						tenant.roles,
+						tenant.permissions,
 						"error_policy:manage",
 						(denial) => new ErrorForbiddenError({ message: denial.message }),
 					)
@@ -291,7 +291,7 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 					yield* Policy.check(
-						tenant.roles,
+						tenant.permissions,
 						"error_policy:manage",
 						(denial) =>
 							new ErrorForbiddenError({

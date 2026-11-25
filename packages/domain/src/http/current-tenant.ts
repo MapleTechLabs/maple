@@ -1,9 +1,9 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
-import { Schema, Context as EffectContext } from "effect"
+import { Array as Arr, Schema, SchemaGetter, Context as EffectContext } from "effect"
 import { type ActorId, type ApiKeyId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
 import type { ChatMode, ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
-import { analystMessage } from "../policy"
+import { limitedAccessMessage, type Permission, PermissionName } from "../policy"
 import { HttpTaggedError } from "./error-policy"
 
 export class UnauthorizedError extends HttpTaggedError<UnauthorizedError>()(
@@ -91,7 +91,7 @@ export class OrganizationWrongRegionError extends HttpTaggedError<OrganizationWr
 	},
 ) {}
 
-/** An analyst asked to operate the organization. 403: the session is fine, the role does not reach it. */
+/** The caller's role reaches no part of this endpoint. 403: the session is fine, the role does not reach it. */
 export class LimitedRoleError extends HttpTaggedError<LimitedRoleError>()(
 	"@maple/http/errors/LimitedRoleError",
 	{ message: Schema.String },
@@ -99,7 +99,7 @@ export class LimitedRoleError extends HttpTaggedError<LimitedRoleError>()(
 		status: 403,
 		code: "limited_role",
 		title: "Limited role",
-		message: analystMessage,
+		message: limitedAccessMessage,
 		retry: "never",
 		recovery: "request_access",
 		exposure: "public_message",
@@ -113,7 +113,10 @@ export class LimitedRoleError extends HttpTaggedError<LimitedRoleError>()(
 export interface TenantContext {
 	readonly orgId: OrgId
 	readonly userId: UserId
+	/** The Clerk roles the permissions came from: for display and pinning, never for checks. */
 	readonly roles: ReadonlyArray<RoleName>
+	/** What this request may do. Every authorization check reads these (`Policy.can`). */
+	readonly permissions: ReadonlyArray<Permission>
 	readonly authMode: AuthMode
 	/** A scoped API key's scopes. Unset for unscoped keys, OAuth tokens and sessions. */
 	readonly scopes?: ReadonlyArray<string> | undefined
@@ -131,11 +134,16 @@ export interface TenantContext {
 	readonly turnOrigin?: ChatTurnOrigin
 	/**
 	 * For an unattended turn, who answers for it, settled when it starts: one of Maple's own
-	 * producers, or a person with the roles they hold now. Absent reads as a person with none.
+	 * producers, or a person with what they hold now. Absent reads as a person holding nothing; a
+	 * person without `permissions` holds what their `roles` grant.
 	 */
 	readonly turnStarter?:
 		| { readonly kind: "producer" }
-		| { readonly kind: "person"; readonly roles: ReadonlyArray<RoleName> }
+		| {
+				readonly kind: "person"
+				readonly roles: ReadonlyArray<RoleName>
+				readonly permissions?: ReadonlyArray<Permission>
+		  }
 	/** Which Maple agent ran the chat-engine turn (investigation, code review, ...), so the audit log can name it. */
 	readonly chatMode?: ChatMode
 }
@@ -150,12 +158,30 @@ export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	orgId: OrgId,
 	userId: UserId,
 	roles: Schema.Array(RoleName),
+	permissions: Schema.Array(PermissionName),
 	authMode: AuthMode,
 	// Present only for API-key auth with restricted scopes (v2). Undefined for
 	// session tokens and legacy full-access keys — those bypass scope checks.
 	scopes: Schema.optional(Schema.Array(Schema.String)),
 	impersonation: Schema.optional(Schema.Struct({ actorId: Schema.String, sessionId: Schema.String })),
 }) {}
+
+const isPermissionName = Schema.is(PermissionName)
+
+/**
+ * The session as `GET /api/auth/session` answers it. A reader drops permission names it does not
+ * know: a newer API may grant one that an open tab's build predates, and that must not fail the read.
+ */
+export const SessionTenantResponse = Schema.Struct({
+	...TenantSchema.fields,
+	permissions: Schema.Array(Schema.String).pipe(
+		Schema.decodeTo(Schema.Array(PermissionName), {
+			decode: SchemaGetter.transform((names) => Arr.filter(names, isPermissionName)),
+			encode: SchemaGetter.passthroughSubtype(),
+		}),
+	),
+})
+export type SessionTenantResponse = typeof SessionTenantResponse.Type
 
 export class Context extends EffectContext.Service<Context, TenantSchema>()(
 	"@maple/domain/http/CurrentTenant",

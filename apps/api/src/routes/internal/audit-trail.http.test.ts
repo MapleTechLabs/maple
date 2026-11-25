@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, describe, expect, it } from "vitest"
 import {
 	AlertMemberDirectoryUnavailableError,
@@ -157,6 +158,7 @@ const makeHarness = (
 							orgId: ORG_ID,
 							userId: USER_ID,
 							roles: Arr.map(roles, (role) => asRole(role)),
+							permissions: Policy.grantsOf(Arr.map(roles, (role) => asRole(role))),
 							authMode: "clerk",
 						}),
 					),

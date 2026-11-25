@@ -7,6 +7,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as Combobox from "@maple/views/ui/combobox"
 import { ListDashboard, Scope } from "./model"
 import { WriteSync } from "../kit/store"
+import { SessionGrants } from "../../kit/session-grants"
 
 /** How many source panels an import turned into working widgets. */
 export const ImportStats = Schema.Struct({ panels: Schema.Number, converted: Schema.Number })
@@ -33,6 +34,7 @@ const WriteResult = Schema.Result(WriteSync, WriteFailure)
 export const Message = defineMessageUnion({
 	/** The clock and the browser's locale, read together before the list renders. */
 	CompletedReadClock: { nowMs: Schema.Number, locale: Schema.String },
+	CompletedFetchSession: SessionGrants,
 	CompletedLoadPreferences: { favorites: Schema.Array(Schema.String), sort: Schema.String },
 	UpdatedDashboards: { orgId: Schema.String, dashboards: Schema.Array(ListDashboard) },
 	/** The live list sat loading past the timeout. */

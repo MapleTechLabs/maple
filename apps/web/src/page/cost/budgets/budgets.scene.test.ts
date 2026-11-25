@@ -50,6 +50,8 @@ const LIST = "FetchCostBudgets"
 const init = () => enter(context, true)
 const ENGINEER = Policy.grantsOf(["org:engineer"])
 const MEMBER = Policy.grantsOf(["org:member"])
+/** A custom role that holds Manage SLOs and budgets and nothing else. */
+const SLOS_ONLY = Policy.grantsOf(["org:custom"], ["slos:manage"])
 const table = role("table", { name: "Budgets" })
 
 const fold = (model: Model, messages: ReadonlyArray<(model: Model) => Message>): Model =>
@@ -158,7 +160,7 @@ describe("cost budgets", () => {
 		)
 	})
 
-	test("whoever manages alerts gets the editor, the switch and delete", () => {
+	test("whoever manages budgets gets the editor, the switch and delete", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
@@ -169,6 +171,19 @@ describe("cost budgets", () => {
 			),
 			expectView(role("switch", { name: "Turn off AWS production" })).toExist(),
 			expectView(role("button", { name: "Delete AWS production" })).toExist(),
+		)
+	})
+
+	test("a custom role holding only Manage SLOs and budgets gets the editor, the switch and delete", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(LIST_OF_FIVE, SLOS_ONLY)),
+			expectView(role("link", { name: "New budget" })).toHaveAttr("href", budgetFormHref()),
+			expectView(role("switch", { name: "Turn off AWS production" })).not.toHaveAttr(
+				"aria-disabled",
+				"true",
+			),
+			expectView(role("button", { name: "Delete AWS production" })).toBeEnabled(),
 		)
 	})
 
@@ -187,7 +202,7 @@ describe("cost budgets", () => {
 			),
 			expectView(role("button", { name: "Edit AWS production" })).toBeDisabled(),
 			expectView(role("button", { name: "Delete AWS production" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("slos:manage").message })).toExist(),
 		)
 	})
 
@@ -205,7 +220,7 @@ describe("cost budgets", () => {
 			expectView(text("No budgets yet")).toExist(),
 			expectView(role("link", { name: "New budget" })).toBeAbsent(),
 			expectView(role("button", { name: "New budget" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("slos:manage").message })).toExist(),
 		)
 	})
 

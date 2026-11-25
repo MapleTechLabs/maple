@@ -12,18 +12,19 @@ import {
 	makeChatSessionId,
 } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
+import * as Policy from "@maple/domain/policy"
 import { ExternalUserId, OrgId, RoleName, UserId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { mapleToolCatalog, mapleToolCatalogFor } from "../mcp/tools/registry"
+import { DASHBOARD_AUTHORING_TOOLS } from "./approval-permission"
 import { MUTATING_TOOL_NAMES } from "./permissions"
 import type { TenantContext } from "@maple/domain/http"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
-import { profileForRoles, profileForTenant, profileForTurn, toolSurfaceForApproval } from "./profiles"
-import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
+import { profileForTenant, profileForTurn, toolSurfaceForApproval } from "./profiles"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./maple-toolkit"
 
@@ -138,6 +139,7 @@ describe("profileForTurn", () => {
 		orgId,
 		userId: Schema.decodeSync(UserId)("user_1"),
 		roles: [],
+		permissions: Policy.grantsOf([]),
 		authMode: "self_hosted",
 	}
 	const executor: McpToolExecutorApi = {
@@ -164,10 +166,11 @@ describe("profileForTurn", () => {
 		}
 	})
 
+	const appProfileFor = (permissions: Policy.Grants) =>
+		profileForTenant(profileForTurn(agentForSession(appSession), { kind: "app" }), { permissions })
+
 	it("proposes dashboard changes to an analyst and offers no other tool that changes data", () => {
-		const profile = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
-			"org:analyst",
-		])
+		const profile = appProfileFor(Policy.grantsOf(["org:analyst"]))
 		const { tools } = buildChatToolkit(
 			executor,
 			tenant,
@@ -185,11 +188,31 @@ describe("profileForTurn", () => {
 		}
 		assert.property(tools, "create_dashboard")
 		// A member's turn on the same session still proposes every one of them.
-		const member = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
-			"org:member",
-		])
+		const member = appProfileFor(Policy.grantsOf(["org:member"]))
 		for (const name of MUTATING_TOOL_NAMES) {
 			assert.equal(evaluatePermission(member.ruleset, name), "ask", name)
+		}
+	})
+
+	it("offers a custom role that only reads telemetry the read tools and no change at all", () => {
+		const profile = appProfileFor(["telemetry:read", "ai:ask"])
+		assert.equal(evaluatePermission(profile.ruleset, "search_traces"), "allow")
+		for (const name of MUTATING_TOOL_NAMES) {
+			assert.equal(evaluatePermission(profile.ruleset, name), "deny", name)
+		}
+		// Reads it does not hold are not offered either: raw SQL and the Security Center.
+		assert.equal(evaluatePermission(profile.ruleset, "run_sql"), "deny")
+		assert.equal(evaluatePermission(profile.ruleset, "list_security_findings"), "deny")
+	})
+
+	it("proposes no dashboard change to a custom role that acts through Maple AI but may not edit dashboards", () => {
+		const profile = appProfileFor(["telemetry:read", "ai:ask", "ai:act", "alerts:manage"])
+		for (const name of MUTATING_TOOL_NAMES) {
+			assert.equal(
+				evaluatePermission(profile.ruleset, name),
+				DASHBOARD_AUTHORING_TOOLS.has(name) ? "deny" : "ask",
+				name,
+			)
 		}
 	})
 
@@ -197,7 +220,10 @@ describe("profileForTurn", () => {
 		const offered = (caller: Pick<TenantContext, "roles" | "turnOrigin" | "turnStarter">) => {
 			const origin = caller.turnOrigin ?? { kind: "app" }
 			const session = origin.kind === "connector" ? connectorSession : appSession
-			const profile = profileForTenant(profileForTurn(agentForSession(session), origin), caller)
+			const profile = profileForTenant(profileForTurn(agentForSession(session), origin), {
+				...caller,
+				permissions: Policy.grantsOf(caller.roles),
+			})
 			return evaluatePermission(profile.ruleset, "query_data_source") !== "deny"
 		}
 		const roles = (name: string) => [Schema.decodeSync(RoleName)(name)]

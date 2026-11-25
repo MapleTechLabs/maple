@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
 import { OrgId, UserId, UsersGroupsRequest, type TenantContext } from "@maple/domain/http"
@@ -13,6 +14,7 @@ const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_users_groups"),
 	userId: Schema.decodeSync(UserId)("user_member"),
 	roles: ["org:admin"],
+	permissions: Policy.grantsOf(["org:admin"]),
 	authMode: "self_hosted",
 }
 

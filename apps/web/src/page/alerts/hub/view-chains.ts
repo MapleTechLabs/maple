@@ -28,7 +28,7 @@ import { Message } from "./message"
 import { type Model } from "./model"
 import { chainMenuId, chainRuleNames } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageOnCall } from "../../kit/session-grants"
 import { gatedEntries, gatedLinkButton } from "../../kit/gated-controls"
 
 type H = HtmlBuilder<Message>
@@ -128,7 +128,7 @@ export const chainRow = (
 					rowActionsMenu(h, {
 						slotId: menuId,
 						model: model.menus[menuId] ?? Menu.init(menuId),
-						entries: gatedEntries(model, "alerts:manage", entries),
+						entries: gatedEntries(model, "oncall:manage", entries),
 						label: `Actions for ${chain.name}`,
 						toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
 					}),
@@ -147,11 +147,11 @@ const chainsEmpty = (h: H, model: Model): Html =>
 				emptyTitle(h, ["No escalation chains yet"]),
 				emptyDescription(h, [
 					"A chain pages one set of destinations, waits for someone to acknowledge, then pages the next. A rule's severity tier can start one on top of its own destinations.",
-					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
+					...(canManageOnCall(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
 			emptyActions(h, [
-				gatedLinkButton(h, model, "alerts:manage", { size: "sm", href: newChainHref() }, [
+				gatedLinkButton(h, model, "oncall:manage", { size: "sm", href: newChainHref() }, [
 					icon(h, "PlusIcon"),
 					"Create chain",
 				]),
@@ -212,7 +212,7 @@ export const chainsSection = (h: H, model: Model): Html =>
 							? gatedLinkButton(
 									h,
 									model,
-									"alerts:manage",
+									"oncall:manage",
 									{ size: "sm", variant: "outline", href: newChainHref() },
 									[icon(h, "PlusIcon"), "New chain"],
 								)

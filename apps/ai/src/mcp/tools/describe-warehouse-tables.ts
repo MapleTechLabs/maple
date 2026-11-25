@@ -100,6 +100,7 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 		}),
 		aliases: { table: "tables" },
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading table schemas", "Describing warehouse tables"],
 		handler: Effect.fn("McpTool.describeWarehouseTables")(function* ({ tables }) {
 			const names = tableNames(tables ?? [])

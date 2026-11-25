@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Context, Effect, Layer, Result, Schema } from "effect"
 import { OrgId, RoleName, UserId, type TenantContext } from "@maple/domain/http"
 import { ListMapleFeedbackOutput } from "@maple/domain/mcp-outputs"
@@ -20,6 +21,7 @@ const tenant = (orgId: OrgId, role = "root"): TenantContext => ({
 	orgId,
 	userId: USER,
 	roles: [Schema.decodeSync(RoleName)(role)],
+	permissions: Policy.grantsOf([Schema.decodeSync(RoleName)(role)]),
 	authMode: "self_hosted",
 })
 
@@ -59,9 +61,10 @@ const call = (params: unknown) =>
 const expectRefused = (result: Result.Result<unknown, { readonly _tag: string }>) => {
 	expect(Result.isFailure(result)).toBe(true)
 	if (Result.isFailure(result)) {
+		// The registry refuses a caller without the permission, the service a customer org.
 		expect(result.failure).toMatchObject({
 			_tag: "@maple/mcp/errors/McpAuthInvalidError",
-			reason: "insufficient_scope",
+			reason: expect.stringMatching(/^insufficient_(scope|permission)$/),
 		})
 	}
 }

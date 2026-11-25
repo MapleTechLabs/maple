@@ -93,7 +93,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(pageUpdate(entered, Message.CompletedReadGrants({ grants: [] })).model),
-			expectView(text("Only org admins and engineers can connect sources")).toExist(),
+			expectView(text("Your role can't connect sources")).toExist(),
 			expectView(role("link", { name: "View sources" })).toHaveAttr("href", "/sources"),
 			expectView(role("textbox")).not.toExist(),
 		)

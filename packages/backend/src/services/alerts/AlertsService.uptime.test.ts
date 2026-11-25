@@ -33,7 +33,7 @@ import {
 	makeLayer,
 	asOrgId,
 	asUserId,
-	adminRoles,
+	adminGrants,
 	createWebhookDestination,
 	alertServices,
 } from "./alerts-service-test-support"
@@ -807,7 +807,7 @@ describe("AlertsService uptime rules", () => {
 					threshold: 1,
 					windowMinutes: 1,
 				})
-				const created = yield* Effect.flip(alerts.createRule(orgId, userId, adminRoles, request))
+				const created = yield* Effect.flip(alerts.createRule(orgId, userId, adminGrants, request))
 				assert.instanceOf(created, AlertValidationError)
 
 				const { ruleId } = yield* seedUptimeMonitor(testDb, {
@@ -820,10 +820,10 @@ describe("AlertsService uptime rules", () => {
 				})
 				assert.lengthOf((yield* alerts.listRules(orgId)).rules, 0)
 				const edited = yield* Effect.flip(
-					alerts.updateRule(orgId, userId, adminRoles, ruleId, request),
+					alerts.updateRule(orgId, userId, adminGrants, ruleId, request),
 				)
 				assert.strictEqual(edited._tag, "@maple/http/errors/AlertValidationError")
-				const deleted = yield* Effect.flip(alerts.deleteRule(orgId, adminRoles, ruleId))
+				const deleted = yield* Effect.flip(alerts.deleteRule(orgId, adminGrants, ruleId))
 				assert.strictEqual(deleted._tag, "@maple/http/errors/AlertRuleNotFoundError")
 			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 		},

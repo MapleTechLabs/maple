@@ -65,7 +65,7 @@ export type Model = typeof Model.Type
 
 /** The viewer may change the escalation policy (`error_policy:manage`). */
 export const canManage = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "error_policy:manage")
+	Policy.can(model.grants, "error_policy:manage")
 
 const done = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, LoadFailure) })
 

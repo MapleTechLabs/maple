@@ -11,6 +11,7 @@ import {
 } from "./three/spatial-layout"
 import type { Edge3D, Topology3D } from "./three/types"
 import type { WorldEntity } from "@maple/domain/http"
+import type * as Policy from "@maple/domain/policy"
 import { Option, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -80,6 +81,8 @@ function edgeLatency(edge: Edge3D) {
 export type Scene3dOptions<M> = Readonly<{
 	model: Model
 	map: ServiceMap.Model
+	/** The viewer's permissions: Customize needs `service_map:edit`. */
+	grants: ReadonlyArray<Policy.Permission>
 	toMessage: (message: Message) => M
 }>
 
@@ -90,6 +93,7 @@ export type ViewportOptions<M> = Readonly<{
 	selectedId: string | null
 	reducedMotion: boolean
 	sample?: boolean
+	grants: ReadonlyArray<Policy.Permission>
 	toMessage: (message: Message) => M
 }>
 
@@ -113,7 +117,7 @@ export const topologyOf = (map: ServiceMap.Model): Topology3D => {
 
 const perspectiveBar = <M>(
 	h: HtmlBuilder<M>,
-	{ model, reducedMotion, toMessage }: ViewportOptions<M>,
+	{ model, reducedMotion, grants, toMessage }: ViewportOptions<M>,
 ): Html => {
 	const flowing = model.traffic ?? !reducedMotion
 	return hstack(h, { gap: "2", align: "center", wrap: true, className: stripClass("head", "shrink-0") }, [
@@ -142,7 +146,7 @@ const perspectiveBar = <M>(
 			],
 			[VIEW_COPY[model.perspective].encoding],
 		),
-		...customizeControls(h, model, toMessage),
+		...customizeControls(h, model, grants, toMessage),
 		// Reduced motion starts the traffic paused; the button still turns it on.
 		button(
 			h,
@@ -386,9 +390,13 @@ const cachedLayout = (
 }
 
 /** The 3D view: the map's `renderScene` in 3D. Labels and overlays are DOM; the scene draws behind them. */
-export const scene3dView = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Scene3dOptions<M>): Html =>
+export const scene3dView = <M>(
+	h: HtmlBuilder<M>,
+	{ model, map, grants, toMessage }: Scene3dOptions<M>,
+): Html =>
 	viewportView(h, {
 		model,
+		grants,
 		topology: topologyOf(map),
 		selectedId: Option.getOrNull(map.selectedId),
 		reducedMotion: map.reducedMotion,

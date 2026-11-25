@@ -25,6 +25,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions, V2TimeRangeInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { ScrapeTargetPublicId } from "./scrape-targets"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 // PlanetScale integration. An org connects PlanetScale over OAuth, binds the
 // grant to one PlanetScale organization, and Maple provisions a managed scrape
@@ -1050,28 +1051,32 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 			payload: V2PlanetScaleQueryInsightsRequest,
 			success: V2PlanetScaleQueryInsightList,
 			error: [V2TimeRangeInvalid.schema, ...organizationErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "queryPlanetScaleQueryInsights",
-				summary: "Query PlanetScale query insights",
-				description:
-					"Returns the top queries by total time for one database branch, proxied live to PlanetScale's Query Insights API and cached briefly. Per-fingerprint cardinality is far too high to store as metrics, so this is computed on demand. A read-only operation despite being a POST — the window and filters belong in a body — so the `integrations:read` scope is sufficient.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "queryPlanetScaleQueryInsights",
+					summary: "Query PlanetScale query insights",
+					description:
+						"Returns the top queries by total time for one database branch, proxied live to PlanetScale's Query Insights API and cached briefly. Per-fingerprint cardinality is far too high to store as metrics, so this is computed on demand. A read-only operation despite being a POST — the window and filters belong in a body — so the `integrations:read` scope is sufficient.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("events", "/events", {
 			payload: V2PlanetScaleEventsRequest,
 			success: V2PlanetScaleEventList,
 			error: [V2TimeRangeInvalid.schema, integrationPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listPlanetScaleEvents",
-				summary: "List PlanetScale lifecycle events",
-				description:
-					"Returns deploy-request transitions and branch state changes for a window, newest first — the timeline behind deployment markers on infrastructure charts. A read-only operation despite being a POST, so the `integrations:read` scope is sufficient.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listPlanetScaleEvents",
+					summary: "List PlanetScale lifecycle events",
+					description:
+						"Returns deploy-request transitions and branch state changes for a window, newest first — the timeline behind deployment markers on infrastructure charts. A read-only operation despite being a POST, so the `integrations:read` scope is sufficient.",
+				}),
+			),
 	)
 	.prefix("/v2/integrations/planetscale")
 	.middleware(AuthorizationV2)
@@ -1081,4 +1086,5 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 			description:
 				"Connect PlanetScale to your organization and manage what Maple collects from it: connection status, organization binding, the metrics service token that enables branch-metrics scraping, the database inventory, webhook setup, query insights, and the lifecycle event timeline.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

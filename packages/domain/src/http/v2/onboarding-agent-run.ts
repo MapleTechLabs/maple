@@ -14,7 +14,7 @@ import {
 	OnboardingAgentStage,
 	OnboardingAgentStageStatus,
 } from "../../onboarding-agent-run"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess } from "../endpoint-access"
 import { AuthorizationV2 } from "./auth"
 import { Timestamp, wireExample } from "./envelopes"
 import { V2InsufficientPermissions } from "./errors"
@@ -171,7 +171,7 @@ export class V2OnboardingAgentRunApiGroup extends HttpApiGroup.make("onboardingA
 				...publicErrors(OnboardingAgentRunRateLimitedError, OnboardingAgentRunUnavailableError),
 			],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "startOnboardingAgentRun",
@@ -186,14 +186,16 @@ export class V2OnboardingAgentRunApiGroup extends HttpApiGroup.make("onboardingA
 		HttpApiEndpoint.get("retrieve", "/", {
 			success: V2OnboardingAgentRun,
 			error: publicErrors(OnboardingAgentRunNotFoundError, OnboardingAgentRunUnavailableError),
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getOnboardingAgentRun",
-				summary: "Retrieve your onboarding agent run",
-				description:
-					"Returns the caller's latest onboarding run. Requires the `onboarding:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getOnboardingAgentRun",
+					summary: "Retrieve your onboarding agent run",
+					description:
+						"Returns the caller's latest onboarding run. Requires the `onboarding:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("report", "/status", {
@@ -205,7 +207,7 @@ export class V2OnboardingAgentRunApiGroup extends HttpApiGroup.make("onboardingA
 				OnboardingAgentRunUnavailableError,
 			),
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "reportOnboardingAgentRun",

@@ -34,7 +34,7 @@ export type ViewInputs = Readonly<{
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const notice = adminOnlyNotice(h, {
 		isKnownMember: inputs.isKnownMember && !canManage(model),
-		subject: "billing",
+		permission: "billing:manage",
 		adminName: inputs.adminName,
 	})
 	const account = accountOf(model)

@@ -66,7 +66,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("createConnector", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const connector = yield* gcp.create(tenant.orgId, tenant.userId, {
@@ -87,7 +87,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("updateConnector", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const connector = yield* gcp.update(tenant.orgId, params.id, {
@@ -104,7 +104,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("setupScripts", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const scripts = yield* gcp.scripts(tenant.orgId, params.id, {
@@ -127,7 +127,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("confirmRemoval", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const connector = yield* gcp.confirmRemoval(tenant.orgId, params.id)
@@ -141,7 +141,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("deleteConnector", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const deleted = yield* gcp.delete(tenant.orgId, params.id)

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { DEFAULT_LIMITS } from "@maple/promql"
@@ -14,6 +15,7 @@ const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_promql"),
 	userId: Schema.decodeSync(UserId)("user_promql"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

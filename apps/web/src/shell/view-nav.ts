@@ -47,7 +47,8 @@ export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<N
 		(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags[name]))
 	const canReadSecurity =
 		!isClerkAuthEnabled ||
-		(clerk !== null && Option.exists(clerk.maybeRole, (role) => Policy.can([role], "security:manage")))
+		(clerk !== null &&
+			Option.exists(clerk.maybeGrants, (grants) => Policy.can(grants, "security:manage")))
 	return navGroups(
 		{
 			cloudSecurity: flag("cloudSecurity") && canReadSecurity,

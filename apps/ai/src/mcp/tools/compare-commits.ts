@@ -59,6 +59,7 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		// An unknown SHA is probed against the connected repositories on GitHub.
 		hints: { readOnly: true, openWorld: true },
+		permission: "telemetry:read",
 		// Maple's own agents only: the org's commit history is not for third-party MCP clients.
 		audience: "agent",
 		phrases: ["Comparing commits", "Listing what shipped"],

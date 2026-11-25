@@ -45,7 +45,7 @@ import { pageUrlOf } from "./update-domain"
 import { PREVIEW_FIELD_TARGETS } from "./command"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
-import { gatedControl } from "../../kit/session-grants"
+import { denialReason, gatedControl } from "../../kit/session-grants"
 import { accessIssue, isAccessDirty } from "./update-access"
 import { isSettingsDirty, settingsOf } from "./update-settings"
 import { PREVIEWED_SECTIONS } from "./update"
@@ -500,13 +500,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return vstack(h, { className: "min-w-0 max-w-3xl" }, [
 		settingsSections(h, [
-			...(canManage(model)
-				? []
-				: [
-						adminOnlyNote(h, [
-							"Only org admins and engineers can change a status page. You can still post incident updates.",
-						]),
-					]),
+			...(canManage(model) ? [] : [adminOnlyNote(h, [denialReason("status_pages:edit")])]),
 			...sectionBody(h, model, page, form, section),
 		]),
 		...(model.settingsFailure === null

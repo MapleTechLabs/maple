@@ -634,7 +634,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(withMonitors([httpMonitor()], false)),
-			expectView(text("Only org admins and engineers can create status pages")).toExist(),
+			expectView(text("Your role can't create status pages")).toExist(),
 			expectView(role("button", { name: "Publish page" })).not.toExist(),
 		)
 	})
@@ -706,7 +706,7 @@ describe("status page setup method", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(withMonitors([httpMonitor()], false, null)),
-			expectView(text("Only org admins and engineers can create status pages")).toExist(),
+			expectView(text("Your role can't create status pages")).toExist(),
 			expectView(role("link", { name: "Get the prompt" })).not.toExist(),
 		)
 	})

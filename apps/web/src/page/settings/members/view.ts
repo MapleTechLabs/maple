@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { cn } from "@maple/ui/lib/utils"
-import { orgRoleLabel, roleChangePrompt, toOrgRole } from "../kit/org-membership"
+import { orgRoleLabel, roleChangePrompt } from "../kit/org-membership"
 import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -30,8 +30,17 @@ import { accountSectionSkeleton, noOrganization } from "../kit/account-skeleton"
 import { adminOnlyNotice } from "../kit/members"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, type InvitationRow, type MemberRow, Message, type Model } from "./model"
-import { hasMore, roleSelectFor } from "./update"
-import { denialReason, gatedControl } from "../../kit/session-grants"
+import {
+	hasMore,
+	holdsNoRole,
+	isSavingFor,
+	MANAGE_ROLES,
+	memberRoleKey,
+	memberRoleName,
+	roleEntriesOf,
+	roleSelectFor,
+} from "./update"
+import { denialTooltipContent, gatedControl } from "../../kit/session-grants"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -40,20 +49,38 @@ import { Array as Arr, String as Str } from "effect"
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
 
-const ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(
-	Policy.assignableRoles,
+/** An invitation offers the built-in roles only: Clerk sends it, and a custom role is set afterwards. */
+const INVITE_ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(
+	Policy.builtInRoles,
 	(entry): SelectView.SelectEntry => ({
 		_tag: "Item",
 		item: { value: entry.clerkKey, label: entry.label },
 	}),
 )
 
+/** The member picker: the built-in roles, the organization's own under "Custom", then the way to manage them. */
+const roleEntries = (model: Model): ReadonlyArray<SelectView.SelectEntry> => {
+	const roles = roleEntriesOf(model)
+	const item = (role: (typeof roles)[number]): SelectView.SelectOption => ({
+		value: role.key,
+		label: role.name,
+	})
+	const custom = Arr.filter(roles, (role) => !role.isBuiltIn)
+	return [
+		...Arr.flatMap(roles, (role): ReadonlyArray<SelectView.SelectEntry> =>
+			role.isBuiltIn ? [{ _tag: "Item", item: item(role) }] : [],
+		),
+		...(custom.length === 0
+			? []
+			: [{ _tag: "Group" as const, label: "Custom", items: Arr.map(custom, item) }]),
+		{ _tag: "Separator" },
+		{ _tag: "Item", item: { value: MANAGE_ROLES, label: "Manage roles" } },
+	]
+}
+
 /** `isInset`: the members column holds role selects, so both tables put values and headers at their text inset. */
-const roleText = (h: H, role: string, isInset: boolean): Html =>
-	h.span(
-		[h.Class(cn(typographyClass({ size: "xs", tone: "foreground" }), isInset && "px-2.5"))],
-		[orgRoleLabel(role)],
-	)
+const roleText = (h: H, label: string, isInset: boolean): Html =>
+	h.span([h.Class(cn(typographyClass({ size: "xs", tone: "foreground" }), isInset && "px-2.5"))], [label])
 
 const roleHead = (h: H, isInset: boolean): Html =>
 	tableHead(h, [h.span([h.Class(cn(isInset && "px-2.5"))], ["Role"])], COLUMN.role)
@@ -101,34 +128,64 @@ const skeletonRow = (h: H, hasActions: boolean, index: number): Html =>
 		[h.Key(`skeleton-${index}`)],
 	)
 
+/** Under "No role": why the member can't do anything, and who can fix it. */
+const noRoleHint = (h: H, member: MemberRow, canEdit: boolean, isInset: boolean): ReadonlyArray<Html> =>
+	holdsNoRole(member)
+		? [
+				typography(
+					h,
+					{
+						as: "div",
+						size: "xs",
+						tone: "muted",
+						className: cn("mt-1 whitespace-normal", isInset && "px-2.5"),
+					},
+					[
+						canEdit
+							? "Holds no permissions. Pick a role."
+							: "Holds no permissions until an admin picks a role.",
+					],
+				),
+			]
+		: []
+
 const roleCell = (h: H, model: Model, member: MemberRow, canEdit: boolean): Html => {
-	if (!canEdit) return tableCell(h, [roleText(h, member.role, canManage(model))])
-	const isConfirming = model.pendingRole?.memberId === member.id
+	if (!canEdit)
+		return tableCell(h, [
+			roleText(h, memberRoleName(model, member), canManage(model)),
+			...noRoleHint(h, member, false, canManage(model)),
+		])
+	const isConfirming = model.pendingRole?.memberId === member.id && model.pendingRole._tag !== "Applying"
 	return tableCell(h, [
 		h.submodel({
 			slotId: `member-role-${member.id}`,
-			model: { ...roleSelectFor(model, member), value: toOrgRole(member.role) },
+			model: { ...roleSelectFor(model, member), value: memberRoleKey(member) },
 			view: SelectView.view,
 			toParentMessage: (message) => Message.GotRoleSelectMessage({ memberId: member.id, message }),
 			viewInputs: {
-				entries: ROLE_ENTRIES,
+				entries: roleEntries(model),
 				ariaLabel: `Role of ${member.name}`,
 				size: "sm",
+				isDisabled: isSavingFor(model, member.id),
 				className: cn("w-full min-w-0", isConfirming && "border-primary"),
-				renderValue: () => [orgRoleLabel(member.role)],
+				renderValue: () => [memberRoleName(model, member)],
 				toView: (parts) => h.div([h.Class("contents")], parts),
 			},
 		}),
+		...noRoleHint(h, member, true, true),
 	])
 }
 
 /** A menu item's lock: disabled with the `members:manage` denial when the viewer may not use it. */
-const lockedUnless = (isAllowed: boolean): Pick<MenuItemEntry, "isDisabled" | "tooltip"> =>
-	isAllowed ? {} : { isDisabled: true, tooltip: { content: [denialReason("members:manage")] } }
+const lockedUnless = (h: H, isAllowed: boolean): Pick<MenuItemEntry, "isDisabled" | "tooltip"> =>
+	isAllowed ? {} : { isDisabled: true, tooltip: { content: denialTooltipContent(h, "members:manage") } }
 
 const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): ReadonlyArray<Html> => {
 	const canEdit = canManage(model) && !member.isCurrentUser
-	const pending = model.pendingRole?.memberId === member.id ? model.pendingRole : null
+	const pending =
+		model.pendingRole?.memberId === member.id && model.pendingRole._tag !== "Applying"
+			? model.pendingRole
+			: null
 	const columnCount = 4
 	const menuId = `member-actions-${member.id}`
 	const row = tableRow(
@@ -198,7 +255,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 										label: "Remove",
 										icon: "TrashIcon",
 										variant: "destructive",
-										...lockedUnless(canEdit),
+										...lockedUnless(h, canEdit),
 									},
 								],
 								toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
@@ -210,7 +267,10 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 		[h.Key(member.id)],
 	)
 	if (pending === null) return [row]
-	const prompt = roleChangePrompt(member.name, pending.next)
+	const prompt =
+		pending.ref._tag === "BuiltIn"
+			? roleChangePrompt(member.name, pending.ref.clerkKey)
+			: { question: `Give ${member.name} the ${pending.roleName} role?`, confirmLabel: "Change role" }
 	return [
 		row,
 		tableRow(
@@ -231,7 +291,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 									],
 									[
 										icon(h, "CircleInfoIcon", {
-											className: "mt-0.5 size-3.5 shrink-0 text-primary",
+											className: "mt-0.5 size-3.5 shrink-0 text-muted-foreground",
 										}),
 										prompt.question,
 									],
@@ -336,7 +396,7 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 					),
 				]),
 			]),
-			tableCell(h, [roleText(h, invitation.role, canManage(model))]),
+			tableCell(h, [roleText(h, orgRoleLabel(invitation.role), canManage(model))]),
 			tableCell(
 				h,
 				// The absolute date, as on Joined above; the age is in its hover card.
@@ -469,7 +529,7 @@ const inviteDialog = (h: H, model: Model): Html => {
 				view: SelectView.view,
 				toParentMessage: (message) => Message.GotInviteRoleMessage({ message }),
 				viewInputs: {
-					entries: ROLE_ENTRIES,
+					entries: INVITE_ROLE_ENTRIES,
 					labelledBy: "invite-role-label",
 					className: "w-full",
 					renderValue: (value) => [orgRoleLabel(value)],
@@ -539,7 +599,7 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 	return settingsSections(h, [
 		...adminOnlyNotice(h, {
 			isKnownMember: inputs.isKnownMember && !canManage(model),
-			subject: "members",
+			permission: "members:manage",
 			adminName: model.adminName,
 		}),
 		membersSection(h, model, inputs),

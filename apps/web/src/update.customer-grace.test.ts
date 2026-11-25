@@ -66,6 +66,7 @@ const snapshot: ClerkSnapshot = {
 	}),
 	memberships: [],
 	maybeRole: Option.none(),
+	maybeGrants: Option.none(),
 	maybePendingTask: Option.none(),
 }
 

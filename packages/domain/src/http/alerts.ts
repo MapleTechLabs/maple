@@ -1166,7 +1166,8 @@ export class AlertForbiddenError extends HttpTaggedError<AlertForbiddenError>()(
 		message: "You do not have permission to perform this alert operation.",
 		retry: "never",
 		recovery: "request_access",
-		exposure: "redacted",
+		// Every message names the permission or scope missing, which is what the viewer needs.
+		exposure: "public_message",
 	},
 ) {}
 

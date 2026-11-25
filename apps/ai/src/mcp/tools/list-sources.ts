@@ -29,6 +29,7 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 			platform: P.optionalOneOf(SourcePlatform.literals, "Only sources of this platform"),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Checking ingest sources", "Listing ingest sources"],
 		handler: Effect.fn("McpTool.listIngestSources")(function* ({ platform }) {
 			const tenant = yield* CurrentMcpTenant

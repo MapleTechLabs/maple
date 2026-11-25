@@ -1,7 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { ApiKeyId, ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
+import { ApiKeyId, ApiKeyNotFoundError, OrgId, RoleName, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { pinAuthority } from "@maple/backend/services/auth/pinned-authority"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiKeysService } from "./ApiKeysService"
 import {
@@ -222,7 +224,7 @@ describe("ApiKeysService.roll", () => {
 				name: "widget",
 				scopes: [],
 				expiresInSeconds: 3600,
-				roles: [],
+				pinned: { roles: [] },
 			})
 
 			const oauthExit = yield* Effect.exit(svc.roll(orgId, asUserId("user_a"), oauth.id, {}))
@@ -467,6 +469,61 @@ describe("ApiKeysService across orgs", () => {
 
 			yield* assertUntouched(keyA, ORG_A)
 			yield* assertUntouched(keyB, ORG_B)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+})
+
+describe("ApiKeysService.resolveByKey pinned authority", () => {
+	const customRole = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+
+	it.effect("resolves a custom-role key with the permissions pinned at mint", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const pinned = pinAuthority({
+				roles: [customRole],
+				permissions: ["telemetry:read", "alerts:manage"],
+			})
+			const created = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "custom mcp",
+				kind: "mcp",
+				metadataJson: { source: "maple_mcp", ...pinned },
+			})
+
+			const resolved = yield* svc.resolveByKey(created.secret)
+
+			assert.isTrue(Option.isSome(resolved))
+			if (Option.isSome(resolved)) {
+				assert.deepStrictEqual(resolved.value.roles, [customRole])
+				assert.sameMembers([...resolved.value.permissions], ["telemetry:read", "alerts:manage"])
+			}
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("gives a custom-role key without pinned codes nothing, and an unpinned key everything", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const bare = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "custom without codes",
+				kind: "mcp",
+				metadataJson: { source: "maple_mcp", roles: [customRole] },
+			})
+			const unpinned = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), { name: "automation" })
+
+			const bareResolved = yield* svc.resolveByKey(bare.secret)
+			const unpinnedResolved = yield* svc.resolveByKey(unpinned.secret)
+
+			assert.deepStrictEqual(
+				Option.map(bareResolved, (key) => key.permissions),
+				Option.some([]),
+			)
+			assert.deepStrictEqual(
+				Option.map(unpinnedResolved, (key) => key.permissions),
+				Option.some(Policy.allPermissions),
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

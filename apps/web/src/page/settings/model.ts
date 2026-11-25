@@ -8,6 +8,7 @@ import { SettingsSearch, settingsTabValues } from "../../route/search"
 import * as Ai from "./ai/model"
 import * as Billing from "./billing/model"
 import * as Members from "./members/model"
+import * as Roles from "./roles/model"
 import * as General from "./general/model"
 import * as Domains from "./domains/model"
 import * as Sso from "./sso/model"
@@ -48,6 +49,7 @@ export const TabModel = Schema.Union([
 	Schema.TaggedStruct("DataSources", { model: DataSources.Model }),
 	Schema.TaggedStruct("General", { model: General.Model }),
 	Schema.TaggedStruct("Members", { model: Members.Model }),
+	Schema.TaggedStruct("Roles", { model: Roles.Model }),
 	Schema.TaggedStruct("Domains", { model: Domains.Model }),
 	Schema.TaggedStruct("Sso", { model: Sso.Model }),
 	Schema.TaggedStruct("Billing", { model: Billing.Model }),

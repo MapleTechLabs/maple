@@ -199,6 +199,11 @@ export const AuditResources = {
 	 * deleted org has no public ID left to resolve.
 	 */
 	organization: { verbs: ["deleted", "region_chosen"] },
+	/**
+	 * A custom role, defined in the Clerk organization's metadata. No prefix: its `role_…` id is
+	 * already public, so it travels in `metadata` with the name.
+	 */
+	role: { verbs: ["created", "updated", "deleted"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
 	uptime_monitor: { prefix: PublicIdPrefixes.uptimeMonitor, verbs: ["created", "updated", "deleted"] },
 	slo: { prefix: PublicIdPrefixes.slo, verbs: ["created", "updated", "deleted"] },
@@ -314,6 +319,7 @@ export const AuditResourceLabels = {
 	cost_source: "Cost source",
 	member: "Member",
 	organization: "Organization",
+	role: "Role",
 	scrape_target: "Scrape target",
 	uptime_monitor: "Uptime monitor",
 	slo: "SLO",
@@ -484,6 +490,9 @@ export const AuditActionLabels = {
 	"member.removed": "Removed member",
 	"organization.deleted": "Deleted organization",
 	"organization.region_chosen": "Chose data region",
+	"role.created": "Created role",
+	"role.updated": "Updated role",
+	"role.deleted": "Deleted role",
 	"scrape_target.created": "Created scrape target",
 	"scrape_target.updated": "Updated scrape target",
 	"scrape_target.deleted": "Deleted scrape target",

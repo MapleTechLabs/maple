@@ -571,9 +571,9 @@ describe("who may change automatic approval", () => {
 	) => prReviewConfigNeedsAutoApprove({ defaults, stored, next })
 
 	it("is an admin's permission, not an engineer's", () => {
-		assert.isFalse(Policy.can(["org:engineer"], "code_review:auto_approve"))
-		assert.isTrue(Policy.can(["org:engineer"], "code_review:configure"))
-		assert.isTrue(Policy.can(["org:admin"], "code_review:auto_approve"))
+		assert.isFalse(Policy.can(Policy.grantsOf(["org:engineer"]), "code_review:auto_approve"))
+		assert.isTrue(Policy.can(Policy.grantsOf(["org:engineer"]), "code_review:configure"))
+		assert.isTrue(Policy.can(Policy.grantsOf(["org:admin"]), "code_review:auto_approve"))
 	})
 
 	it("is needed to turn approval on, and not to turn it off or leave it off", () => {

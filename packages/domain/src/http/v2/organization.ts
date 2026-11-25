@@ -1,3 +1,4 @@
+import { EndpointAccess } from "../endpoint-access"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { OrgId } from "@maple/primitives"
@@ -54,14 +55,16 @@ export class V2OrganizationApiGroup extends HttpApiGroup.make("organization")
 		HttpApiEndpoint.get("retrieve", "/", {
 			success: V2Organization,
 			error: publicError(OrganizationProviderError),
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getOrganization",
-				summary: "Retrieve the organization",
-				description:
-					"Returns the organization the credentials belong to. Requires the `organization:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getOrganization",
+					summary: "Retrieve the organization",
+					description:
+						"Returns the organization the credentials belong to. Requires the `organization:read` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/organization")
 	.middleware(AuthorizationV2)

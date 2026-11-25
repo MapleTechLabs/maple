@@ -25,6 +25,7 @@ import {
 	AlertRuleId,
 	OrgId,
 	SHARE_NOT_FOUND_MESSAGE,
+	ShareForbiddenError,
 	ShareNotConfiguredError,
 	ShareNotFoundError,
 	ShareOgCardResponse,
@@ -37,6 +38,7 @@ import {
 	ShareWrongOrgError,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import type { DashboardId } from "@maple/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken } from "@maple/backend/platform/credential-tokens"
@@ -247,6 +249,12 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						message: "This dashboard belongs to a different organization.",
 					})
 				}
+				// The link shows the org's telemetry, so the viewer's role must read it.
+				yield* Policy.check(
+					tenant.value.permissions,
+					"telemetry:read",
+					(denial) => new ShareForbiddenError({ message: denial.message }),
+				)
 			}
 
 			const document = yield* sharedDocument(orgId, share.dashboardId)
@@ -316,6 +324,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						// Minting a share already required reading all of its telemetry, and stored
 						// SQL is only written by a caller that can (see the dashboards write routes).
 						canRead: () => true,
+						canRunRawSql: true,
 					})
 					return new ShareWidgetDataResponse({ results, variables })
 				}),

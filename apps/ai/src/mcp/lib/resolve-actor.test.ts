@@ -22,6 +22,7 @@ const tenantWith = (extra?: Partial<TenantContext>): TenantContext => ({
 	orgId: ORG,
 	userId: USER,
 	roles: [],
+	permissions: [],
 	authMode: "self_hosted",
 	...extra,
 })

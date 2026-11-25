@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { timeRangeOf } from "./plan"
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
@@ -23,6 +24,13 @@ import { init, routeChanged, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+/** The session answering with a role that may edit and share dashboards. */
+const asEditor = (model: Model): Model =>
+	update(
+		model,
+		Message.CompletedFetchSession({ orgId, grants: Policy.grantsOf(["org:engineer"]) }),
+		context,
+	).model
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -60,17 +68,17 @@ const ready = (): Model =>
 			Message.CompletedReadClock({ nowMs: NOW }),
 			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 		],
-		init(ROUTE, context).model,
+		asEditor(init(ROUTE, context).model),
 		(model, message) => pageUpdate(model, message).model,
 	)
 
 describe("dashboard view", () => {
-	test("entry reads the clock and loads the chart runtime; the document asks for the shares", () => {
+	test("entry reads the clock, the chart runtime and the viewer's grants; the document asks for the shares", () => {
 		expect(names(init(ROUTE, context).commands)).toEqual(
-			expect.arrayContaining(["ReadDashboardClock", "LoadChartRuntime"]),
+			expect.arrayContaining(["ReadDashboardClock", "LoadChartRuntime", "FetchDashboardSession"]),
 		)
 		const clocked = pageUpdate(
-			init(ROUTE, context).model,
+			asEditor(init(ROUTE, context).model),
 			Message.CompletedReadClock({ nowMs: NOW }),
 		).model
 		const received = pageUpdate(
@@ -83,7 +91,7 @@ describe("dashboard view", () => {
 
 	test("a missing row is the not-found state", () => {
 		const missing = pageUpdate(
-			init(ROUTE, context).model,
+			asEditor(init(ROUTE, context).model),
 			Message.UpdatedDashboard({ orgId, maybeDocument: Option.none() }),
 		)
 		expect(missing.model.status).toBe("Missing")

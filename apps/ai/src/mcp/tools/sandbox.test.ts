@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { IntegrationsUpstreamError, OrgId, UserId } from "@maple/domain/http"
 import { SandboxRunCheckoutPending } from "@maple/domain/sandbox"
 import {
@@ -78,6 +79,7 @@ const tenant = Layer.succeed(CurrentMcpTenant, {
 	orgId: Schema.decodeSync(OrgId)("org_tools"),
 	userId: Schema.decodeSync(UserId)("user_tools"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 } as CurrentMcpTenant["Service"])
 

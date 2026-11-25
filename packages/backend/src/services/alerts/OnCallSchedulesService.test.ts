@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	AlertMemberDirectoryNotConfiguredError,
@@ -23,8 +24,8 @@ const asRoleName = Schema.decodeUnknownSync(RoleName)
 
 const ORG = asOrgId("org_oncall")
 const OTHER_ORG = asOrgId("org_oncall_other")
-const ADMIN = [asRoleName("org:admin")]
-const MEMBER = [asRoleName("org:member")]
+const ADMIN = Policy.grantsOf([asRoleName("org:admin")])
+const MEMBER = Policy.grantsOf([asRoleName("org:member")])
 const ana = asUserId("user_ana")
 const ben = asUserId("user_ben")
 const chen = asUserId("user_chen")

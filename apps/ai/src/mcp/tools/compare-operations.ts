@@ -54,6 +54,7 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Comparing operations", "Diffing a service's operations across a deploy"],
 		handler: Effect.fn("McpTool.compareOperations")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

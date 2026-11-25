@@ -1,6 +1,7 @@
 /** What a rule write can tell the caller about its first evaluation, from a short preview. */
 import { Clock, DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { IsoDateTimeString } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import {
 	AlertRulePreviewRequest,
 	type AlertRulePreviewResponse,
@@ -79,6 +80,15 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 		}
 		return { evaluation, warnings: noWarnings }
 	}
+	// The preview's values are telemetry: a caller who may manage alerts but not read it sees none.
+	if (!Policy.can(tenant.permissions, "telemetry:read")) {
+		const evaluation: typeof AlertRuleFirstEvaluation.Type = {
+			nextEvaluationAt,
+			current: [],
+			previewSkipped: "Your role can't read telemetry, so the latest window's values are not shown.",
+		}
+		return { evaluation, warnings: noWarnings }
+	}
 	const lookbackMs = Math.max(rule.windowMinutes * 6, 60) * 60_000
 
 	const preview = yield* decodePreviewRequest({
@@ -86,7 +96,7 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 		startTime: isoAt(now - lookbackMs),
 		endTime: isoAt(now),
 	}).pipe(
-		Effect.flatMap((request) => alerts.previewRule(tenant.orgId, tenant.roles, request)),
+		Effect.flatMap((request) => alerts.previewRule(tenant.orgId, tenant.permissions, request)),
 		Effect.timeoutOption(PREVIEW_TIMEOUT),
 		Effect.map((option) =>
 			Option.match(option, {

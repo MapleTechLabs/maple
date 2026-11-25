@@ -10,6 +10,7 @@ import { V2WarehouseReadErrors } from "./query-errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { AlertDestinationPublicId, AlertRulePublicId } from "./resource-ids"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /** `slo_…` public ID ⇄ internal `SloId` (raw UUID). */
 export const SloPublicId = PublicId(PublicIdPrefixes.slo, SloId)
@@ -306,14 +307,16 @@ export class V2SlosApiGroup extends HttpApiGroup.make("slos")
 		HttpApiEndpoint.get("statuses", "/statuses", {
 			success: V2SloStatusList,
 			error: [sloPersistence, ...V2WarehouseReadErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listSloStatuses",
-				summary: "List every SLO's status",
-				description:
-					"Returns the SLI, budget left and burn windows of every SLO in the organization, read together.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listSloStatuses",
+					summary: "List every SLO's status",
+					description:
+						"Returns the SLI, budget left and burn windows of every SLO in the organization, read together.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("create", "/", {
@@ -375,27 +378,31 @@ export class V2SlosApiGroup extends HttpApiGroup.make("slos")
 			params: { id: SloPublicId },
 			success: V2SloStatus,
 			error: [sloNotFound, sloPersistence, ...V2WarehouseReadErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getSloStatus",
-				summary: "Retrieve an SLO's status",
-				description:
-					"Returns the SLO's SLI and error budget over its window, and its current burn rates.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getSloStatus",
+					summary: "Retrieve an SLO's status",
+					description:
+						"Returns the SLO's SLI and error budget over its window, and its current burn rates.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("history", "/:id/history", {
 			params: { id: SloPublicId },
 			success: V2SloHistory,
 			error: [sloNotFound, sloPersistence, ...V2WarehouseReadErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getSloHistory",
-				summary: "Retrieve an SLO's budget history",
-				description: "Returns the error budget left over the SLO window, one point per hour.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getSloHistory",
+					summary: "Retrieve an SLO's budget history",
+					description: "Returns the error budget left over the SLO window, one point per hour.",
+				}),
+			),
 	)
 	.prefix("/v2/slos")
 	.middleware(AuthorizationV2)
@@ -405,4 +412,5 @@ export class V2SlosApiGroup extends HttpApiGroup.make("slos")
 			description:
 				"Service level objectives over a service's entry-point spans, with an error budget measured over a rolling window.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

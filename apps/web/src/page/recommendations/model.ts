@@ -1,4 +1,5 @@
 import { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -10,6 +11,7 @@ export type BusyAction = typeof BusyAction.Type
 
 export const Model = Schema.Struct({
 	recommendationKey: Schema.String,
+	grants: Schema.Array(Policy.PermissionName),
 	/** `Date.now()` at render, read once on entry for the rail's relative time. */
 	nowMs: Schema.NullOr(Schema.Number),
 	/** Every page of the org's recommendations. */

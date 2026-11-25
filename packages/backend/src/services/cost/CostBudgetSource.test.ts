@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { StoredCostBudget } from "@maple/domain/cost-budget"
 import type { TenantContext } from "@maple/domain/http"
@@ -22,6 +23,7 @@ const tenant: TenantContext = {
 	orgId,
 	userId: asUserId("user_cost_budget_source"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

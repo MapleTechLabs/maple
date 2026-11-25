@@ -36,7 +36,7 @@ describe("toOrgRole", () => {
 		const prompt = roleChangePrompt("Ada", "org:analyst")
 		expect(prompt.confirmLabel).toBe("Make analyst")
 		expect(prompt.question).toContain("Make Ada an analyst?")
-		expect(prompt.question).toContain("builds dashboards")
+		expect(prompt.question).toContain("Read access only")
 	})
 })
 

@@ -1,7 +1,9 @@
+import * as Policy from "@maple/domain/policy"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { AlertMemberNotifier } from "@maple/backend/services/alerts/AlertMemberNotifier"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
@@ -186,7 +188,12 @@ const makeHarness = (
 	// Incident pushes and the pages a chain step sends to a person's phone.
 	const mobilePushLive = Layer.effect(MobilePushService, MobilePushService.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
+			Layer.mergeAll(
+				ApnsClient.layer,
+				MobileDevicesService.layer,
+				LiveActivitiesService.layer,
+				Layer.mock(OrgMembershipService)({ directory: "none" }),
+			),
 		),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
@@ -291,11 +298,25 @@ const makeHarness = (
 	const ORG = Schema.decodeSync(OrgId)("org_alerts_e2e")
 	const USER = Schema.decodeSync(UserId)("user_alerts_e2e")
 
-	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
+	/** A key with `scopes`, pinned to a custom role holding `permissions` when given. */
+	const bootstrapKey = (scopes?: ReadonlyArray<string>, permissions?: ReadonlyArray<Policy.Permission>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(ORG, USER, { name: "alerts-test", scopes })
+				return yield* service.create(ORG, USER, {
+					name: "alerts-test",
+					scopes,
+					...(permissions === undefined
+						? undefined
+						: {
+								metadataJson: {
+									source: "maple_cli",
+									roles: ["org:custom"],
+									deviceName: "laptop",
+									permissions: Policy.encodePermissions(permissions),
+								},
+							}),
+				})
 			}),
 		)
 
@@ -1110,6 +1131,63 @@ describe("v2 alerts over HTTP", () => {
 		})
 		expect(response.status).toBe(403)
 		expect(warehouseCalls).toBe(0)
+		await harness.dispose()
+	})
+
+	it("refuses a rule test, which answers with live data, to a role that cannot read telemetry", async () => {
+		let warehouseCalls = 0
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (tenant, compiled) => {
+				warehouseCalls += 1
+				return warehouseStub.compiledQuery(tenant, compiled)
+			},
+		})
+		// Not alerts:manage alone: every permission that acts on alerts implies telemetry:read.
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read"], ["billing:manage"])
+		const response = await harness.request("POST", "/v2/alerts/rules/test", key.secret, {
+			rule: errorRatePreview.rule,
+			send_notification: false,
+		})
+		expect(response.status).toBe(403)
+		expect(response.body.error.message).toBe(Policy.denialFor("telemetry:read").message)
+		expect(warehouseCalls).toBe(0)
+		await harness.dispose()
+	})
+
+	it("refuses a raw SQL rule to a role that manages alerts but cannot run SQL", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(
+			["alerts:write", "traces:read", "logs:read", "metrics:read"],
+			["telemetry:read", "alerts:manage"],
+		)
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Ops hook",
+			url: "https://example.com/hooks/maple",
+		})
+		const rule = {
+			severity: "warning",
+			comparator: "gt",
+			threshold: 10,
+			window_minutes: 5,
+			destination_ids: [destination.body.id],
+		}
+		const raw = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			...rule,
+			name: "Raw rule",
+			signal_type: "raw_query",
+			raw_query_sql:
+				"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+		})
+		expect([raw.status, raw.body.error.code]).toEqual([403, "alert_forbidden"])
+		// The same role writes a builder rule: only the raw SQL is refused.
+		const builder = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			...rule,
+			name: "Error rate rule",
+			signal_type: "error_rate",
+		})
+		expect(builder.status).toBe(200)
 		await harness.dispose()
 	})
 

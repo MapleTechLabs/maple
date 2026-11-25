@@ -287,6 +287,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Exploring attributes", "Looking up attribute values"],
 		handler: Effect.fn("McpTool.exploreAttributes")(function* (params) {
 			const { st, et } = yield* (params.source === "product_events" ? EVENTS_WINDOW : WINDOW).resolve(

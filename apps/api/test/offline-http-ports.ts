@@ -27,34 +27,39 @@ import {
 const rejectIO = () => Effect.die("Unexpected external I/O in cold-path probe")
 const queue = { sendBatch: rejectIO }
 const limiter = { limit: rejectIO }
-export const offlinePorts = Layer.mergeAll(
-	Layer.succeed(VcsSyncQueueProducer, queue),
-	Layer.succeed(VcsBackfillQueueProducer, queue),
-	Layer.succeed(PlanetScaleWebhookQueueProducer, queue),
-	Layer.succeed(AuditEventsQueueProducer, queue),
-	Layer.succeed(CancellationReviewQueueProducer, queue),
-	Layer.succeed(ApiV2RateLimit, limiter),
-	Layer.succeed(ShareLinkRateLimit, limiter),
-	Layer.succeed(CliAuthRateLimit, limiter),
-	Layer.succeed(SelfHostedLoginRateLimit, limiter),
-	Layer.succeed(McpOAuthRateLimit, limiter),
-	Layer.succeed(AwsEventsRateLimit, limiter),
-	Layer.succeed(DataSourceProductionCallLimit, limiter),
-	Layer.succeed(DataSourceDevelopmentCallLimit, limiter),
-	Layer.succeed(DataSourceSqlQueryLimit, limiter),
-	Layer.succeed(ReplayBlobBucket, { getBytes: rejectIO }),
-	sourceMapBucketLayer({ getBytes: rejectIO, put: rejectIO, delete: rejectIO, list: rejectIO }),
-	StatusPageStore.inMemory,
-	Layer.succeed(MapleDbConnection, Option.none()),
-	Layer.succeed(EmailSender, Option.none()),
-	Layer.succeed(SchemaApplyWorkflow, { create: rejectIO }),
-	// Every session call fails: the probe must not reach a Durable Object.
-	fakeChatSessionsLayer(() => ({})),
-	envPorts({
-		TINYBIRD_HOST: "https://warehouse.invalid",
-		TINYBIRD_TOKEN: "offline",
-		MAPLE_ROOT_PASSWORD: "offline-benchmark-only",
-		MAPLE_INGEST_KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-		MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
-	}),
-)
+/** The offline ports over `env` laid on top of the offline defaults (a Clerk-mode env, say). */
+export const offlinePortsWith = (env: Record<string, unknown>) =>
+	Layer.mergeAll(
+		Layer.succeed(VcsSyncQueueProducer, queue),
+		Layer.succeed(VcsBackfillQueueProducer, queue),
+		Layer.succeed(PlanetScaleWebhookQueueProducer, queue),
+		Layer.succeed(AuditEventsQueueProducer, queue),
+		Layer.succeed(CancellationReviewQueueProducer, queue),
+		Layer.succeed(ApiV2RateLimit, limiter),
+		Layer.succeed(ShareLinkRateLimit, limiter),
+		Layer.succeed(CliAuthRateLimit, limiter),
+		Layer.succeed(SelfHostedLoginRateLimit, limiter),
+		Layer.succeed(McpOAuthRateLimit, limiter),
+		Layer.succeed(AwsEventsRateLimit, limiter),
+		Layer.succeed(DataSourceProductionCallLimit, limiter),
+		Layer.succeed(DataSourceDevelopmentCallLimit, limiter),
+		Layer.succeed(DataSourceSqlQueryLimit, limiter),
+		Layer.succeed(ReplayBlobBucket, { getBytes: rejectIO }),
+		sourceMapBucketLayer({ getBytes: rejectIO, put: rejectIO, delete: rejectIO, list: rejectIO }),
+		StatusPageStore.inMemory,
+		Layer.succeed(MapleDbConnection, Option.none()),
+		Layer.succeed(EmailSender, Option.none()),
+		Layer.succeed(SchemaApplyWorkflow, { create: rejectIO }),
+		// Every session call fails: the probe must not reach a Durable Object.
+		fakeChatSessionsLayer(() => ({})),
+		envPorts({
+			TINYBIRD_HOST: "https://warehouse.invalid",
+			TINYBIRD_TOKEN: "offline",
+			MAPLE_ROOT_PASSWORD: "offline-benchmark-only",
+			MAPLE_INGEST_KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+			...env,
+		}),
+	)
+
+export const offlinePorts = offlinePortsWith({})

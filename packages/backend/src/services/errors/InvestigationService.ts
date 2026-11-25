@@ -1,3 +1,4 @@
+import type { Permission } from "@maple/domain/policy"
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import { randomUUID } from "node:crypto"
 import {
@@ -96,6 +97,8 @@ export interface ListInvestigationsOptions {
 export interface ManualStarter {
 	readonly userId: UserId | null
 	readonly roles: ReadonlyArray<RoleName>
+	/** What they may do: a custom role's permissions are not in its role name. */
+	readonly permissions: ReadonlyArray<Permission>
 	/** Whether the credential's scopes reach data sources: a session's do, a scoped key's may not. */
 	readonly mayReadDataSources: boolean
 }
@@ -432,6 +435,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							kind: "person",
 							...(author === null ? undefined : { userId: author }),
 							roles: by.roles,
+							permissions: by.permissions,
 							mayReadDataSources: by.mayReadDataSources,
 						},
 						nowMs,

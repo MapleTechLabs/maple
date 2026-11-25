@@ -1,5 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Schema } from "effect"
+import { OrgId, RoleName, UserId, type TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { CurrentMcpTenant } from "../tenant"
 import { executeRegisteredTool, type MapleToolDefinition, type McpToolLookup } from "./registry-core"
 
 const definition = (name: string, next: ReadonlyArray<string>): MapleToolDefinition => ({
@@ -10,6 +13,7 @@ const definition = (name: string, next: ReadonlyArray<string>): MapleToolDefinit
 	parseOptions: {},
 	outputSchema: Schema.Unknown,
 	hints: { readOnly: true },
+	permission: "telemetry:read",
 	aliases: {},
 	valueAliases: {},
 	audience: "public",
@@ -38,9 +42,20 @@ const lookup: McpToolLookup = {
 	namesFor: () => ["echo", "healthy", "broken"],
 }
 
-// The registry's requirements name every tool's services; these tools reach none of them.
-const withoutUnreachedServices = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E> =>
-	Effect.provide(effect, Context.makeUnsafe<R>(new Map()))
+const callerHolding = (permissions: Policy.Grants): TenantContext => ({
+	orgId: Schema.decodeSync(OrgId)("org_registry"),
+	userId: Schema.decodeSync(UserId)("user_registry"),
+	roles: [Schema.decodeSync(RoleName)("org:custom")],
+	permissions,
+	authMode: "self_hosted",
+})
+
+// The registry's requirements name every tool's services; these tools reach none but the tenant.
+const withoutUnreachedServices = <A, E, R>(
+	effect: Effect.Effect<A, E, R>,
+	tenant: TenantContext = callerHolding(["telemetry:read"]),
+): Effect.Effect<A, E> =>
+	Effect.provide(Effect.provideService(effect, CurrentMcpTenant, tenant), Context.makeUnsafe<R>(new Map()))
 
 describe("executeRegisteredTool", () => {
 	it.effect("keeps the result and drops a suggested call whose tool fails to load", () =>
@@ -72,6 +87,19 @@ describe("executeRegisteredTool", () => {
 				true,
 				true,
 			])
+		}),
+	)
+
+	it.effect("refuses a caller without the tool's permission, saying which one", () =>
+		Effect.gen(function* () {
+			const refused = yield* executeRegisteredTool(lookup, "echo", {}, "mcp").pipe(
+				(effect) => withoutUnreachedServices(effect, callerHolding(["dashboards:edit"])),
+				Effect.flip,
+			)
+			expect(refused).toMatchObject({
+				_tag: "@maple/mcp/errors/McpAuthInvalidError",
+				message: Policy.denialFor("telemetry:read").message,
+			})
 		}),
 	)
 

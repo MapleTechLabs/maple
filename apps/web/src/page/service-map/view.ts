@@ -165,7 +165,8 @@ const toTiles = (message: Tiles.Message) => Message.GotTilesMessage({ message })
 const sceneOf = (h: H, model: Model, map: ServiceMap.Model): (() => Html) | undefined => {
 	switch (model.search.view) {
 		case "3d":
-			return () => scene3dView(h, { model: model.scene3d, map, toMessage: toScene3d })
+			return () =>
+				scene3dView(h, { model: model.scene3d, map, grants: model.grants, toMessage: toScene3d })
 		case "tiles":
 			return () =>
 				h.submodel({

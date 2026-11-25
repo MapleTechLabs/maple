@@ -50,6 +50,7 @@ const snapshotOf = (task: PendingSessionTask | null): ClerkSnapshot => ({
 	maybeOrganization: Option.none(),
 	memberships: [],
 	maybeRole: Option.none(),
+	maybeGrants: Option.none(),
 	maybePendingTask: Option.fromNullishOr(task),
 })
 

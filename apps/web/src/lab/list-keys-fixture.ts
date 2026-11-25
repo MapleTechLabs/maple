@@ -260,6 +260,10 @@ export const dashboardsFixture = (context: PageContext) => {
 	const step = (model: Parameters<typeof Dashboards.update>[0], message: DashboardsMessage) =>
 		Dashboards.update(model, message, context)
 	return fold(Dashboards.init({ search: {} }, context).model, step, () => [
+		DashboardsMessage.CompletedFetchSession({
+			orgId: context.orgId,
+			grants: Policy.grantsOf(["org:engineer"]),
+		}),
 		DashboardsMessage.CompletedReadClock({ nowMs: NOW, locale: "en-US" }),
 		DashboardsMessage.CompletedLoadPreferences({ favorites: ["dash_payment"], sort: "updated" }),
 		DashboardsMessage.UpdatedDashboards({ orgId: context.orgId, dashboards: DASHBOARDS }),

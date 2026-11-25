@@ -1,4 +1,4 @@
-import { makeResolveTenant } from "@maple/auth"
+import { makeClerkMembershipDirectory, makeResolveTenant } from "@maple/auth"
 import type {
 	AuthorizationUnavailableError,
 	OrganizationAccessDeniedError,
@@ -23,14 +23,19 @@ export interface TenantResolverApi {
  * session bearer.
  *
  * No membership verifier either, so `x-maple-org-id` is REJECTED rather than ignored: an ignored
- * selection would serve the token's own rows under another organization's name.
+ * selection would serve the token's own rows under another organization's name. A custom role's
+ * permissions still come from Clerk (`makeClerkMembershipDirectory`), so shapes can be gated on them.
  */
 export class TenantResolver extends Context.Service<TenantResolver, TenantResolverApi>()(
 	"@maple/electric-sync/TenantResolver",
 	{
 		make: Effect.gen(function* () {
 			const config = yield* SyncConfig
-			return { resolve: makeResolveTenant(config) } satisfies TenantResolverApi
+			return {
+				resolve: makeResolveTenant(config, {
+					customRoleDirectory: yield* makeClerkMembershipDirectory(config),
+				}),
+			} satisfies TenantResolverApi
 		}),
 	},
 ) {

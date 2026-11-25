@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { GitCommitSha, OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -82,6 +83,7 @@ const run = (params: Readonly<Record<string, unknown>>) =>
 					orgId: Schema.decodeSync(OrgId)("org_compare"),
 					userId: Schema.decodeSync(UserId)("user_compare"),
 					roles: [],
+					permissions: Policy.grantsOf([]),
 					authMode: "self_hosted",
 				}),
 			).pipe(

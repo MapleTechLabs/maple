@@ -37,4 +37,4 @@ export type Model = typeof Model.Type
 
 /** The viewer may change what this page edits (`uptime_monitors:manage`). */
 export const canManage = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "uptime_monitors:manage")
+	Policy.can(model.grants, "uptime_monitors:manage")

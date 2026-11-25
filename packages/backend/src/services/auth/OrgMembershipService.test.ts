@@ -60,6 +60,26 @@ describe("collectMemberships", () => {
 		}),
 	)
 
+	it.effect("keeps a custom role's permission codes from the membership metadata", () =>
+		Effect.gen(function* () {
+			const result = yield* collectMemberships(() =>
+				Effect.succeed([
+					{
+						organization: { id: "org_custom" },
+						role: "org:custom",
+						public_metadata: { maple_role: { id: "role_abcdefghijkl", permissions: [10, 36] } },
+					},
+					row("org_plain"),
+				]),
+			)
+
+			assert.deepStrictEqual(
+				Arr.map(result.memberships, (membership) => membership.permissionCodes),
+				[[10, 36], undefined],
+			)
+		}),
+	)
+
 	it.effect("a page failure is a failure, never a shorter answer", () =>
 		Effect.gen(function* () {
 			const result = yield* collectMemberships(() =>

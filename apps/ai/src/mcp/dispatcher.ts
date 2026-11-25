@@ -108,7 +108,7 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 			"@maple/mcp/errors/McpAuthInvalidError": (error) =>
 				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
 					Effect.as(
-						error.reason === "insufficient_scope"
+						error.reason === "insufficient_scope" || error.reason === "insufficient_permission"
 							? failureResult(`Permission denied: ${error.message}`, "permission")
 							: failureResult(`Authentication failed: ${error.message}`, "auth"),
 					),

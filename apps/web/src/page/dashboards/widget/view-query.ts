@@ -24,7 +24,9 @@ import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr } from "effect"
+import { denialTooltip } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -103,6 +105,10 @@ const formulaPanel = (h: H, formula: FormulaDraft): Html =>
 		],
 	)
 
+/** Raw SQL runs as the org on every read of the board, so writing it needs `query:sql`. */
+const lockedSourceReason = (model: Model, value: string): string | undefined =>
+	value === "rawSql" && !Policy.can(model.grants, "query:sql") ? denialTooltip("query:sql") : undefined
+
 const sourceToggle = (h: H, model: Model): Html =>
 	hstack(h, { gap: "3" }, [
 		eyebrow(h, {}, ["Source"]),
@@ -110,7 +116,11 @@ const sourceToggle = (h: H, model: Model): Html =>
 			slotId: "widget-editor-source",
 			model: model.sourceTabs,
 			view: TabsView.view,
-			viewInputs: { labels: ["Query builder", "Raw SQL", "PromQL"], panel: () => undefined },
+			viewInputs: {
+				labels: ["Query builder", "Raw SQL", "PromQL"],
+				panel: () => undefined,
+				lockedReason: (value) => lockedSourceReason(model, value),
+			},
 			toParentMessage: (message) => Message.GotSourceTabsMessage({ message }),
 		}),
 	])

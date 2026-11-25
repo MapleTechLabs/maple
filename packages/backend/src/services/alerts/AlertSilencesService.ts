@@ -14,7 +14,6 @@ import {
 	type AlertSilenceStatus,
 	type AlertSilenceUpdateRequest,
 	type OrgId,
-	type RoleName,
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -55,7 +54,7 @@ export interface AlertSilencesServiceApi {
 	readonly create: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		request: AlertSilenceCreateRequest,
 	) => Effect.Effect<
 		AlertSilenceDocument,
@@ -64,7 +63,7 @@ export interface AlertSilencesServiceApi {
 	readonly update: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		silenceId: AlertSilenceId,
 		request: AlertSilenceUpdateRequest,
 	) => Effect.Effect<
@@ -75,7 +74,7 @@ export interface AlertSilencesServiceApi {
 	readonly end: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		silenceId: AlertSilenceId,
 	) => Effect.Effect<
 		AlertSilenceDocument,
@@ -93,14 +92,13 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 			const runtime = yield* AlertRuntime
 			const dbExecute = makeDbExecute(database, "AlertSilencesService", makePersistenceError)
 
-			const requireManage = (roles: ReadonlyArray<RoleName>) =>
+			const requireManage = (permissions: Policy.Grants) =>
 				Policy.check(
-					roles,
+					permissions,
 					"alerts:manage",
 					(denial) =>
 						new AlertForbiddenError({
 							message: denial.message,
-							...(roles.length > 0 ? { roles: [...roles] } : undefined),
 						}),
 				)
 
@@ -230,10 +228,10 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 			const create = Effect.fn("AlertSilencesService.create")(function* (
 				orgId: OrgId,
 				userId: UserId,
-				roles: ReadonlyArray<RoleName>,
+				permissions: Policy.Grants,
 				request: AlertSilenceCreateRequest,
 			) {
-				yield* requireManage(roles)
+				yield* requireManage(permissions)
 				const nowMs = yield* runtime.now
 				const requestedStart = request.startsAt === undefined ? nowMs : timestampMs(request.startsAt)
 				if (requestedStart < nowMs - START_SKEW_MS)
@@ -284,11 +282,11 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 			const update = Effect.fn("AlertSilencesService.update")(function* (
 				orgId: OrgId,
 				userId: UserId,
-				roles: ReadonlyArray<RoleName>,
+				permissions: Policy.Grants,
 				silenceId: AlertSilenceId,
 				request: AlertSilenceUpdateRequest,
 			) {
-				yield* requireManage(roles)
+				yield* requireManage(permissions)
 				const nowMs = yield* runtime.now
 				const current = yield* findRow(orgId, silenceId)
 				yield* requireUnmanaged(orgId, current)
@@ -337,10 +335,10 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 			const end = Effect.fn("AlertSilencesService.end")(function* (
 				orgId: OrgId,
 				userId: UserId,
-				roles: ReadonlyArray<RoleName>,
+				permissions: Policy.Grants,
 				silenceId: AlertSilenceId,
 			) {
-				yield* requireManage(roles)
+				yield* requireManage(permissions)
 				const nowMs = yield* runtime.now
 				const current = yield* findRow(orgId, silenceId)
 				yield* requireUnmanaged(orgId, current)

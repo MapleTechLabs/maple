@@ -28,7 +28,7 @@ import { Message } from "./message"
 import { type Model } from "./model"
 import { DELETE_SCHEDULE_DIALOG_ID, scheduleMenuId } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageOnCall } from "../../kit/session-grants"
 import { gatedEntries, gatedLinkButton } from "../../kit/gated-controls"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -137,7 +137,7 @@ const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: numb
 					rowActionsMenu(h, {
 						slotId: menuId,
 						model: model.menus[menuId] ?? Menu.init(menuId),
-						entries: gatedEntries(model, "alerts:manage", entries),
+						entries: gatedEntries(model, "oncall:manage", entries),
 						label: `Actions for ${schedule.name}`,
 						toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
 					}),
@@ -156,11 +156,11 @@ const schedulesEmpty = (h: H, model: Model): Html =>
 				emptyTitle(h, ["No on-call schedules yet"]),
 				emptyDescription(h, [
 					"A schedule says who is on call when: people take turns in layers that hand off daily, weekly or every few hours, and overrides cover swaps. Escalation chains page whoever is on call.",
-					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
+					...(canManageOnCall(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
 			emptyActions(h, [
-				gatedLinkButton(h, model, "alerts:manage", { size: "sm", href: newScheduleHref() }, [
+				gatedLinkButton(h, model, "oncall:manage", { size: "sm", href: newScheduleHref() }, [
 					icon(h, "PlusIcon"),
 					"Create schedule",
 				]),

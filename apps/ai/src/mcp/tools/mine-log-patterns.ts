@@ -37,6 +37,7 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Grouping log patterns", "Finding common log patterns"],
 		handler: Effect.fn("McpTool.mineLogPatterns")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "mine_log_patterns")

@@ -15,6 +15,7 @@ export const deleteEscalationChainAction = (family: McpToolFamilyBuilder<"manage
 			chain_id: P.resourceId("escalationChain", "Escalation chain to delete"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "oncall:manage",
 		handler: Effect.fn("McpTool.deleteEscalationChain")(function* (params) {
 			const chainId = yield* P.decodeResourceId("escalationChain", "chain_id")(params.chain_id)
 			const tenant = yield* CurrentMcpTenant
@@ -29,7 +30,7 @@ export const deleteEscalationChainAction = (family: McpToolFamilyBuilder<"manage
 				}),
 			)
 			yield* chains
-				.delete(tenant.orgId, tenant.roles, chainId)
+				.delete(tenant.orgId, tenant.permissions, chainId)
 				.pipe(Effect.catchTags(deleteChainErrors))
 			return { id: chain.id, name: chain.name }
 		}),

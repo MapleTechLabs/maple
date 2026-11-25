@@ -74,8 +74,8 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
 				onNone: () => undefined,
 				onSome: (service) => service.verify,
 			})
-			const resolveTenant = makeResolveTenant(env, undefined, undefined, verifyOrgMembership)
-			const resolveMcpTenant = makeResolveMcpTenant(env)
+			const resolveTenant = makeResolveTenant(env, { verifyOrgMembership: verifyOrgMembership })
+			const resolveMcpTenant = makeResolveMcpTenant(env, { customRoleDirectory: verifyOrgMembership })
 			const loginSelfHosted = makeLoginSelfHosted(env)
 			const refreshSelfHostedSession = makeRefreshSelfHostedSession(env)
 			const getUserEmail = makeGetUserEmail(env)

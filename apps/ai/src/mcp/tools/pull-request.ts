@@ -374,6 +374,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			"List every file one pull request changes, with additions, deletions and a coarse kind (source, test, generated, docs, config, infra, tooling, lockfile). Call it first when reviewing a pull request; generated files, docs, tooling and lockfiles are not reviewed. Read the rest with pr_file_diff. The repository must be the one named in the review's first message.",
 		parameters: Schema.Struct({ repository: REPOSITORY, number: NUMBER }),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: INTERNAL,
 		phrases: ["Listing changed files"],
 		handler: Effect.fn("McpTool.prChangedFiles")(function* ({ repository, number }) {
@@ -395,6 +396,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			"The pull request's commits, the comments people and other bots already left on it, and the checks on its head commit. Call it once, after pr_changed_files, so a review never repeats what was already said or what CI already reports.",
 		parameters: Schema.Struct({ repository: REPOSITORY, number: NUMBER }),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: INTERNAL,
 		phrases: ["Reading the pull request"],
 		handler: Effect.fn("McpTool.prContext")(function* ({ repository, number }) {
@@ -423,6 +425,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			path: P.optionalText("One changed file, when reading a single diff"),
 		}),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: INTERNAL,
 		phrases: ["Reading a diff"],
 		handler: Effect.fn("McpTool.prFileDiff")(function* ({ repository, number, path, paths }) {

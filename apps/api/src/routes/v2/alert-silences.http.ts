@@ -132,7 +132,7 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 					const created = yield* silences.create(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						new AlertSilenceCreateRequest({
 							reason: payload.reason,
 							matchers: toMatchers(payload.matchers),
@@ -163,7 +163,7 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 					const updated = yield* silences.update(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 						new AlertSilenceUpdateRequest({
 							...(payload.reason === undefined ? undefined : { reason: payload.reason }),
@@ -185,7 +185,12 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 			.handle("end", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const ended = yield* silences.end(tenant.orgId, tenant.userId, tenant.roles, params.id)
+					const ended = yield* silences.end(
+						tenant.orgId,
+						tenant.userId,
+						tenant.permissions,
+						params.id,
+					)
 					yield* recordHttpAudit("alert_silence.ended", {
 						resourceId: ended.id,
 						metadata: { reason: ended.reason },

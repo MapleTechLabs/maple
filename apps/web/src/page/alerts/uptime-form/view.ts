@@ -288,7 +288,7 @@ const saveFailureNotice = (h: H, failure: LoadFailure, widthClass: string): Html
 const adminOnlyPage = (h: H, model: Model, header: Readonly<{ title: string; description: string }>) =>
 	managersOnlyPage(h, {
 		header,
-		title: "Only org admins and engineers can create or change uptime monitors",
+		permission: "uptime_monitors:manage",
 		back:
 			model.editingId === null
 				? { href: uptimeTabHref(), label: "Back to uptime" }

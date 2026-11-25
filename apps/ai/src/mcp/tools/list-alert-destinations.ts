@@ -108,6 +108,7 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 			enabled_only: P.optionalFlag("Only enabled destinations"),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing alert destinations", "Checking alert destinations"],
 		handler: Effect.fn("McpTool.listAlertDestinations")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

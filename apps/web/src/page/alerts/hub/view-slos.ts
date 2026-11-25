@@ -59,13 +59,10 @@ const slosEmptyState = (h: H, model: Model, serviceName: string | undefined): Ht
 				]),
 			]),
 			emptyActions(h, [
-				gatedLinkButton(
-					h,
-					model,
-					"alerts:manage",
-					{ size: "sm", href: newSloHref({ serviceName }) },
-					[icon(h, "PlusIcon"), "New SLO"],
-				),
+				gatedLinkButton(h, model, "slos:manage", { size: "sm", href: newSloHref({ serviceName }) }, [
+					icon(h, "PlusIcon"),
+					"New SLO",
+				]),
 			]),
 		],
 		"py-12",

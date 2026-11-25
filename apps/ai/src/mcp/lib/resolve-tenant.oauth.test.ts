@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import * as Policy from "@maple/domain/policy"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
@@ -59,7 +60,13 @@ const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
 const challenge = createHash("sha256").update(verifier).digest("base64url")
 
 /** Register → authorize → approve → exchange, the shortest path to a live grant. */
-const issueGrant = Effect.fnUntraced(function* (oauth: McpOAuthService["Service"]) {
+const issueGrant = Effect.fnUntraced(function* (
+	oauth: McpOAuthService["Service"],
+	approver: { readonly roles: ReadonlyArray<RoleName>; readonly permissions: Policy.Grants } = {
+		roles: [memberRole],
+		permissions: Policy.grantsOf([memberRole]),
+	},
+) {
 	const client = yield* oauth.register(
 		{ clientName: "seam-test", redirectUris: [redirectUri] },
 		"127.0.0.1",
@@ -80,7 +87,8 @@ const issueGrant = Effect.fnUntraced(function* (oauth: McpOAuthService["Service"
 	const approved = yield* oauth.approve(requestId, {
 		orgId,
 		userId,
-		roles: [memberRole],
+		roles: [...approver.roles],
+		permissions: approver.permissions,
 		userEmail: null,
 	})
 	return yield* oauth.exchangeAuthorizationCode(
@@ -107,6 +115,25 @@ describe("an MCP OAuth token, resolved by the AI worker", () => {
 			)
 			expect(tenant.orgId).toBe(orgId)
 			expect(tenant.roles).toEqual([memberRole])
+			expect(tenant.permissions).toEqual(Policy.grantsOf([memberRole]))
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
+	it.effect("carries a custom role's permissions as they were when the grant was approved", () => {
+		const db = createTestDb(createdDbs)
+		const customRole = Schema.decodeSync(RoleName)("org:custom")
+		return Effect.gen(function* () {
+			const tokens = yield* issueGrant(yield* McpOAuthService, {
+				roles: [customRole],
+				permissions: ["telemetry:read", "alerts:manage"],
+			})
+			const tenant = yield* resolveMcpTenantContext(
+				new Request(resource, {
+					headers: { authorization: `Bearer ${tokens.access_token}` },
+				}),
+			)
+			expect(tenant.roles).toEqual([customRole])
+			expect([...tenant.permissions].sort()).toEqual(["alerts:manage", "telemetry:read"])
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 

@@ -264,7 +264,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 			.handle("telegramChats", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const chats = yield* destinations.listTelegramChats(tenant.roles, payload.bot_token)
+					const chats = yield* destinations.listTelegramChats(tenant.permissions, payload.bot_token)
 					return {
 						object: "alert_destination.telegram_chat_list" as const,
 						chats,
@@ -277,7 +277,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const created = yield* destinations.createDestination(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						toCreateRequest(payload),
 					)
 
@@ -298,7 +298,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const updated = yield* destinations.updateDestination(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 						request,
 					)
@@ -322,7 +322,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const deleted = yield* destinations.deleteDestination(
 						tenant.orgId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 					)
 					yield* recordHttpAudit("alert_destination.deleted", {
@@ -343,7 +343,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const result = yield* destinations.testDestination(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 					)
 

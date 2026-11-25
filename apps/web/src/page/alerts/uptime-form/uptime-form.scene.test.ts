@@ -253,7 +253,7 @@ describe("uptime monitor form", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
-			expectView(text("Only org admins and engineers can create or change uptime monitors")).toExist(),
+			expectView(text(Policy.denialFor("uptime_monitors:manage").message)).toExist(),
 			expectView(role("button", { name: "Create monitor" })).not.toExist(),
 		)
 		const tried = pageUpdate(

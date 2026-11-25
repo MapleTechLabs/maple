@@ -161,6 +161,7 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Computing retention", "Building retention cohorts"],
 		handler: Effect.fn("McpTool.queryRetention")(function* (params) {
 			const requested = yield* WINDOW.resolve(params, TOOL)

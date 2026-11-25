@@ -14,8 +14,15 @@ import {
 } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
-import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import {
+	DashboardNotFoundError,
+	DashboardPersistenceError,
+	OrgId,
+	RoleName,
+	UserId,
+} from "@maple/domain/http"
 import { AlertRuleId } from "@maple/primitives"
+import * as Policy from "@maple/domain/policy"
 import { alertChartId } from "@maple/backend/platform/signed-ids"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
@@ -103,7 +110,8 @@ const SharePublicLive = HttpV2SharePublicLive.pipe(
 	Layer.provide(Layer.succeed(ShareRateLimiter, { check: () => Effect.succeed("allowed" as const) })),
 )
 
-const makeHarness = () => {
+/** `viewer` stands in for a signed-in Clerk session holding those permissions; a self-hosted one holds all. */
+const makeHarness = (viewer?: Policy.Grants) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	// Passthrough unless a test arms a failure: the real store cannot fail a read
@@ -139,9 +147,29 @@ const makeHarness = () => {
 			}
 		}),
 	).pipe(Layer.provide(DashboardPersistenceService.layer))
+	const authLive =
+		viewer === undefined
+			? AuthService.layer
+			: Layer.effect(
+					AuthService,
+					Effect.gen(function* () {
+						const live = yield* AuthService
+						return {
+							...live,
+							resolveTenant: () =>
+								Effect.succeed({
+									orgId: Schema.decodeSync(OrgId)("org_dashboard_e2e"),
+									userId: Schema.decodeSync(UserId)("user_dashboard_viewer"),
+									roles: [Schema.decodeSync(RoleName)("org:custom")],
+									permissions: viewer,
+									authMode: "clerk" as const,
+								}),
+						}
+					}),
+				).pipe(Layer.provide(AuthService.layer))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
-		AuthService.layer,
+		authLive,
 		persistenceLive,
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
@@ -177,8 +205,13 @@ const makeHarness = () => {
 	const ORG = Schema.decodeSync(OrgId)("org_dashboard_e2e")
 	const USER = Schema.decodeSync(UserId)("user_dashboard_e2e")
 
-	// `roles` makes it a key minted for a person, which acts with that person's org roles.
-	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
+	// `roles` makes it a key minted for a person, which acts with that person's org roles; `permissions`
+	// is what an `org:custom` person holds.
+	const bootstrapKey = (
+		scopes?: ReadonlyArray<string>,
+		roles?: ReadonlyArray<string>,
+		permissions?: Policy.Grants,
+	) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
@@ -187,7 +220,16 @@ const makeHarness = () => {
 					scopes,
 					...(roles === undefined
 						? undefined
-						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+						: {
+								metadataJson: {
+									source: "maple_cli",
+									roles,
+									deviceName: "laptop",
+									...(permissions === undefined
+										? undefined
+										: { permissions: Policy.encodePermissions(permissions) }),
+								},
+							}),
 				})
 			}),
 		)
@@ -1414,6 +1456,25 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
+	it("shows an org link only to a signed-in member whose role reads telemetry", async () => {
+		for (const [viewer, status, code] of [
+			[["dashboards:edit"], 403, "share_forbidden"],
+			[["telemetry:read"], 200, undefined],
+		] as const) {
+			const harness = makeHarness(viewer)
+			const key = await harness.bootstrapKey(SHARE_SCOPES)
+			const id = await createDashboard(harness, key.secret)
+			const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+				mode: "org",
+			})
+			const opened = await harness.request("POST", "/v2/share/resolve", "viewer-session", {
+				token: shared.body.token,
+			})
+			expect([opened.status, opened.body.error?.code]).toEqual([status, code])
+			await harness.dispose()
+		}
+	})
+
 	it("never grants a chart link more than its board's mode", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(SHARE_SCOPES)
@@ -1694,6 +1755,43 @@ describe("v2 raw SQL widgets", () => {
 		await harness.dispose()
 	})
 
+	it("refuses to share a board that holds raw SQL to a caller without query:sql", async () => {
+		const harness = makeHarness()
+		const author = await harness.bootstrapKey(["dashboards:write", ...TELEMETRY])
+		const created = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			author.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(created.status).toBe(200)
+		const id = created.body.id as string
+
+		const sharer = await harness.bootstrapKey(
+			["dashboards:write", ...TELEMETRY],
+			["org:custom"],
+			["telemetry:read", "dashboards:share"],
+		)
+		const refused = await harness.request("PUT", `/v2/dashboards/${id}/share`, sharer.secret, {
+			mode: "public",
+		})
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.code).toBe("insufficient_permissions")
+		const widget = await harness.request("PUT", `/v2/dashboards/${id}/widgets/sql/share`, sharer.secret, {
+			mode: "public",
+		})
+		expect(widget.status).toBe(403)
+		const rotated = await harness.request("POST", `/v2/dashboards/${id}/share/rotate`, sharer.secret)
+		expect(rotated.status).toBe(403)
+
+		const plain = await harness.request("POST", "/v2/dashboards", author.secret, board([]))
+		const shared = await harness.request("PUT", `/v2/dashboards/${plain.body.id}/share`, sharer.secret, {
+			mode: "public",
+		})
+		expect(shared.status).toBe(200)
+		await harness.dispose()
+	})
+
 	it("lets a narrow key edit around SQL it did not write, but not change or restore it", async () => {
 		const harness = makeHarness()
 		const author = await harness.bootstrapKey(["dashboards:write", ...TELEMETRY])
@@ -1752,6 +1850,41 @@ describe("v2 raw SQL widgets", () => {
 			Arr.map([unscoped.secret, telemetryReader.secret], (token) => widgetData(harness, id, token)),
 		)
 		expect(Arr.map(admitted, (response) => response.body.results[0].reason)).toEqual(["failed", "failed"])
+		await harness.dispose()
+	})
+
+	it("refuses saving and running raw SQL to a custom role without query:sql", async () => {
+		const harness = makeHarness()
+		const builder = await harness.bootstrapKey(
+			undefined,
+			["org:custom"],
+			["telemetry:read", "dashboards:edit"],
+		)
+		const refused = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			builder.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.message).toBe(Policy.denialFor("query:sql").message)
+
+		const author = await harness.bootstrapKey()
+		const created = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			author.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(created.status).toBe(200)
+		const ran = await widgetData(harness, created.body.id, builder.secret)
+		expect(ran.status).toBe(200)
+		expect(ran.body.results[0]).toEqual({
+			widget_id: "sql",
+			ok: false,
+			reason: "unsupported",
+			message: Policy.denialFor("query:sql").message,
+		})
 		await harness.dispose()
 	})
 

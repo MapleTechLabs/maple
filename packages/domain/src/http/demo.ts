@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
+import { EndpointAccess, requires } from "./endpoint-access"
 
 export class DemoSeedRequest extends Schema.Class<DemoSeedRequest>("DemoSeedRequest")({
 	hours: Schema.optional(Schema.Number),
@@ -31,4 +32,6 @@ export class DemoApiGroup extends HttpApiGroup.make("demo")
 		}),
 	)
 	.prefix("/internal/demo")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// Writes telemetry into the org, so it takes the permission that connects telemetry sources.
+	.annotate(EndpointAccess, requires("sources:manage")) {}

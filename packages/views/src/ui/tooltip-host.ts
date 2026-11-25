@@ -13,6 +13,7 @@ import { Command, Dom, type Update } from "foldkit"
 import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { Side } from "./overlay/position"
+import { personCard } from "./person-avatar"
 import { timestampCard } from "./timestamp"
 import { typography } from "./typography"
 import { icon } from "./icon"
@@ -39,6 +40,9 @@ const GROUP_ATTRIBUTE = "data-tooltip-group"
 const INSTANT_ATTRIBUTE = "data-tooltip-instant"
 const ZONE_ATTRIBUTE = "data-tooltip-zone"
 const NOW_ATTRIBUTE = "data-tooltip-now"
+const PERSON_ATTRIBUTE = "data-tooltip-person"
+const PERSON_IMAGE_ATTRIBUTE = "data-tooltip-person-image"
+const PERSON_DETAIL_ATTRIBUTE = "data-tooltip-person-detail"
 const ID_PREFIX = "maple-tooltip-trigger-"
 
 export type TriggerOptions = Readonly<{
@@ -99,6 +103,14 @@ export const tooltipTrigger = <Message>(
 /** A `timestampTrigger`'s instant, zone and the page clock its text read (else the hover's). */
 const Instant = Schema.Struct({ epochMs: Schema.Number, timeZone: Schema.String, nowMs: Schema.Number })
 
+/** A `personTrigger`'s person, drawn as the person card. */
+const Person = Schema.Struct({
+	name: Schema.String,
+	imageUrl: Schema.optionalKey(Schema.String),
+	detail: Schema.optionalKey(Schema.String),
+})
+type Person = { -readonly [K in keyof typeof Person.Type]: (typeof Person.Type)[K] }
+
 const Shown = Schema.Struct({
 	text: Schema.String,
 	title: Schema.optionalKey(Schema.String),
@@ -110,6 +122,7 @@ const Shown = Schema.Struct({
 	isIconButton: Schema.Boolean,
 	side: Side,
 	instant: Schema.optionalKey(Instant),
+	person: Schema.optionalKey(Person),
 })
 type Shown = typeof Shown.Type
 
@@ -328,6 +341,17 @@ const instantOf = (trigger: HTMLElement): Option.Option<typeof Instant.Type> => 
 		: Option.none()
 }
 
+const personOf = (trigger: HTMLElement): Option.Option<Person> => {
+	const name = trigger.getAttribute(PERSON_ATTRIBUTE)
+	if (name === null || name === "") return Option.none()
+	const person: Person = { name }
+	const imageUrl = trigger.getAttribute(PERSON_IMAGE_ATTRIBUTE)
+	if (imageUrl !== null) person.imageUrl = imageUrl
+	const detail = trigger.getAttribute(PERSON_DETAIL_ATTRIBUTE)
+	if (detail !== null) person.detail = detail
+	return Option.some(person)
+}
+
 const shownOf = (trigger: HTMLElement) => ({
 	triggerId: anchorIdOf(trigger),
 	shown: {
@@ -356,6 +380,7 @@ const shownOf = (trigger: HTMLElement) => ({
 		isIconButton: trigger.getAttribute(LAYOUT_ATTRIBUTE) === "icon-button",
 		side: Option.getOrElse(decodeSide(trigger.getAttribute(SIDE_ATTRIBUTE)), (): Side => "top"),
 		...Option.match(instantOf(trigger), { onNone: () => ({}), onSome: (instant) => ({ instant }) }),
+		...Option.match(personOf(trigger), { onNone: () => ({}), onSome: (person) => ({ person }) }),
 	},
 })
 
@@ -639,6 +664,7 @@ export const view = <ParentMessage>(
 					toContent: (triggerId) => {
 						const shown = model.shown[triggerId]
 						if (shown?.instant !== undefined) return [timestampCard(h, shown.instant)]
+						if (shown?.person !== undefined) return [personCard(h, shown.person)]
 						if (shown?.title !== undefined)
 							return [titledCard(h, { ...shown, title: shown.title })]
 						return [shown?.text ?? ""]

@@ -27,6 +27,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const SAMPLE_PATHS = [
 	"/settings/ingestion/rules/new",
 	"/settings/billing/ai-credits",
+	"/settings/roles/role_1",
 	"/services",
 	"/",
 	"/metrics",

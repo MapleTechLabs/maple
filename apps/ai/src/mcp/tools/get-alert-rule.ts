@@ -40,6 +40,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading an alert rule"],
 		handler: Effect.fn("McpTool.getAlertRule")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

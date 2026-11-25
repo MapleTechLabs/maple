@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	AlertRuleUpsertRequest,
@@ -9,7 +10,7 @@ import { AlertDestinationId } from "@maple/primitives"
 import { Array as Arr, Duration, Effect } from "effect"
 import { TestClock } from "effect/testing"
 import {
-	adminRoles,
+	adminGrants,
 	alertServices,
 	asOrgId,
 	asUserId,
@@ -32,6 +33,7 @@ const tenantOf = (org: typeof orgId): TenantContext => ({
 	orgId: org,
 	userId,
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 })
 
@@ -366,13 +368,13 @@ describe("CostBudgetsService", () => {
 
 				assert.lengthOf((yield* alerts.listRules(orgId)).rules, 0)
 				const refusedCreate = yield* alerts
-					.createRule(orgId, userId, adminRoles, request)
+					.createRule(orgId, userId, adminGrants, request)
 					.pipe(Effect.flip)
 				const refusedEdit = yield* alerts
-					.updateRule(orgId, userId, adminRoles, created.id, request)
+					.updateRule(orgId, userId, adminGrants, created.id, request)
 					.pipe(Effect.flip)
 				const refusedDelete = yield* alerts
-					.deleteRule(orgId, adminRoles, created.id)
+					.deleteRule(orgId, adminGrants, created.id)
 					.pipe(Effect.flip)
 
 				assert.deepStrictEqual(

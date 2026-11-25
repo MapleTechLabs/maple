@@ -121,7 +121,23 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/members",
 		title: "Members",
 		description:
-			"The settings members tab as an admin, with a role change on its inline confirm strip and saving (`?state=`).",
+			"The settings members tab as an admin, with a change to admin on its inline confirm strip and saving, and the role picker open on the custom roles (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/roles",
+		title: "Roles",
+		description:
+			"The settings Roles tab as an admin and as a member, loading, failed, the create dialog and the delete dialog moving three members (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/role-editor",
+		title: "Role editor",
+		description:
+			"A role's editor: a custom role with unsaved changes compared with Member, the built-in Engineer role read-only, and a role nobody holds (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},

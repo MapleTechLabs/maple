@@ -115,6 +115,7 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		scopeFamily: "users",
 		phrases: ["Looking up a user"],
 		handler: Effect.fn("McpTool.inspectUser")(function* (params) {

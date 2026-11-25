@@ -7,7 +7,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
 import { McpConnectionPublicId } from "./resource-ids"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess } from "../endpoint-access"
 
 const mcpConnectionExample = {
 	id: "mcpc_p12S8T8agEHUkYc825nMz6",
@@ -67,14 +67,16 @@ export class V2McpConnectionsApiGroup extends HttpApiGroup.make("mcpConnections"
 			query: ListQuery,
 			success: McpConnectionList,
 			error: [V2ParameterInvalid.schema, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listMcpConnections",
-				summary: "List MCP connections",
-				description:
-					"Returns the live MCP OAuth connections, most recently refreshed first. Org admins see every member's connections; other members see their own. Requires the `mcp_connections:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listMcpConnections",
+					summary: "List MCP connections",
+					description:
+						"Returns the live MCP OAuth connections, most recently refreshed first. Org admins see every member's connections; other members see their own. Requires the `mcp_connections:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("revoke", "/:id", {
@@ -82,7 +84,7 @@ export class V2McpConnectionsApiGroup extends HttpApiGroup.make("mcpConnections"
 			success: V2McpConnection,
 			error: [notFound, persistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "revokeMcpConnection",

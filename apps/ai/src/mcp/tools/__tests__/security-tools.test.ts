@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	InspectSecurityAuditRunOutput,
@@ -34,7 +35,14 @@ beforeAll(async () => {
 	await seedIntegrationWorld(member)
 	await seedCommitWorld(member)
 	await seedSecurityWorld(member)
-	admin = { ...member, tenant: { ...member.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
+	admin = {
+		...member,
+		tenant: {
+			...member.tenant,
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
+			permissions: Policy.grantsOf(["org:admin"]),
+		},
+	}
 })
 afterAll(async () => {
 	globalThis.fetch = realFetch
@@ -123,7 +131,7 @@ describe("list_security_findings", () => {
 		const overview = await runToolDirect(member, "list_security_findings", {})
 		const finding = await runToolDirect(member, "inspect_security_finding", { id: "CVE-2024-0001" })
 		expect([overview.isError, finding.isError]).toEqual([true, true])
-		expect(markdown(overview)).toContain("Only org admins and engineers")
+		expect(markdown(overview)).toContain(Policy.denialFor("security:manage").message)
 	})
 
 	it("does not report a catch-all service's answered probes as exposures", async () => {
@@ -281,7 +289,11 @@ describe("inspect_security_finding", () => {
 			failure: { message: "warehouse unavailable", type: "UNKNOWN" },
 		})
 		try {
-			const tenant = { ...isolated.tenant, roles: admin.tenant.roles }
+			const tenant = {
+				...isolated.tenant,
+				roles: admin.tenant.roles,
+				permissions: admin.tenant.permissions,
+			}
 			const result: McpToolResult = await runToolDirect(
 				{ ...isolated, tenant },
 				"inspect_security_finding",
@@ -316,7 +328,11 @@ describe("inspect_security_finding", () => {
 	it("does not answer clean when no repository is connected", async () => {
 		const empty = makeEvalRuntime()
 		try {
-			const tenant = { ...empty.tenant, roles: admin.tenant.roles }
+			const tenant = {
+				...empty.tenant,
+				roles: admin.tenant.roles,
+				permissions: admin.tenant.permissions,
+			}
 			const result: McpToolResult = await runToolDirect(
 				{ ...empty, tenant },
 				"inspect_security_finding",

@@ -1,3 +1,4 @@
+import { EndpointAccess, requires } from "../endpoint-access"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import {
@@ -189,4 +190,5 @@ export class V2InstrumentationAuditApiGroup extends HttpApiGroup.make("instrumen
 			description:
 				"A health check for your Maple setup — what you are ingesting, whether alerts can reach you, and whether your telemetry follows the conventions Maple's features depend on.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

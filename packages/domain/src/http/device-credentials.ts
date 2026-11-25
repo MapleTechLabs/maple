@@ -133,7 +133,8 @@ export class DeviceInstallationInUseError extends HttpTaggedError<DeviceInstalla
 		status: 409,
 		code: "device_installation_in_use",
 		title: "Installation registered by someone else",
-		message: "Another member has a live device credential for this installation. Retry once it is revoked.",
+		message:
+			"Another member has a live device credential for this installation. Retry once it is revoked.",
 		param: "installation_id",
 		retry: "never",
 		recovery: "none",

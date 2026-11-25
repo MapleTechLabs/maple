@@ -39,7 +39,8 @@ import { DashboardId } from "@maple/primitives"
 import { Clock, DateTime, Effect, Option, Ref, Result, Schema, Array as Arr } from "effect"
 import { Base64Url } from "effect/encoding"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { dataSourceRawSql } from "@maple/widgets/dashboard"
+import { addsRawSql, holdsRawSql } from "@maple/widgets/dashboard"
+import * as Policy from "@maple/domain/policy"
 import { getTemplate, listTemplateMetadata } from "@maple/backend/dashboard-templates"
 import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
 import { auditDiff } from "@/routes/v2/audit-changes"
@@ -73,33 +74,45 @@ const requireShareableScopes = (scopes: ReadonlyArray<string> | undefined) =>
 
 type DashboardWidgets = DashboardDocument["widgets"]
 
-/** Every stored raw SQL text on these widgets, tiles and sparklines alike. */
-const rawSqlTexts = (widgets: DashboardWidgets): ReadonlyArray<string> =>
-	Arr.flatMap(widgets, (widget) =>
-		Arr.flatMap([widget.dataSource, widget.display?.sparkline?.dataSource], (dataSource) => {
-			const rawSql = dataSourceRawSql(dataSource)
-			return rawSql === null ? [] : [rawSql.sql]
-		}),
-	)
-
 /**
- * Raw SQL runs as the org on every read of the board, share links included, so a key that
- * cannot read the telemetry may only keep SQL the board already had, never add or change it.
+ * Raw SQL runs as the org on every read of the board, share links included, so a caller that could
+ * not run it may only keep SQL the board already had, never add or change it: a key needs the
+ * telemetry read scopes, and its holder `query:sql`.
  */
-const requireRawSqlScopes = (
-	scopes: ReadonlyArray<string> | undefined,
+const requireRawSqlAccess = (
+	tenant: Pick<CurrentTenant.TenantSchema, "scopes" | "permissions">,
 	before: DashboardWidgets,
 	after: DashboardWidgets,
-) => {
-	if (canReadTelemetry(scopes)) return Effect.void
-	const existing = new Set(rawSqlTexts(before))
-	return Arr.every(rawSqlTexts(after), (sql) => existing.has(sql))
-		? Effect.void
-		: Effect.fail(
-				V2InsufficientScope.make(
-					'Saving raw SQL on a dashboard requires the "traces:read", "logs:read" and "metrics:read" scopes, because the SQL runs with access to that telemetry.',
-				),
-			)
+): Effect.Effect<
+	void,
+	ReturnType<typeof V2InsufficientScope.make> | ReturnType<typeof V2InsufficientPermissions.make>
+> => {
+	if (!addsRawSql(before, after)) return Effect.void
+	if (!canReadTelemetry(tenant.scopes)) {
+		return Effect.fail(
+			V2InsufficientScope.make(
+				'Saving raw SQL on a dashboard requires the "traces:read", "logs:read" and "metrics:read" scopes, because the SQL runs with access to that telemetry.',
+			),
+		)
+	}
+	return Policy.check(tenant.permissions, "query:sql", (denial) =>
+		V2InsufficientPermissions.make(denial.message),
+	)
+}
+
+/**
+ * A share link runs the board's raw SQL for whoever opens it, so sharing a board (or a widget) that
+ * holds raw SQL needs `query:sql`, as running it would.
+ */
+const requireRawSqlToShare = (
+	permissions: Policy.Grants,
+	widgets: DashboardWidgets,
+	widgetId: string | null,
+): Effect.Effect<void, ReturnType<typeof V2InsufficientPermissions.make>> => {
+	const shared = widgetId === null ? widgets : Arr.filter(widgets, (widget) => widget.id === widgetId)
+	return holdsRawSql(shared)
+		? Policy.check(permissions, "query:sql", (denial) => V2InsufficientPermissions.make(denial.message))
+		: Effect.void
 }
 
 const toV2DashboardSnapshot = (dashboard: DashboardDocument): V2DashboardVersionDetail["snapshot"] => ({
@@ -327,7 +340,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 			source: "perses_import" | "grafana_import",
 		) {
 			const tenant = yield* CurrentTenant.Context
-			yield* requireRawSqlScopes(tenant.scopes, [], portable.widgets)
+			yield* requireRawSqlAccess(tenant, [], portable.widgets)
 			const stored = yield* persistence.create(tenant.orgId, tenant.userId, portable)
 			yield* recordHttpAudit("dashboard.created", {
 				resourceId: stored.document.id,
@@ -411,6 +424,11 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 		) =>
 			Effect.gen(function* () {
 				yield* requireShareableScopes(context.tenant.scopes)
+				yield* requireRawSqlToShare(
+					context.tenant.permissions,
+					context.dashboard.widgets,
+					context.scope.widgetId,
+				)
 				const created = yield* shares.upsert(
 					context.tenant.orgId,
 					context.tenant.userId,
@@ -446,6 +464,11 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 			Effect.gen(function* () {
 				const context = yield* openScope(dashboardId, widgetId)
 				yield* requireShareableScopes(context.tenant.scopes)
+				yield* requireRawSqlToShare(
+					context.tenant.permissions,
+					context.dashboard.widgets,
+					context.scope.widgetId,
+				)
 				const rotated = yield* shares.rotate(
 					context.tenant.orgId,
 					context.tenant.userId,
@@ -546,6 +569,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								variableValues: payload.variable_values ?? {},
 								// Per widget: a key reads only the tiles whose telemetry it could query.
 								canRead: (family) => missingReadScopes(tenant.scopes, [family]).length === 0,
+								canRunRawSql: Policy.can(tenant.permissions, "query:sql"),
 							})
 							.pipe(
 								Effect.catchTags({
@@ -574,7 +598,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const portable = toPortable(payload)
-						yield* requireRawSqlScopes(tenant.scopes, [], portable.widgets)
+						yield* requireRawSqlAccess(tenant, [], portable.widgets)
 						const stored = yield* persistence.create(tenant.orgId, tenant.userId, portable)
 						const dashboard = stored.document
 						yield* recordHttpAudit("dashboard.created", {
@@ -600,7 +624,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								const next = applyUpdate(current, payload, updatedAt)
 								return Ref.set(previous, Option.some(current)).pipe(
 									Effect.andThen(
-										requireRawSqlScopes(tenant.scopes, current.widgets, next.widgets),
+										requireRawSqlAccess(tenant, current.widgets, next.widgets),
 									),
 									Effect.as(next),
 								)
@@ -711,18 +735,17 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("restoreVersion", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						if (!canReadTelemetry(tenant.scopes)) {
+						if (
+							!canReadTelemetry(tenant.scopes) ||
+							!Policy.can(tenant.permissions, "query:sql")
+						) {
 							const { document: current } = yield* persistence.get(tenant.orgId, params.id)
 							const version = yield* persistence.getVersion(
 								tenant.orgId,
 								params.id,
 								params.version_id,
 							)
-							yield* requireRawSqlScopes(
-								tenant.scopes,
-								current.widgets,
-								version.snapshot.widgets,
-							)
+							yield* requireRawSqlAccess(tenant, current.widgets, version.snapshot.widgets)
 						}
 						const stored = yield* persistence.restoreVersion(
 							tenant.orgId,

@@ -205,7 +205,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 		const stripeCustomerForWrite = (tenant: CurrentTenant.TenantSchema) =>
 			Effect.gen(function* () {
 				yield* Policy.check(
-					tenant.roles,
+					tenant.permissions,
 					"billing:manage",
 					(denial) => new BillingForbiddenError({ message: denial.message }),
 				)
@@ -350,6 +350,14 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 				.handle("getDailySpend", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						// Billing managers see what they pay for; telemetry readers see their volume.
+						if (!Policy.can(tenant.permissions, "telemetry:read")) {
+							yield* Policy.check(
+								tenant.permissions,
+								"billing:manage",
+								(denial) => new BillingForbiddenError({ message: denial.message }),
+							)
+						}
 						// The cycle window comes from the subscription, not the calendar:
 						// an org that subscribed mid-month is billed on its own anniversary
 						// and a calendar-month chart would disagree with the invoice.
@@ -386,7 +394,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* Policy.check(
-							tenant.roles,
+							tenant.permissions,
 							"billing:manage",
 							(denial) =>
 								new BillingForbiddenError({
@@ -428,7 +436,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// Starting or changing a plan is an org-wide spend decision, so
 						// it is gated like every other billing write in this group.
 						yield* Policy.check(
-							tenant.roles,
+							tenant.permissions,
 							"billing:manage",
 							(denial) =>
 								new BillingForbiddenError({
@@ -514,7 +522,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// payment methods and invoice history — admin-only, like the
 						// billing-details writes it overlaps with.
 						yield* Policy.check(
-							tenant.roles,
+							tenant.permissions,
 							"billing:manage",
 							(denial) =>
 								new BillingForbiddenError({
@@ -647,7 +655,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						return yield* billingOrgs.link({
 							orgId: tenant.orgId,
 							userId: tenant.userId,
-							roles: tenant.roles,
+							permissions: tenant.permissions,
 							billingOrgId: payload.billingOrgId,
 						})
 					}),
@@ -657,7 +665,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const tenant = yield* CurrentTenant.Context
 						return yield* billingOrgs.unlink({
 							orgId: tenant.orgId,
-							roles: tenant.roles,
+							permissions: tenant.permissions,
 							memberOrgId: params.orgId,
 						})
 					}),

@@ -13,6 +13,7 @@ export function registerGetErrorNotificationPolicyTool(server: McpToolRegistrar)
 			"Read the org-wide error notification policy: whether it is on, which alert destinations it delivers to (name, UUID and REST id), which events notify, min_occurrence_count, and the occurrence count a new error's first notification waits for while the org has early promotions left that day (at least 3 once they are spent). update_error_notification_policy changes it.",
 		parameters: Schema.Struct({}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading the notification policy"],
 		handler: Effect.fn("McpTool.getErrorNotificationPolicy")(function* () {
 			const tenant = yield* CurrentMcpTenant

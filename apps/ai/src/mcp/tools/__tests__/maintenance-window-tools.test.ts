@@ -4,6 +4,7 @@
  * and delete requiring confirm.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ListMaintenanceWindowsOutput, MaintenanceWindowMutationOutput } from "@maple/domain/mcp-outputs"
@@ -31,6 +32,7 @@ const layerFor = (testDb: TestDb) =>
 			orgId: ORG,
 			userId: Schema.decodeSync(UserId)("user_mcp_maintenance"),
 			roles: [Schema.decodeSync(RoleName)("root")],
+			permissions: Policy.grantsOf([Schema.decodeSync(RoleName)("root")]),
 			authMode: "self_hosted",
 		}),
 	).pipe(

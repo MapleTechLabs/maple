@@ -109,6 +109,7 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 			},
 		},
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: null,
 		phrases: ["Sending feedback"],
 		handler: Effect.fn("McpTool.sendMapleFeedback")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

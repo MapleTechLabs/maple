@@ -4,6 +4,7 @@
  * test reads the change back through the list tool an agent would use next.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { installFakeWarehouse, restoreWarehouse } from "../../__evals__/fake-warehouse"
 import {
 	asCaller,
@@ -321,7 +322,7 @@ describe("manage_alert_destination", () => {
 		)
 		expect(refused.isError).toBe(true)
 		expect(markdown(refused)).not.toContain("not confirmed")
-		expect(markdown(refused)).toContain("Alerts > Destinations")
+		expect(markdown(refused)).toContain(Policy.denialFor("alerts:manage").message)
 	})
 
 	it("refuses a member, who may not manage alerts", async () => {

@@ -36,6 +36,7 @@ import * as AlertsScheduleNew from "./alerts/schedule-form"
 import * as AlertsEscalationChain from "./alerts/escalation-chain"
 import * as IngestRuleEditor from "./settings/ingest-rule"
 import * as BillingAiCredits from "./settings/ai-credits"
+import * as RoleEditor from "./settings/role"
 import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
@@ -204,6 +205,7 @@ export const pages = [
 	Settings.page,
 	IngestRuleEditor.page,
 	BillingAiCredits.page,
+	RoleEditor.page,
 	McpPage.page,
 	SourcesList.page,
 	SourcesNew.page,

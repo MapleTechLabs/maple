@@ -5,7 +5,7 @@ import { OrgId } from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /**
  * The credential a device's Home Screen widgets fetch with.
@@ -100,7 +100,7 @@ export class V2WidgetCredentialsApiGroup extends HttpApiGroup.make("widgetCreden
 			success: V2WidgetCredential,
 			error: [publicError(ApiKeyPersistenceError)],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, requires("devices:connect"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "mintWidgetCredential",
@@ -116,7 +116,7 @@ export class V2WidgetCredentialsApiGroup extends HttpApiGroup.make("widgetCreden
 			success: V2WidgetCredentialDeleteResponse,
 			error: [publicError(ApiKeyPersistenceError)],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "revokeWidgetCredential",

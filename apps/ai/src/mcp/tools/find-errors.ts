@@ -65,6 +65,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Looking for errors", "Finding errors"],
 		handler: Effect.fn("McpTool.findErrors")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "find_errors")

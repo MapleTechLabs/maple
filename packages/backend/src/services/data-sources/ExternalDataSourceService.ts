@@ -1065,7 +1065,7 @@ export class ExternalDataSourceService extends Context.Service<
 		) {
 			if (caller.kind === "principal") {
 				yield* Policy.check(
-					caller.roles,
+					caller.permissions,
 					"data_sources:query",
 					(denial) =>
 						new DataSourceForbiddenError({

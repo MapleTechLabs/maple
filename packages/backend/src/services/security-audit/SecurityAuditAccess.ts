@@ -64,7 +64,7 @@ const make = Effect.gen(function* () {
 		orgAccess.pipe(
 			Effect.tap(({ tenant }) =>
 				Policy.check(
-					tenant.roles,
+					tenant.permissions,
 					permission,
 					(denial) => new SecurityAuditForbiddenError({ message: denial.message }),
 				),

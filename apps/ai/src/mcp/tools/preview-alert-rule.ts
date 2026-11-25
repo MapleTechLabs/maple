@@ -154,6 +154,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 		parameters: Parameters,
 		aliases: { service_names: "services", since: "start_time", until: "end_time" },
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Previewing an alert rule"],
 		handler: Effect.fn("McpTool.previewAlertRule")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -204,7 +205,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 			}
 
 			const alerts = yield* AlertsService
-			const preview = yield* alerts.previewRule(tenant.orgId, tenant.roles, request).pipe(
+			const preview = yield* alerts.previewRule(tenant.orgId, tenant.permissions, request).pipe(
 				Effect.catchTags({
 					"@maple/http/errors/AlertValidationError": (error) =>
 						Effect.fail(invalidRuleInput(error)),

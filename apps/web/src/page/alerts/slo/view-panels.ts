@@ -58,7 +58,7 @@ import {
 import { toneText } from "../shared/slo-view"
 import { Message } from "./message"
 import { type Model } from "./model"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageSlos } from "../../kit/session-grants"
 import { gatedSwitch } from "../../kit/gated-controls"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -423,12 +423,12 @@ export const alertingPanel = (h: H, model: Model, slo: Slo): Html =>
 				...gatedSwitch(
 					h,
 					model,
-					"alerts:manage",
+					"slos:manage",
 					switchControl(h, {
 						id: "slo-alerting",
 						inputId: "slo-alerting-input",
 						isChecked: slo.alerting.enabled,
-						isDisabled: !canManageAlerts(model) || model.isTogglingAlerting,
+						isDisabled: !canManageSlos(model) || model.isTogglingAlerting,
 						ariaLabel: "Burn-rate alerting",
 						onToggle: Message.ClickedToggleAlerting(),
 					}),

@@ -359,7 +359,7 @@ describe("alert incident", () => {
 			expectView(role("link", { name: "Edit rule" })).not.toExist(),
 			// Until the session answers there is no link, and no word yet on who may open the log.
 			expectView(role("link", { name: "Open audit log" })).not.toExist(),
-			expectView(text(/only org admins can open it/u)).not.toExist(),
+			expectView(text(/your role can't open it/u)).not.toExist(),
 		)
 		const seenBy = (roles: ReadonlyArray<string>) =>
 			step(withRule.model, Message.CompletedFetchSession({ grants: Policy.grantsOf(roles) })).model
@@ -367,7 +367,7 @@ describe("alert incident", () => {
 			{ update: pageUpdate, view },
 			given(seenBy(["org:member"])),
 			themeResolved(),
-			expectView(text(/only org admins can open it/u)).toExist(),
+			expectView(text(/your role can't open it/u)).toExist(),
 			expectView(role("link", { name: "Open audit log" })).not.toExist(),
 		)
 		scene(
@@ -972,7 +972,7 @@ describe("alert incident, silences", () => {
 			given(loaded(["org:member"])),
 			themeResolved(),
 			expectView(role("button", { name: "Silence" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 		// Before rules load a click does nothing, so the group can't be silenced as the whole rule.
 		expect(step(loaded(["org:engineer"], false), Message.ClickedSilence()).commands ?? []).toEqual([])

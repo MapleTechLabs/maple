@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import {
 	CurrentTenant,
@@ -19,6 +20,7 @@ const TENANT = new CurrentTenant.TenantSchema({
 	orgId: "org_serve_rows" as CurrentTenant.TenantSchema["orgId"],
 	userId: "user_serve_rows" as CurrentTenant.TenantSchema["userId"],
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 })
 

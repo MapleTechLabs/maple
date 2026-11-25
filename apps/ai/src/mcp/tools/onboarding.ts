@@ -67,6 +67,8 @@ export function registerOnboardingTools(server: McpToolRegistrar) {
 		// Reporting the same stage again overwrites it with the same values.
 		hints: { readOnly: false, idempotent: true },
 		scopeFamily: "onboarding",
+		// Only the caller's own run, reported by the client they signed in.
+		permission: "devices:connect",
 		aliases: { service_names: "services" },
 		phrases: ["Reporting setup progress"],
 		handler: Effect.fn("McpTool.onboardingStatusUpdate")(function* (params) {
@@ -172,6 +174,8 @@ export function registerOnboardingTools(server: McpToolRegistrar) {
 		// Creates the org's ingest keys on first use, so a read-only token is refused.
 		hints: { readOnly: false, idempotent: true },
 		scopeFamily: "ingest_keys",
+		// What the client the caller signed in needs to send data; never the private key.
+		permission: "devices:connect",
 		phrases: ["Reading ingest setup"],
 		handler: Effect.fn("McpTool.getIngestSetup")(function* () {
 			const tenant = yield* CurrentMcpTenant

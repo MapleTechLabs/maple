@@ -149,7 +149,7 @@ describe("alerts hub, Silences tab", () => {
 			given(onSilences(MEMBER, [silence({ startMin: -10, endMin: 50 })])),
 			expectView(role("button", { name: "End now" })).toBeDisabled(),
 			expectView(role("button", { name: "New silence" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 	})
 

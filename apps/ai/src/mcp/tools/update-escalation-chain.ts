@@ -31,6 +31,7 @@ export const updateEscalationChainAction = (family: McpToolFamilyBuilder<"manage
 			description: P.optionalText('New notes, or "none" to clear them'),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "oncall:manage",
 		handler: Effect.fn("McpTool.updateEscalationChain")(function* (params) {
 			const chainId = yield* P.decodeResourceId("escalationChain", "chain_id")(params.chain_id)
 			const steps = params.steps === undefined ? undefined : yield* toStepsRequest(params.steps)
@@ -62,7 +63,7 @@ export const updateEscalationChainAction = (family: McpToolFamilyBuilder<"manage
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
 			const chain = yield* chains
-				.update(tenant.orgId, tenant.userId, tenant.roles, chainId, request)
+				.update(tenant.orgId, tenant.userId, tenant.permissions, chainId, request)
 				.pipe(Effect.catchTags(updateChainErrors))
 			const directory = yield* targetDirectory(tenant.orgId)
 			return { chain: toEscalationChainRow(chain, directory) }

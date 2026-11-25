@@ -84,7 +84,7 @@ const uptimeEmptyState = (h: H, model: Model, serviceName: string | undefined): 
 				gatedLinkButton(
 					h,
 					model,
-					"alerts:manage",
+					"uptime_monitors:manage",
 					{ size: "sm", href: newMonitorHref({ serviceName }) },
 					[icon(h, "PlusIcon"), "New uptime check"],
 				),
@@ -191,7 +191,7 @@ const rowMenu = (h: H, model: Model, monitor: UptimeMonitor): Html => {
 	return rowActionsMenu(h, {
 		slotId: menuId,
 		model: model.menus[menuId] ?? Menu.init(menuId),
-		entries: gatedEntries(model, "alerts:manage", entries),
+		entries: gatedEntries(model, "uptime_monitors:manage", entries),
 		label: `Actions for ${monitor.name}`,
 		className: ROW_LINK_LIFT,
 		toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),

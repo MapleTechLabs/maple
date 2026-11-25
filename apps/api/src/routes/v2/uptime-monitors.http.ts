@@ -77,7 +77,7 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 
 /** Whether the caller may write monitors: the role, and for a scoped API key the write scope too. */
 const canWriteMonitors = (tenant: CurrentTenant.TenantContext) =>
-	Policy.can(tenant.roles, "uptime_monitors:manage") &&
+	Policy.can(tenant.permissions, "uptime_monitors:manage") &&
 	scopeAllows(tenant.scopes, { family: "uptime_monitors", access: "write" })
 
 interface ReadableRequest {
@@ -154,7 +154,7 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "uptime_monitors:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "uptime_monitors:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const created = yield* service.create(tenant.orgId, {
@@ -186,7 +186,7 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 			.handle("test", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "uptime_monitors:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "uptime_monitors:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const result = yield* service.testHttp(uptimeConfigFromWire(payload.config))
@@ -206,7 +206,7 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "uptime_monitors:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "uptime_monitors:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
@@ -245,7 +245,7 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "uptime_monitors:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "uptime_monitors:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const deleted = yield* service.delete(tenant.orgId, params.id)

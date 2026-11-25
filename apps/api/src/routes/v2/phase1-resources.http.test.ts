@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import {
 	ConfigProvider,
@@ -739,7 +740,11 @@ const makeHarness = (
 		}
 	}
 
-	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
+	const bootstrapKey = (
+		scopes?: ReadonlyArray<string>,
+		roles?: ReadonlyArray<string>,
+		permissionCodes?: ReadonlyArray<number>,
+	) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
@@ -748,7 +753,16 @@ const makeHarness = (
 					scopes,
 					...(roles === undefined
 						? undefined
-						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+						: {
+								metadataJson: {
+									source: "maple_cli",
+									roles,
+									deviceName: "laptop",
+									...(permissionCodes === undefined
+										? undefined
+										: { permissions: permissionCodes }),
+								},
+							}),
 				})
 			}),
 		)
@@ -929,7 +943,28 @@ describe("v2 error_issues over HTTP", () => {
 		})
 		expect(refused.status).toBe(403)
 		expect(refused.body.error.code).toBe("insufficient_permissions")
-		expect(refused.body.error.message).toContain("Analysts can read Maple")
+		expect(refused.body.error.message).toContain("You need Triage error issues")
+		expect(harness.issueActions()).toEqual([])
+		await harness.dispose()
+	})
+
+	it("refuses triage to a custom role that holds only telemetry:read", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(
+			undefined,
+			["org:custom"],
+			Policy.encodePermissions(["telemetry:read"]),
+		)
+
+		const read = await harness.request("GET", `/v2/error_issues/${ISS_ID}`, { token: key.secret })
+		expect(read.status).toBe(200)
+
+		const refused = await harness.request("POST", `/v2/error_issues/${ISS_ID}/claim`, {
+			token: key.secret,
+			body: {},
+		})
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.message).toContain("You need Triage error issues")
 		expect(harness.issueActions()).toEqual([])
 		await harness.dispose()
 	})

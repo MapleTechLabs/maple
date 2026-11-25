@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import {
@@ -35,6 +36,7 @@ import {
 } from "@maple/backend/services/org/OrganizationRegionService"
 import type { MapleRegion } from "@maple/domain/organization-regions"
 import { AutumnWebhookRouter } from "./autumn.http"
+import { RolesService } from "@maple/backend/services/roles/RolesService"
 import { ClerkWebhookRoute } from "./clerk.http"
 import { SVIX_WEBHOOK_MAX_BYTES } from "./svix-receiver"
 
@@ -102,9 +104,16 @@ const recordingRevocation = (fail = false) => {
 	const layer = Layer.succeed(MembershipRevocationService, {
 		revokeMembership: (orgId, userId) => run(`revoke:${orgId}:${userId}`),
 		revokeUser: (userId) => run(`revokeUser:${userId}`),
-		demoteMembership: (orgId, userId, roles) =>
-			run(`demote:${orgId}:${userId}:${Arr.join(roles, ",")}`).pipe(
-				Effect.map(() => ({ apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked: 0 })),
+		demoteMembership: (orgId, userId, current) =>
+			run(`demote:${orgId}:${userId}:${Arr.join(current, ",")}`).pipe(
+				Effect.map(() => ({
+					apiKeysRevoked: 0,
+					mcpFamiliesRevoked: 0,
+					deviceCredentialsRevoked: 0,
+					dashboardSharesRevoked: 0,
+					digestSubscriptionsDisabled: 0,
+					mobileDevicesDeleted: 0,
+				})),
 			),
 		invalidateMembership: (userId) =>
 			fail
@@ -157,6 +166,12 @@ const recordingSso = (owns = true) => {
 	return { applied, layer }
 }
 
+/** Every custom role a membership names still matches its definition. */
+const matchingRoles = Layer.mock(RolesService)({
+	settleMembership: (_orgId, _userId, held) =>
+		Effect.succeed(Policy.decodeCustomPermissions(held.permissions)),
+})
+
 const makeRouterLayer = (
 	router: typeof ClerkWebhookRoute | typeof AutumnWebhookRouter,
 	config: Record<string, string>,
@@ -169,6 +184,7 @@ const makeRouterLayer = (
 	sso: Layer.Layer<EnterpriseSsoService> = recordingSso().layer,
 ) =>
 	router.pipe(
+		Layer.provide(matchingRoles),
 		Layer.provide(sso),
 		Layer.provide(productEvents),
 		Layer.provide(regions),
@@ -316,12 +332,13 @@ describe("ClerkWebhookRouter", () => {
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const audit = recordingAudit()
+			const revocation = recordingRevocation()
 			const configured = HttpRouter.toWebHandler(
 				makeRouterLayer(
 					ClerkWebhookRoute,
 					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
 					events.layer,
-					recordingRevocation().layer,
+					revocation.layer,
 					audit.layer,
 				),
 				{ disableLogger: true },
@@ -336,6 +353,8 @@ describe("ClerkWebhookRouter", () => {
 					headers,
 				)
 				assert.strictEqual(response.status, 200)
+				// The new member's cached membership list must not hide the org they just joined.
+				assert.deepStrictEqual(revocation.calls, ["invalidate:user_2abc"])
 				assert.strictEqual(audit.recorded.length, 1)
 				const entry = audit.recorded[0]
 				assert.strictEqual(entry.action, "member.added")
@@ -434,20 +453,20 @@ describe("ClerkWebhookRouter", () => {
 				status: 200,
 				audited: 0,
 				tracked: 0,
-				calls: ["demote:org_9:user_9:org:member"],
+				calls: [`demote:org_9:user_9:${Arr.join(Policy.grantsOf(["org:member"]), ",")}`],
 			})
-			// A join has nothing to sweep: the other region only acknowledges it.
+			// A join only evicts the member's cached membership list; the other region records nothing.
 			assert.deepStrictEqual(yield* deliver("elsewhere", "organizationMembership.created"), {
 				status: 200,
 				audited: 0,
 				tracked: 0,
-				calls: [],
+				calls: ["invalidate:user_9"],
 			})
 			assert.deepStrictEqual(yield* deliver("unknown", "organizationMembership.created"), {
 				status: 503,
 				audited: 0,
 				tracked: 0,
-				calls: [],
+				calls: ["invalidate:user_9"],
 			})
 		}),
 	)
@@ -614,13 +633,36 @@ describe("ClerkWebhookRouter", () => {
 				// keys pinned to the role the member just lost are retired.
 				assert.deepStrictEqual(revocation.calls, [
 					"revoke:org_9:user_9",
-					"demote:org_9:user_9:org:member",
+					`demote:org_9:user_9:${Arr.join(Policy.grantsOf(["org:member"]), ",")}`,
 					"revokeUser:user_9",
 				])
 				// The removal is a product event on the member and org; a role change is not.
 				assert.deepStrictEqual(
 					Arr.map(events.tracked, (event) => [event.name, event.userId, event.groupId]),
 					[["member_removed", "user_9", "org_9"]],
+				)
+
+				// A custom role's permissions come from the membership's public metadata.
+				const custom = JSON.stringify({
+					type: "organizationMembership.updated",
+					data: {
+						organization: { id: "org_9" },
+						public_user_data: { user_id: "user_9" },
+						role: "org:custom",
+						public_metadata: {
+							maple_role: {
+								id: "role_abcdefghijkl",
+								permissions: Policy.encodePermissions(["telemetry:read", "alerts:manage"]),
+							},
+						},
+					},
+				})
+				const customHeaders = yield* signedHeaders(CLERK_SECRET, custom, now, "msg_upd_custom")
+				const customResponse = yield* post(handler, "/webhooks/clerk", custom, customHeaders)
+				assert.strictEqual(customResponse.status, 200)
+				assert.strictEqual(
+					revocation.calls.at(-1),
+					`demote:org_9:user_9:${Arr.join(Policy.grantsOf(["org:custom"], ["telemetry:read", "alerts:manage"]), ",")}`,
 				)
 
 				// No role in the payload: we cannot tell demotion from promotion, so

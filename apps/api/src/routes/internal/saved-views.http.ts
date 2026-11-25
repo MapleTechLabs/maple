@@ -19,7 +19,7 @@ import { orgMemberDirectory } from "../org-member-directory"
 const callerOf = (tenant: TenantContext): SavedViewCaller => ({
 	orgId: tenant.orgId,
 	userId: tenant.userId,
-	roles: tenant.roles,
+	permissions: tenant.permissions,
 })
 
 /** A member's name, else their email; `null` for someone the directory no longer lists. */

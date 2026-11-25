@@ -1,7 +1,9 @@
+import type * as Policy from "@maple/domain/policy"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"
 import { icon } from "@maple/views/ui/icon"
 import { Array as Arr, Option, Predicate } from "effect"
+import { denialReason } from "../../kit/session-grants"
 
 interface MemberName {
 	readonly firstName?: string | null
@@ -31,21 +33,22 @@ export const otherAdminName = (
 			?.publicUserData,
 	) ?? null
 
-/** "Only admins can change X." plus "Ask <name>." when an admin's name is known. */
-export const adminOnlyNoticeText = (subject: string, adminName: string | null): string => {
-	const lead = `Only admins can change ${subject}.`
+/** The denial for `permission`, plus "Ask <name>." when an admin's name is known. */
+const adminOnlyNoticeText = (permission: Policy.Permission, adminName: string | null): string => {
+	const lead = denialReason(permission)
 	return adminName === null ? lead : `${lead} Ask ${adminName}.`
 }
 
 /**
- * The slim notice atop a tab a member can see but not change. `isKnownMember`: the session read
- * says so; while it is unknown or failed, nothing claims the viewer is not an admin.
+ * The slim notice atop a tab a viewer can see but not change, naming the `permission` the change
+ * needs. `isKnownMember`: the session read says so; while it is unknown or failed, nothing claims
+ * the viewer lacks it.
  */
 export const adminOnlyNotice = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
 		isKnownMember: boolean
-		subject: string
+		permission: Policy.Permission
 		adminName: string | null
 		className?: string
 	}>,
@@ -55,6 +58,6 @@ export const adminOnlyNotice = <M>(
 		: [
 				alert(h, { size: "sm", className: options.className }, [
 					icon(h, "ShieldIcon"),
-					alertDescription(h, [adminOnlyNoticeText(options.subject, options.adminName)]),
+					alertDescription(h, [adminOnlyNoticeText(options.permission, options.adminName)]),
 				]),
 			]

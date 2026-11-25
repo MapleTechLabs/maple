@@ -10,4 +10,4 @@ export const initialGrants: ReadonlyArray<Policy.Permission> = isClerkAuthEnable
 export const readsSessionGrants = isClerkAuthEnabled
 
 /** The viewer may move, claim, rate, merge, link and comment on issues (`error_issues:triage`). */
-export const canTriageIssues = (model: Grants): boolean => Policy.has(model.grants, "error_issues:triage")
+export const canTriageIssues = (model: Grants): boolean => Policy.can(model.grants, "error_issues:triage")

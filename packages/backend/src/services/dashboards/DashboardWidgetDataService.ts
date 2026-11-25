@@ -58,6 +58,8 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { Context, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -158,19 +160,20 @@ export interface WidgetDataOutcome {
 const findWidget = (document: DashboardDocument, widgetId: string) =>
 	Arr.findFirst(document.widgets, (widget) => widget.id === widgetId)
 
-/** The families a request reads that the caller may not, empty when it may read them all. */
-const unreadableFamilies = (
-	document: DashboardDocument,
-	request: WidgetDataRequest,
-	canRead: (family: TelemetryReadFamily) => boolean,
-): ReadonlyArray<TelemetryReadFamily> => {
-	const dataSource = Option.match(findWidget(document, request.widgetId), {
+/** The data source a request reads: the widget's own, or its sparkline's. */
+const requestDataSource = (document: DashboardDocument, request: WidgetDataRequest) =>
+	Option.match(findWidget(document, request.widgetId), {
 		onNone: () => undefined,
 		onSome: (widget) =>
 			request.source === "sparkline" ? widget.display?.sparkline?.dataSource : widget.dataSource,
 	})
-	return Arr.filter(widgetReadFamilies(dataSource), (family) => !canRead(family))
-}
+
+/** The families a request reads that the caller may not, empty when it may read them all. */
+const unreadableFamilies = (
+	dataSource: ReturnType<typeof requestDataSource>,
+	canRead: (family: TelemetryReadFamily) => boolean,
+): ReadonlyArray<TelemetryReadFamily> =>
+	Arr.filter(widgetReadFamilies(dataSource), (family) => !canRead(family))
 
 const scopeNotAllowedMessage = (missing: ReadonlyArray<TelemetryReadFamily>) =>
 	`This widget requires the ${Arr.join(
@@ -278,6 +281,8 @@ export interface WidgetDataBatchInput {
 	 * widget runs as the org, and a widget whose families the caller cannot read is refused.
 	 */
 	readonly canRead: (family: TelemetryReadFamily) => boolean
+	/** Whether the caller may run a raw SQL widget (`query:sql`). Required for the same reason. */
+	readonly canRunRawSql: boolean
 }
 
 export interface WidgetDataBatchResult {
@@ -653,10 +658,16 @@ export class DashboardWidgetDataService extends Context.Service<
 					if (input.onlyWidgetId !== undefined && request.widgetId !== input.onlyWidgetId) {
 						return Effect.succeed(failed(request.widgetId, "not_found", WIDGET_NOT_ON_DASHBOARD))
 					}
-					const missing = unreadableFamilies(document, request, input.canRead)
+					const dataSource = requestDataSource(document, request)
+					const missing = unreadableFamilies(dataSource, input.canRead)
 					if (missing.length > 0) {
 						return Effect.succeed(
 							failed(request.widgetId, "unsupported", scopeNotAllowedMessage(missing)),
+						)
+					}
+					if (!input.canRunRawSql && dataSourceRawSql(dataSource) !== null) {
+						return Effect.succeed(
+							failed(request.widgetId, "unsupported", Policy.denialFor("query:sql").message),
 						)
 					}
 					return resolve(orgId, document, request, window, variableValues).pipe(

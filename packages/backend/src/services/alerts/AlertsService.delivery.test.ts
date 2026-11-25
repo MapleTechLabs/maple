@@ -37,7 +37,7 @@ import {
 	makeLayer,
 	asOrgId,
 	asUserId,
-	adminRoles,
+	adminGrants,
 	createWebhookDestination,
 	createErrorRateRule,
 	okFetch,
@@ -161,7 +161,7 @@ describe("AlertsService delivery drain across destinations", () => {
 			const fast = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new WebhookAlertDestinationConfig({
 					type: "webhook",
 					name: "Fast webhook",
@@ -488,7 +488,7 @@ describe("AlertsService chat digests", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new ChatAlertDestinationConfig({
 					type: "chat",
 					name: "Incidents",
@@ -628,7 +628,7 @@ describe("AlertsService chat destination test", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new ChatAlertDestinationConfig({
 					type: "chat",
 					name: "Incidents",
@@ -636,7 +636,7 @@ describe("AlertsService chat destination test", () => {
 					channelId: "channel-1",
 				}),
 			)
-			const tested = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			const tested = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
 			assert.strictEqual(
 				tested.message,
 				"Skipped: alert notifications are off for this Test Chat workspace",
@@ -837,7 +837,7 @@ describe("AlertsService held incidents", () => {
 		alerts.createRule(
 			orgId,
 			userId,
-			adminRoles,
+			adminGrants,
 			new AlertRuleUpsertRequest({
 				name: "Grouped error rate",
 				severity: "critical",
@@ -1198,7 +1198,7 @@ describe("AlertsService PagerDuty acknowledgements", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new PagerDutyAlertDestinationConfig({
 					type: "pagerduty",
 					name: "On-call",

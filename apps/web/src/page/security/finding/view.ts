@@ -40,6 +40,7 @@ import { findingBadge } from "../kit/findings-view"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { denialReason } from "../../kit/session-grants"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
 
@@ -145,9 +146,7 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 	const state = Field.stateOf(model.reason, reasonError !== null)
 	if (!canManage(model))
 		return detailRailGroup(h, "Triage", [
-			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				"Only org admins and engineers can change a finding's status.",
-			]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [denialReason("security:manage")]),
 		])
 	return detailRailGroup(h, "Triage", [
 		h.form(

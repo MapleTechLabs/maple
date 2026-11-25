@@ -132,6 +132,7 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: true },
+		permission: "dashboards:edit",
 		phrases: ["Updating a widget"],
 		handler: Effect.fn("McpTool.updateDashboardWidget")(function* ({
 			dashboard_id,

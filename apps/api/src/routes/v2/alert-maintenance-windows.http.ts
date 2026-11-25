@@ -125,7 +125,7 @@ export const HttpV2AlertMaintenanceWindowsLive = HttpApiBuilder.group(
 						const created = yield* windows.create(
 							tenant.orgId,
 							tenant.userId,
-							tenant.roles,
+							tenant.permissions,
 							new AlertMaintenanceWindowCreateRequest({
 								name: payload.name,
 								...(payload.reason === undefined ? undefined : { reason: payload.reason }),
@@ -154,7 +154,7 @@ export const HttpV2AlertMaintenanceWindowsLive = HttpApiBuilder.group(
 						const updated = yield* windows.update(
 							tenant.orgId,
 							tenant.userId,
-							tenant.roles,
+							tenant.permissions,
 							params.id,
 							new AlertMaintenanceWindowUpdateRequest({
 								...(payload.name === undefined ? undefined : { name: payload.name }),
@@ -187,7 +187,7 @@ export const HttpV2AlertMaintenanceWindowsLive = HttpApiBuilder.group(
 						const deleted = yield* windows.delete(
 							tenant.orgId,
 							tenant.userId,
-							tenant.roles,
+							tenant.permissions,
 							params.id,
 						)
 						yield* recordHttpAudit("alert_maintenance_window.deleted", {

@@ -6,6 +6,7 @@ import {
 	formatBucketSecondsShort,
 	resolveTimeRangeWindow,
 } from "@maple/query-engine"
+import * as Policy from "@maple/domain/policy"
 import { Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -22,7 +23,13 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget } from "../kit/widget-data"
-import { FetchAutocomplete, FetchVariableOptions, FetchWidget, ReadClock } from "./command"
+import {
+	FetchAutocomplete,
+	FetchVariableOptions,
+	FetchWidget,
+	FetchWidgetSession,
+	ReadClock,
+} from "./command"
 import { planOptionRequests, planVariablesOf } from "../kit/variables"
 import type { EditorState } from "./editor-state"
 import {
@@ -53,11 +60,12 @@ type Route = Readonly<{ dashboardId: string; widgetId: string; search: Search }>
 
 export const SOURCE_MODES = ["builder", "rawSql", "promql"]
 
-export const init = (route: Route, _context: PageContext): Return => ({
+export const init = (route: Route, context: PageContext): Return => ({
 	model: {
 		dashboardId: route.dashboardId,
 		widgetId: route.widgetId,
 		search: route.search,
+		grants: [],
 		status: "Loading",
 		document: null,
 		state: null,
@@ -102,7 +110,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		leaveDialog: Dialog.init("widget-editor-leave-dialog", "alert-dialog"),
 		pendingLeaveUrl: null,
 	},
-	commands: [ReadClock(), LoadChartRuntime()],
+	commands: [ReadClock(), LoadChartRuntime(), FetchWidgetSession({ orgId: context.orgId })],
 })
 
 export const routeChanged = (model: Model, route: Route): Return => ({
@@ -284,6 +292,18 @@ export const canApply = (model: Model): boolean => {
 	const rawSql = isSqlSource(model) ? model.rawSql : null
 	return rawSql === null ? validationErrorOf(model.state) === null : isRunnableSql(rawSql)
 }
+
+/**
+ * The permission Apply needs that the viewer may lack: `dashboards:edit`, and `query:sql` once the
+ * Raw SQL differs from what the widget was opened with (the API refuses new SQL without it).
+ */
+export const applyPermission = (model: Model): Policy.Permission =>
+	isSqlSource(model) &&
+	model.rawSql !== null &&
+	model.rawSql.draft.sql !== model.rawSql.initial.sql &&
+	Policy.can(model.grants, "dashboards:edit")
+		? "query:sql"
+		: "dashboards:edit"
 
 /** Run preview: the editing state is staged, unless the query set is invalid. */
 export const runPreview = (model: Model, context: PageContext): Return =>

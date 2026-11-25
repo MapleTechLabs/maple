@@ -69,6 +69,7 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Building a cohort", "Finding who did it"],
 		handler: Effect.fn("McpTool.queryCohort")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

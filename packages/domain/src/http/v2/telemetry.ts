@@ -7,6 +7,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { defineV2Error, V2CursorInvalid, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { V2CachedWarehouseReadErrors, V2QueryErrors, V2WarehouseReadErrors } from "./query-errors"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 export const V2TelemetryRangeTooLarge = defineV2Error({
 	tag: "@maple/http/v2/TelemetryRangeTooLargeError",
@@ -791,7 +792,8 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 			title: "Traces",
 			description: "Search and inspect distributed traces.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}
 
 export const V2Log = Schema.Struct({
 	id: LogPublicId,
@@ -894,7 +896,8 @@ export class V2LogsApiGroup extends HttpApiGroup.make("logs")
 			title: "Logs",
 			description: "Search and retrieve OpenTelemetry logs.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}
 
 export const V2Metric = Schema.Struct({
 	object: Schema.Literal("metric"),
@@ -975,7 +978,8 @@ export class V2MetricsApiGroup extends HttpApiGroup.make("metrics")
 			title: "Metrics",
 			description: "Browse and query OpenTelemetry metrics.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}
 
 export const V2Service = Schema.Struct({
 	object: Schema.Literal("service"),
@@ -1350,7 +1354,8 @@ export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 			title: "Services",
 			description: "Observed service health summaries.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}
 
 export const V2Environment = Schema.Struct({
 	object: Schema.Literal("environment"),
@@ -1404,7 +1409,8 @@ export class V2EnvironmentsApiGroup extends HttpApiGroup.make("environments")
 			title: "Environments",
 			description: "The deployment environments telemetry has been observed in.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}
 
 export class V2ServiceMapApiGroup extends HttpApiGroup.make("serviceMap")
 	.add(
@@ -1429,4 +1435,5 @@ export class V2ServiceMapApiGroup extends HttpApiGroup.make("serviceMap")
 			title: "Service Map",
 			description: "Service-to-service topology.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

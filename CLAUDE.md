@@ -42,10 +42,13 @@ with `packageManager`.
 - LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
-- Analysts (`org:analyst`) read everything and build dashboards. The auth middlewares refuse them every
-  other non-GET endpoint unless it is marked `AnalystAccess` (`packages/domain/src/http/analyst-access.ts`):
-  `read` for a POST that only queries, `personal` for the caller's own state, `author` for dashboards. An
-  unmarked read-only POST is a 403 for them.
+- Roles are permission sets (`packages/domain/src/policy`): built-in presets, or custom roles on Clerk
+  metadata (members hold `org:custom`, their permissions sit on the membership). Checks read
+  `tenant.permissions`, never a role. Endpoints carry `EndpointAccess`
+  (`packages/domain/src/http/endpoint-access.ts`): `requires(permission)`, `"personal"` for the caller's own
+  state, `"handler"` when the handler checks. Endpoint and group rules both apply; an unmarked non-GET is
+  refused, and a GET no `requires` or `"personal"` covers needs `telemetry:read`. Every MCP tool declares
+  its `permission`.
 
 ### Service conventions
 
@@ -203,4 +206,4 @@ form on the sign-in page with `PREVIEW_SIGNIN_KEY` (Infisical `dev`).
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
 `packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
 `ingest-wal-durability.md`, `secret-encryption.md` (any `*_ciphertext` column), `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
-`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`), `status-page-custom-domains.md` (Cloudflare for SaaS on status pages), `design-rules.md` (tokens and the `maple/*` design lint rules for `apps/web` and `packages/ui`).
+`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`), `status-page-custom-domains.md` (Cloudflare for SaaS on status pages), `design-rules.md` (tokens and the `maple/*` design lint rules for `apps/web` and `packages/ui`), `custom-roles.md` (permissions, custom roles and the Clerk setup they need).

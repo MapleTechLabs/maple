@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import { HttpServerRequest } from "effect/http"
 import type { TenantContext } from "@maple/domain/http"
@@ -18,6 +19,7 @@ const tenant = (sessionId: string | undefined): TenantContext => ({
 	orgId: ORG,
 	userId: USER,
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "clerk",
 	...(sessionId !== undefined ? { impersonation: { actorId: "user_support", sessionId } } : undefined),
 })

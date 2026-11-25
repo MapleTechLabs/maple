@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { Array as Arr, Context, Effect, Layer, Result, Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
+import { Array as Arr, Context, Effect, Layer, Option, Result, Schema } from "effect"
 import { OrgId, RoleName, UserId, type TenantContext } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -7,7 +8,7 @@ import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDe
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped, mapleToolCatalog } from "../registry"
-import { DASHBOARD_AUTHORING_TOOLS, FEEDBACK_TOOL, ANALYST_ALLOWED_WRITE_TOOLS, refusalFor } from "../types"
+import { FEEDBACK_TOOL, refusalFor } from "../types"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -16,6 +17,7 @@ const tenant = (readOnly: boolean, scopes?: ReadonlyArray<string>, role = "root"
 	orgId: Schema.decodeSync(OrgId)("org_read_only_key"),
 	userId: Schema.decodeSync(UserId)("user_read_only_key"),
 	roles: [Schema.decodeSync(RoleName)(role)],
+	permissions: Policy.grantsOf([Schema.decodeSync(RoleName)(role)]),
 	authMode: "self_hosted",
 	...(readOnly ? { readOnly: true as const } : undefined),
 	...(scopes === undefined ? undefined : { scopes }),
@@ -83,14 +85,16 @@ describe("an analyst over MCP", () => {
 		}).pipe(Effect.provide(analyst())),
 	)
 
-	it.effect("refuses a tool that changes data and says which role can", () =>
+	it.effect("refuses a tool that changes data and says which permission it needs", () =>
 		Effect.gen(function* () {
 			const result = yield* call("update_error_notification_policy", updatePolicy)
 			expect(Result.isFailure(result)).toBe(true)
 			if (Result.isFailure(result)) {
-				expect(result.failure._tag).toBe("@maple/mcp/errors/McpAuthInvalidError")
-				expect(result.failure.message).toContain("update_error_notification_policy")
-				expect(result.failure.message).toContain("Ask an org admin for the Member role")
+				expect(result.failure).toMatchObject({
+					_tag: "@maple/mcp/errors/McpAuthInvalidError",
+					reason: "insufficient_permission",
+					message: Policy.denialFor("error_policy:manage").message,
+				})
 			}
 		}).pipe(Effect.provide(analyst())),
 	)
@@ -98,23 +102,47 @@ describe("an analyst over MCP", () => {
 
 describe("what an analyst may change over MCP", () => {
 	const changing = Arr.filter(mapleToolCatalog, (definition) => !definition.hints.readOnly)
+	const analystGrants = Policy.grantsOf(["org:analyst"])
+	const toolOf = (definition: (typeof changing)[number]) => ({
+		name: definition.name,
+		permission: definition.permission,
+		readOnly: definition.hints.readOnly,
+	})
 	const openTo = (caller: Parameters<typeof refusalFor>[0]) =>
-		Arr.filter(
-			Arr.map(changing, (definition) => definition.name),
-			(name) => refusalFor(caller, name, false) === undefined,
+		Arr.map(
+			Arr.filter(changing, (definition) => refusalFor(caller, toolOf(definition)) === undefined),
+			(definition) => definition.name,
 		).sort()
 
-	it("is the dashboard tools, the allowed writes and Maple's feedback channel, out of every tool that changes data", () => {
-		expect(openTo({ roles: ["org:analyst"] })).toEqual(
-			[...DASHBOARD_AUTHORING_TOOLS, ...ANALYST_ALLOWED_WRITE_TOOLS, FEEDBACK_TOOL].sort(),
+	it("is the dashboard tools, onboarding setup and Maple's feedback channel, out of every tool that changes data", () => {
+		expect(openTo({ permissions: analystGrants })).toEqual(
+			[
+				"add_dashboard_widget",
+				"create_dashboard",
+				"delete_dashboard",
+				"remove_dashboard_widget",
+				"reorder_dashboard_widgets",
+				"replace_dashboard_widgets",
+				"update_dashboard",
+				"update_dashboard_widget",
+				"get_ingest_setup",
+				"onboarding_status_update",
+				FEEDBACK_TOOL,
+			].sort(),
 		)
 	})
 
 	it("is only the feedback channel when their key is read-only", () => {
-		expect(openTo({ roles: ["org:analyst"], readOnly: true })).toEqual([FEEDBACK_TOOL])
-		expect(refusalFor({ roles: ["org:analyst"], readOnly: true }, "create_dashboard", false)).toBe(
-			"read_only_key",
+		expect(openTo({ permissions: analystGrants, readOnly: true })).toEqual([FEEDBACK_TOOL])
+		const createDashboard = Arr.findFirst(
+			changing,
+			(definition) => definition.name === "create_dashboard",
 		)
+		expect(
+			Option.map(createDashboard, (definition) =>
+				refusalFor({ permissions: analystGrants, readOnly: true }, toolOf(definition)),
+			),
+		).toEqual(Option.some({ _tag: "read_only_key" }))
 	})
 })
 

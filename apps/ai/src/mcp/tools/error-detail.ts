@@ -298,6 +298,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 		aliases: { ...P.SERVICE_ALIASES, fingerprint_hash: "fingerprint" },
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading error details", "Looking into an error"],
 		handler: Effect.fn("McpTool.errorDetail")(function* (params) {
 			const target = yield* resolveTarget(params)

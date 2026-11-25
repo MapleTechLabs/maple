@@ -233,7 +233,7 @@ export const HttpV2AnomaliesLive = HttpApiBuilder.group(MapleApiV2, "anomalies",
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(
-						tenant.roles,
+						tenant.permissions,
 						"anomalies:configure",
 						(denial) =>
 							new AnomalyForbiddenError({

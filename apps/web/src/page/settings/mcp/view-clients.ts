@@ -88,7 +88,7 @@ export const connectedClientsSection = (h: H, model: Model, inputs: Inputs): Htm
 			id: "mcp-clients-heading",
 			title: "Connected clients",
 			description: [
-				Policy.has(inputs.grants, "mcp_connections:view_all")
+				Policy.can(inputs.grants, "mcp_connections:view_all")
 					? "Clients that members approved with OAuth. Revoking one signs it out right away."
 					: "Clients you approved with OAuth. Revoking signs the client out right away.",
 			],

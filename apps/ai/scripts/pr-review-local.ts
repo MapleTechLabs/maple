@@ -33,6 +33,7 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
 import { PermissionRule } from "@maple/domain/permission"
+import * as Policy from "@maple/domain/policy"
 import {
 	GitCommitSha,
 	OrgId,
@@ -987,6 +988,7 @@ export const reviewLocally = async (
 		orgId,
 		userId: Schema.decodeSync(UserId)("internal-service"),
 		roles: [],
+		permissions: Policy.grantsOf([]),
 		authMode: "self_hosted",
 	}
 	const env = { ...process.env }

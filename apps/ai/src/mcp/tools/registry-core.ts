@@ -25,11 +25,11 @@ import {
 	type McpToolError,
 	type McpToolFamilySpec,
 	type McpToolHints,
+	type McpToolPermission,
 	type McpToolPhrases,
 	type McpToolRegistrar,
 	type McpToolResult,
 	refusalFor,
-	refusesReadOnlyCredential,
 } from "./types"
 import { canonicalToolCall, enumSpelling, retiredOutputKey } from "./tool-name-aliases"
 import { unknownToolMessage } from "../lib/tool-suggestions"
@@ -60,6 +60,7 @@ export interface MapleToolDefinition extends MapleToolCatalogEntry {
 /** One action of a family: decoded, gated and run as a tool of its own under the family's name. */
 export interface MapleToolActionEntry extends MapleToolCatalogEntry {
 	readonly action: string
+	readonly permission: Policy.Permission
 }
 
 export interface MapleToolCatalogEntry {
@@ -71,6 +72,7 @@ export interface MapleToolCatalogEntry {
 	readonly parseOptions: SchemaAST.ParseOptions
 	readonly outputSchema: Schema.Codec<unknown, unknown>
 	readonly hints: McpToolHints
+	readonly permission: McpToolPermission
 	readonly aliases: Readonly<Record<string, string>>
 	readonly valueAliases: Readonly<Record<string, Readonly<Record<string, string>>>>
 	readonly audience: McpToolAudience
@@ -461,6 +463,7 @@ export const collectToolDefinitions = (
 			parseOptions: { onExcessProperty: spec.rejectUnknownKeys === true ? "error" : "ignore" },
 			outputSchema,
 			hints: spec.hints,
+			permission: spec.permission,
 			aliases: spec.aliases ?? {},
 			valueAliases: spec.valueAliases ?? {},
 			audience: spec.audience ?? "public",
@@ -496,6 +499,7 @@ export const collectToolDefinitions = (
 					},
 					outputSchema: resultSchema,
 					hints: action.hints,
+					permission: action.permission,
 					aliases: action.aliases ?? {},
 					valueAliases: action.valueAliases ?? {},
 					audience: spec.audience ?? "public",
@@ -632,6 +636,8 @@ const toFamilyDefinition = (
 	if (Arr.some(actions, (entry) => entry.hints.readOnly)) {
 		throw new Error(`${spec.name}: every action of a family changes data. A read is a tool of its own.`)
 	}
+	const permissions = Arr.dedupe(Arr.map(actions, (entry) => entry.permission))
+	if (!Arr.isReadonlyArrayNonEmpty(permissions)) throw new Error(`${spec.name} has no actions`)
 	const scopes = Arr.dedupe(Arr.flatMap(actions, (entry) => Arr.ensure(entry.scopeFamily ?? [])))
 	let description: string | undefined
 	let published: Record<string, unknown> | undefined
@@ -656,6 +662,7 @@ const toFamilyDefinition = (
 			idempotent: Arr.every(actions, (entry) => entry.hints.idempotent === true),
 			openWorld: Arr.some(actions, (entry) => entry.hints.openWorld === true),
 		},
+		permission: permissions.length === 1 ? permissions[0] : permissions,
 		aliases: {},
 		valueAliases: {},
 		audience: spec.audience ?? "public",
@@ -711,6 +718,8 @@ export interface McpToolModule {
 	readonly audience: McpToolAudience
 	/** `hints.readOnly`, so a surface's names can be listed without loading every module. */
 	readonly readOnly: boolean
+	/** The tool's permission, so `tools/list` can hide what a caller may not call without loading it. */
+	readonly permission: McpToolPermission
 	readonly load: () => Promise<McpToolRegister>
 }
 
@@ -856,6 +865,30 @@ const finish = Effect.fnUntraced(function* (
 	return result
 })
 
+/** Fails with why the caller may not run this tool or action, naming what they lack. */
+const refuseCaller = (
+	tenant: Parameters<typeof refusalFor>[0],
+	entry: Pick<MapleToolCatalogEntry, "name" | "permission" | "hints">,
+) => {
+	const refusal = refusalFor(tenant, {
+		name: entry.name,
+		permission: entry.permission,
+		readOnly: entry.hints.readOnly,
+	})
+	if (refusal === undefined) return Effect.void
+	return Effect.fail(
+		refusal._tag === "permission"
+			? new McpAuthInvalidError({
+					message: Policy.denialFor(refusal.permission).message,
+					reason: "insufficient_permission",
+				})
+			: new McpAuthInvalidError({
+					message: `\`${entry.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+					reason: "insufficient_scope",
+				}),
+	)
+}
+
 /**
  * The one raw registry entry point. Its full Effect environment is intentionally
  * preserved; only `McpToolExecutor` may close it with tenant and app services.
@@ -884,20 +917,10 @@ export const executeRegisteredTool = Effect.fn("McpToolRegistry.execute")(functi
 			message: unknownToolMessage(name, lookup.namesFor(surface)),
 		})
 	}
-	// Refused on the tool's name, before its arguments are read: a family's actions all change data.
-	if (refusesReadOnlyCredential(found.name, found.hints.readOnly)) {
-		const tenant = yield* CurrentMcpTenant
-		const refusal = refusalFor(tenant, found.name, found.hints.readOnly)
-		if (refusal !== undefined) {
-			return yield* new McpAuthInvalidError({
-				message:
-					refusal === "analyst"
-						? `\`${found.name}\` changes data. ${Policy.analystMessage}`
-						: `\`${found.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
-				reason: "insufficient_scope",
-			})
-		}
-	}
+	// Refused before the arguments are read: a family is gated on holding one of its actions'
+	// permissions here, and on the action's own below.
+	const tenant = yield* CurrentMcpTenant
+	yield* refuseCaller(tenant, found)
 
 	const resolved = resolveToolCall(found, call.input)
 	if (Result.isFailure(resolved)) {
@@ -905,10 +928,10 @@ export const executeRegisteredTool = Effect.fn("McpToolRegistry.execute")(functi
 		return yield* new McpDecodeError({ message: resolved.failure })
 	}
 	const { target: definition, input } = resolved.success
+	if (definition !== found) yield* refuseCaller(tenant, definition)
 
 	if (definition.scopeFamily !== undefined) {
 		const access = definition.hints.readOnly ? "read" : "write"
-		const tenant = yield* CurrentMcpTenant
 		const missing = Arr.findFirst(
 			Arr.ensure(definition.scopeFamily),
 			(family) => !scopeAllows(tenant.scopes, { family, access }),

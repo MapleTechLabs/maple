@@ -61,6 +61,7 @@ export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "error_issues:triage",
 		phrases: ["Updating an issue's status"],
 		handler: Effect.fn("McpTool.transitionErrorIssue")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

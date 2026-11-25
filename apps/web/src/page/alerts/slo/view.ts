@@ -64,13 +64,13 @@ type H = HtmlBuilder<Message>
 
 const headerActions = (h: H, model: Model, slo: Slo): Html =>
 	detailActions(h, [
-		gatedControl(h, model, "alerts:manage", (isDisabled) => {
+		gatedControl(h, model, "slos:manage", (isDisabled) => {
 			const children = [icon(h, "PencilIcon"), "Edit"]
 			return isDisabled
 				? button(h, { size: "sm", variant: "outline", isDisabled }, children)
 				: linkButton(h, { size: "sm", variant: "outline", href: editSloHref(slo.id) }, children)
 		}),
-		gatedControl(h, model, "alerts:manage", (isDisabled) =>
+		gatedControl(h, model, "slos:manage", (isDisabled) =>
 			button(
 				h,
 				{

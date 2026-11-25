@@ -15,6 +15,7 @@ export const removeOnCallOverrideAction = (family: McpToolFamilyBuilder<"manage_
 			override_id: P.resourceId("oncallOverride", "Override to delete"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "oncall:manage",
 		handler: Effect.fn("McpTool.deleteOnCallOverride")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
 			const overrideId = yield* P.decodeResourceId("oncallOverride", "override_id")(params.override_id)
@@ -29,7 +30,7 @@ export const removeOnCallOverrideAction = (family: McpToolFamilyBuilder<"manage_
 				}),
 			)
 			yield* schedules
-				.deleteOverride(tenant.orgId, tenant.roles, scheduleId, overrideId)
+				.deleteOverride(tenant.orgId, tenant.permissions, scheduleId, overrideId)
 				.pipe(Effect.catchTags(deleteOverrideErrors))
 			return { id: overrideId, scheduleId, scheduleName: schedule.name }
 		}),

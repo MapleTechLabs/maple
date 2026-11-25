@@ -7,6 +7,7 @@ import {
 	SourceMapStorageError,
 	SourceMapTooLargeError,
 } from "../source-maps"
+import { EndpointAccess, requires } from "../endpoint-access"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
@@ -144,42 +145,48 @@ export class V2SourceMapsApiGroup extends HttpApiGroup.make("sourceMaps")
 			payload: SourceMapBody,
 			success: V2SourceMap,
 			error: [V2InsufficientPermissions.schema, sourceMapInvalid, sourceMapTooLarge, sourceMapStorage],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "uploadSourceMap",
-				summary: "Upload a source map",
-				description:
-					"Stores one source map (the raw JSON as the request body, at most 10 MiB, the largest map Maple can symbolicate with; larger is a 413). Index maps (with `sections`) are refused with a 400; emit a regular map. With a `debug_id`, only the map with that `debug_id` is replaced, so builds sharing a release path keep their own maps. Without one, the map without a debug id at the same `service`, `version` and `minified_path` is replaced. Requires an engineer or admin role and the `source_maps:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("source_maps:upload"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "uploadSourceMap",
+					summary: "Upload a source map",
+					description:
+						"Stores one source map (the raw JSON as the request body, at most 10 MiB, the largest map Maple can symbolicate with; larger is a 413). Index maps (with `sections`) are refused with a 400; emit a regular map. With a `debug_id`, only the map with that `debug_id` is replaced, so builds sharing a release path keep their own maps. Without one, the map without a debug id at the same `service`, `version` and `minified_path` is replaced. Requires an engineer or admin role and the `source_maps:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("list", "/", {
 			query: V2SourceMapListQuery,
 			success: SourceMapList,
 			error: [V2ParameterInvalid.schema, sourceMapStorage],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listSourceMaps",
-				summary: "List source maps",
-				description:
-					"Returns your organization's source maps, newest first. Cursor-paginated. Requires the `source_maps:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listSourceMaps",
+					summary: "List source maps",
+					description:
+						"Returns your organization's source maps, newest first. Cursor-paginated. Requires the `source_maps:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: { id: SourceMapPublicId },
 			success: V2SourceMap,
 			error: [V2InsufficientPermissions.schema, sourceMapNotFound, sourceMapStorage],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "deleteSourceMap",
-				summary: "Delete a source map",
-				description:
-					"Deletes a source map and returns it as it was. Requires an engineer or admin role and the `source_maps:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("source_maps:upload"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "deleteSourceMap",
+					summary: "Delete a source map",
+					description:
+						"Deletes a source map and returns it as it was. Requires an engineer or admin role and the `source_maps:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/source_maps")
 	.middleware(AuthorizationV2)

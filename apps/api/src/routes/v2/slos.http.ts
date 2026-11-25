@@ -86,7 +86,7 @@ const alertingFromWire = (alerting: V2SloAlertingParams | undefined) =>
 
 const requireManage = Effect.gen(function* () {
 	const tenant = yield* CurrentTenant.Context
-	yield* Policy.check(tenant.roles, "alerts:manage", (denial) =>
+	yield* Policy.check(tenant.permissions, "slos:manage", (denial) =>
 		V2InsufficientPermissions.make(denial.message),
 	)
 	return tenant

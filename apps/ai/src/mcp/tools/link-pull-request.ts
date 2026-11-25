@@ -28,6 +28,7 @@ export function registerLinkPullRequestTool(server: McpToolRegistrar) {
 		}),
 		// Linking the same PR again updates the one link; it reads the PR's state from GitHub.
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		permission: "ai:act",
 		phrases: ["Linking a pull request"],
 		handler: Effect.fn("McpTool.linkPullRequest")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

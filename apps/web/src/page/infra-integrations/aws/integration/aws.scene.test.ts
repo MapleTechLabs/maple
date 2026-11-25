@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/domain/http/v2"
 import { AwsAccountId, AwsConnectionId } from "@maple/primitives"
 import { AwsMetricStream } from "@maple/domain/aws"
@@ -959,7 +960,7 @@ describe("aws card", () => {
 				given(member),
 				expectView(costSwitch).toBeDisabled(),
 				expectView(
-					role("group", { name: "Only org admins and engineers can manage integrations." }),
+					role("group", { name: Policy.denialFor("integrations:manage").message }),
 				).toExist(),
 			)
 			expect(

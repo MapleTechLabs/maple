@@ -13,7 +13,7 @@ export const HttpDeviceSecurityLive = HttpApiBuilder.group(MapleInternalApi, "de
 			Effect.gen(function* () {
 				const tenant = yield* CurrentTenant.Context
 				yield* Policy.check(
-					tenant.roles,
+					tenant.permissions,
 					"security:manage",
 					(denial) => new IntegrationsForbiddenError({ message: denial.message }),
 				)

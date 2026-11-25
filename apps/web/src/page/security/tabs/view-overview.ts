@@ -202,7 +202,7 @@ const kpis = (h: H, model: Model): Html => {
 		state._tag === "Ready"
 			? null
 			: state._tag === "Gated"
-				? "Admins and engineers"
+				? "Needs a role that opens Security"
 				: placeholder(h, "h-7 w-10")
 	const coverage = coverageAcross(model)
 	// Until its reads land, an empty sum is unknown, not "not mapped".
@@ -437,7 +437,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 				: leadCounts(h, findings)
 			: leadCounts(h, findings)
 		: typography(h, { size: "xs", tone: "muted" }, [
-				findings === "forbidden" ? "Admins and engineers" : "",
+				findings === "forbidden" ? "Needs a role that opens Security" : "",
 			])
 	return tableRow(
 		h,

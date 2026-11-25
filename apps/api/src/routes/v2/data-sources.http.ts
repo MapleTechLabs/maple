@@ -53,7 +53,7 @@ export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSourc
 		// Sources hold credentials to the org's own systems: writes, tests and refreshes need an engineer.
 		const requireManage = Effect.gen(function* () {
 			const tenant = yield* enabledTenant
-			yield* Policy.check(tenant.roles, "data_sources:manage", (denial) =>
+			yield* Policy.check(tenant.permissions, "data_sources:manage", (denial) =>
 				V2InsufficientPermissions.make(denial.message),
 			)
 			return tenant

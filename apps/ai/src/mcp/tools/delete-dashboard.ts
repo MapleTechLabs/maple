@@ -23,6 +23,7 @@ export function registerDeleteDashboardTool(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "dashboards:edit",
 		phrases: ["Deleting a dashboard"],
 		handler: Effect.fn("McpTool.deleteDashboard")(function* ({ dashboard_id, confirm }) {
 			if (confirm !== true) {

@@ -8,6 +8,7 @@ import { LIST_LIMIT_DEFAULT, wireExample, ListOf, ListQuery, Timestamp } from ".
 import { defineV2Error, V2CursorInvalid, V2ParameterInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { V2WarehouseReadErrors } from "./query-errors"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /** `srep_…` public ID ⇄ internal `SessionId` (free-form string). */
 export const SessionReplayPublicId = PublicId(PublicIdPrefixes.sessionReplay, SessionId)
@@ -676,4 +677,5 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 			description:
 				"Recorded browser sessions — search them, retrieve detail, stream rrweb event chunks, read the distilled transcript, and reverse-correlate from a trace.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

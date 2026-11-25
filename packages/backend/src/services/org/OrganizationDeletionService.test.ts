@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { vi } from "vitest"
@@ -134,7 +135,7 @@ describe("OrganizationDeletionService.delete", () => {
 			assert.deepStrictEqual(yield* countsFor(testDb, ORG_B), everyTableAt(1))
 
 			const organizations = yield* OrganizationDeletionService
-			yield* organizations.delete(ORG_A, [role("org:admin")])
+			yield* organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")]))
 
 			assert.deepStrictEqual(yield* countsFor(testDb, ORG_A), everyTableAt(0))
 			assert.deepStrictEqual(yield* countsFor(testDb, ORG_B), everyTableAt(1))
@@ -147,7 +148,9 @@ describe("OrganizationDeletionService.delete", () => {
 			yield* seedBothOrgs(testDb)
 			const organizations = yield* OrganizationDeletionService
 
-			const exit = yield* Effect.exit(organizations.delete(ORG_A, [role("org:member")]))
+			const exit = yield* Effect.exit(
+				organizations.delete(ORG_A, Policy.grantsOf([role("org:member")])),
+			)
 
 			assert.isTrue(Exit.isFailure(exit))
 			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(exit)), OrganizationForbiddenError)
@@ -168,11 +171,11 @@ describe("OrganizationDeletionService.delete", () => {
 			)
 			const organizations = yield* OrganizationDeletionService
 
-			const exit = yield* Effect.exit(organizations.delete(ORG_A, [role("org:admin")]))
+			const exit = yield* Effect.exit(organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")])))
 			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(exit)), OrganizationForbiddenError)
 
 			// The member itself can still go, and takes its link with it.
-			yield* organizations.delete(ORG_B, [role("org:admin")])
+			yield* organizations.delete(ORG_B, Policy.grantsOf([role("org:admin")]))
 			assert.strictEqual(yield* countOrgRows(testDb, "org_billing_links", "billing_org_id", ORG_A), 0)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -196,7 +199,7 @@ describe("OrganizationDeletionService.delete", () => {
 			yield* seedBothOrgs(testDb)
 			const organizations = yield* OrganizationDeletionService
 
-			const exit = yield* Effect.exit(organizations.delete(ORG_A, [role("org:admin")]))
+			const exit = yield* Effect.exit(organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")])))
 			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(exit)), OrganizationProviderError)
 			// Only the billing link is gone: delete drops it under its lock before anything else.
 			assert.deepStrictEqual(yield* countsFor(testDb, ORG_A), {
@@ -206,7 +209,7 @@ describe("OrganizationDeletionService.delete", () => {
 
 			// The retry finds the connection row it needs, and then the purge runs.
 			clerk.down = false
-			yield* organizations.delete(ORG_A, [role("org:admin")])
+			yield* organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")]))
 			assert.deepStrictEqual(rowsSeen, [1, 1])
 			assert.deepStrictEqual(yield* countsFor(testDb, ORG_A), everyTableAt(0))
 			assert.deepStrictEqual(yield* countsFor(testDb, ORG_B), everyTableAt(1))
@@ -227,7 +230,7 @@ describe("OrganizationDeletionService.delete", () => {
 		return Effect.gen(function* () {
 			yield* seedBothOrgs(testDb)
 			const organizations = yield* OrganizationDeletionService
-			yield* organizations.delete(ORG_A, [role("org:admin")])
+			yield* organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")]))
 
 			assert.sameDeepMembers(
 				grantsSeen,
@@ -257,7 +260,9 @@ describe("OrganizationDeletionService.delete", () => {
 		return Effect.gen(function* () {
 			yield* seedBothOrgs(testDb)
 			const organizations = yield* OrganizationDeletionService
-			const pending = yield* Effect.forkChild(organizations.delete(ORG_A, [role("org:admin")]))
+			const pending = yield* Effect.forkChild(
+				organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")])),
+			)
 			// The stalled vendor is waited on for a bounded time; the deletion then goes on.
 			yield* Effect.promise(() => vi.waitFor(() => assert.include(started, "supabase")))
 			yield* TestClock.adjust("1 minute")
@@ -277,7 +282,7 @@ describe("OrganizationDeletionService.delete", () => {
 		return Effect.gen(function* () {
 			yield* seedBothOrgs(testDb)
 			const organizations = yield* OrganizationDeletionService
-			const deleted = yield* organizations.delete(ORG_A, [role("org:admin")])
+			const deleted = yield* organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")]))
 			assert.isUndefined(deleted.incompleteTeardowns)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -297,11 +302,11 @@ describe("OrganizationDeletionService.delete", () => {
 			yield* seedBothOrgs(testDb)
 			const organizations = yield* OrganizationDeletionService
 			yield* rename(last, `${last}_away`)
-			const exit = yield* Effect.exit(organizations.delete(ORG_A, [role("org:admin")]))
+			const exit = yield* Effect.exit(organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")])))
 			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(exit)), OrganizationPersistenceError)
 
 			yield* rename(`${last}_away`, last)
-			const deleted = yield* organizations.delete(ORG_A, [role("org:admin")])
+			const deleted = yield* organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")]))
 
 			assert.isTrue(deleted.deleted)
 			// The teardown ran again on the retry and found nothing it could not handle.
@@ -323,8 +328,8 @@ describe("OrganizationDeletionService.delete", () => {
 		return Effect.gen(function* () {
 			yield* seedBothOrgs(testDb)
 			const organizations = yield* OrganizationDeletionService
-			yield* Effect.exit(organizations.delete(ORG_A, [role("org:member")]))
-			yield* Effect.exit(organizations.delete(ORG_A, [role("org:admin")]))
+			yield* Effect.exit(organizations.delete(ORG_A, Policy.grantsOf([role("org:member")])))
+			yield* Effect.exit(organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")])))
 			assert.deepStrictEqual(tornDown, [])
 		}).pipe(Effect.provide(makeLayer(testDb, ssoDown, offboarding)))
 	})
@@ -337,7 +342,7 @@ describe("OrganizationDeletionService.delete", () => {
 				yield* seedOrgRow(testDb, "investigations", "org_id", ORG_A)
 				yield* seedOrgRow(testDb, "investigations", "org_id", ORG_B)
 				const organizations = yield* OrganizationDeletionService
-				yield* organizations.delete(ORG_A, [role("org:admin")])
+				yield* organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")]))
 
 				const database = yield* Database
 				const queued = yield* database.execute((db) =>
@@ -379,7 +384,7 @@ describe("OrganizationDeletionService.delete", () => {
 				db.run(PG.insertInto(ErrorIssueVerifications).values([waiting(ORG_A), waiting(ORG_B)])),
 			)
 			const organizations = yield* OrganizationDeletionService
-			yield* organizations.delete(ORG_A, [role("org:admin")])
+			yield* organizations.delete(ORG_A, Policy.grantsOf([role("org:admin")]))
 
 			// What the tick selects: every org's waiting rows whose window has closed.
 			const due = yield* database.execute((db) =>

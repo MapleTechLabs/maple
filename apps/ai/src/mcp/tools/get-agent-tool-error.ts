@@ -80,6 +80,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Inspecting an agent tool error"],
 		handler: Effect.fn("McpTool.getAgentToolError")(function* (params) {
 			const { st, et } = yield* AGENT_TOOL_WINDOW.resolve(params, "get_agent_tool_error")

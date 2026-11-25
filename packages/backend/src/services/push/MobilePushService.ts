@@ -8,7 +8,10 @@ import type {
 	UserId,
 } from "@maple/domain/http"
 import { PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
-import { Cause, Clock, Context, Duration, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { AuthorizationUnavailableError } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { membershipGrants } from "@maple/auth"
+import { Cause, Clock, Context, Duration, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { ApnsClient, type ApnsPush } from "@maple/backend/platform/Apns"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
@@ -22,6 +25,7 @@ import {
 	anomalySummaryLine,
 } from "@maple/backend/services/alerts/alert-formatting"
 import type { SignalDisplay } from "@maple/backend/services/alerts/alert-signal-display"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { LiveActivitiesService, type LiveActivity } from "./LiveActivitiesService"
 import { MobileDevicesService, type MobileDevice } from "./MobileDevicesService"
 import { UPTIME_CERTIFICATE_GROUP_KEY } from "@maple/domain/uptime"
@@ -180,6 +184,8 @@ export interface MemberPagePush {
 }
 
 const SEND_CONCURRENCY = 8
+/** How long a push waits on one device owner's role before sending anyway. */
+const OWNER_LOOKUP_TIMEOUT = Duration.seconds(2)
 const SEND_TIMEOUT = Duration.seconds(8)
 
 /**
@@ -568,6 +574,51 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 			const apns = yield* ApnsClient
 			const devices = yield* MobileDevicesService
 			const activities = yield* LiveActivitiesService
+			const memberships = yield* OrgMembershipService
+
+			/**
+			 * The devices whose owner still reads telemetry: a push carries rule names and values. A
+			 * demotion deletes the devices outright; this covers the time before it runs (a delayed Clerk
+			 * webhook). One cached lookup per owner. A failed lookup keeps the device, so a Clerk outage
+			 * cannot silence paging.
+			 */
+			const ownedByReaders = (orgId: OrgId, listed: ReadonlyArray<MobileDevice>) =>
+				memberships.directory === "none"
+					? Effect.succeed(listed)
+					: Effect.filter(
+							Arr.dedupe(Arr.map(listed, (device) => device.userId)),
+							(userId) =>
+								memberships.verify(userId, orgId).pipe(
+									// A slow Clerk must not eat the push's own deadline.
+									Effect.timeoutOrElse({
+										duration: OWNER_LOOKUP_TIMEOUT,
+										orElse: () =>
+											Effect.fail(
+												new AuthorizationUnavailableError({
+													message: "Device owner lookup timed out",
+												}),
+											),
+									}),
+									Effect.map(
+										Option.exists((membership) =>
+											Policy.can(membershipGrants(membership), "telemetry:read"),
+										),
+									),
+									Effect.catch((error) =>
+										Effect.as(
+											Effect.logWarning(
+												"Mobile push: could not read a device owner's role, sending anyway",
+											).pipe(Effect.annotateLogs({ orgId, error: error.message })),
+											true,
+										),
+									),
+								),
+							{ concurrency: SEND_CONCURRENCY },
+						).pipe(
+							Effect.map((readers) =>
+								Arr.filter(listed, (device) => Arr.contains(readers, device.userId)),
+							),
+						)
 
 			const pageMember = Effect.fn("MobilePushService.pageMember")(function* (page: MemberPagePush) {
 				yield* Effect.annotateCurrentSpan({
@@ -694,7 +745,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				// stage without Apple credentials — quiet, not a warning.
 				if (!apns.isConfigured) return empty
 
-				const registered = yield* devices
+				const listed = yield* devices
 					.listForOrg(event.orgId)
 					.pipe(
 						Effect.catch((error) =>
@@ -704,11 +755,12 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 							),
 						),
 					)
+				const registered = yield* ownedByReaders(event.orgId, listed)
 				// A repeat that has not reached the next rung of the escalation
 				// ladder still updates the Lock Screen below, but sends no banner.
 				const escalates = event.eventType !== "renotify" || shouldPushRenotify(event)
 				const targets = escalates ? Arr.filter(registered, (device) => wantsEvent(device, event)) : []
-				const skipped = registered.length - targets.length
+				const skipped = listed.length - targets.length
 				yield* Effect.annotateCurrentSpan({ "maple.push.escalates": escalates })
 				if (targets.length === 0) {
 					// Nobody wants the banner, but an activity already on someone's
@@ -1094,9 +1146,10 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					(activity) =>
 						Effect.gen(function* () {
 							const device = byDeviceId.get(activity.deviceId)
-							// The device unregistered while its activity was running.
-							// Nothing can be pushed without knowing which APNs host to
-							// use, so the row is closed rather than retried forever.
+							// The device unregistered while its activity was running, or its
+							// owner no longer reads telemetry. Nothing can be pushed without
+							// knowing which APNs host to use, so the row is closed rather
+							// than retried forever.
 							if (device === undefined) {
 								yield* activities.end(activity.id, "device_unregistered").pipe(
 									ignoreLogged("Live Activity: could not close the activity row", {
@@ -1171,15 +1224,16 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				const empty: MobilePushSummary = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
 				if (!apns.isConfigured) return empty
 
-				const registered = yield* devices
+				const listed = yield* devices
 					.listForOrg(event.orgId)
 					.pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<MobileDevice>))
+				const registered = yield* ownedByReaders(event.orgId, listed)
 				const targets = Arr.filter(registered, (device) =>
 					event.severity === "critical"
 						? device.preferences.criticalIncidents
 						: device.preferences.warningIncidents,
 				)
-				const skipped = registered.length - targets.length
+				const skipped = listed.length - targets.length
 				if (targets.length === 0) return { ...empty, skipped }
 
 				const rendered = renderDigestPush(event)
@@ -1229,7 +1283,12 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(ApnsClient.layer, LiveActivitiesService.layer, MobileDevicesService.layer),
+			Layer.mergeAll(
+				ApnsClient.layer,
+				LiveActivitiesService.layer,
+				MobileDevicesService.layer,
+				OrgMembershipService.layer,
+			),
 		),
 	)
 }

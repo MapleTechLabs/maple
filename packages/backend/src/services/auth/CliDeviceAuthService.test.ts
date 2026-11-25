@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import {
 	Array as Arr,
 	ConfigProvider,
@@ -54,7 +55,7 @@ const makeLayer = (testDb: TestDb) => {
 /** A handoff as the start route makes it: the code, then the run it hands to the agent. */
 const startHandoff = Effect.gen(function* () {
 	const auth = yield* CliDeviceAuthService
-	const handoff = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], userEmail: null })
+	const handoff = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], permissions: memberGrants, userEmail: null })
 	yield* (yield* OnboardingAgentRunService).start({ orgId, userId }, handoff.codeHash)
 	return handoff
 })
@@ -62,6 +63,7 @@ const startHandoff = Effect.gen(function* () {
 const orgId = Schema.decodeSync(OrgId)("org_cli")
 const userId = Schema.decodeSync(UserId)("user_cli")
 const memberRole = Schema.decodeSync(RoleName)("org:member")
+const memberGrants = Policy.grantsOf([memberRole])
 
 describe("CliDeviceAuthService", () => {
 	it.effect("mints a CLI key with a bounded lifetime rather than a permanent one", () => {
@@ -73,6 +75,7 @@ describe("CliDeviceAuthService", () => {
 				orgId,
 				userId,
 				roles: [memberRole],
+				permissions: memberGrants,
 				userEmail: null,
 			})
 			yield* auth.poll(started.deviceCode)
@@ -162,7 +165,7 @@ describe("CliDeviceAuthService", () => {
 			// Copying the prompt again replaces the run the first code was for.
 			yield* startHandoff
 			expect((yield* auth.poll(replaced.code)).status).toBe("expired")
-			const orphan = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], userEmail: null })
+			const orphan = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], permissions: memberGrants, userEmail: null })
 			expect((yield* auth.poll(orphan.code)).status).toBe("expired")
 			// The refused claims rolled back: neither code holds a key.
 			const keys = yield* Effect.promise(() =>
@@ -223,7 +226,7 @@ describe("CliDeviceAuthService", () => {
 			expect(
 				Exit.isFailure(
 					yield* auth
-						.approve(plantedUser, { orgId, userId, roles: [memberRole], userEmail: null })
+						.approve(plantedUser, { orgId, userId, roles: [memberRole], permissions: memberGrants, userEmail: null })
 						.pipe(Effect.exit),
 				),
 			).toBe(true)

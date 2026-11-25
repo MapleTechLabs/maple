@@ -176,6 +176,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Inspecting a span", "Reading span details"],
 		handler: Effect.fn("McpTool.inspectSpan")(function* ({
 			trace_id,

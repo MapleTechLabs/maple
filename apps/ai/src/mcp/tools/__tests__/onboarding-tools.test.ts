@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Context, Effect, Layer, Result, Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import { OrgId, RoleName, UserId, type TenantContext } from "@maple/domain/http"
 import { ApiKeyId } from "@maple/primitives"
 import { GetIngestSetupOutput, OnboardingStatusUpdateOutput } from "@maple/domain/mcp-outputs"
@@ -21,6 +22,7 @@ const tenant = (readOnly: boolean, role: string, apiKeyId?: ApiKeyId): TenantCon
 	orgId,
 	userId,
 	roles: [Schema.decodeSync(RoleName)(role)],
+	permissions: Policy.grantsOf([role]),
 	authMode: "self_hosted",
 	...(readOnly ? { readOnly: true as const } : undefined),
 	...(apiKeyId === undefined ? undefined : { apiKeyId }),

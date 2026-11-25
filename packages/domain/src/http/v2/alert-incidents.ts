@@ -27,6 +27,7 @@ import {
 	EscalationChainPublicId,
 } from "./resource-ids"
 import { AlertSilencePublicId } from "./alert-silences"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 const alertIncidentExample = {
 	id: "inc_tC4d9V79DCDzgbGKhAnff9",
@@ -393,28 +394,32 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 			params: { id: AlertIncidentPublicId },
 			success: V2AlertIncident,
 			error: [alertIncidentNotFound, alertIncidentResolved, alertPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "acknowledgeAlertIncident",
-				summary: "Acknowledge an alert incident",
-				description:
-					"Marks an open incident as acknowledged by the calling user, which pauses reminders until it is unacknowledged, escalates to a higher severity, or resolves. Acknowledging an already acknowledged incident changes nothing and returns it. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("incidents:respond"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "acknowledgeAlertIncident",
+					summary: "Acknowledge an alert incident",
+					description:
+						"Marks an open incident as acknowledged by the calling user, which pauses reminders until it is unacknowledged, escalates to a higher severity, or resolves. Acknowledging an already acknowledged incident changes nothing and returns it. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("unacknowledge", "/:id/unacknowledge", {
 			params: { id: AlertIncidentPublicId },
 			success: V2AlertIncident,
 			error: [alertIncidentNotFound, alertIncidentResolved, alertPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "unacknowledgeAlertIncident",
-				summary: "Unacknowledge an alert incident",
-				description:
-					"Clears an open incident's acknowledgement, so reminders resume: one that came due while it was acknowledged is sent on the next check. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("incidents:respond"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "unacknowledgeAlertIncident",
+					summary: "Unacknowledge an alert incident",
+					description:
+						"Clears an open incident's acknowledgement, so reminders resume: one that came due while it was acknowledged is sent on the next check. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("resolve", "/:id/resolve", {
@@ -452,4 +457,5 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 			description:
 				"The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders, or resolved by hand.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

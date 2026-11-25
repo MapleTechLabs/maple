@@ -85,15 +85,20 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 	if (issue.status === "dismissed")
 		return [
 			badge(h, { variant: status.variant }, [status.label]),
-			button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					isLoading: isPending,
-					attributes: [h.OnClick(Message.ClickedReopenRecommendation({ id: issue.id }))],
-				},
-				[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen"],
+			gatedControl(h, model, "recommendations:triage", (isDisabled) =>
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isLoading: isPending,
+						isDisabled,
+						attributes: isDisabled
+							? []
+							: [h.OnClick(Message.ClickedReopenRecommendation({ id: issue.id }))],
+					},
+					[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen"],
+				),
 			),
 		]
 	if (issue.status !== "open") return [badge(h, { variant: status.variant }, [status.label])]
@@ -118,16 +123,21 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 			: [linkButton(h, { variant: "outline", size: "sm", href }, [icon(h, "CodeIcon"), "How to fix"])]
 	return [
 		...primary,
-		button(
-			h,
-			{
-				variant: "ghost",
-				size: "sm",
-				className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-				isLoading: isPending,
-				attributes: [h.OnClick(Message.ClickedDismissRecommendation({ id: issue.id }))],
-			},
-			["Dismiss"],
+		gatedControl(h, model, "recommendations:triage", (isDisabled) =>
+			button(
+				h,
+				{
+					variant: "ghost",
+					size: "sm",
+					className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+					isLoading: isPending,
+					isDisabled,
+					attributes: isDisabled
+						? []
+						: [h.OnClick(Message.ClickedDismissRecommendation({ id: issue.id }))],
+				},
+				["Dismiss"],
+			),
 		),
 	]
 }

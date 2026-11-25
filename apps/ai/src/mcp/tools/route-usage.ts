@@ -40,6 +40,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Checking route usage", "Finding unused routes"],
 		handler: Effect.fn("McpTool.routeUsage")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

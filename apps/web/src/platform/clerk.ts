@@ -104,10 +104,7 @@ export interface ClerkUserResource {
 		ClerkExternalAccountResource
 	>
 	readonly leaveOrganization: Write<string>
-	readonly organizationMemberships?: ReadonlyArray<{
-		readonly organization: ClerkOrganizationResource
-		readonly role?: string
-	}>
+	readonly organizationMemberships?: ReadonlyArray<ClerkUserMembership>
 	readonly getOrganizationMemberships: () => Promise<
 		ClerkPage<{ readonly organization: { readonly id: string } }>
 	>
@@ -130,9 +127,31 @@ export interface ClerkPublicUserData {
 	readonly imageUrl: string
 	readonly hasImage: boolean
 }
+/** One of the signed-in user's memberships (`user.organizationMemberships`). */
+export interface ClerkUserMembership {
+	readonly organization: ClerkOrganizationResource
+	readonly role?: string
+	/** Read-only to the browser; an `org:custom` membership carries its role here. */
+	readonly publicMetadata?: unknown
+}
+/**
+ * The permissions a membership holds: its Clerk role's, or for `org:custom` the ones its public
+ * metadata carries. None until Clerk has read the role.
+ */
+export const membershipGrants = (membership: ClerkUserMembership): Option.Option<Policy.Grants> =>
+	Option.map(Option.fromNullishOr(membership.role), (role) =>
+		Policy.grantsOf(
+			[role],
+			role === Policy.CUSTOM_ROLE_CLERK_KEY
+				? Policy.customPermissionsFromMembershipMetadata(membership.publicMetadata)
+				: undefined,
+		),
+	)
 export interface ClerkMembershipResource {
 	readonly id: string
 	readonly role: string
+	/** An `org:custom` membership names its role here (`Policy.membershipRoleFromMetadata`). */
+	readonly publicMetadata?: unknown
 	readonly createdAt: Date
 	readonly publicUserData?: ClerkPublicUserData | null
 	readonly update: Write<{ role: string }>
@@ -272,6 +291,8 @@ export const ClerkSnapshot = Schema.Struct({
 	memberships: Schema.Array(ClerkOrganization),
 	/** The user's membership role in the active org (`org:admin`), for the session's traits. */
 	maybeRole: Schema.Option(Schema.String),
+	/** What that membership may do, a custom role's permissions included; none until it is read. */
+	maybeGrants: Schema.Option(Schema.Array(Policy.PermissionName)),
 	/** The API treats a pending session as signed out, so the app shows the task instead. */
 	maybePendingTask: Schema.Option(PendingSessionTask),
 })
@@ -292,6 +313,12 @@ const toOrganization = (organization: ClerkOrganizationResource, nowMs: number):
 	flags: organizationFeatureFlagsFrom(organization.publicMetadata),
 })
 
+const activeMembership = (resources: ClerkResources): Option.Option<ClerkUserMembership> =>
+	Arr.findFirst(
+		resources.user?.organizationMemberships ?? [],
+		(membership) => membership.organization.id === resources.organization?.id,
+	)
+
 const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 	Effect.map(Clock.currentTimeMillis, (nowMs) => ({
 		maybeUserId: Option.map(Option.fromNullishOr(resources.user?.id), (id) => UserId.make(id)),
@@ -307,13 +334,10 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		memberships: Arr.map(resources.user?.organizationMemberships ?? [], (membership) =>
 			toOrganization(membership.organization, nowMs),
 		),
-		maybeRole: Option.flatMap(
-			Arr.findFirst(
-				resources.user?.organizationMemberships ?? [],
-				(membership) => membership.organization.id === resources.organization?.id,
-			),
-			(membership) => Option.fromNullishOr(membership.role),
+		maybeRole: Option.flatMap(activeMembership(resources), (membership) =>
+			Option.fromNullishOr(membership.role),
 		),
+		maybeGrants: Option.flatMap(activeMembership(resources), membershipGrants),
 		maybePendingTask: Option.filter(
 			Option.fromNullishOr(
 				resources.session?.status === "pending" ? resources.session.currentTask?.key : null,
@@ -376,8 +400,8 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 		)
 		return Option.some<ClerkTeamOrganization>({
 			name: organization.name,
-			canManageMembers: Option.exists(membership, (found) =>
-				Policy.can(found.role === undefined ? [] : [found.role], "members:manage"),
+			canManageMembers: Option.exists(Option.flatMap(membership, membershipGrants), (grants) =>
+				Policy.can(grants, "members:manage"),
 			),
 			update: (input) =>
 				update === undefined ? missing() : update.call(organization, input).then(() => undefined),

@@ -7,6 +7,7 @@
  * `invoke_agent` span was filed under the child's own thread instead of the review's session.
  */
 import { OrgId, UserId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import type { SubmitPrReviewRequest, TenantContext } from "@maple/domain/http"
 import { prReviewSessionId } from "@maple/domain/chat-session"
 import { Effect, Exit, Layer, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
@@ -29,6 +30,7 @@ const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
 	userId: Schema.decodeSync(UserId)("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

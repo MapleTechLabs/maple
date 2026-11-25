@@ -11,6 +11,7 @@ import * as Select from "@maple/views/ui/select"
 import * as Tiles from "./tiles/update"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "@maple/views/data/signal-presence"
+import { SessionGrants } from "../kit/session-grants"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { BatchOutcome } from "./factory/edits"
 import * as Scene3d from "./scene3d"
@@ -31,6 +32,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 })
 
 export const Message = defineMessageUnion({
+	CompletedFetchSession: SessionGrants,
 	CompletedResolveWindow: {
 		window: TimeWindow,
 		timeZone: Schema.String,

@@ -131,6 +131,7 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 			resources: "entries",
 		},
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		scopeFamily: "data_sources",
 		phrases: ["Checking connected data sources", "Finding where the data lives", "Reading a data source"],
 		handler: Effect.fn("McpTool.dataSources")(function* ({ query, data_source, entries, offset, limit }) {

@@ -56,7 +56,7 @@ const SAVE = "SecurityApiDetectionSave"
 
 const ADMIN = Policy.allPermissions
 const ENGINEER = Policy.grantsOf(["org:engineer"])
-const adminsOnly = text("Only org admins can create or change detections")
+const adminsOnly = text(Policy.denialFor("audit_log:read").message)
 const createButton = role("button", { name: "Create detection" })
 const saveButton = role("button", { name: "Save changes" })
 const issues = selector('[aria-label="Fix before saving"]')

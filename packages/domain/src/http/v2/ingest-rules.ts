@@ -23,9 +23,9 @@ import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { V2WarehouseReadErrors } from "./query-errors"
-import { AnalystAccess } from "../analyst-access"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /** `irule_…` public ID ⇄ internal `IngestRuleId` (raw UUID). */
 export const IngestRulePublicId = PublicId(PublicIdPrefixes.ingestRule, IngestRuleId)
@@ -507,27 +507,31 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 			query: V2IngestRuleStatsQuery,
 			success: V2IngestRuleStats,
 			error: [V2ParameterInvalid.schema, rulePersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getIngestRuleStats",
-				summary: "Ingest rule stats",
-				description:
-					"Per-rule and per-signal counts of what rules matched, dropped and redacted, at most 62 days. Requires the `ingest_rules:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getIngestRuleStats",
+					summary: "Ingest rule stats",
+					description:
+						"Per-rule and per-signal counts of what rules matched, dropped and redacted, at most 62 days. Requires the `ingest_rules:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("suggestions", "/suggestions", {
 			success: V2IngestRuleSuggestions,
 			error: [...V2WarehouseReadErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listIngestRuleSuggestions",
-				summary: "Suggested ingest rules",
-				description:
-					"Rules the last 24 hours of stored logs and spans suggest, from the hourly rollups, with the bytes each would have dropped. Requires the `ingest_rules:read` scope; log suggestions also need `logs:read` and span suggestions `traces:read`.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listIngestRuleSuggestions",
+					summary: "Suggested ingest rules",
+					description:
+						"Rules the last 24 hours of stored logs and spans suggest, from the hourly rollups, with the bytes each would have dropped. Requires the `ingest_rules:read` scope; log suggestions also need `logs:read` and span suggestions `traces:read`.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("preview", "/preview", {
@@ -535,7 +539,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 			success: V2IngestRulePreview,
 			error: [ruleValidation, ...V2WarehouseReadErrors],
 		})
-			.annotate(AnalystAccess, "read")
+			.annotate(EndpointAccess, requires("telemetry:read"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "previewIngestRule",
@@ -624,4 +628,5 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 			description:
 				"Drop, parse or redact telemetry before Maple stores or bills it. Dropped data is not metered; parsing and redaction happen before anything is written to disk.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

@@ -415,7 +415,7 @@ describe("alert rule page, silences", () => {
 			given(withGrants(loaded(), ["org:member"])),
 			themeResolved(),
 			expectView(role("button", { name: "Silence" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },

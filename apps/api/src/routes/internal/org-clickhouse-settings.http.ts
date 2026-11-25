@@ -15,7 +15,7 @@ export const HttpOrgClickHouseSettingsLive = HttpApiBuilder.group(
 				.handle("get", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return yield* service.get(tenant.orgId, tenant.roles)
+						return yield* service.get(tenant.orgId, tenant.permissions)
 					}),
 				)
 				.handle("upsert", ({ payload }) =>
@@ -24,7 +24,7 @@ export const HttpOrgClickHouseSettingsLive = HttpApiBuilder.group(
 						const updated = yield* service.upsert(
 							tenant.orgId,
 							tenant.userId,
-							tenant.roles,
+							tenant.permissions,
 							payload,
 						)
 						// URL/user/database identify the connection; the password in the
@@ -38,13 +38,17 @@ export const HttpOrgClickHouseSettingsLive = HttpApiBuilder.group(
 				.handle("schemaDiff", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return yield* service.schemaDiff(tenant.orgId, tenant.roles)
+						return yield* service.schemaDiff(tenant.orgId, tenant.permissions)
 					}),
 				)
 				.handle("applySchema", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const applied = yield* service.applySchema(tenant.orgId, tenant.userId, tenant.roles)
+						const applied = yield* service.applySchema(
+							tenant.orgId,
+							tenant.userId,
+							tenant.permissions,
+						)
 						yield* recordHttpAudit("warehouse_settings.schema_applied")
 						return applied
 					}),
@@ -52,19 +56,19 @@ export const HttpOrgClickHouseSettingsLive = HttpApiBuilder.group(
 				.handle("applySchemaStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return yield* service.applySchemaStatus(tenant.orgId, tenant.roles)
+						return yield* service.applySchemaStatus(tenant.orgId, tenant.permissions)
 					}),
 				)
 				.handle("collectorConfig", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return yield* service.collectorConfig(tenant.orgId, tenant.roles)
+						return yield* service.collectorConfig(tenant.orgId, tenant.permissions)
 					}),
 				)
 				.handle("delete", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const deleted = yield* service.delete(tenant.orgId, tenant.roles)
+						const deleted = yield* service.delete(tenant.orgId, tenant.permissions)
 						yield* recordHttpAudit("warehouse_settings.deleted")
 						return deleted
 					}),

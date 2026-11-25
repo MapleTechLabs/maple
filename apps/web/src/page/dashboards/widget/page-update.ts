@@ -12,6 +12,7 @@ import type { WhereFieldMessage } from "../../kit/where-field"
 import { updateWhereFields } from "../../kit/where-field-update"
 import { toPanelType } from "../kit/chart-registry"
 import { SaveWidget } from "./command"
+import { acceptGrants } from "../../kit/session-grants"
 import { addFormula, addQuery, cloneQuery, removeFormula, setPanelType } from "./edits"
 import type { EditorState } from "./editor-state"
 import { trackStoredSource } from "./lowering"
@@ -223,6 +224,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		UpdatedDashboard: (updated) => receiveDocument(model, context, updated),
 		CompletedReadClock: ({ nowMs }) => planPreview({ ...model, nowMs }, context),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		MeasuredPreview: ({ widthPx }) =>
 			widthPx === model.previewWidth
 				? { model }

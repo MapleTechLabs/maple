@@ -67,13 +67,11 @@ describe("alert incident, analyst", () => {
 			expectView(role("button", { name: "Acknowledge" })).toBeDisabled(),
 			expectView(
 				role("group", {
-					name: "Only org admins, engineers and members can acknowledge and resolve incidents.",
+					name: Policy.denialFor("incidents:respond").message,
 				}),
 			).toExist(),
 			expectView(role("button", { name: "Investigate" })).toBeDisabled(),
-			expectView(
-				role("group", { name: "Only org admins, engineers and members can start investigations." }),
-			).toExist(),
+			expectView(role("group", { name: Policy.denialFor("investigations:run").message })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },

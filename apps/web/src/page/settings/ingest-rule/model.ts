@@ -55,4 +55,4 @@ export type Model = typeof Model.Type
 
 /** The viewer may change what this page edits (`ingest_rules:manage`). */
 export const canManage = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "ingest_rules:manage")
+	Policy.can(model.grants, "ingest_rules:manage")

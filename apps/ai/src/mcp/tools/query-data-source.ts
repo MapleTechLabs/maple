@@ -64,6 +64,7 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 		}),
 		aliases: { source: "data_source", query: "sql" },
 		hints: { readOnly: true, openWorld: true },
+		permission: "data_sources:query",
 		scopeFamily: "data_sources",
 		phrases: ["Querying a data source", "Running a data source query"],
 		handler: Effect.fn("McpTool.queryDataSource")(function* (params) {

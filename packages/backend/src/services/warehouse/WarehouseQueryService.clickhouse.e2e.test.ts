@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -149,6 +150,7 @@ const tenant: TenantContext = {
 	orgId: asOrgId(orgId),
 	userId: asUserId("user_raw_sql_e2e"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

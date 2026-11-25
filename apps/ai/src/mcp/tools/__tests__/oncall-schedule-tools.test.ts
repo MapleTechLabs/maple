@@ -3,6 +3,7 @@
  * rendered by display name, schedules found by name, and service failures as parameter errors.
  */
 import { describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Context, Effect, Layer, Schema } from "effect"
 import {
 	AlertValidationError,
@@ -115,6 +116,8 @@ const layer = (seen: Seen) =>
 			orgId: Schema.decodeSync(OrgId)("org_tools"),
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
+			// The services are mocked; what a role may change is the registry's, tested on its own.
+			permissions: Policy.allPermissions,
 			authMode: "self_hosted",
 		}),
 		Layer.mock(OnCallSchedulesService)({

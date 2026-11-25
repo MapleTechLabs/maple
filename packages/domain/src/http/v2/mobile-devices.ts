@@ -11,7 +11,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"
 import { AlertIncidentPublicId, MobileDevicePublicId } from "./resource-ids"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 // Code points, not UTF-16 units: identical for these ASCII values, and the only length the
 // JSON Schema `minLength` can state exactly (Effect halves a UTF-16 bound when it exports one).
@@ -180,14 +180,16 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 		HttpApiEndpoint.get("list", "/", {
 			success: MobileDeviceList,
 			error: [persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listMobileDevices",
-				summary: "List my devices",
-				description:
-					"Returns the devices the current user has registered in the current organization. Requires the `mobile_devices:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listMobileDevices",
+					summary: "List my devices",
+					description:
+						"Returns the devices the current user has registered in the current organization. Requires the `mobile_devices:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.put("register", "/:token", {
@@ -196,7 +198,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2MobileDevice,
 			error: [persistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, requires("devices:connect", "telemetry:read"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "registerMobileDevice",
@@ -212,7 +214,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2MobileDeviceDeleteResponse,
 			error: [notFound, persistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "unregisterMobileDevice",
@@ -229,7 +231,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2LiveActivity,
 			error: [notFound, persistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, requires("devices:connect", "telemetry:read"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "registerLiveActivity",
@@ -245,7 +247,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2LiveActivityDeleteResponse,
 			error: [notFound, persistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "endLiveActivity",

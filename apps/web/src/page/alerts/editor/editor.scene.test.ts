@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { AlertRulePreviewResponse, DashboardDocument } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, V2ChatConnector } from "@maple/domain/http/v2"
@@ -626,7 +627,10 @@ describe("alert rule editor", () => {
 	// Every section is memoized on what it reads: each step renders the old state first, so a
 	// section keyed on the wrong input would keep showing it.
 	test("each section follows the edit or sync it reads, after rendering the one before", () => {
-		const ready = withLists(entered({ template: "slow_p95" }))
+		// An engineer, who may write SQL rules.
+		const ready = run(withLists(entered({ template: "slow_p95" })), [
+			Message.CompletedReadGrants({ grants: Policy.grantsOf(["org:engineer"]) }),
+		])
 		const firing = Schema.decodeSync(AlertRulePreviewResponse)({
 			bucketSeconds: 300,
 			windowMinutes: 5,
@@ -706,5 +710,20 @@ describe("alert rule editor lazy sections", () => {
 		["a saved rule", () => withLists(entered({ ruleId: ruleId(2) }))],
 	])("%s reuses every section on an unchanged render", (_, model) => {
 		Lazy.expectAllReused({ view, model: model() })
+	})
+})
+
+describe("alert rule editor, without Run raw SQL", () => {
+	test("locks the SQL mode for a role that may manage alerts but not write SQL", () => {
+		const ready = run(withLists(entered({ template: "slow_p95" })), [
+			Message.CompletedReadGrants({ grants: Policy.withImplied(["alerts:manage"]) }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(ready),
+			themeResolved(),
+			expectView(role("button", { name: "SQL" })).toBeDisabled(),
+			expectView(role("button", { name: "Query builder" })).not.toBeDisabled(),
+		)
 	})
 })

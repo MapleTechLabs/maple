@@ -44,6 +44,7 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing product events"],
 		handler: Effect.fn("McpTool.listProductEvents")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

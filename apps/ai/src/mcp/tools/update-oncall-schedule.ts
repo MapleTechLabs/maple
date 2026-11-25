@@ -30,6 +30,7 @@ export const updateOnCallScheduleAction = (family: McpToolFamilyBuilder<"manage_
 			description: P.optionalText("New notes"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "oncall:manage",
 		handler: Effect.fn("McpTool.updateOnCallSchedule")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
 			if (
@@ -60,7 +61,7 @@ export const updateOnCallScheduleAction = (family: McpToolFamilyBuilder<"manage_
 			const tenant = yield* CurrentMcpTenant
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules
-				.update(tenant.orgId, tenant.userId, tenant.roles, scheduleId, request)
+				.update(tenant.orgId, tenant.userId, tenant.permissions, scheduleId, request)
 				.pipe(Effect.catchTags(updateScheduleErrors))
 			const names = yield* memberNames(tenant.orgId)
 			return { schedule: toScheduleRow(schedule, names) }

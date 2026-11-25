@@ -30,6 +30,7 @@ import { isoTimestamp, wireExample, ListOf, ListQuery, Timestamp } from "./envel
 import { V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { EscalationChainPublicId, OnCallOverridePublicId, OnCallSchedulePublicId } from "./resource-ids"
+import { EndpointAccess } from "../endpoint-access"
 
 export { OnCallOverridePublicId, OnCallSchedulePublicId } from "./resource-ids"
 
@@ -787,4 +788,5 @@ export class V2OnCallSchedulesApiGroup extends HttpApiGroup.make("oncallSchedule
 			description:
 				"Who is on call when: layered rotations in a time zone, with overrides for swaps and cover.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

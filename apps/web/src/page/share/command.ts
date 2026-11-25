@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { readClock } from "@maple/views/data/timing"
 import { Effect, Option, Queue, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import { Command, Mount } from "foldkit"
@@ -76,6 +77,14 @@ const toShareError = (error: unknown): ShareError => {
 			return { _tag: "SignInRequired" }
 		case "@maple/http/errors/ShareWrongOrgError":
 			return { _tag: "WrongOrg" }
+		case "@maple/http/errors/ShareForbiddenError":
+			return {
+				_tag: "Forbidden",
+				message: Option.getOrElse(
+					Option.map(decodeMessage(error), (envelope) => envelope.error.message),
+					() => Policy.denialFor("telemetry:read").message,
+				),
+			}
 		case "@maple/http/errors/ShareRateLimitedError":
 			return { _tag: "RateLimited" }
 		case "@maple/http/errors/ShareNotFoundError":

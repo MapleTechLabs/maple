@@ -8,6 +8,7 @@ import {
 	CostConnectionValidationError,
 } from "./cost-connections"
 import { SessionAuthorization } from "./current-tenant"
+import { EndpointAccess } from "./endpoint-access"
 
 /** Far above any Morph key: it only bounds what the request carries. */
 export const MORPH_COST_KEY_MAX_LENGTH = 512
@@ -37,4 +38,6 @@ export class MorphCostApiGroup extends HttpApiGroup.make("morphCost")
 		}),
 	)
 	.prefix("/internal/cost/morph")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// `saveCostConnection` / `removeCostConnection` check `integrations:manage`.
+	.annotate(EndpointAccess, "handler") {}

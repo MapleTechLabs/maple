@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -80,6 +81,7 @@ const run = (
 					orgId: Schema.decodeSync(OrgId)("org_promql"),
 					userId: Schema.decodeSync(UserId)("user_promql"),
 					roles: [],
+					permissions: Policy.grantsOf([]),
 					authMode: "self_hosted",
 				}),
 			).pipe(

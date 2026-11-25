@@ -67,7 +67,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("createConnection", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const connection = yield* aws.create(tenant.orgId, tenant.userId, {
@@ -85,7 +85,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("updateConnection", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const connection = yield* aws.update(tenant.orgId, params.id, {
@@ -102,7 +102,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("setup", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					// A rendered setup can hold keys that write to ingest, so `requiredScopeForRoute`
@@ -131,7 +131,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("rotateEventsKey", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const connection = yield* aws.rotateEventsKey(tenant.orgId, params.id)
@@ -144,7 +144,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("checkConnection", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const connection = yield* aws.check(tenant.orgId, params.id)
@@ -176,7 +176,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("deleteConnection", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const deleted = yield* aws.delete(tenant.orgId, params.id)

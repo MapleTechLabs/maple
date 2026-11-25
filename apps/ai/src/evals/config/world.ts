@@ -52,7 +52,7 @@ const seedTool = async (rt: EvalRuntime, name: string, params: unknown): Promise
 
 export const seedConfigWorld = async (base: EvalRuntime): Promise<void> => {
 	const rt = asCaller(base, ADMIN_CALLER)
-	const { orgId, userId, roles } = rt.tenant
+	const { orgId, userId, permissions } = rt.tenant
 
 	const [destination] = await rt.runtime.runPromise(
 		Effect.gen(function* () {
@@ -61,7 +61,7 @@ export const seedConfigWorld = async (base: EvalRuntime): Promise<void> => {
 			const used = yield* destinations.createDestination(
 				orgId,
 				userId,
-				roles,
+				permissions,
 				new WebhookAlertDestinationConfig({
 					type: "webhook",
 					name: CONFIG_WORLD.destination,
@@ -71,7 +71,7 @@ export const seedConfigWorld = async (base: EvalRuntime): Promise<void> => {
 			yield* destinations.createDestination(
 				orgId,
 				userId,
-				roles,
+				permissions,
 				new WebhookAlertDestinationConfig({
 					type: "webhook",
 					name: CONFIG_WORLD.unusedDestination,

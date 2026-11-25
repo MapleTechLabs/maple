@@ -5,7 +5,7 @@ import {
 	FEATURE_REQUEST_SUBJECT_MAX_LENGTH,
 	FeatureRequestArea,
 } from "../feature-requests"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess } from "./endpoint-access"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
@@ -57,5 +57,5 @@ export class FeatureRequestApiGroup extends HttpApiGroup.make("featureRequests")
 		}),
 	)
 	.prefix("/internal/feature-requests")
-	.annotate(AnalystAccess, "personal")
+	.annotate(EndpointAccess, "personal")
 	.middleware(SessionAuthorization) {}

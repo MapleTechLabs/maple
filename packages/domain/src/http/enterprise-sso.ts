@@ -3,6 +3,7 @@ import { Schema, String as Str } from "effect"
 import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
+import { EndpointAccess } from "./endpoint-access"
 
 /**
  * Lower-cased hostname with at least one dot, no wildcard and no trailing dot. Capped at 236 so
@@ -385,4 +386,5 @@ export class EnterpriseSsoApiGroup extends HttpApiGroup.make("enterpriseSso")
 		}),
 	)
 	.prefix("/internal/enterprise-sso")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

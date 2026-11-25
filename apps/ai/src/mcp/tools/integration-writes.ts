@@ -10,7 +10,6 @@ import { CreateScrapeTargetRequest, UpdateScrapeTargetRequest } from "@maple/dom
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ScrapeIntervalSeconds } from "@maple/primitives"
 import { redactUrlSecrets } from "@maple/domain/url-redaction"
-import * as Policy from "@maple/domain/policy"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
@@ -23,21 +22,6 @@ const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOStrin
 
 /** The Railway poller ticks every 5 minutes; this long without a success after a sync is not a blip. */
 const RAILWAY_STALE_MS = 30 * 60 * 1000
-
-const permitted = (tool: string, permission: Policy.Permission) =>
-	Effect.gen(function* () {
-		const tenant = yield* CurrentMcpTenant
-		yield* Policy.check(
-			tenant.roles,
-			permission,
-			(denial) =>
-				new McpUnavailableError({
-					message: `${tool}: ${denial.message} Ask someone who can, or change it in Sources.`,
-					capability: "org_admin",
-				}),
-		)
-		return tenant
-	})
 
 const queryError = (tool: string) => (error: { readonly _tag: string; readonly message: string }) =>
 	new McpQueryError({ message: error.message, pipeName: tool, cause: error })
@@ -154,9 +138,10 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			"Sync Vercel now instead of waiting for the next 5-minute tick: refresh the team's deployments, check that Maple's drains (logs, traces, AI Gateway, and the opt-in Speed Insights, Web Analytics and audit log) still exist (re-creating a deleted one, re-keying them after an ingest key change), then report each drain's state and each project's latest deployment. Use after fixing a Vercel token or drain, to confirm the data flows again. Org admins and engineers only.",
 		parameters: Schema.Struct({}),
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		permission: "integrations:manage",
 		phrases: ["Syncing Vercel"],
 		handler: Effect.fn("McpTool.syncVercel")(function* () {
-			const tenant = yield* permitted("sync_vercel", "integrations:manage")
+			const tenant = yield* CurrentMcpTenant
 			const vercel = yield* VercelIntegrationService
 			const status = yield* vercel.sync(tenant.orgId).pipe(Effect.mapError(queryError("sync_vercel")))
 			const drain = (
@@ -256,9 +241,10 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			"Poll Railway now instead of waiting for the next 5-minute tick, then report each environment's last sync and error. Use after fixing a Railway token or project access, to confirm metrics flow again. Org admins and engineers only. Environments already caught up cost no Railway call.",
 		parameters: Schema.Struct({}),
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		permission: "integrations:manage",
 		phrases: ["Syncing Railway"],
 		handler: Effect.fn("McpTool.syncRailway")(function* () {
-			const tenant = yield* permitted("sync_railway", "integrations:manage")
+			const tenant = yield* CurrentMcpTenant
 			const railway = yield* RailwayMetricsService
 			const status = yield* railway.sync(tenant.orgId).pipe(Effect.mapError(queryError("sync_railway")))
 			const now = yield* Clock.currentTimeMillis
@@ -353,8 +339,9 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			}),
 			aliases: P.SERVICE_ALIASES,
 			hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+			permission: "scrape_targets:manage",
 			handler: Effect.fn("McpTool.createScrapeTarget")(function* (params) {
-				const tenant = yield* permitted("manage_scrape_target", "scrape_targets:manage")
+				const tenant = yield* CurrentMcpTenant
 				const targets = yield* ScrapeTargetsService
 				const interval =
 					params.interval_seconds === undefined
@@ -417,8 +404,9 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			}),
 			aliases: P.SERVICE_ALIASES,
 			hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+			permission: "scrape_targets:manage",
 			handler: Effect.fn("McpTool.updateScrapeTarget")(function* (params) {
-				const tenant = yield* permitted("manage_scrape_target", "scrape_targets:manage")
+				const tenant = yield* CurrentMcpTenant
 				const targets = yield* ScrapeTargetsService
 				const target = yield* resolveTarget("manage_scrape_target", tenant.orgId, params.target)
 				const interval =
@@ -467,6 +455,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 				confirm: P.flag("Must be true. There is no undo."),
 			}),
 			hints: { readOnly: false, destructive: true, idempotent: false },
+			permission: "scrape_targets:manage",
 			handler: Effect.fn("McpTool.deleteScrapeTarget")(function* (params) {
 				if (params.confirm !== true) {
 					return yield* new McpInvalidInputError({
@@ -474,7 +463,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 						parameter: "confirm",
 					})
 				}
-				const tenant = yield* permitted("manage_scrape_target", "scrape_targets:manage")
+				const tenant = yield* CurrentMcpTenant
 				const targets = yield* ScrapeTargetsService
 				const target = yield* resolveTarget("manage_scrape_target", tenant.orgId, params.target)
 				yield* targets

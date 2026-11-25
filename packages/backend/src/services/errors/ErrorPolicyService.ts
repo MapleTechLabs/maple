@@ -18,7 +18,6 @@ import {
 	type IssueEscalationPolicyUpsertRequest,
 	type ErrorIssueId,
 	type OrgId,
-	type RoleName,
 	type UserId,
 	UserId as UserIdSchema,
 } from "@maple/domain/http"
@@ -65,7 +64,7 @@ export interface ErrorPolicyPublicApi {
 	readonly upsertNotificationPolicy: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		request: ErrorNotificationPolicyUpsertRequest,
 	) => Effect.Effect<
 		ErrorNotificationPolicyDocument,
@@ -190,10 +189,10 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 
 	const upsertNotificationPolicy: ErrorPolicyServiceApi["upsertNotificationPolicy"] = Effect.fn(
 		"ErrorPolicyService.upsertNotificationPolicy",
-	)(function* (orgId, userId, roles, request) {
+	)(function* (orgId, userId, permissions, request) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		yield* Policy.check(
-			roles,
+			permissions,
 			"error_policy:manage",
 			(denial) =>
 				new ErrorForbiddenError({

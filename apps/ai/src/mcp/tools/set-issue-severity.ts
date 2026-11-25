@@ -20,6 +20,7 @@ export function registerSetIssueSeverityTool(server: McpToolRegistrar) {
 			note: P.optionalText("Reasoning or context, stored on the severity event"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "error_issues:triage",
 		phrases: ["Setting issue severity"],
 		handler: Effect.fn("McpTool.setIssueSeverity")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

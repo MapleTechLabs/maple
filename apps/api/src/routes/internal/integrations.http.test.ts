@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import {
 	ApiSchemaErrors,
@@ -89,6 +90,7 @@ const unreached = <Id, Service>(tag: Context.Key<Id, Service>) =>
 
 const makeHarness = (role: string) => {
 	const asked: Array<string> = []
+	const completed: Array<string> = []
 	const authorization = Layer.succeed(
 		CurrentTenant.SessionAuthorization,
 		CurrentTenant.SessionAuthorization.of({
@@ -100,6 +102,7 @@ const makeHarness = (role: string) => {
 						orgId: ORG,
 						userId: USER,
 						roles: [Schema.decodeSync(RoleName)(role)],
+						permissions: Policy.grantsOf([Schema.decodeSync(RoleName)(role)]),
 						authMode: "clerk",
 					}),
 				),
@@ -148,7 +151,18 @@ const makeHarness = (role: string) => {
 		unreached(PlanetScaleConnectionService),
 		unreached(PlanetScaleOAuthService),
 		unreached(AwsConnectionService),
-		unreached(ChatWorkspaceService),
+		Layer.mock(ChatWorkspaceService)({
+			completeInstall: () =>
+				Effect.sync(() => {
+					completed.push("install")
+					return { orgId: ORG, name: "Acme" }
+				}),
+			completeLink: () =>
+				Effect.sync(() => {
+					completed.push("identity")
+					return { orgId: ORG, displayName: "ada" }
+				}),
+		}),
 		WarehouseServiceStubLayer,
 		TelemetryServiceStubsLayer,
 		EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
@@ -174,7 +188,19 @@ const makeHarness = (role: string) => {
 		return { status: response.status, body: text === "" ? null : JSON.parse(text) }
 	}
 
-	return { get, asked, dispose }
+	const completeOAuth = async (flow: "chat_install" | "chat_identity") => {
+		const response = await handler(
+			new Request("http://maple.test/internal/integrations/oauth/complete", {
+				method: "POST",
+				headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+				body: JSON.stringify({ flow, connector: "slack", query: "code=c&state=s" }),
+			}),
+			Context.empty() as never,
+		)
+		return { status: response.status, body: JSON.parse(await response.text()) }
+	}
+
+	return { get, completeOAuth, asked, completed, dispose }
 }
 
 const PICKERS = ["/linear/teams", "/google-search-console/sites"]
@@ -206,6 +232,41 @@ describe("/internal/integrations picker lists", () => {
 			{ siteUrl: "sc-domain:acme.dev", permissionLevel: "siteOwner", selectable: true, enabled: true },
 		])
 		expect(harness.asked).toEqual(["linear", "search-console"])
+		await harness.dispose()
+	})
+})
+
+describe("/internal/integrations/oauth/complete", () => {
+	it("lets a member finish linking their own chat account", async () => {
+		const harness = makeHarness("org:member")
+		const response = await harness.completeOAuth("chat_identity")
+		expect([response.status, response.body.chat]).toEqual([
+			200,
+			{ kind: "identity", name: "ada", reason: null },
+		])
+		expect(harness.completed).toEqual(["identity"])
+		await harness.dispose()
+	})
+
+	it("refuses a member finishing a workspace install, before redeeming it", async () => {
+		const harness = makeHarness("org:member")
+		const response = await harness.completeOAuth("chat_install")
+		expect([response.status, asFailure(response.body)._tag]).toEqual([
+			403,
+			"@maple/http/errors/IntegrationsForbiddenError",
+		])
+		expect(harness.completed).toEqual([])
+		await harness.dispose()
+	})
+
+	it("lets a member who manages integrations finish a workspace install", async () => {
+		const harness = makeHarness("org:engineer")
+		const response = await harness.completeOAuth("chat_install")
+		expect([response.status, response.body.chat]).toEqual([
+			200,
+			{ kind: "workspace", name: "Acme", reason: null },
+		])
+		expect(harness.completed).toEqual(["install"])
 		await harness.dispose()
 	})
 })

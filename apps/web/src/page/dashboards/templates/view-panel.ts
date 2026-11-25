@@ -37,6 +37,7 @@ import { MAX_PREVIEW_WIDGETS, selectedOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -379,33 +380,37 @@ const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: b
 		],
 		actions: isReady
 			? [
-					button(
-						h,
-						{
-							size: "sm",
-							isDisabled: missing.length > 0,
-							isLoading: model.isCreating,
-							attributes: [h.OnClick(create)],
-						},
-						[
-							"Create dashboard",
-							icon(h, "ArrowRightIcon", {
-								attributes: [h.DataAttribute("icon", "inline-end")],
-							}),
-						],
+					gatedControl(h, model, "dashboards:edit", (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								isDisabled: missing.length > 0 || isLocked,
+								isLoading: model.isCreating,
+								attributes: [h.OnClick(create)],
+							},
+							[
+								"Create dashboard",
+								icon(h, "ArrowRightIcon", {
+									attributes: [h.DataAttribute("icon", "inline-end")],
+								}),
+							],
+						),
 					),
 				]
 			: [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: missing.length > 0,
-							isLoading: model.isCreating,
-							attributes: [h.OnClick(create)],
-						},
-						["Create it anyway"],
+					gatedControl(h, model, "dashboards:edit", (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isDisabled: missing.length > 0 || isLocked,
+								isLoading: model.isCreating,
+								attributes: [h.OnClick(create)],
+							},
+							["Create it anyway"],
+						),
 					),
 					linkButton(h, { size: "sm", href: setupHref(template) }, [
 						`Set up ${template.requirement?.setupLabel ?? "the collector"}`,

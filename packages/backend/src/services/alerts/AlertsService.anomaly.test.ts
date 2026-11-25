@@ -28,7 +28,7 @@ import {
 import { AnomalyAlertSource } from "./anomaly/AnomalyAlertSource"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	createWebhookDestination,
@@ -261,7 +261,7 @@ describe("AlertsService anomaly rules", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				anomalyRule({
 					name: "Checkout anomalies",
 					serviceNames: ["checkout"],
@@ -311,7 +311,7 @@ describe("AlertsService anomaly rules", () => {
 				chains.create(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new EscalationChainCreateRequest({
 						name: "Checkout escalation",
 						steps: [
@@ -326,7 +326,7 @@ describe("AlertsService anomaly rules", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				anomalyRule({
 					name: "Checkout anomalies",
 					serviceNames: ["checkout"],
@@ -361,7 +361,7 @@ describe("AlertsService anomaly rules", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				anomalyRule({
 					name: "Checkout anomalies",
 					serviceNames: ["checkout"],
@@ -416,7 +416,7 @@ describe("AlertsService anomaly rules", () => {
 				const scoped = yield* alerts.createRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					anomalyRule({
 						name: "Checkout critical anomalies",
 						serviceNames: ["checkout"],
@@ -477,12 +477,12 @@ describe("AlertsService anomaly rules", () => {
 					],
 					enabled,
 				})
-			const scoped = yield* alerts.createRule(orgId, userId, adminRoles, scopedRequest(true))
+			const scoped = yield* alerts.createRule(orgId, userId, adminGrants, scopedRequest(true))
 			yield* nextTick
 			assert.deepStrictEqual(yield* openOn, [scoped.id])
 
 			// Disabling it resolves its incident from the stored label, with no observation at hand.
-			yield* alerts.updateRule(orgId, userId, adminRoles, scoped.id, scopedRequest(false))
+			yield* alerts.updateRule(orgId, userId, adminGrants, scoped.id, scopedRequest(false))
 			yield* nextTick
 			assert.deepStrictEqual(yield* openOn, [defaultRuleId])
 			const sent = Arr.map(
@@ -501,7 +501,7 @@ describe("AlertsService anomaly rules", () => {
 				[{ eventType: "resolve", rule: { groupLabel: "checkout (production)" } }],
 			)
 
-			yield* alerts.updateRule(orgId, userId, adminRoles, scoped.id, scopedRequest(true))
+			yield* alerts.updateRule(orgId, userId, adminGrants, scoped.id, scopedRequest(true))
 			yield* nextTick
 			assert.deepStrictEqual(yield* openOn, [scoped.id])
 		}).pipe(Effect.provide(layer))
@@ -551,7 +551,7 @@ describe("AlertsService anomaly rules", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				anomalyRule({
 					name: "Checkout and cart anomalies",
 					serviceNames: ["checkout", "cart"],
@@ -621,7 +621,7 @@ describe("AlertsService anomaly rules", () => {
 				alerts.testRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					anomalyRule({
 						name: "Unsaved",
 						serviceNames,
@@ -653,7 +653,7 @@ describe("AlertsService anomaly rules", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				anomalyRule({
 					name: "Checkout anomalies",
 					serviceNames: ["checkout"],
@@ -711,7 +711,7 @@ describe("AlertsService anomaly rules", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				anomalyRule({
 					name: "Checkout anomalies",
 					serviceNames: ["checkout"],

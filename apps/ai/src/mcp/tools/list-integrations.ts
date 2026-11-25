@@ -111,6 +111,7 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Checking integrations", "Listing connected integrations"],
 		handler: Effect.fn("McpTool.listIntegrations")(function* ({ provider }) {
 			const tenant = yield* CurrentMcpTenant

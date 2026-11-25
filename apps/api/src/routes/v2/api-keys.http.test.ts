@@ -566,7 +566,8 @@ describe("v2 api_keys over HTTP", () => {
 			type: "permission_error",
 			code: "insufficient_permissions",
 			title: "Permission required",
-			message: "Only org admins and engineers can create restricted API keys.",
+			message:
+				"You need Create restricted API keys to create restricted API keys. Admin and Engineer have it.",
 			retryable: false,
 			recovery: "request_access",
 		})

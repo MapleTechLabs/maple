@@ -43,6 +43,7 @@ export const DOCS = {
 	embedCharts: "/docs/dashboards/embed-charts",
 	apiReference: "/docs/reference/api",
 	authentication: "/docs/reference/authentication",
+	roles: "/docs/reference/roles",
 	hosts: "/docs/infrastructure/hosts",
 	docker: "/docs/infrastructure/docker",
 	kubernetes: "/docs/infrastructure/kubernetes",

@@ -11,7 +11,7 @@ import { SessionTenant } from "./session-tenant"
  */
 export const retrieveIngestKeys = Effect.gen(function* () {
 	const maybeTenant = yield* Effect.option((yield* SessionTenant).get)
-	if (Option.exists(maybeTenant, (tenant) => !Policy.can(tenant.roles, "ingest_keys:view")))
+	if (Option.exists(maybeTenant, (tenant) => !Policy.can(tenant.permissions, "ingest_keys:view")))
 		return yield* V2InsufficientPermissions.make(Policy.denialFor("ingest_keys:view").message)
 	return yield* (yield* MapleApiV2Client).ingestKeys.retrieve()
 })

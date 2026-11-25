@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Context, Effect, Layer, Schema } from "effect"
 import {
 	InvestigationDocument,
@@ -114,6 +115,7 @@ const tenant = Layer.succeed(CurrentMcpTenant, {
 	orgId: ORG,
 	userId: Schema.decodeSync(UserId)("user_get_investigation"),
 	roles: [Schema.decodeSync(RoleName)("org:member")],
+	permissions: Policy.grantsOf([Schema.decodeSync(RoleName)("org:member")]),
 	authMode: "self_hosted",
 })
 
@@ -217,6 +219,7 @@ describe("get_investigation", () => {
 			orgId: ORG,
 			userId: Schema.decodeSync(UserId)("user_get_investigation"),
 			roles: [Schema.decodeSync(RoleName)("org:member")],
+			permissions: Policy.grantsOf([Schema.decodeSync(RoleName)("org:member")]),
 			authMode: "self_hosted",
 			scopes: ["errors:read", "traces:read"],
 		})
@@ -234,6 +237,7 @@ describe("get_investigation", () => {
 			orgId: ORG,
 			userId: Schema.decodeSync(UserId)("user_get_investigation"),
 			roles: [Schema.decodeSync(RoleName)("org:member")],
+			permissions: Policy.grantsOf([Schema.decodeSync(RoleName)("org:member")]),
 			authMode: "self_hosted",
 			scopes: ["investigations:read"],
 		})

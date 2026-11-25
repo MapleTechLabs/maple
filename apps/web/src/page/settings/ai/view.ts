@@ -30,7 +30,9 @@ import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { switchControl } from "@maple/views/ui/switch"
 import { saveBar } from "../../kit/save-bar"
-import { settingsSection, settingsSections } from "../../kit/settings-section"
+import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
+import * as Policy from "@maple/domain/policy"
+import { denialReason, gatedControl, type Grants } from "../../kit/session-grants"
 import { Message, type Model, type Provider } from "./model"
 import { isLimitsDirty, limitsDraftOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -180,8 +182,8 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 	)
 }
 
-/** A lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
-const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =>
+/** A lapsed key's notice, the add-on's price and "Add to plan" (a plan change: `billing:manage`) behind a confirm. */
+const addOnUpsell = (h: H, model: Model, inputs: Inputs, current: OpenRouterKeyDocument): Html =>
 	vstack(h, { gap: "3" }, [
 		...(current.configured
 			? [
@@ -223,15 +225,17 @@ const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =
 			ADD_ON_PRICE,
 			", billed with your plan. Cancel any time from billing.",
 		]),
-		button(
-			h,
-			{
-				size: "sm",
-				className: "w-fit",
-				isDisabled: model.isAttachingAddOn,
-				attributes: [h.OnClick(Message.ClickedAddOn())],
-			},
-			["Add to plan"],
+		gatedControl(h, inputs, "billing:manage", (isLocked) =>
+			button(
+				h,
+				{
+					size: "sm",
+					className: "w-fit",
+					isDisabled: model.isAttachingAddOn || isLocked,
+					attributes: [h.OnClick(Message.ClickedAddOn())],
+				},
+				["Add to plan"],
+			),
 		),
 		confirmDialog(h, {
 			slotId: "openrouter-add-on-dialog",
@@ -247,8 +251,13 @@ const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =
 		}),
 	])
 
-const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyArray<Html> => {
-	if (!current.entitled) return [addOnUpsell(h, model, current)]
+const keyPanel = (
+	h: H,
+	model: Model,
+	inputs: Inputs,
+	current: OpenRouterKeyDocument,
+): ReadonlyArray<Html> => {
+	if (!current.entitled) return [addOnUpsell(h, model, inputs, current)]
 	if (current.configured && !model.isReplacing)
 		return [
 			hstack(
@@ -293,7 +302,12 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 	return [keyForm(h, model, current.configured)]
 }
 
-const providerChoice = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyArray<Html> => {
+const providerChoice = (
+	h: H,
+	model: Model,
+	inputs: Inputs,
+	current: OpenRouterKeyDocument,
+): ReadonlyArray<Html> => {
 	const isInUse = current.entitled && current.configured
 	const selected: Provider = model.picked ?? (isInUse ? "openrouter" : "managed")
 	return [
@@ -310,7 +324,7 @@ const providerChoice = (h: H, model: Model, current: OpenRouterKeyDocument): Rea
 				title: "Your OpenRouter key",
 				badge: isInUse ? badge(h, { variant: "ok" }, ["In use"]) : undefined,
 				description: "OpenRouter bills the tokens. Maple stops charging for AI usage.",
-				children: keyPanel(h, model, current),
+				children: keyPanel(h, model, inputs, current),
 			}),
 		]),
 		confirmDialog(h, {
@@ -326,7 +340,8 @@ const providerChoice = (h: H, model: Model, current: OpenRouterKeyDocument): Rea
 	]
 }
 
-const providerSection = (h: H, model: Model): Html =>
+/** The key is `llm_keys:manage`'s: a viewer here for auto-triage alone sees why, not the key's controls. */
+const providerSection = (h: H, model: Model, inputs: Inputs): Html =>
 	settingsSection(
 		h,
 		{
@@ -335,18 +350,20 @@ const providerSection = (h: H, model: Model): Html =>
 			description: ["Runs investigations and pull request reviews. Models stay the same either way."],
 			framed: false,
 		},
-		AsyncData.matchData(model.key, {
-			onEmpty: () => [skeleton(h, "h-28 w-full")],
-			onFailure: (failure) => [
-				errorState(h, {
-					failure,
-					title: "Couldn't load the model provider",
-					variant: "row",
-					onRetry: Message.ClickedRetryKey(),
-				}),
-			],
-			onData: (current) => providerChoice(h, model, current),
-		}),
+		Policy.can(inputs.grants, "llm_keys:manage")
+			? AsyncData.matchData(model.key, {
+					onEmpty: () => [skeleton(h, "h-28 w-full")],
+					onFailure: (failure) => [
+						errorState(h, {
+							failure,
+							title: "Couldn't load the model provider",
+							variant: "row",
+							onRetry: Message.ClickedRetryKey(),
+						}),
+					],
+					onData: (current) => providerChoice(h, model, inputs, current),
+				})
+			: [adminOnlyNote(h, [denialReason("llm_keys:manage")])],
 	)
 
 const limitRow = (
@@ -435,20 +452,27 @@ const switchRow = (
 		}),
 	})
 
-const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): ReadonlyArray<Html> => {
+/** `canConfigure`: the viewer holds `ai_triage:configure`, which saving these settings needs. */
+const triageForm = (
+	h: H,
+	model: Model,
+	current: AiTriageSettingsDocument,
+	canConfigure: boolean,
+): ReadonlyArray<Html> => {
 	const draft = limitsDraftOf(model)
 	const runs = parseDailyLimit(draft.maxRunsPerDay, RUNS_PER_DAY_LIMITS)
 	const passes = parseDailyLimit(draft.maxPassesPerDay, PASSES_PER_DAY_LIMITS)
 	// An invalid ceiling keeps the section open.
 	const isAdvancedOpen = model.isAdvancedOpen || !passes.ok
 	return [
+		...(canConfigure ? [] : [adminOnlyNote(h, [denialReason("ai_triage:configure")])]),
 		panel(h, { className: "divide-y" }, [
 			switchRow(h, {
 				id: "ai-triage-enabled",
 				label: "Investigate new incidents",
 				description: "Applies right away.",
 				isChecked: current.enabled,
-				isDisabled: model.isToggling,
+				isDisabled: model.isToggling || !canConfigure,
 				onToggle: Message.ToggledTriage(),
 				className: "p-4",
 			}),
@@ -460,7 +484,7 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 				error: runs.ok ? null : runs.message,
 				limit: current.maxRunsPerDay,
 				spent: current.usage.runs,
-				isDisabled: model.isSavingLimits,
+				isDisabled: model.isSavingLimits || !canConfigure,
 				onInput: (value) => Message.ChangedLimit({ field: "maxRunsPerDay", value }),
 			}),
 			collapsible(
@@ -496,7 +520,7 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 								error: passes.ok ? null : passes.message,
 								limit: current.maxPassesPerDay,
 								spent: current.usage.passes,
-								isDisabled: model.isSavingLimits,
+								isDisabled: model.isSavingLimits || !canConfigure,
 								onInput: (value) => Message.ChangedLimit({ field: "maxPassesPerDay", value }),
 							}),
 						],
@@ -562,7 +586,7 @@ const triageTeaser = (h: H): Html =>
 		],
 	)
 
-const triageSection = (h: H, model: Model): Html =>
+const triageSection = (h: H, model: Model, canConfigure: boolean): Html =>
 	model.isTriageAvailable
 		? settingsSection(
 				h,
@@ -582,7 +606,7 @@ const triageSection = (h: H, model: Model): Html =>
 							onRetry: Message.ClickedRetryTriage(),
 						}),
 					],
-					onData: (current) => triageForm(h, model, current),
+					onData: (current) => triageForm(h, model, current, canConfigure),
 				}),
 			)
 		: triageTeaser(h)
@@ -615,8 +639,13 @@ const escalationCard = (h: H): Html =>
 		],
 	)
 
-type NoInputs = Readonly<{ readonly none?: never }>
+/** The viewer's permissions: the tab opens with `llm_keys:manage` or `ai_triage:configure`. */
+type Inputs = Grants
 
-export const view = Submodel.defineView<Model, Message, NoInputs>((model, _inputs, h) =>
-	settingsSections(h, [providerSection(h, model), triageSection(h, model), escalationCard(h)]),
+export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) =>
+	settingsSections(h, [
+		providerSection(h, model, inputs),
+		triageSection(h, model, Policy.can(inputs.grants, "ai_triage:configure")),
+		escalationCard(h),
+	]),
 )

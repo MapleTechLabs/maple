@@ -3,6 +3,8 @@ import { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 const StringList = Schema.Array(Schema.String)
+/** Permission codes pinned next to the roles when one of them is a custom role. */
+const PermissionCodes = Schema.Array(Schema.Int)
 
 export const McpOAuthClients = PG.table("mcp_oauth_clients", {
 	columns: {
@@ -29,6 +31,9 @@ export const McpOAuthAuthorizations = PG.table("mcp_oauth_authorizations", {
 		approvedOrgId: PG.column(PG.nullable(PG.brand(PG.text, OrgId)), { name: "approved_org_id" }),
 		approvedUserId: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "approved_user_id" }),
 		approvedRoles: PG.column(PG.nullable(PG.jsonb(StringList)), { name: "approved_roles" }),
+		approvedPermissions: PG.column(PG.nullable(PG.jsonb(PermissionCodes)), {
+			name: "approved_permissions",
+		}),
 		approvedUserEmail: PG.column(PG.nullable(PG.text), { name: "approved_user_email" }),
 		approvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "approved_at" }),
 		deniedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "denied_at" }),
@@ -54,6 +59,7 @@ export const McpOAuthRefreshTokens = PG.table("mcp_oauth_refresh_tokens", {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		userId: PG.column(PG.brand(PG.text, UserId), { name: "user_id" }),
 		roles: PG.jsonb(StringList),
+		permissions: PG.nullable(PG.jsonb(PermissionCodes)),
 		userEmail: PG.column(PG.nullable(PG.text), { name: "user_email" }),
 		accessKeyId: PG.column(PG.brand(PG.text, ApiKeyId), { name: "access_key_id" }),
 		replacedById: PG.column(PG.nullable(PG.text), { name: "replaced_by_id" }),

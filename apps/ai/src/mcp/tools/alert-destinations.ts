@@ -16,7 +16,6 @@ import {
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import type { AlertDestinationRow } from "@maple/domain/mcp-outputs"
 import { UserId } from "@maple/primitives"
-import * as Policy from "@maple/domain/policy"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../tenant"
@@ -31,21 +30,6 @@ const TOOL = "manage_alert_destination"
 const CREATABLE_TYPES = ["email"] as const
 
 const toMcpError = toMcpHttpError(TOOL)
-
-/** Refused on the caller's role first, so a member is never asked to confirm a change they cannot make. */
-const permitted = Effect.gen(function* () {
-	const tenant = yield* CurrentMcpTenant
-	yield* Policy.check(
-		tenant.roles,
-		"alerts:manage",
-		(denial) =>
-			new McpUnavailableError({
-				message: `${TOOL}: ${denial.message} Ask someone who can, or change it in Alerts > Destinations.`,
-				capability: "org_admin",
-			}),
-	)
-	return tenant
-})
 
 type Row = typeof AlertDestinationRow.Type
 
@@ -169,8 +153,9 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 				),
 			}),
 			hints: { readOnly: false, destructive: false, idempotent: false },
+			permission: "alerts:manage",
 			handler: Effect.fn("McpTool.createAlertDestination")(function* (params) {
-				const tenant = yield* permitted
+				const tenant = yield* CurrentMcpTenant
 				const destinations = yield* AlertDestinationsService
 				const memberUserIds = yield* recipientIds(params.recipients ?? ["me"], tenant.userId)
 				const request = yield* Schema.decodeEffect(EmailAlertDestinationConfig)({
@@ -187,7 +172,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 					),
 				)
 				const created = yield* destinations
-					.createDestination(tenant.orgId, tenant.userId, tenant.roles, request)
+					.createDestination(tenant.orgId, tenant.userId, tenant.permissions, request)
 					.pipe(
 						Effect.catchTag(
 							"@maple/http/errors/AlertMemberDirectoryNotConfiguredError",
@@ -226,8 +211,9 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 				),
 			}),
 			hints: { readOnly: false, destructive: false, idempotent: true },
+			permission: "alerts:manage",
 			handler: Effect.fn("McpTool.updateAlertDestination")(function* (params) {
-				const tenant = yield* permitted
+				const tenant = yield* CurrentMcpTenant
 				const destinations = yield* AlertDestinationsService
 				const current = yield* resolveDestination(tenant.orgId, params.destination)
 				if (
@@ -266,7 +252,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 					),
 				)
 				const updated = yield* destinations
-					.updateDestination(tenant.orgId, tenant.userId, tenant.roles, current.id, request)
+					.updateDestination(tenant.orgId, tenant.userId, tenant.permissions, current.id, request)
 					.pipe(
 						Effect.catchTag(
 							"@maple/http/errors/AlertMemberDirectoryNotConfiguredError",
@@ -304,8 +290,9 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 				confirm: P.flag("Must be true. There is no undo."),
 			}),
 			hints: { readOnly: false, destructive: true, idempotent: false },
+			permission: "alerts:manage",
 			handler: Effect.fn("McpTool.deleteAlertDestination")(function* (params) {
-				const tenant = yield* permitted
+				const tenant = yield* CurrentMcpTenant
 				const destinations = yield* AlertDestinationsService
 				if (params.confirm !== true) {
 					return yield* new McpInvalidInputError({
@@ -314,7 +301,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 					})
 				}
 				const current = yield* resolveDestination(tenant.orgId, params.destination)
-				yield* destinations.deleteDestination(tenant.orgId, tenant.roles, current.id).pipe(
+				yield* destinations.deleteDestination(tenant.orgId, tenant.permissions, current.id).pipe(
 					Effect.catchTag("@maple/http/errors/AlertDestinationInUseError", (error) =>
 						Effect.fail(
 							new McpInvalidInputError({
@@ -353,8 +340,9 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 				destination: P.text("The destination's name or id"),
 			}),
 			hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+			permission: "alerts:manage",
 			handler: Effect.fn("McpTool.testAlertDestination")(function* (params) {
-				const tenant = yield* permitted
+				const tenant = yield* CurrentMcpTenant
 				const destinations = yield* AlertDestinationsService
 				const current = yield* resolveDestination(tenant.orgId, params.destination)
 				if (current.type === "email") {
@@ -370,7 +358,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 				})
 				// A provider refusing the test is the answer, not a failure of the call.
 				const outcome = yield* destinations
-					.testDestination(tenant.orgId, tenant.userId, tenant.roles, current.id)
+					.testDestination(tenant.orgId, tenant.userId, tenant.permissions, current.id)
 					.pipe(
 						Effect.map((sent) => ({ passed: sent.success, message: sent.message })),
 						Effect.catchTags({

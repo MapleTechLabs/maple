@@ -108,6 +108,7 @@ export const createMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 		}),
 		aliases: { service_names: "services", start_time: "start_time_of_day" },
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "alerts:manage",
 		handler: Effect.fn("McpTool.createMaintenanceWindow")(function* (params) {
 			const ruleIds = yield* Effect.forEach(
 				params.rule_ids ?? [],
@@ -141,7 +142,7 @@ export const createMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 			const tenant = yield* CurrentMcpTenant
 			const windows = yield* AlertMaintenanceWindowsService
 			const window = yield* windows
-				.create(tenant.orgId, tenant.userId, tenant.roles, request)
+				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
 				.pipe(Effect.catchTags(createWindowErrors))
 
 			return { window: toMaintenanceWindowRow(window) }

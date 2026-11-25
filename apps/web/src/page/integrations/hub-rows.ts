@@ -179,7 +179,7 @@ export const hubRowsOf = (model: Model): HubRows => {
 	}))
 	// Connecting a data source is admin-only, so members get no cards that lead to a form they cannot save.
 	const queryShelf: ReadonlyArray<Shelf> =
-		model.hasDataSources && Policy.has(model.grants, "data_sources:manage")
+		model.hasDataSources && Policy.can(model.grants, "data_sources:manage")
 			? [
 					{
 						_tag: "DataSources",

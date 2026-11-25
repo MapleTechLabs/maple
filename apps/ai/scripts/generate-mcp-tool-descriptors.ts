@@ -69,6 +69,7 @@ const sourceOf = (name: string, tool: string): ToolModuleSource => {
 		title: entry.title,
 		audience: entry.audience,
 		readOnly: entry.hints.readOnly,
+		permission: entry.permission,
 		...location,
 	}
 }

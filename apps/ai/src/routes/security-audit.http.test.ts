@@ -1,5 +1,6 @@
 // SAFETY-FILE: JSON in this test is emitted by the handler under test before its fields are asserted.
 import { afterEach, describe, expect, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import {
 	ApiSchemaErrors,
 	ApiUnexpectedErrors,
@@ -95,6 +96,7 @@ const AuthorizationStubLayer = Layer.succeed(
 					orgId: Schema.decodeSync(OrgId)(org),
 					userId: USER,
 					roles: [decodeRole(role)],
+					permissions: Policy.grantsOf([decodeRole(role)]),
 					authMode: "clerk",
 				})
 				return yield* Effect.provideService(httpEffect, CurrentTenant.Context, tenant)

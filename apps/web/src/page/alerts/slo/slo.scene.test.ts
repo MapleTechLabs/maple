@@ -37,6 +37,8 @@ import { view as pageView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
 const MEMBER = Policy.grantsOf(["org:member"])
+/** A custom role that holds Manage SLOs and budgets and nothing else. */
+const SLOS_ONLY = Policy.grantsOf(["org:custom"], ["slos:manage"])
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -620,8 +622,27 @@ describe("SLO page", () => {
 			expectView(role("link", { name: "Edit" })).not.toExist(),
 			expectView(role("button", { name: "Edit" })).toBeDisabled(),
 			expectView(role("button", { name: "Delete" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("slos:manage").message })).toExist(),
 			expectView(within(alertingPanel, role("switch", { name: "Burn-rate alerting" }))).toHaveAttr(
+				"aria-disabled",
+				"true",
+			),
+		)
+	})
+
+	test("a custom role holding only Manage SLOs and budgets can edit, delete and switch alerting", () => {
+		const custom = pageUpdate(
+			withStatus("healthy"),
+			Message.CompletedFetchSession({ orgId: ORG, grants: SLOS_ONLY }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(custom),
+			themeResolved(),
+			expectView(role("link", { name: "Edit" })).toExist(),
+			expectView(role("button", { name: "Delete" })).toBeEnabled(),
+			expectView(role("group", { name: Policy.denialFor("slos:manage").message })).not.toExist(),
+			expectView(within(alertingPanel, role("switch", { name: "Burn-rate alerting" }))).not.toHaveAttr(
 				"aria-disabled",
 				"true",
 			),

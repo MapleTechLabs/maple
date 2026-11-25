@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -8,6 +9,7 @@ import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/ba
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { CurrentMcpTenant } from "../tenant"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
+import { executeRegisteredMcpToolUnscoped } from "./registry"
 import { renderToolDoc } from "../lib/tool-doc"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import type { McpToolError, McpToolRegistrar } from "./types"
@@ -44,14 +46,15 @@ const acknowledgeTool = (rendered = false): Invoke => {
 	return (params) => invoke(params)
 }
 
-const layerFor = (testDb: TestDb) =>
+const layerFor = (testDb: TestDb, role?: string) =>
 	Layer.mergeAll(
 		unimplementedMcpToolServices,
 		AlertIncidentAckService.layer,
 		Layer.succeed(CurrentMcpTenant, {
 			orgId: Schema.decodeSync(OrgId)(ORG),
 			userId: Schema.decodeSync(UserId)("user_mcp_ack"),
-			roles: [],
+			roles: role === undefined ? [] : [Schema.decodeSync(RoleName)(role)],
+			permissions: Policy.grantsOf(role === undefined ? [] : [role]),
 			authMode: "self_hosted",
 		}),
 	).pipe(
@@ -174,5 +177,23 @@ describe("acknowledge_alert_incident", () => {
 			)
 			assert.isNull(rows.rows[0]?.acknowledged_by_user_id)
 		}).pipe(Effect.provide(layerFor(testDb)))
+	})
+
+	it.effect("lets a member acknowledge through the registry and refuses an analyst", () => {
+		const testDb = createTestDb(trackedDbs)
+		const viaRegistry = (role: string) =>
+			executeRegisteredMcpToolUnscoped("acknowledge_alert_incident", { incident_id: OPEN }, "mcp").pipe(
+				Effect.provide(layerFor(testDb, role)),
+			)
+		return Effect.gen(function* () {
+			yield* seed(testDb)
+			const refused = yield* Effect.flip(viaRegistry("org:analyst"))
+			assert.deepInclude(refused, {
+				_tag: "@maple/mcp/errors/McpAuthInvalidError",
+				message: Policy.denialFor("incidents:respond").message,
+			})
+			const acked = yield* viaRegistry("org:member")
+			assert.include(acked.content[0]?.text ?? "", "## Incident Acknowledged")
+		})
 	})
 })

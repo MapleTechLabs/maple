@@ -13,9 +13,9 @@ import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 
 // A cost source is a connection like any other: the role that manages integrations manages it.
-const requireIntegrationsManager = (roles: CurrentTenant.TenantSchema["roles"]) =>
+const requireIntegrationsManager = (permissions: CurrentTenant.TenantSchema["permissions"]) =>
 	Policy.check(
-		roles,
+		permissions,
 		"integrations:manage",
 		(denial) => new CostConnectionForbiddenError({ message: denial.message }),
 	)
@@ -30,7 +30,7 @@ export const saveCostConnection = <E, R>(
 ) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentTenant.Context
-		yield* requireIntegrationsManager(tenant.roles)
+		yield* requireIntegrationsManager(tenant.permissions)
 		const saved = yield* save(tenant.orgId, tenant.userId)
 		yield* recordHttpAudit("cost_source_key.updated", {
 			metadata: { provider, accountId: saved.accountId },
@@ -45,7 +45,7 @@ export const removeCostConnection = <E, R>(
 ) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentTenant.Context
-		yield* requireIntegrationsManager(tenant.roles)
+		yield* requireIntegrationsManager(tenant.permissions)
 		yield* remove(tenant.orgId)
 		yield* recordHttpAudit("cost_source_key.deleted", { metadata: { provider } })
 		return new CostConnectionRemoved({ removed: true })

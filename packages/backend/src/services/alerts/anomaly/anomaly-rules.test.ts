@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	AlertDestinationId,
@@ -30,7 +31,7 @@ const asRuleId = Schema.decodeUnknownSync(AlertRuleId)
 
 const ORG = asOrgId("org_anomaly_rules")
 const USER = asUserId("user_anomaly_rules")
-const ADMIN_ROLES = [asRoleName("org:admin")]
+const ADMIN_ROLES = Policy.grantsOf([asRoleName("org:admin")])
 const NOW = Date.parse("2026-11-06T12:00:00.000Z")
 const DEFAULT_RULE_ID = asRuleId("00000000-0000-4000-8000-0000000000aa")
 const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("00000000-0000-4000-8000-0000000000d1")

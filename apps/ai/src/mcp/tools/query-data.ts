@@ -662,6 +662,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Querying telemetry", "Running a query", "Pulling the numbers"],
 		handler: Effect.fn("McpTool.queryData")(function* (input) {
 			// Spellings agents used for tokens the engine names differently (commit_sha, a dotted

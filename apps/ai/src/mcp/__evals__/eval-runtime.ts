@@ -1,4 +1,5 @@
 import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import { McpToolPlatformLive, mcpServicesWithFeatureFlags } from "../../runtime/mcp-tool-graph"
 import { McpRuntimeServicesLive } from "../tools/runtime-services"
 import {
@@ -113,12 +114,15 @@ export const makeEvalRuntime = (
 /** A person who may run queries on connected data sources: the role the data source tools are exercised under. */
 export const ENGINEER_CALLER = { roles: [Schema.decodeSync(RoleName)("org:engineer")] }
 
-/** The same runtime, called by someone else. `EVAL_TENANT` alone holds no role and names no starter. */
+/**
+ * The same runtime, called by someone else, holding what their roles grant unless `permissions`
+ * says otherwise. `EVAL_TENANT` alone holds no role and names no starter.
+ */
 export const asCaller = (
 	rt: EvalRuntime,
 	caller: Pick<TenantContext, "roles"> &
-		Partial<Pick<TenantContext, "userId" | "turnOrigin" | "turnStarter" | "scopes">>,
-): EvalRuntime => ({ ...rt, tenant: { ...rt.tenant, ...caller } })
+		Partial<Pick<TenantContext, "permissions" | "userId" | "turnOrigin" | "turnStarter" | "scopes">>,
+): EvalRuntime => ({ ...rt, tenant: { ...rt.tenant, permissions: Policy.grantsOf(caller.roles), ...caller } })
 
 class StructuredOutputTooDeep extends Schema.TaggedError<StructuredOutputTooDeep>()(
 	"@maple/ai/evals/StructuredOutputTooDeep",

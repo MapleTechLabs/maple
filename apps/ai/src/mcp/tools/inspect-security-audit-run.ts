@@ -49,6 +49,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 			repository: P.optionalText("Instead of run_id: this repository's (owner/name) latest run"),
 		}),
 		hints: { readOnly: true },
+		permission: "security:manage",
 		phrases: ["Inspecting a security audit run"],
 		handler: Effect.fn("McpTool.inspectSecurityAuditRun")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

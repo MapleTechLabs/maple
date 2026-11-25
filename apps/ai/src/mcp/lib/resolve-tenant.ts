@@ -169,6 +169,7 @@ const resolveSessionTenant = Effect.fn("McpTenant.resolveSessionTenant")(functio
 		orgId: tenant.orgId,
 		userId: tenant.userId,
 		roles: [...tenant.roles],
+		permissions: tenant.permissions,
 		authMode: tenant.authMode,
 		rateLimitCredentialId: `user:${tenant.userId}`,
 	} satisfies McpAuthenticatedTenant
@@ -276,6 +277,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				orgId: validOrgId,
 				userId: validUserId,
 				roles: resolved.roles ?? apiKeyDefaultRoles,
+				permissions: resolved.permissions,
 				authMode: "self_hosted",
 				rateLimitCredentialId: `key:${resolved.keyId}`,
 				...(isMcpOAuthToken ? undefined : { apiKeyId: resolved.keyId }),
@@ -296,6 +298,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 			orgId: tenant.orgId,
 			userId: tenant.userId,
 			roles: [...tenant.roles],
+			permissions: tenant.permissions,
 			authMode: tenant.authMode,
 			rateLimitCredentialId: `user:${tenant.userId}`,
 		}

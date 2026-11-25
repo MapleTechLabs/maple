@@ -14,12 +14,13 @@ export const endAlertSilenceAction = (family: McpToolFamilyBuilder<"manage_alert
 			silence_id: P.resourceId("alertSilence", "Silence to end"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "alerts:manage",
 		handler: Effect.fn("McpTool.endAlertSilence")(function* (params) {
 			const silenceId = yield* P.decodeResourceId("alertSilence", "silence_id")(params.silence_id)
 			const tenant = yield* CurrentMcpTenant
 			const silences = yield* AlertSilencesService
 			const silence = yield* silences
-				.end(tenant.orgId, tenant.userId, tenant.roles, silenceId)
+				.end(tenant.orgId, tenant.userId, tenant.permissions, silenceId)
 				.pipe(Effect.catchTags(endSilenceErrors))
 			return { silence: toAlertSilenceRow(silence) }
 		}),

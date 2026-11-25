@@ -33,6 +33,7 @@ import type { V2Dashboard } from "@maple/domain/http/v2"
 import { documentOf } from "../view/command-history"
 import { toListDashboard } from "./derive"
 import { Message, type WriteFailure } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 /** The localStorage key of the default sort for a URL without `?sort`. */
 const SORT_KEY = "maple.dashboards.sort"
@@ -325,3 +326,5 @@ export const FetchDashboardsFallback = Command.define("FetchDashboardsFallback",
 			Effect.map((result) => Message.CompletedFetchFallback({ orgId, result })),
 		),
 })
+
+export const FetchListSession = fetchSessionGrants("FetchDashboardsSession", Message.CompletedFetchSession)

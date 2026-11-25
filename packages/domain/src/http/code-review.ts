@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
+import { EndpointAccess, requires } from "./endpoint-access"
 import { DigestTimeZone } from "./digest"
 import {
 	PrReviewCategory,
@@ -555,4 +556,6 @@ export class CodeReviewApiGroup extends HttpApiGroup.make("codeReview")
 		}),
 	)
 	.prefix("/internal/code-review")
+	// CI traces and post-merge telemetry.
+	.annotate(EndpointAccess, requires("telemetry:read"))
 	.middleware(SessionAuthorization) {}

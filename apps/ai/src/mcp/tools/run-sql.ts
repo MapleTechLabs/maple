@@ -365,6 +365,7 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 		parameters: runSqlSchema,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "query:sql",
 		phrases: ["Running a query", "Running SQL", "Querying the warehouse"],
 		handler: Effect.fn("McpTool.runSql")(function* (params) {
 			// Only that one was given: the text comes from the conversation and can name people.

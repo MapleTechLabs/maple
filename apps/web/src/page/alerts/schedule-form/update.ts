@@ -32,7 +32,7 @@ import {
 import { type Direction, Message } from "./message"
 import { type Model, zoneItems } from "./model"
 import { acceptGrants } from "../../kit/session-grants"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageOnCall } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsScheduleNew" }>
@@ -199,7 +199,7 @@ const zonePicked = (model: Model, message: Combobox.Message): Return => {
 }
 
 const save = (model: Model): Return =>
-	model.isSaving || !canManageAlerts(model)
+	model.isSaving || !canManageOnCall(model)
 		? { model }
 		: Option.match(payloadOf(model.form), {
 				onNone: () => ({ model: { ...model, isShowingErrors: true } }),

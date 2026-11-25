@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 // SAFETY-FILE: JSON in this test is emitted by the route under test before its fields are asserted.
 import { describe, expect, it } from "@effect/vitest"
 import {
@@ -49,6 +50,7 @@ const TENANT = new CurrentTenant.TenantSchema({
 	orgId: "org_ai_sessions" as CurrentTenant.TenantSchema["orgId"],
 	userId: "user_ai_sessions" as CurrentTenant.TenantSchema["userId"],
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 })
 

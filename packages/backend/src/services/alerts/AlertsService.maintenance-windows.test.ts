@@ -8,7 +8,7 @@ import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService
 import { AlertSilencesService } from "./AlertSilencesService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	createErrorRateRule,
@@ -79,7 +79,7 @@ describe("maintenance windows hold back alerts", () => {
 			const window = yield* windows.create(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertMaintenanceWindowCreateRequest({
 					name: "Nightly deploy",
 					matchers: { services: ["checkout"] },
@@ -126,7 +126,7 @@ describe("maintenance windows hold back alerts", () => {
 			const window = yield* windows.create(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertMaintenanceWindowCreateRequest({
 					name: "Nightly deploy",
 					matchers: { services: ["checkout"] },
@@ -146,7 +146,7 @@ describe("maintenance windows hold back alerts", () => {
 				windows.update(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					window.id,
 					new AlertMaintenanceWindowUpdateRequest({ enabled }),
 				)

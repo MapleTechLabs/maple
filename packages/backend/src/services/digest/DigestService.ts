@@ -55,7 +55,32 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { runWeeklyDigestTick } from "./weekly-digest-tick"
 import { type ClerkApi, type ClerkApiServices, clerkApiFor } from "@maple/auth"
+import * as Policy from "@maple/domain/policy"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
+
+/** One Clerk membership, as much of it as enrolling a digest recipient reads. */
+export interface ClerkDigestMember {
+	readonly role: string
+	readonly public_metadata: unknown
+	readonly public_user_data?:
+		| { readonly identifier?: string | null | undefined; readonly user_id: string }
+		| undefined
+}
+
+/** The members the Clerk sweep enrolls: those with an address whose role reads telemetry. */
+export const digestRecipientsOf = (orgId: OrgId, members: ReadonlyArray<ClerkDigestMember>) =>
+	Arr.flatMap(members, (member) => {
+		const memberEmail = member.public_user_data?.identifier
+		const memberUserId = member.public_user_data?.user_id
+		if (!memberEmail || !memberUserId) return []
+		const grants = Policy.grantsOf(
+			[member.role],
+			Policy.customPermissionsFromMembershipMetadata(member.public_metadata),
+		)
+		if (!Policy.can(grants, "telemetry:read")) return []
+		return [{ orgId, userId: UserId.make(memberUserId), email: memberEmail }]
+	})
 
 const toPersistenceError = (error: unknown) =>
 	new DigestPersistenceError({
@@ -275,6 +300,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		const warehouse = yield* WarehouseQueryService
 		const edgeCache = yield* EdgeCacheService
 		const random = yield* SecureRandom.SecureRandom
+		const memberships = yield* OrgMembershipService
 		const linkConfig = {
 			secret: Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			appBaseUrl: env.MAPLE_APP_BASE_URL,
@@ -917,18 +943,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 							`Failed to list Clerk members for org ${org.id}`,
 						)
 
-						return Arr.flatMap(members, (member) => {
-							const memberEmail = member.public_user_data?.identifier
-							const memberUserId = member.public_user_data?.user_id
-							if (!memberEmail || !memberUserId) return []
-							return [
-								{
-									orgId: OrgId.make(org.id),
-									userId: UserId.make(memberUserId),
-									email: memberEmail,
-								},
-							]
-						})
+						return digestRecipientsOf(OrgId.make(org.id), members)
 					}),
 				{ concurrency: CLERK_ORG_CONCURRENCY },
 			)
@@ -1106,6 +1121,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 								renderDigestHtml({ ...props, unsubscribeUrl }),
 						}
 					}),
+				memberships,
 				failureMessage: "Digest failed for org",
 				skipMessage: "Skipping digest for org with quarantined warehouse",
 			})
@@ -1135,7 +1151,12 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(WarehouseQueryService.layer, EmailService.layer, SecureRandom.layerWebCrypto),
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				EmailService.layer,
+				SecureRandom.layerWebCrypto,
+				OrgMembershipService.layer,
+			),
 		),
 	)
 }

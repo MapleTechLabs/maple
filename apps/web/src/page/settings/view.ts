@@ -26,6 +26,7 @@ import * as McpView from "./mcp/view"
 import * as AiView from "./ai/view"
 import * as BillingView from "./billing/view"
 import * as MembersView from "./members/view"
+import * as RolesView from "./roles/view"
 import * as GeneralView from "./general/view"
 import * as DomainsView from "./domains/view"
 import * as SsoView from "./sso/view"
@@ -106,7 +107,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					model: tab.model,
 					view: AiView.view,
 					toParentMessage: (message) => Message.GotAiMessage({ message }),
-					viewInputs: {},
+					viewInputs: { grants: visibilityOf(model).grants },
 				}),
 			]
 		case "Automation":
@@ -156,7 +157,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: DataSourcesView.view,
 					toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
 					viewInputs: {
-						canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage"),
+						canManage: Policy.can(visibilityOf(model).grants, "data_sources:manage"),
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,
 					},
@@ -184,6 +185,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 						timeZone: inputs.context.timeZone,
 						isKnownMember: isKnownMember(model),
 					},
+				}),
+			]
+		case "Roles":
+			return [
+				h.submodel({
+					slotId: "settings-roles",
+					model: tab.model,
+					view: RolesView.view,
+					toParentMessage: (message) => Message.GotRolesMessage({ message }),
+					viewInputs: {},
 				}),
 			]
 		case "Domains":
@@ -247,9 +258,9 @@ const gatedTabReason = (model: Model, tab: SettingsTab): string => {
 	const label = settingsTabLabels[tab]
 	const visibility = visibilityOf(model)
 	if (!visibility.isClerk) return `${label} isn't available on this deployment.`
-	if (tab === "data-platform" && Policy.has(visibility.grants, "warehouse:manage"))
+	if (tab === "data-platform" && Policy.can(visibility.grants, "warehouse:manage"))
 		return `${label} needs the Bring your own cloud add-on.`
-	return `You need admin access to view ${label}.`
+	return `Your role can't view ${label}.`
 }
 
 const isRoleUnknown = (model: Model): boolean =>
@@ -259,6 +270,7 @@ const isRoleUnknown = (model: Model): boolean =>
 const ROLE_GATED_TABS: ReadonlySet<SettingsTab> = new Set([
 	"general",
 	"members",
+	"roles",
 	"billing",
 	"keys",
 	"automation",
@@ -287,7 +299,7 @@ const pageNote = (h: H, model: Model): ReadonlyArray<Html> => {
 	const linksToPlans =
 		!isRoleUnknown(model) &&
 		model.deniedTab === "data-platform" &&
-		Policy.has(visibilityOf(model).grants, "warehouse:manage")
+		Policy.can(visibilityOf(model).grants, "warehouse:manage")
 	return reason === null
 		? []
 		: [
@@ -323,12 +335,14 @@ const pageNote = (h: H, model: Model): ReadonlyArray<Html> => {
 }
 
 /** The lead tabs' description, shown under the page `<h1>`. */
-const tabDescription = (model: Model): string | undefined => {
+const tabDescription = (h: H, model: Model): Html | string | undefined => {
 	switch (model.tab?._tag) {
 		case "Keys":
 			return KeysView.description
 		case "Members":
 			return MembersView.description
+		case "Roles":
+			return RolesView.description(h)
 		case "Domains":
 			return DomainsView.description
 		case "Sso":
@@ -363,6 +377,14 @@ const tabActions = (h: H, model: Model): Html | undefined => {
 				toParentMessage: (message) => Message.GotMembersMessage({ message }),
 				viewInputs: {},
 			})
+		case "Roles":
+			return h.submodel({
+				slotId: "settings-roles-actions",
+				model: tab.model,
+				view: RolesView.headerActions,
+				toParentMessage: (message) => Message.GotRolesMessage({ message }),
+				viewInputs: {},
+			})
 		case "Domains":
 			return h.submodel({
 				slotId: "settings-domains-actions",
@@ -377,7 +399,7 @@ const tabActions = (h: H, model: Model): Html | undefined => {
 				model: tab.model,
 				view: DataSourcesView.headerActions,
 				toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
-				viewInputs: { canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage") },
+				viewInputs: { canManage: Policy.can(visibilityOf(model).grants, "data_sources:manage") },
 			})
 		default:
 			return undefined
@@ -391,7 +413,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			title: isLoading || empty ? undefined : settingsTabLabels[activeTabOf(model)],
-			description: isLoading || empty ? undefined : tabDescription(model),
+			description: isLoading || empty ? undefined : tabDescription(h, model),
 			actions: isLoading || empty ? undefined : tabActions(h, model),
 			width: "settings",
 			// Holds the header row while the session resolves, so the content does not jump down.

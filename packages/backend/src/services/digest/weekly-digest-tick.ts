@@ -1,15 +1,18 @@
 /**
  * The weekly digest tick both digests run on their own columns of `digest_subscriptions`: pick
  * the subscriptions due now, claim the window once per group, render once per group, send per
- * subscriber, record each send. A parked org is skipped before the claim, so it is not marked
- * attempted for the window.
+ * subscriber, record each send. A parked org, or one whose members' roles could not be read, is
+ * skipped before the claim, so it is not marked attempted for the window.
  */
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import type { DigestSubscriptionRow } from "@maple/db/tables"
 import type { EdgeCacheServiceApi } from "@maple/cache"
-import type { DigestPersistenceError } from "@maple/domain/http"
-import { Cause, Clock, Effect, Array as Arr, Record as Rec } from "effect"
+import type { AuthorizationUnavailableError, DigestPersistenceError } from "@maple/domain/http"
+import { OrgId, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { Cause, Clock, Effect, Option, Array as Arr, Record as Rec } from "effect"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
+import type { OrgMembershipServiceApi } from "@maple/backend/services/auth/OrgMembershipService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { runWarehouseOrgTurn } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { digestResendCutoffMs, isDigestDue } from "./digest-schedule"
@@ -61,10 +64,22 @@ export interface WeeklyDigestTickInput<EP, ER, R> {
 	readonly groupBy: (row: DigestSubscriptionRow) => string
 	/** The group's email, or `undefined` when there is nothing to say; `head` speaks for the group. */
 	readonly prepare: (head: DigestSubscriptionRow) => Effect.Effect<DigestEmail<ER> | undefined, EP, R>
+	/** Who still reads telemetry, asked before the claim: a failed lookup leaves the group unclaimed. */
+	readonly memberships: OrgMembershipServiceApi
 	readonly failureMessage: string
 	readonly skipMessage?: string
 	readonly logQuarantine?: boolean
 }
+
+/**
+ * What each of an org's members holds, asked once per org and tick: the daily Clerk sweep lags a
+ * role change by up to a day. `undefined` without a directory (self-hosted), where everyone reads.
+ */
+const orgGrants = (memberships: OrgMembershipServiceApi, orgId: string) =>
+	memberships.directory === "none" ? Effect.undefined : memberships.orgGrants(OrgId.make(orgId))
+
+const readsTelemetry = (grants: ReadonlyMap<UserId, Policy.Grants> | undefined, sub: DigestSubscriptionRow) =>
+	grants === undefined || Policy.can(grants.get(UserId.make(sub.userId)) ?? [], "telemetry:read")
 
 export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, ER, R>) =>
 	Effect.gen(function* () {
@@ -110,6 +125,19 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 				Effect.match({ onSuccess: () => ({ sent: true }), onFailure: () => ({ sent: false }) }),
 			)
 
+		// Groups of one org share its lookup, failures included: an outage is asked about once a tick.
+		const lookups = new Map<
+			string,
+			Effect.Effect<ReadonlyMap<UserId, Policy.Grants> | undefined, AuthorizationUnavailableError>
+		>()
+		const grantsOf = Effect.fnUntraced(function* (orgId: string) {
+			const known = lookups.get(orgId)
+			if (known !== undefined) return yield* known
+			const lookup = yield* Effect.cached(orgGrants(input.memberships, orgId))
+			lookups.set(orgId, lookup)
+			return yield* lookup
+		})
+
 		const results = yield* Effect.forEach(
 			groups,
 			(group) => {
@@ -119,6 +147,22 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 					return []
 				})
 				const sendGroup = Effect.gen(function* () {
+					// Before the claim: a failed lookup leaves the window open for the next tick.
+					const grants = yield* grantsOf(head.orgId).pipe(
+						Effect.tapError((error) =>
+							Effect.logWarning(
+								"Leaving a digest group for the next tick: its members' roles could not be read",
+							).pipe(
+								Effect.annotateLogs({
+									digest: channel.kind,
+									orgId: head.orgId,
+									error: error.message,
+								}),
+							),
+						),
+						Effect.option,
+					)
+					if (Option.isNone(grants)) return []
 					const claim = yield* input.execute((db) =>
 						channel.claim(
 							db,
@@ -141,11 +185,14 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 							}),
 						)
 					}
-					if (claimed.length === 0) return []
+					const recipients = Arr.filter(claimed, (sub) => readsTelemetry(grants.value, sub))
+					if (recipients.length === 0) return []
 					rendered++
 					const message = yield* input.prepare(head)
 					if (message === undefined) return []
-					return yield* Effect.forEach(claimed, (sub) => sendTo(sub, message), { concurrency: 1 })
+					return yield* Effect.forEach(recipients, (sub) => sendTo(sub, message), {
+						concurrency: 1,
+					})
 				})
 				const turn = runWarehouseOrgTurn(input.edgeCache, head.orgId, now, sendGroup, {
 					skipped: [],

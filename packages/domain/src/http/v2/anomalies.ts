@@ -25,6 +25,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicError, publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { AnomalyIncidentPublicId, ErrorIssuePublicId } from "./resource-ids"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 export { AnomalyIncidentPublicId } from "./resource-ids"
 
@@ -430,14 +431,16 @@ export class V2AnomaliesApiGroup extends HttpApiGroup.make("anomalies")
 			params: { id: AnomalyIncidentPublicId },
 			success: V2AnomalyIncident,
 			error: [anomalyPersistence, anomalyNotFound],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "resolveAnomalyIncident",
-				summary: "Resolve an anomaly incident",
-				description:
-					"Manually resolves an open anomaly incident and returns it. Requires the `anomalies:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("incidents:respond"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "resolveAnomalyIncident",
+					summary: "Resolve an anomaly incident",
+					description:
+						"Manually resolves an open anomaly incident and returns it. Requires the `anomalies:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.put("setIncidentIssue", "/incidents/:id/issue", {
@@ -450,14 +453,16 @@ export class V2AnomaliesApiGroup extends HttpApiGroup.make("anomalies")
 				anomalyNotFound,
 				anomalyLinkedIssueNotFound,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "setAnomalyIncidentIssue",
-				summary: "Link an error issue to an incident",
-				description:
-					"Links (or unlinks, with `issue_id: null`) an error issue to an anomaly incident. Requires the `anomalies:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("incidents:respond"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "setAnomalyIncidentIssue",
+					summary: "Link an error issue to an incident",
+					description:
+						"Links (or unlinks, with `issue_id: null`) an error issue to an anomaly incident. Requires the `anomalies:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("getSettings", "/settings", {
@@ -477,14 +482,16 @@ export class V2AnomaliesApiGroup extends HttpApiGroup.make("anomalies")
 			payload: V2AnomalySettingsUpdateParams,
 			success: V2AnomalySettings,
 			error: [anomalyForbidden, anomalyPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "updateAnomalySettings",
-				summary: "Update anomaly settings",
-				description:
-					"Updates the org-wide detector settings; omitted fields are unchanged. Org-admin only. Requires the `anomalies:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, "handler")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "updateAnomalySettings",
+					summary: "Update anomaly settings",
+					description:
+						"Updates the org-wide detector settings; omitted fields are unchanged. Org-admin only. Requires the `anomalies:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/anomalies")
 	.middleware(AuthorizationV2)
@@ -494,4 +501,5 @@ export class V2AnomaliesApiGroup extends HttpApiGroup.make("anomalies")
 			description:
 				"Baseline-detected anomalies on monitored signals — list and inspect incidents, resolve them, link error issues, and manage detector settings.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

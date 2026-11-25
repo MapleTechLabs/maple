@@ -23,6 +23,7 @@ import * as SetupHealth from "./setup-health/update"
 import * as Ai from "./ai/update"
 import * as Billing from "./billing/update"
 import * as Members from "./members/update"
+import * as Roles from "./roles/update"
 import * as General from "./general/update"
 import * as Domains from "./domains/update"
 import * as Sso from "./sso/update"
@@ -47,7 +48,7 @@ type SettingsRoute = Extract<AppRoute, { readonly _tag: "Settings" }>
 
 export const visibilityOf = (model: Model): Visibility => {
 	const grants = grantsOf(model)
-	const canManageWarehouse = Policy.has(grants, "warehouse:manage")
+	const canManageWarehouse = Policy.can(grants, "warehouse:manage")
 	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
 	return {
 		isClerk: isClerkAuthEnabled,
@@ -101,6 +102,7 @@ const TAB_TAGS = {
 	"data-sources": "DataSources",
 	general: "General",
 	members: "Members",
+	roles: "Roles",
 	domains: "Domains",
 	sso: "Sso",
 	billing: "Billing",
@@ -202,14 +204,12 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Ai": {
-			// An admin of an org in the `aiAutoTriage` rollout (self-hosted has every rollout).
+			// An org in the `aiAutoTriage` rollout (self-hosted has every rollout).
 			const hasFlag = AsyncData.getOrElse(
 				AsyncData.map(model.session, (session) => session.hasAiAutoTriage),
 				() => false,
 			)
-			const step = Ai.init(
-				Policy.has(grantsOf(model), "llm_keys:manage") && (!isClerkAuthEnabled || hasFlag),
-			)
+			const step = Ai.init(!isClerkAuthEnabled || hasFlag)
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -247,7 +247,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 		case "DataSources": {
 			// Connecting is admin-only, so a shared connect link opens the list for members.
 			const step = DataSources.init(
-				Policy.has(grantsOf(model), "data_sources:manage")
+				Policy.can(grantsOf(model), "data_sources:manage")
 					? model.search
 					: { source: model.search.source },
 			)
@@ -276,6 +276,15 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				),
 			}
 		}
+		case "Roles": {
+			const step = Roles.init(grantsOf(model))
+			return {
+				model: { ...model, tab: { _tag: "Roles", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotRolesMessage({ message }),
+				),
+			}
+		}
 		case "Domains": {
 			const step = Domains.init()
 			return {
@@ -286,7 +295,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Sso": {
-			const step = Sso.init(Policy.has(grantsOf(model), "sso:manage"))
+			const step = Sso.init(Policy.can(grantsOf(model), "sso:manage"))
 			return {
 				model: { ...model, tab: { _tag: "Sso", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -433,6 +442,15 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 				model: { ...model, tab: { _tag: "Members", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
 					Message.GotMembersMessage({ message }),
+				),
+			}
+		}
+		case "Roles": {
+			const step = Roles.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Roles", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotRolesMessage({ message }),
 				),
 			}
 		}
@@ -765,6 +783,18 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				model: putTab(model, { _tag: "Members", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) =>
 					Message.GotMembersMessage({ message: child }),
+				),
+				outMessage: step.outMessage,
+			}
+		},
+		GotRolesMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "Roles")
+			if (tab === undefined) return { model }
+			const step = Roles.update(tab.model, inner)
+			return {
+				model: putTab(model, { _tag: "Roles", model: step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotRolesMessage({ message: child }),
 				),
 				outMessage: step.outMessage,
 			}

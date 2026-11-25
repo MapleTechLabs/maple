@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "vitest"
 import { Context, Effect, Layer, Schema } from "effect"
 import {
@@ -156,6 +157,7 @@ const tenant = Layer.succeed(CurrentMcpTenant, {
 	orgId: ORG,
 	userId: Schema.decodeSync(UserId)("user_error_grouping"),
 	roles: [Schema.decodeSync(RoleName)("org:member")],
+	permissions: Policy.grantsOf(["org:member"]),
 	authMode: "self_hosted",
 	actorId: ACTOR,
 })

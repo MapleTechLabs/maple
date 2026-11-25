@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 // BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import { describe, it } from "@effect/vitest"
 import { TestClock } from "effect/testing"
@@ -64,6 +65,7 @@ const tenant: TenantContext = {
 	orgId: asOrgId("org_test"),
 	userId: asUserId("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

@@ -10,7 +10,7 @@ import {
 	SavedViewNotFoundError,
 	SavedViewPersistenceError,
 } from "@maple/domain/http"
-import { highestRole, isAtLeast } from "@maple/domain/policy"
+import * as Policy from "@maple/domain/policy"
 import { SavedViewState, type SavedViewSurface, type SavedViewVisibility } from "@maple/domain/saved-views"
 import { SavedViewId, type OrgId, type UserId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
@@ -22,7 +22,7 @@ import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
 export interface SavedViewCaller {
 	readonly orgId: OrgId
 	readonly userId: UserId
-	readonly roles: ReadonlyArray<string>
+	readonly permissions: Policy.Grants
 }
 
 /** A view as its caller may use it. */
@@ -97,7 +97,8 @@ const toPersistenceError = makePersistenceErrorMapper(
 
 const decodeId = Schema.decodeUnknownSync(SavedViewId)
 
-const isOrgAdmin = (caller: SavedViewCaller): boolean => isAtLeast(highestRole(caller.roles), "admin")
+// `members:manage` is Admin's alone: custom roles cannot hold it.
+const isOrgAdmin = (caller: SavedViewCaller): boolean => Policy.can(caller.permissions, "members:manage")
 
 /** A row with its state as stored, not yet checked against the schema. */
 type StoredRow = Omit<SavedViewRow, "state"> & { readonly state: unknown }

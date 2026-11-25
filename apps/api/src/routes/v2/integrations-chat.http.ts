@@ -89,7 +89,7 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("install", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
 						// The install is bound to `tenant.userId`, who must be the one finishing it.
@@ -173,7 +173,7 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("updateWorkspace", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
 						const features = {
@@ -212,7 +212,7 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("destinations", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
 						const destinations = yield* chat.listDestinations(tenant.orgId, params.id)
@@ -229,7 +229,7 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("deleteWorkspace", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
 						yield* chat.uninstall(tenant.orgId, params.id)

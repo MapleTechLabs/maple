@@ -19,6 +19,7 @@ import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
 import { MetricPageSchema } from "../../kit/query-builder/metric-options"
 import { ProductEdit } from "./product-edit"
 import { Suggestion, SuggestionLookup } from "./suggestions"
+import { SessionGrants } from "../../kit/session-grants"
 
 export const FormulaTextField = Schema.Literals(["expression", "legend"])
 export type FormulaTextField = typeof FormulaTextField.Type
@@ -30,6 +31,7 @@ export type GeneratedIdPurpose = typeof GeneratedIdPurpose.Type
 export const Message = defineMessageUnion({
 	UpdatedDashboard: { orgId: Schema.String, maybeDocument: Schema.Option(DashboardDocument) },
 	CompletedReadClock: { nowMs: Schema.Number },
+	CompletedFetchSession: SessionGrants,
 	MeasuredPreview: { widthPx: Schema.Number },
 	CompletedFetchWidget: { key: Schema.String, result: Schema.Result(Schema.Unknown, WidgetFailure) },
 	CompletedFetchVariableOptions: {
