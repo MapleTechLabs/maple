@@ -79,6 +79,9 @@ characters each, made of letters, digits, spaces and `. _ : / @ + -`.
   a minute, a cached membership up to five) pins the grants held before it. Limiting someone's role
   retires what they held then, not a key they mint in that window.
 - Telemetry sent without a `service.namespace` belongs to no namespace: no limited role reads it.
+- The trace list pages by root span, so a trace that starts in another namespace is not listed for
+  a limited role, even when some of its spans are in the role's namespaces. Opened by id, it shows
+  those spans.
 - A limited role opening a trace sees only the spans its namespaces emitted; spans of other
   namespaces in the same trace are missing, not redacted in place. It can learn that a trace id
   exists and when, from the trace index.
