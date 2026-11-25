@@ -3,6 +3,7 @@ import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import * as Policy from "@maple/domain/policy"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
+import { ServiceSourceMaps } from "../../kit/source-maps"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -63,6 +64,7 @@ export const Message = defineMessageUnion({
 		...result(Schema.Array(V2UptimeMonitor)),
 		grants: Schema.Array(Policy.PermissionName),
 	},
+	CompletedFetchSourceMaps: result(ServiceSourceMaps),
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchRuntimes: result(Schema.Array(ServiceRuntime)),
 	CompletedFetchDependencies: result(DependencyBundle),
