@@ -456,6 +456,31 @@ describe("RetentionService.readHorizon", () => {
 		),
 	)
 
+	// Live clock: readers that find a load under way look again after a real few milliseconds.
+	it.live("readers arriving together on a new isolate share one policy read", () =>
+		withSwitchableDb((database, db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const decodeOrgId = Schema.decodeSync(OrgId)
+				yield* fromAnotherIsolate(
+					db,
+					RetentionService.use((other) => other.setOrganization(ORG, ANA, { traces: 7 })),
+				)
+				const horizons = yield* Effect.forEach(
+					[ORG, ...Arr.makeBy(11, (index) => decodeOrgId(`org_${index}`))],
+					(orgId) => retention.readHorizon(orgId),
+					{ concurrency: "unbounded" },
+				)
+				assert.strictEqual(database.calls, 1)
+				// None of them fell back to the defaults while the first was still reading.
+				assert.deepStrictEqual(
+					Arr.map(horizons, (horizon) => horizon.days.traces),
+					[7, ...Arr.makeBy(11, () => DEFAULT_RETENTION_DAYS.traces)],
+				)
+			}),
+		),
+	)
+
 	it.effect("reading many organizations costs one policy read, not one each", () =>
 		withSwitchableDb((database, db) =>
 			Effect.gen(function* () {

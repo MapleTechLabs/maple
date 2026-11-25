@@ -98,6 +98,8 @@ export const READ_HORIZON_RETRY_MS = 10_000
 export const READ_HORIZON_LOAD_TIMEOUT_MS = 2_000
 /** A write this much older than a snapshot is in it, whatever two isolates' clocks disagree by. */
 export const READ_HORIZON_WRITE_SKEW_MS = 5_000
+/** How often a read on an isolate that holds nothing yet looks for the load under way. */
+const READ_HORIZON_COLD_POLL_MS = 5
 /** A refresh marker older than this is from a fiber that never cleared it. */
 const READ_HORIZON_REFRESH_STALE_MS = 10_000
 
@@ -288,7 +290,6 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 			const loadReadHorizons = Effect.fn("RetentionService.loadReadHorizons")(function* (
 				nowMs: number,
 			) {
-				state.refreshStartedAt = nowMs
 				// A new isolate asks the shared cache before Postgres, unless it is mid fan-out.
 				yield* edgeCache
 					.getOrCompute(
@@ -359,20 +360,28 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 			})
 
 			// No span of its own: a hit is a clock read and a map lookup on every warehouse read.
-			const readHorizon = (orgId: OrgId) =>
+			const readHorizonAfter = (orgId: OrgId, polls: number): Effect.Effect<RetentionReadHorizon> =>
 				Effect.flatMap(Clock.currentTimeMillis, (nowMs) => {
-					// While another fiber reads the policies, the rest keep the last known horizons
-					// instead of each asking Postgres. They never wait on it: that fiber may
-					// belong to another request, and its connection with it.
+					// While another fiber reads the policies, the rest never start a read of their own
+					// and never wait on that fiber: it may belong to another request, and its
+					// connection with it. They keep the last known horizons, or with none yet they
+					// look again shortly, since the defaults would let a bounded org read too far.
 					const startedAt = state.refreshStartedAt
-					const fresh =
-						state.known !== undefined &&
-						(nowMs < state.known.freshUntil ||
-							(startedAt !== undefined && nowMs - startedAt < READ_HORIZON_REFRESH_STALE_MS))
-					return fresh
-						? Effect.succeed(horizonOf(orgId))
-						: Effect.map(loadReadHorizons(nowMs), () => horizonOf(orgId))
+					const loading =
+						startedAt !== undefined && nowMs - startedAt < READ_HORIZON_REFRESH_STALE_MS
+					if (state.known !== undefined && (loading || nowMs < state.known.freshUntil)) {
+						return Effect.succeed(horizonOf(orgId))
+					}
+					if (loading && polls * READ_HORIZON_COLD_POLL_MS < READ_HORIZON_LOAD_TIMEOUT_MS) {
+						return Effect.flatMap(Effect.sleep(Duration.millis(READ_HORIZON_COLD_POLL_MS)), () =>
+							readHorizonAfter(orgId, polls + 1),
+						)
+					}
+					// Marked here, in the same step as the check, so the next reader sees it.
+					state.refreshStartedAt = nowMs
+					return Effect.map(loadReadHorizons(nowMs), () => horizonOf(orgId))
 				})
+			const readHorizon = (orgId: OrgId) => readHorizonAfter(orgId, 0)
 
 			/**
 			 * A write is read back by its own instance at once. The shared entry is dropped, so
