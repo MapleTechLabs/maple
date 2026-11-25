@@ -130,6 +130,8 @@ export type ShellClerk = Readonly<{
 	maybeOrganization: Option.Option<ClerkOrganization>
 	memberships: ReadonlyArray<ClerkOrganization>
 	customer: BillingCustomer | undefined
+	/** When the customer was read: the clock the trial banners and chip count days by. */
+	customerReadAtMs: number
 	/** What the viewer may do in the active org, once Clerk has read their membership. */
 	maybeGrants: Option.Option<Policy.Grants>
 }>

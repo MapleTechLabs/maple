@@ -8,8 +8,13 @@ import {
 	CatalogPlanPrice,
 } from "@maple/domain/http"
 import {
+	getAiCardGate,
 	getFeatureQuotas,
 	getLapsedPlan,
+	getNoCardTrial,
+	getTrialNotice,
+	hasEndedNoCardTrial,
+	hasPaidPlan,
 	getLegacyPlanInfo,
 	getPastDueSubscription,
 	getQuotaStatus,
@@ -395,5 +400,95 @@ describe("isLegacyPlan / getLegacyPlanInfo", () => {
 		// getOrCreateCustomer does not expand subscription.plan in practice.
 		const customer = buildCustomer([buildSubscription({ planId: "starter", plan: null })])
 		expect(getLegacyPlanInfo(customer, catalog)).toEqual({ isLegacy: true, planName: "starter" })
+	})
+})
+
+describe("the no-card trial", () => {
+	const DAY = 24 * 60 * 60 * 1000
+	const NOW = 1_800_000_000_000
+	const onTrial = (daysLeft: number, balances: Customer["balances"] = {}) =>
+		buildCustomer(
+			[buildSubscription({ planId: "trial", plan: null, trialEndsAt: NOW + daysLeft * DAY })],
+			{
+				balances,
+			},
+		)
+	const used = (usage: number) => buildBalance("logs", { granted: 100, usage, remaining: 100 - usage })
+
+	it("counts its days left and is not a paid plan", () => {
+		const customer = onTrial(8.5)
+		expect(getNoCardTrial(customer, NOW)).toEqual({ endsAt: NOW + 8.5 * DAY, daysRemaining: 9 })
+		expect(hasPaidPlan(customer)).toBe(false)
+		expect(hasSelectedPlan(customer)).toBe(true)
+	})
+
+	it("is absent on a paid plan, which ends a checkout wait", () => {
+		const customer = buildCustomer([buildSubscription({ planId: "startup", trialEndsAt: NOW + DAY })])
+		expect(getNoCardTrial(customer, NOW)).toBeNull()
+		expect(hasPaidPlan(customer)).toBe(true)
+		expect(getTrialNotice(customer, NOW)).toBeNull()
+	})
+
+	it("asks for a card for a capped signal first, naming each one at its cap", () => {
+		const notice = getTrialNotice(
+			onTrial(2, { logs: used(100), traces: used(85), metrics: used(100) }),
+			NOW,
+		)
+		expect(notice?._tag).toBe("Capped")
+		expect(notice !== null && notice._tag !== "Ending" ? notice.featureIds : []).toEqual([
+			"logs",
+			"metrics",
+		])
+	})
+
+	it("asks in the last days, before a cap only nears", () => {
+		expect(getTrialNotice(onTrial(3, { logs: used(85) }), NOW)?._tag).toBe("Ending")
+		expect(getTrialNotice(onTrial(10, { logs: used(85) }), NOW)?._tag).toBe("Approaching")
+		expect(getTrialNotice(onTrial(10, { logs: used(10) }), NOW)).toBeNull()
+	})
+
+	it("counts a bought plan or add-on as paid, never the trial, the free row or an auto-enabled one", () => {
+		const paid = (sub: Partial<Subscription>) => hasPaidPlan(buildCustomer([buildSubscription(sub)]))
+		expect(paid({ planId: "free" })).toBe(false)
+		expect(paid({ planId: "starter", autoEnable: true })).toBe(false)
+		expect(paid({ planId: "trial" })).toBe(false)
+		expect(paid({ planId: "bringyourowncloud", addOn: true })).toBe(true)
+		expect(paid({ planId: "startup", status: "expired" })).toBe(false)
+	})
+
+	it("tells an ended trial from an ended subscription", () => {
+		const endedTrial = buildCustomer([
+			buildSubscription({ planId: "trial", status: "expired", trialEndsAt: NOW - DAY }),
+		])
+		const endedPlan = buildCustomer([buildSubscription({ planId: "startup", status: "expired" })])
+		expect(hasEndedNoCardTrial(endedTrial)).toBe(true)
+		expect(hasEndedNoCardTrial(endedPlan)).toBe(false)
+		expect(resolvePlanAccess({ customer: endedTrial, isLoading: false })).toBe("app")
+	})
+})
+
+describe("getAiCardGate", () => {
+	const trial = buildSubscription({ planId: "trial", trialEndsAt: Date.UTC(2026, 11, 9) })
+
+	it("asks for a card on the no-card trial and for a plan once none is active", () => {
+		expect(getAiCardGate(buildCustomer([trial]))).toBe("trial")
+		expect(
+			getAiCardGate(buildCustomer([buildSubscription({ planId: "trial", status: "expired" })])),
+		).toBe("no_plan")
+		expect(getAiCardGate(buildCustomer([]))).toBe("no_plan")
+	})
+
+	it("lets a paid plan through, and asks a trial org for a card even with the OpenRouter add-on", () => {
+		expect(getAiCardGate(buildCustomer([buildSubscription({ planId: "startup" })]))).toBeNull()
+		// The add-on is not a plan; only a configured key (server-side) runs AI without one.
+		expect(
+			getAiCardGate(
+				buildCustomer([trial, buildSubscription({ planId: "openrouter_byok", addOn: true })]),
+			),
+		).toBe("trial")
+	})
+
+	it("says nothing before billing answers: the server still checks", () => {
+		expect(getAiCardGate(undefined)).toBeNull()
 	})
 })

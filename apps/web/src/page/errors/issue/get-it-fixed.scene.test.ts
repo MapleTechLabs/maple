@@ -76,7 +76,11 @@ const loaded = (): Model => {
 	).model
 }
 
-const view = (model: Model, h: HtmlBuilder<Message>): Html => getItFixedPanel(h, model, issue, null)
+const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+	getItFixedPanel(h, model, issue, null, undefined)
+
+const viewOnTrial = (model: Model, h: HtmlBuilder<Message>): Html =>
+	getItFixedPanel(h, model, issue, null, "trial")
 
 describe("get it fixed", () => {
 	test("Copy prompt puts the issue's agent prompt on the clipboard, then says Copied", () => {
@@ -110,6 +114,15 @@ describe("get it fixed", () => {
 				CreateInvestigation,
 				Message.CompletedCreateInvestigation({ result: Result.succeed("inv_1") }),
 			),
+		)
+	})
+
+	test("on the no-card trial the panel asks for a card instead of starting an investigation", () => {
+		scene(
+			{ update: pageUpdate, view: viewOnTrial },
+			given(loaded()),
+			expectView(role("button", { name: "Start investigation" })).not.toExist(),
+			expectView(role("link", { name: "Add card to use AI" })).toHaveAttr("href", "/settings/billing"),
 		)
 	})
 })

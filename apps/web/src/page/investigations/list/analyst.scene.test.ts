@@ -73,6 +73,26 @@ describe("investigations list, analyst", () => {
 		)
 	})
 
+	test("on the no-card trial, the card notice takes a member's bar and is not shown to an analyst", () => {
+		const trialView = withViewInputs(pageView, { context: { ...context, aiCardGate: "trial" } })()
+		const notice = text("Add a card to turn on Maple AI")
+		scene(
+			{ update: pageUpdate, view: trialView },
+			given(loaded(MEMBER, [investigation])),
+			measured(),
+			rowsMounted(),
+			expectView(notice).toExist(),
+			expectView(bar).toBeAbsent(),
+		)
+		scene(
+			{ update: pageUpdate, view: trialView },
+			given(loaded(ANALYST, [investigation])),
+			measured(),
+			rowsMounted(),
+			expectView(notice).toBeAbsent(),
+		)
+	})
+
 	test("an empty workspace shows an analyst the plain empty list, and a member the first-run hero", () => {
 		scene(
 			{ update: pageUpdate, view },

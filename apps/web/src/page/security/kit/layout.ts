@@ -1,3 +1,5 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { aiCardNotice } from "../../kit/billing/ai-card-gate"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
@@ -209,6 +211,8 @@ type SecurityLayoutOptions = Readonly<{
 	actions?: Html
 	/** Dialogs the page owns, rendered after the content. */
 	overlay?: ReadonlyArray<Html>
+	/** Audits run on Maple AI: on `code`, a notice above the content asks for a card first. */
+	aiCardGate?: AiCardGate
 }>
 
 export const securityLayout = <M>(
@@ -230,7 +234,15 @@ export const securityLayout = <M>(
 			tabs: options.source === "code" ? codeTabs(h, options.codeTab ?? "overview") : undefined,
 			scrollClassName: "pb-8",
 		},
-		[stack(h, children), ...(options.overlay ?? [])],
+		[
+			stack(h, [
+				...(options.aiCardGate === undefined || options.source !== "code"
+					? []
+					: [aiCardNotice(h, options.aiCardGate)]),
+				...children,
+			]),
+			...(options.overlay ?? []),
+		],
 	)
 
 /** A four-tile stat rail keeps two columns until the page is wide enough for four. */

@@ -172,7 +172,11 @@ describe("AiCredits", () => {
 
 	const BILLED = { AUTUMN_SECRET_KEY: "am_sk_test" }
 	const UNAUTHORIZED = '{"code":"unauthorized"}'
-	const NO_CREDITS = JSON.stringify({ id: "org_customer", subscriptions: [], balances: {} })
+	const NO_CREDITS = JSON.stringify({
+		id: "org_customer",
+		subscriptions: [{ plan_id: "startup", status: "active" }],
+		balances: {},
+	})
 
 	it.effect("reports billing as unavailable, not unmetered, when it rejects a configured key", () =>
 		Effect.gen(function* () {
@@ -187,7 +191,7 @@ describe("AiCredits", () => {
 			Effect.gen(function* () {
 				const capped = JSON.stringify({
 					id: "org_customer",
-					subscriptions: [],
+					subscriptions: [{ plan_id: "startup", status: "active" }],
 					balances: {
 						ai_credits: { granted: 10, usage: 15, remaining: -5, overage_allowed: true },
 					},
@@ -236,7 +240,7 @@ describe("AiCredits", () => {
 		Effect.gen(function* () {
 			const body = JSON.stringify({
 				id: "org_customer",
-				subscriptions: [],
+				subscriptions: [{ plan_id: "startup", status: "active" }],
 				balances: { ai_credits: { granted: 10, usage: 25, remaining: -15, overageAllowed: true } },
 				billingControls: {
 					spendLimits: [{ featureId: "ai_credits", enabled: true, overageLimit: 15 }],
@@ -250,6 +254,40 @@ describe("AiCredits", () => {
 			)
 			assert.strictEqual(reason, "cap_reached")
 		}),
+	)
+
+	it.effect(
+		"asks an org on the no-card trial for a card, credits or not, and lets it in once it pays",
+		() =>
+			Effect.gen(function* () {
+				const credits = { ai_credits: { granted: 10, remaining: 10 } }
+				const onTrial = JSON.stringify({
+					id: "org_customer",
+					subscriptions: [{ plan_id: "trial", status: "active" }],
+					balances: credits,
+				})
+				const reasonOf = (body: string) =>
+					ensureFor(CUSTOMER_ORG, BILLED, 200, body).pipe(
+						Effect.as("allowed"),
+						Effect.catchTag("@maple/backend/billing/AiCreditsExhausted", (error) =>
+							Effect.succeed(`${error.reason}:${String(error.resetsAt)}`),
+						),
+					)
+				const subscribed = JSON.stringify({
+					id: "org_customer",
+					subscriptions: [
+						{ plan_id: "trial", status: "expired" },
+						{ plan_id: "startup", status: "active" },
+					],
+					balances: credits,
+				})
+				// An ended trial whose balances Autumn dropped is refused too, never read as unmetered.
+				const ended = JSON.stringify({ id: "org_customer", subscriptions: [], balances: {} })
+				assert.deepStrictEqual(
+					[yield* reasonOf(onTrial), yield* reasonOf(subscribed), yield* reasonOf(ended)],
+					["card_required:null", "allowed", "card_required:null"],
+				)
+			}),
 	)
 
 	it.effect("lets an org on its own OpenRouter key spend without AI credits, resolved or stated", () =>

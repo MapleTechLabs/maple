@@ -9,6 +9,9 @@ import {
 	ENTERPRISE_SSO_FEATURE_ID,
 	OPENROUTER_BYOK_ADDON_ID,
 	OPENROUTER_BYOK_FEATURE_ID,
+	TRIAL_DURATION_DAYS,
+	TRIAL_PLAN_ID,
+	TRIAL_SIGNAL_GB,
 	UPTIME_MONITORS_FEATURE_ID,
 } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
@@ -217,10 +220,30 @@ export const startup = plan({
 			},
 		},
 	],
+})
+
+// The no-card trial every new org starts on: Startup's allowances with no overage price, so each
+// is a hard cap the ingest gateway enforces (`balances.check` denies at zero). Adding a card
+// attaches Startup with the days left (`trialForStartupAttach`). The API hides it from the catalog.
+export const trial = plan({
+	id: TRIAL_PLAN_ID,
+	name: "Free trial",
+	items: [
+		{ featureId: "logs", included: TRIAL_SIGNAL_GB, reset: { interval: "month" } },
+		{ featureId: "metrics", included: TRIAL_SIGNAL_GB, reset: { interval: "month" } },
+		{ featureId: "traces", included: TRIAL_SIGNAL_GB, reset: { interval: "month" } },
+		{ featureId: "profiles", included: 10, reset: { interval: "month" } },
+		{ featureId: "browser_sessions", included: 5000, reset: { interval: "month" } },
+		{ featureId: "product_events", included: 1_000_000, reset: { interval: "month" } },
+		{ featureId: UPTIME_MONITORS_FEATURE_ID, included: 10 },
+		// Maple AI waits for a card (`aiCardGateOf`). Zero, not absent: a plan without the
+		// balance reads as unmetered, so an empty one is the backstop.
+		{ featureId: "ai_credits", included: 0 },
+	],
 	freeTrial: {
-		durationLength: 14,
+		durationLength: TRIAL_DURATION_DAYS,
 		durationType: "day",
-		cardRequired: true,
+		cardRequired: false,
 	},
 })
 

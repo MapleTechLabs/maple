@@ -20,8 +20,8 @@ import type { Resources } from "../platform/resources"
 import { aiCreditUsageFixture } from "./ai-credits-fixture"
 
 // `/lab/billing-orgs`: the Billing tab per billing role over fixtures. `?state=` picks one:
-// member, member-viewer, billing-org, standalone, rejected, and ai-credits (the AI credits row with
-// its link to the details page).
+// member, member-viewer, billing-org, standalone, rejected, ai-credits (the AI credits row with
+// its link to the details page), and trial (a standalone org on the no-card trial, logs near its cap).
 
 export { Message, Model }
 
@@ -32,19 +32,21 @@ export const LabState = Schema.Literals([
 	"standalone",
 	"rejected",
 	"ai-credits",
+	"trial",
 ])
 export type LabState = typeof LabState.Type
 
 export const Flags = Schema.Struct({ state: LabState, timeZone: Schema.String })
 export type Flags = typeof Flags.Type
 
-export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
-	state: Option.getOrElse(
+/** The `?state=` this page was opened with. */
+const labState = (): LabState =>
+	Option.getOrElse(
 		Schema.decodeUnknownOption(LabState)(new URLSearchParams(window.location.search).get("state")),
 		(): LabState => "member",
-	),
-	timeZone: "UTC",
-}))
+	)
+
+export const flags: Effect.Effect<Flags> = Effect.sync(() => ({ state: labState(), timeZone: "UTC" }))
 
 const DAY = 86_400_000
 const CYCLE_START = Date.UTC(2026, 9, 1)
@@ -71,7 +73,7 @@ const plans = Schema.decodeSync(Schema.Array(CatalogPlan))([
 	},
 ])
 
-const customer = Schema.decodeSync(BillingCustomer)({
+const paidCustomer = Schema.decodeSync(BillingCustomer)({
 	id: "org_acme",
 	subscriptions: [
 		{
@@ -92,6 +94,46 @@ const customer = Schema.decodeSync(BillingCustomer)({
 		ai_credits: { granted: 10 },
 	},
 })
+
+/** The no-card trial, nine days left: hard caps (no overage), logs at 86 GB of 100. */
+const trialCustomer = Schema.decodeSync(BillingCustomer)({
+	id: "org_acme",
+	subscriptions: [
+		{
+			planId: "trial",
+			plan: {
+				id: "trial",
+				name: "Free trial",
+				price: null,
+				items: [
+					{ featureId: "logs", included: 100 },
+					{ featureId: "traces", included: 100 },
+					{ featureId: "metrics", included: 100 },
+					{ featureId: "profiles", included: 10 },
+					{ featureId: "browser_sessions", included: 5_000 },
+					{ featureId: "product_events", included: 1_000_000 },
+					{ featureId: "ai_credits", included: 10 },
+				],
+			},
+			status: "active",
+			addOn: false,
+			trialEndsAt: NOW_MS + 9 * DAY,
+			currentPeriodStart: NOW_MS - 5 * DAY,
+			currentPeriodEnd: NOW_MS + 9 * DAY,
+		},
+	],
+	balances: {
+		logs: { granted: 100, usage: 86, overageAllowed: false },
+		traces: { granted: 100, usage: 31, overageAllowed: false },
+		metrics: { granted: 100, usage: 7, overageAllowed: false },
+		profiles: { granted: 10, overageAllowed: false },
+		browser_sessions: { granted: 5_000, overageAllowed: false },
+		product_events: { granted: 1_000_000, overageAllowed: false },
+		ai_credits: { granted: 10, overageAllowed: false },
+	},
+})
+
+const customerOf = (state: LabState) => (state === "trial" ? trialCustomer : paidCustomer)
 
 /** Usage per lab state: the AI credits spent match the state's AI credits section. */
 const usage = (state: LabState) =>
@@ -231,7 +273,7 @@ export const init = (flags: Flags): Return => {
 
 /** Dialogs and pickers work; reads and writes are dropped, the fixture is all the data there is. */
 export const update = (model: Model, message: Message): Return => {
-	const step = billingUpdate(model, message, customer, NOW_MS).step
+	const step = billingUpdate(model, message, customerOf(labState()), NOW_MS).step
 	return {
 		model: step.model,
 		commands: Arr.filter(
@@ -251,7 +293,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				view: billingView,
 				toParentMessage: (message: Message) => message,
 				viewInputs: {
-					customer: AsyncData.Success({ data: customer }),
+					customer: AsyncData.Success({ data: customerOf(labState()) }),
 					adminName: null,
 					isKnownMember: false,
 					nowMs: NOW_MS,

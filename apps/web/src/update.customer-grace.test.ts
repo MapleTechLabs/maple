@@ -105,7 +105,7 @@ describe("plan gate splash on a slow customer read", () => {
 		expect(Option.isNone(Option.flatMap(planGateOf(elapsed.model), (gate) => gate.redirect))).toBe(true)
 
 		const customer = new BillingCustomer({ id: orgId, subscriptions: [] })
-		const settled = update(elapsed.model, Message.SucceededLoadCustomer({ orgId, customer }))
+		const settled = update(elapsed.model, Message.SucceededLoadCustomer({ orgId, customer, readAtMs: 0 }))
 		const redirect = Option.flatMap(planGateOf(settled.model), (gate) => gate.redirect)
 		expect(Option.map(redirect, ({ url }) => Str.startsWith("/quick-start")(url))).toEqual(
 			Option.some(true),
@@ -140,5 +140,28 @@ describe("profiling rollout", () => {
 	test("a service page is told whether its org is in the rollout", () => {
 		expect(profilingOf(false)).toEqual(Option.some(false))
 		expect(profilingOf(true)).toEqual(Option.some(true))
+	})
+})
+
+describe("Maple AI on the no-card trial", () => {
+	const withPlans = (subscriptions: ReadonlyArray<Record<string, unknown>>) => {
+		const loaded = update(base({ [orgId]: true }), Message.CompletedLoadClerk({ snapshot }))
+		const customer = Schema.decodeUnknownSync(BillingCustomer)({ id: orgId, subscriptions })
+		return update(loaded.model, Message.SucceededLoadCustomer({ orgId, customer, readAtMs: 0 })).model
+	}
+	const gateOf = (model: Model) => Option.map(pageContextOf(model), (context) => context.aiCardGate)
+
+	test("pages are told AI waits for a card on the trial, and not once Startup holds a card", () => {
+		const onTrial = withPlans([{ planId: "trial", status: "active", trialEndsAt: Date.UTC(2026, 11, 9) }])
+		const subscribed = withPlans([
+			{ planId: "trial", status: "expired" },
+			{ planId: "startup", status: "active" },
+		])
+		expect([gateOf(onTrial), gateOf(subscribed)]).toEqual([Option.some("trial"), Option.some(undefined)])
+	})
+
+	test("the hourly trial tick re-reads the customer, so the countdown and caps stay current", () => {
+		const onTrial = withPlans([{ planId: "trial", status: "active", trialEndsAt: Date.UTC(2026, 11, 9) }])
+		expect(namesOf(update(onTrial, Message.ElapsedTrialRefresh()))).toEqual(["LoadCustomer"])
 	})
 })

@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { buildCheckoutSuccessUrl } from "../../kit/billing/checkout-return"
-import { hasSelectedPlan } from "../../kit/billing/plan-gating"
+import { hasPaidPlan } from "../../kit/billing/plan-gating"
 import { parseCapInput, spendLimitFor, uncappedFeatures, updateFeatureControls } from "./controls"
 import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "./spend"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
@@ -918,9 +918,9 @@ export const requestRuleStats = (
 			}
 }
 
-/** The customer settled: once it carries a plan, the wait is over (`confirmed`). */
+/** The customer settled: once it carries a paid plan (the trial is not one), the wait is over. */
 export const customerChanged = (model: Model, customer: BillingCustomer): Step | null => {
-	const wait = hasSelectedPlan(customer) ? CheckoutReturn.confirmed(model.checkoutReturn) : null
+	const wait = hasPaidPlan(customer) ? CheckoutReturn.confirmed(model.checkoutReturn) : null
 	return wait === null ? null : checkoutReturnStep(model, wait)
 }
 

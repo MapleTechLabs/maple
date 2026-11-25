@@ -28,6 +28,7 @@ export const ANALYST_CLERK: ShellClerk = {
 	maybeOrganization: Option.none(),
 	memberships: [],
 	customer: undefined,
+	customerReadAtMs: 0,
 	maybeGrants: Option.some(Policy.grantsOf(["org:analyst"])),
 }
 

@@ -752,6 +752,169 @@ describe("billing writes over HTTP", () => {
 		}
 	})
 
+	describe("attach trial terms", () => {
+		const DAY_MS = 24 * 60 * 60 * 1000
+		type AttachOptions = {
+			readonly planId: string
+			readonly successUrl?: string | undefined
+			readonly trialDays?: number | null | undefined
+		}
+
+		// An admin attaching with the given subscriptions on file; records every attach and customer read.
+		const attachWith = async (
+			planId: string,
+			subscriptions: ReadonlyArray<Record<string, unknown>>,
+			autumnState: {
+				readonly trialsUsed?: ReadonlyArray<string>
+				readonly isTrialMissing?: boolean
+			} = {},
+		) => {
+			const attaches: Array<AttachOptions> = []
+			let customerReads = 0
+			const harness = makeHarness(["org:admin"], {
+				organizations: {
+					retrieve: () =>
+						Effect.succeed({
+							id: ORG,
+							name: null,
+							slug: null,
+							imageUrl: null,
+							createdAtMs: null,
+						}),
+				},
+				autumn: {
+					getOrCreateCustomer: () =>
+						Effect.sync(() => {
+							customerReads += 1
+							return {
+								statusCode: 200,
+								response: {
+									id: ORG,
+									subscriptions,
+									trialsUsed: Arr.map(autumnState.trialsUsed ?? [], (id) => ({
+										planId: id,
+									})),
+								},
+							}
+						}),
+					attach: (_customerId: string, options: AttachOptions) =>
+						Effect.sync(() => {
+							attaches.push(options)
+							return autumnState.isTrialMissing === true && options.planId === "trial"
+								? {
+										statusCode: 404,
+										response: {
+											message: "Product trial not found",
+											code: "product_not_found",
+										},
+									}
+								: {
+										statusCode: 200,
+										response: { paymentUrl: "https://checkout.stripe.test/c" },
+									}
+						}),
+				},
+			})
+			try {
+				const response = await harness.post("/internal/billing/attach", { planId })
+				return { response, attaches, customerReads }
+			} finally {
+				await harness.dispose()
+			}
+		}
+
+		it("starts the trial on the plan's own terms for an org that never had a plan", async () => {
+			const { response, attaches } = await attachWith("trial", [])
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(response.body, { paymentUrl: "https://checkout.stripe.test/c" })
+			assert.strictEqual(attaches.length, 1)
+			assert.strictEqual(attaches[0]?.planId, "trial")
+			assert.isUndefined(attaches[0]?.trialDays)
+		})
+
+		it("answers a second trial click while the trial runs as done, without attaching again", async () => {
+			const { response, attaches } = await attachWith("trial", [
+				{ planId: "trial", status: "active", trialEndsAt: Date.now() + 10 * DAY_MS },
+			])
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(response.body, {})
+			assert.deepStrictEqual(attaches, [])
+		})
+
+		it("refuses a second trial once the org has had any plan", async () => {
+			const histories = [
+				[{ planId: "trial", status: "expired", trialEndsAt: Date.now() - DAY_MS }],
+				[{ planId: "startup", status: "expired" }],
+			]
+			const outcomes = []
+			for (const subscriptions of histories) {
+				const { response, attaches } = await attachWith("trial", subscriptions)
+				outcomes.push([response.status, response.body._tag, attaches.length])
+			}
+			assert.deepStrictEqual(outcomes, [
+				[409, "@maple/http/errors/BillingConflictError", 0],
+				[409, "@maple/http/errors/BillingConflictError", 0],
+			])
+		})
+
+		it("refuses a trial Autumn counts as used even when no subscription row is left", async () => {
+			const { response, attaches } = await attachWith("trial", [], { trialsUsed: ["trial"] })
+			assert.strictEqual(response.status, 409)
+			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingConflictError")
+			assert.deepStrictEqual(attaches, [])
+		})
+
+		it("falls back to a card trial on Startup while Autumn has no trial plan yet", async () => {
+			const { response, attaches } = await attachWith("trial", [], { isTrialMissing: true })
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(response.body, { paymentUrl: "https://checkout.stripe.test/c" })
+			assert.deepStrictEqual(
+				Arr.map(attaches, (attach) => [attach.planId, attach.trialDays]),
+				[
+					["trial", undefined],
+					["startup", 14],
+				],
+			)
+		})
+
+		it("carries the trial's days left onto Startup, bills now once it ended, and gives a first plan the card trial", async () => {
+			const running = await attachWith("startup", [
+				{ planId: "trial", status: "active", trialEndsAt: Date.now() + 8.5 * DAY_MS },
+			])
+			const ended = await attachWith("startup", [
+				{ planId: "trial", status: "expired", trialEndsAt: Date.now() - DAY_MS },
+			])
+			const neverTrialed = await attachWith("startup", [])
+			// A trial Autumn remembers, or a plan held before, gets no second one.
+			const trialRemembered = await attachWith("startup", [], { trialsUsed: ["trial"] })
+			const lapsed = await attachWith("startup", [{ planId: "startup", status: "expired" }])
+			assert.deepStrictEqual(
+				Arr.map([running, ended, neverTrialed, trialRemembered, lapsed], ({ response, attaches }) => [
+					response.status,
+					attaches.length,
+					attaches[0]?.trialDays,
+				]),
+				[
+					[200, 1, 9],
+					[200, 1, null],
+					[200, 1, 14],
+					[200, 1, undefined],
+					[200, 1, undefined],
+				],
+			)
+		})
+
+		it("attaches an add-on without reading the customer for trial terms", async () => {
+			const { response, attaches, customerReads } = await attachWith("bringyourowncloud", [
+				{ planId: "trial", status: "active", trialEndsAt: Date.now() + 8.5 * DAY_MS },
+			])
+			assert.strictEqual(response.status, 200)
+			assert.strictEqual(customerReads, 0)
+			assert.strictEqual(attaches.length, 1)
+			assert.isUndefined(attaches[0]?.trialDays)
+		})
+	})
+
 	it("shows the daily spend chart to telemetry readers and billing managers, and no one else", async () => {
 		const spend = new DailySpendResponse({ days: [], cycleStart: 1_000, cycleEnd: 2_000 })
 		const overrides = {

@@ -1,3 +1,6 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { primaryKind } from "./update"
+import { aiCardAction, aiCardNotice } from "../../kit/billing/ai-card-gate"
 import {
 	type InvestigationStatus,
 	MANUAL_INVESTIGATION_TRANSITIONS,
@@ -81,7 +84,12 @@ const titleContent = (h: H, investigation: V2Investigation): Html => {
 }
 
 /** The status's primary verb, and the overflow menu. */
-const headerActions = (h: H, model: Model, investigation: V2Investigation): Html => {
+const headerActions = (
+	h: H,
+	model: Model,
+	investigation: V2Investigation,
+	aiCardGate: AiCardGate | undefined,
+): Html => {
 	const status = investigation.status
 	const isBusy = model.busy !== null
 	// The server's own rules: a run in flight can be neither resolved nor restarted.
@@ -106,7 +114,8 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 			value: "restart",
 			label: "Run again",
 			icon: "ArrowPathIcon",
-			isDisabled: isBusy || !canRestart,
+			// A new AI run: while it waits on a card, the header's billing link is the way on.
+			isDisabled: isBusy || !canRestart || aiCardGate !== undefined,
 		},
 		...(status === "resolved"
 			? []
@@ -123,16 +132,19 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 	return detailActions(h, [
 		hstack(h, { gap: "2" }, [
 			...(handoff === null ? [] : [handoff]),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: primary.variant,
-					isDisabled: isBusy || !primaryAllowed,
-					attributes: [h.OnClick(Message.ClickedPrimary())],
-				},
-				[primary.label],
-			),
+			// Run again and Reopen start a new AI run: while it waits on a card, the button asks for one.
+			aiCardGate !== undefined && primaryKind(investigation) === "restart"
+				? aiCardAction(h, aiCardGate)
+				: button(
+						h,
+						{
+							size: "sm",
+							variant: primary.variant,
+							isDisabled: isBusy || !primaryAllowed,
+							attributes: [h.OnClick(Message.ClickedPrimary())],
+						},
+						[primary.label],
+					),
 			h.submodel({
 				slotId: "investigation-actions",
 				model: model.actionsMenu,
@@ -202,6 +214,7 @@ const documentTab = (
 	timeZone: string,
 	trigger: TipTrigger,
 	canDrive: boolean,
+	aiCardGate: AiCardGate | undefined,
 ): ReadonlyArray<Html> => {
 	const isResolved = investigation.status === "resolved"
 	const canvas = provenanceCanvas(h, model, investigation, timeZone)
@@ -219,28 +232,42 @@ const documentTab = (
 		pageScrollArea(h, {}, [
 			vstack(h, { className: "gap-7" }, [...sections, investigationMeta(h, model, investigation)]),
 		]),
-		...(isResolved || !canDrive ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
+		...(isResolved || !canDrive
+			? []
+			: [
+					h.div(
+						[h.Class("shrink-0 px-4 pb-4")],
+						[
+							aiCardGate === undefined
+								? followUpComposer(h)
+								: aiCardNotice(h, aiCardGate, { size: "sm" }),
+						],
+					),
+				]),
 	]
 }
 
-/** What a thread with no turns says, read off the subject's own status. */
-const investigationLead = (h: H, investigation: V2Investigation): Html =>
+/**
+ * What a thread with no turns says, read off the subject's own status. `canAsk` false (Maple AI
+ * waits on a card) drops the offers to ask or retry: the card notice below says what unlocks them.
+ */
+const investigationLead = (h: H, investigation: V2Investigation, canAsk: boolean): Html =>
 	investigation.status === "investigating"
 		? emptyNotice(
 				h,
 				"Investigating",
-				"Maple is gathering evidence. The Transcript tab shows what it is doing as it goes. You can ask a question here without waiting for it to finish.",
+				`Maple is gathering evidence. The Transcript tab shows what it is doing as it goes.${canAsk ? " You can ask a question here without waiting for it to finish." : ""}`,
 			)
 		: investigation.status === "failed"
 			? emptyNotice(
 					h,
 					"Autonomous pass failed",
-					"Maple couldn't complete the investigation. Retry it from the header, or ask a question to continue by hand.",
+					`Maple couldn't complete the investigation.${canAsk ? " Retry it from the header, or ask a question to continue by hand." : ""}`,
 				)
 			: emptyNotice(
 					h,
 					"Ready to investigate",
-					`This ${investigationNoun(contextOf(investigation).kind)} is attached to every message in the thread. Start with a suggestion or ask your own question.`,
+					`This ${investigationNoun(contextOf(investigation).kind)} is attached to every message in the thread.${canAsk ? " Start with a suggestion or ask your own question." : ""}`,
 				)
 
 /** The thread, led by the report until its own turn lands. */
@@ -251,6 +278,7 @@ const conversationTab = (
 	timeZone: string,
 	trigger: TipTrigger,
 	canDrive: boolean,
+	aiCardGate: AiCardGate | undefined,
 ): ReadonlyArray<Html> => {
 	const { conversation } = model
 	if (conversation === null) return []
@@ -263,8 +291,9 @@ const conversationTab = (
 			timeZone,
 			textareaId: `investigation-chat-${model.id}`,
 			canReply: canDrive,
+			...(aiCardGate === undefined ? undefined : { aiCardGate }),
 			placeholder: placeholderOf(investigation),
-			emptyState: () => investigationLead(h, investigation),
+			emptyState: () => investigationLead(h, investigation, aiCardGate === undefined),
 			scrollerMount: Mount.mapMessage(MountMessageScroller({ focusMessageId: null }), () =>
 				Message.CompletedMountScroller(),
 			),
@@ -291,6 +320,7 @@ const readyPage = (
 	investigation: V2Investigation,
 	timeZone: string,
 	canDrive: boolean,
+	aiCardGate: AiCardGate | undefined,
 ): Html => {
 	const tab = tabOf(model)
 	const isConversation = tab === "chat" || tab === "transcript"
@@ -309,14 +339,31 @@ const readyPage = (
 					h,
 					{
 						titleContent: titleContent(h, investigation),
-						actions: canDrive ? headerActions(h, model, investigation) : undefined,
+						actions: canDrive ? headerActions(h, model, investigation, aiCardGate) : undefined,
 						tabs: tabs(h, investigation, tab),
 						fill: true,
 					},
 					[
 						...(isConversation
-							? conversationTab(h, model, investigation, timeZone, trigger, canDrive)
-							: documentTab(h, model, investigation, tab, timeZone, trigger, canDrive)),
+							? conversationTab(
+									h,
+									model,
+									investigation,
+									timeZone,
+									trigger,
+									canDrive,
+									aiCardGate,
+								)
+							: documentTab(
+									h,
+									model,
+									investigation,
+									tab,
+									timeZone,
+									trigger,
+									canDrive,
+									aiCardGate,
+								)),
 						actionSheet(h, model, investigation, timeZone, trigger),
 						...(portal === null ? [] : [portal]),
 					],
@@ -335,6 +382,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				model.sync.investigation,
 				timeZone,
 				inputs.context.audience !== "analyst",
+				inputs.context.aiCardGate,
 			)
 		case "Missing":
 			return dashboardPage(h, {}, [

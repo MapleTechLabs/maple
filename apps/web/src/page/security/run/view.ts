@@ -1,3 +1,4 @@
+import type { AiCardGate } from "@maple/domain/billing"
 import type { SecurityAuditRunDetail } from "@maple/domain/http"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -163,8 +164,14 @@ const runDetails = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: s
 	])
 }
 
-const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: string): Html => {
-	const banner = stopBanner(h, model, run)
+const loaded = (
+	h: H,
+	model: Model,
+	run: SecurityAuditRunDetail,
+	timeZone: string,
+	aiCardGate: AiCardGate | undefined,
+): Html => {
+	const banner = stopBanner(h, model, run, aiCardGate)
 	const body: ReadonlyArray<Html> = [
 		...(banner === null ? [] : [banner]),
 		...findingsSection(h, model, run),
@@ -174,7 +181,7 @@ const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: strin
 		h,
 		{
 			titleContent: runTitle(h, run, targetOf(model, run), model.nowMs, timeZone),
-			actions: runActions(h, model, run),
+			actions: runActions(h, model, run, aiCardGate),
 			scrollClassName: "pb-8",
 		},
 		[stack(h, body), cancelDialog(h, model), reportSheet(h, model, run), findingSheet(h, model)],
@@ -212,7 +219,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							}),
 			])
 		},
-		onData: (run) => loaded(h, model, run, inputs.context.timeZone),
+		onData: (run) => loaded(h, model, run, inputs.context.timeZone, inputs.context.aiCardGate),
 	}),
 )
 

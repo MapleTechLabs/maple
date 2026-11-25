@@ -1,3 +1,5 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { aiCardAction } from "../../kit/billing/ai-card-gate"
 import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import type { SecurityAuditRunDetail, SecurityAuditTarget } from "@maple/domain/http"
 import { executionModeLine } from "@maple/domain/security-audit"
@@ -109,7 +111,12 @@ export const runTitle = (
 	})
 }
 
-export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Html =>
+export const runActions = (
+	h: H,
+	model: Model,
+	run: SecurityAuditRunDetail,
+	aiCardGate: AiCardGate | undefined,
+): Html =>
 	hstack(h, { gap: "2" }, [
 		...(run.reports === null
 			? []
@@ -124,28 +131,32 @@ export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 						[icon(h, "FileIcon"), "Report"],
 					),
 				]),
+		// A new run spends AI credits: while that waits on a card, the start asks for one. The
+		// permission denial still wins, so the link only takes a start the viewer could use.
 		gatedControl(h, model, "security_audit:run", (isLocked) =>
-			isLive(run)
-				? button(
-						h,
-						{
-							size: "sm",
-							variant: "destructive-outline",
-							isDisabled: isLocked || model.busy !== null,
-							attributes: [h.OnClick(Message.ClickedCancel())],
-						},
-						["Cancel run"],
-					)
-				: button(
-						h,
-						{
-							size: "sm",
-							isLoading: model.busy === "start",
-							isDisabled: isLocked || model.busy !== null,
-							attributes: [h.OnClick(Message.ClickedStartRun())],
-						},
-						[icon(h, "MediaPlayIcon"), "Start run"],
-					),
+			!isLive(run) && aiCardGate !== undefined && !isLocked
+				? aiCardAction(h, aiCardGate)
+				: isLive(run)
+					? button(
+							h,
+							{
+								size: "sm",
+								variant: "destructive-outline",
+								isDisabled: isLocked || model.busy !== null,
+								attributes: [h.OnClick(Message.ClickedCancel())],
+							},
+							["Cancel run"],
+						)
+					: button(
+							h,
+							{
+								size: "sm",
+								isLoading: model.busy === "start",
+								isDisabled: isLocked || model.busy !== null,
+								attributes: [h.OnClick(Message.ClickedStartRun())],
+							},
+							[icon(h, "MediaPlayIcon"), "Start run"],
+						),
 		),
 	])
 
@@ -162,11 +173,18 @@ const startRunButton = (h: H, model: Model): Html =>
 		["Start run"],
 	)
 
-const stopAction = (h: H, model: Model, action: StopAction): ReadonlyArray<Html> => {
+const stopAction = (
+	h: H,
+	model: Model,
+	action: StopAction,
+	aiCardGate: AiCardGate | undefined,
+): ReadonlyArray<Html> => {
 	if (!canRunAudits(model) || action === null) return []
 	const control =
 		action === "start"
-			? startRunButton(h, model)
+			? aiCardGate === undefined
+				? startRunButton(h, model)
+				: aiCardAction(h, aiCardGate)
 			: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.SecurityCode()) }, [
 					action === "limit" ? "Raise the limit" : "Spend & models",
 				])
@@ -174,7 +192,12 @@ const stopAction = (h: H, model: Model, action: StopAction): ReadonlyArray<Html>
 }
 
 /** Why a finished run stopped short, in one sentence, and what to do next. */
-export const stopBanner = (h: H, model: Model, run: SecurityAuditRunDetail): Html | null => {
+export const stopBanner = (
+	h: H,
+	model: Model,
+	run: SecurityAuditRunDetail,
+	aiCardGate: AiCardGate | undefined,
+): Html | null => {
 	if (isLive(run)) return null
 	if (run.status === "failed")
 		return alert(h, { variant: "crit" }, [
@@ -183,7 +206,7 @@ export const stopBanner = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 			alertDescription(h, [
 				run.error ?? "The run failed before it wrote its results. Start it again to retry.",
 			]),
-			...stopAction(h, model, "start"),
+			...stopAction(h, model, "start", aiCardGate),
 		])
 	if (isCancelled(run))
 		return alert(h, {}, [
@@ -199,7 +222,7 @@ export const stopBanner = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 		icon(h, note.tone === "crit" ? "CircleWarningIcon" : "AlertWarningIcon"),
 		alertTitle(h, [note.title]),
 		alertDescription(h, [note.body]),
-		...stopAction(h, model, note.action),
+		...stopAction(h, model, note.action, aiCardGate),
 	])
 }
 

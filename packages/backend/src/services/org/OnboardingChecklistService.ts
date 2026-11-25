@@ -5,6 +5,7 @@ import {
 	type TenantContext,
 } from "@maple/domain/http"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
+import { isActivePlanSubscription, TRIAL_PLAN_ID } from "@maple/domain/billing"
 import type { OrgId } from "@maple/primitives"
 import {
 	emptyOnboardingChecklistInputs,
@@ -162,6 +163,21 @@ const make = Effect.gen(function* () {
 		const orgId = tenant.orgId
 		const { channel, ...inputs } = yield* Effect.all(
 			{
+				cardAdded: degrade(
+					orgId,
+					"add_card",
+					false,
+					autumn.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: [] }).pipe(
+						Effect.flatMap(classifyAutumn),
+						Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
+						Effect.map((customer) =>
+							Arr.some(
+								customer.subscriptions,
+								(sub) => isActivePlanSubscription(sub) && sub.planId !== TRIAL_PLAN_ID,
+							),
+						),
+					),
+				),
 				channel: degrade(
 					orgId,
 					"join_slack_channel",
@@ -337,6 +353,14 @@ const make = Effect.gen(function* () {
 			yield* release
 			return yield* new OnboardingRewardNotClaimableError({
 				message: "Start a plan before claiming the reward.",
+				reason: "no_subscription",
+			})
+		}
+		// The no-card trial has no Stripe subscription to discount: the card comes first.
+		if (planId.value === TRIAL_PLAN_ID) {
+			yield* release
+			return yield* new OnboardingRewardNotClaimableError({
+				message: "Add a card to claim the reward. It comes off your first invoice.",
 				reason: "no_subscription",
 			})
 		}

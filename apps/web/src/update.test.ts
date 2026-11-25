@@ -215,14 +215,17 @@ describe("telemetry identity", () => {
 			customer: { orgId: "org_acme", data: CustomerData.Loading() },
 		}
 		const loaded = update(reading, Message.CompletedLoadClerk({ snapshot }))
-		const settled = update(loaded.model, Message.SucceededLoadCustomer({ orgId: "org_acme", customer }))
+		const settled = update(
+			loaded.model,
+			Message.SucceededLoadCustomer({ orgId: "org_acme", customer, readAtMs: 0 }),
+		)
 		expect(commandsOf(settled)).toContainEqual({
 			name: "IdentifySession",
 			args: { identity: { id: "user_ada", groupId: "org_acme", traits: { plan: "startup" } } },
 		})
 		const resettled = update(
 			settled.model,
-			Message.SucceededLoadCustomer({ orgId: "org_acme", customer }),
+			Message.SucceededLoadCustomer({ orgId: "org_acme", customer, readAtMs: 0 }),
 		)
 		expect(Arr.map(commandsOf(resettled), ({ name }) => name)).not.toContain("IdentifySession")
 	})

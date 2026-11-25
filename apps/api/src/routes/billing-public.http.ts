@@ -1,11 +1,12 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { HttpServerRequest } from "effect/http"
-import { Effect, Option, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema } from "effect"
 import { CatalogPlan, CatalogPlansResponse, MapleApi } from "@maple/domain/http"
 import { decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { TRIAL_PLAN_ID } from "@maple/domain/billing"
 
 // The plan catalog is the one billing operation that is NOT internal-only: it is
 // served unauthenticated so a transient token-settle gap renders prices instead
@@ -35,7 +36,10 @@ export const HttpBillingPublicLive = HttpApiBuilder.group(MapleApi, "billingPubl
 				// Autumn wraps the catalog as `{ list: [...] }`.
 				const list = (response as { list?: unknown })?.list ?? response
 				const plans = yield* decodeUpstream(Schema.Array(CatalogPlan), list)
-				return new CatalogPlansResponse({ plans })
+				// The no-card trial is started by onboarding, never picked from the catalog.
+				return new CatalogPlansResponse({
+					plans: Arr.filter(plans, (plan) => plan.id !== TRIAL_PLAN_ID),
+				})
 			}),
 		)
 	}),

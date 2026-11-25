@@ -1,5 +1,6 @@
 import type { CatalogPlan } from "@maple/domain/http"
-import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../kit/billing/plans"
+import { TRIAL_DURATION_DAYS, TRIAL_PLAN_ID, TRIAL_SIGNAL_GB } from "@maple/domain/billing"
+import { getPlanDescription, getPlanFeatures } from "../kit/billing/plans"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,7 +14,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
 import { compliance } from "../kit/compliance-line"
-import { ENTERPRISE_CONTACT_URL, Message, type Model } from "./pricing-cards"
+import { ENTERPRISE_CONTACT_URL, Message, type Model, type Offer } from "./pricing-cards"
 import {
 	ENTERPRISE_DATA_FEATURES,
 	FEATURE_ICONS,
@@ -111,15 +112,20 @@ const platformFeatures = (h: H, slug: string): Html =>
 		],
 	)
 
-/** One plan's card; trial and status badges for an active plan are the settings page's concern. */
-const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html => {
+/**
+ * One plan's card; trial and status badges for an active plan are the settings page's concern.
+ * Under the `Trial` offer a new plan's button starts the no-card trial instead of a checkout.
+ */
+const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null, offer: Offer): Html => {
 	const scenario = getScenario(plan)
 	const isActive = scenario === "active"
 	const isUpgrade = !isActive && scenario === "upgrade"
+	const isTrialOffer = offer === "Trial" && scenario === "new"
 	const { price, interval } = getPlanPrice(plan)
 	const features = getFeatureRows(plan)
 	const config = getButtonConfig(plan)
-	const isTrial = plan.customerEligibility?.trialAvailable === true && !config.isDisabled
+	const attachPlanId = isTrialOffer ? TRIAL_PLAN_ID : plan.id
+	const highlight = isTrialOffer ? `${TRIAL_DURATION_DAYS} days free` : isUpgrade ? "Recommended" : null
 	return card(
 		h,
 		[
@@ -128,12 +134,12 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 					cardTitle(h, [plan.name], cn(eyebrowVariants(), isUpgrade && "text-primary")),
 					...(isActive
 						? [badge(h, { variant: "secondary", size: "xs" }, ["Current"])]
-						: isUpgrade
+						: highlight !== null
 							? [
 									badge(
 										h,
 										{ variant: "secondary", size: "xs", className: "text-primary" },
-										["Recommended"],
+										[highlight],
 									),
 								]
 							: []),
@@ -168,23 +174,28 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 					button(
 						h,
 						{
-							variant: isTrial ? "default" : config.variant,
-							isLoading: loadingPlanId === plan.id,
+							variant: isTrialOffer ? "default" : config.variant,
+							isLoading: loadingPlanId === attachPlanId,
 							isDisabled: config.isDisabled,
 							className: CARD_ACTION_CLASS,
-							attributes: [h.OnClick(Message.ClickedPlan({ planId: plan.id }))],
+							attributes: [h.OnClick(Message.ClickedPlan({ planId: attachPlanId }))],
 						},
-						[
-							isTrial
-								? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-								: config.label,
-						],
+						[isTrialOffer ? `Start ${TRIAL_DURATION_DAYS}-day free trial` : config.label],
 					),
-					...(isTrial
+					...(isTrialOffer
 						? [
-								h.p(
-									[h.Class("text-2xs text-muted-foreground text-center tabular-nums")],
-									["$0 due today · Card required · Cancel anytime"],
+								typography(
+									h,
+									{
+										size: "2xs",
+										tone: "muted",
+										numeric: true,
+										as: "p",
+										className: "text-center",
+									},
+									[
+										`No credit card needed · ${TRIAL_SIGNAL_GB} GB per signal during the trial`,
+									],
 								),
 							]
 						: []),
@@ -195,7 +206,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 		cn(
 			"flex flex-col",
 			isActive && "bg-surface-strong",
-			isUpgrade && "bg-surface-sunken ring-1 ring-primary-a3",
+			(isUpgrade || isTrialOffer) && "bg-surface-sunken ring-1 ring-primary-a3",
 		),
 	)
 }
@@ -256,15 +267,15 @@ const enterpriseCard = (h: H): Html =>
 	)
 
 /** `PricingCards`: skeletons while the catalog loads, its error row, or the plan grid. */
-export const view = Submodel.defineView<Model, Message>((model, h) =>
+export const view = Submodel.defineView<Model, Message, Readonly<{ offer: Offer }>>((model, { offer }, h) =>
 	model.checkoutReturn === "Confirming"
 		? checkoutConfirming(h)
 		: AsyncData.match(model.plans, {
 				onIdle: () => loadingGrid(h),
 				onLoading: () => loadingGrid(h),
-				onRefreshing: (response) => plansGrid(h, response.plans, model),
-				onStale: ({ data }) => plansGrid(h, data.plans, model),
-				onSuccess: (response) => plansGrid(h, response.plans, model),
+				onRefreshing: (response) => plansGrid(h, response.plans, model, offer),
+				onStale: ({ data }) => plansGrid(h, data.plans, model, offer),
+				onSuccess: (response) => plansGrid(h, response.plans, model, offer),
 				onFailure: (message) =>
 					errorState(h, {
 						title: "Unable to load pricing plans",
@@ -311,7 +322,12 @@ const loadingGrid = (h: H): Html =>
 	h.div([h.Class("grid grid-cols-1 gap-4 sm:grid-cols-2")], [loadingCard(h), loadingCard(h)])
 
 /** The plans offered, then Enterprise as a peer card. */
-export const planCards = (h: H, plans: ReadonlyArray<CatalogPlan>, loadingPlanId: string | null): Html => {
+export const planCards = (
+	h: H,
+	plans: ReadonlyArray<CatalogPlan>,
+	loadingPlanId: string | null,
+	offer: Offer,
+): Html => {
 	const totalCards = plans.length + 1
 	return h.div(
 		[
@@ -323,11 +339,11 @@ export const planCards = (h: H, plans: ReadonlyArray<CatalogPlan>, loadingPlanId
 				),
 			),
 		],
-		[...Arr.map(plans, (plan) => planCard(h, plan, loadingPlanId)), enterpriseCard(h)],
+		[...Arr.map(plans, (plan) => planCard(h, plan, loadingPlanId, offer)), enterpriseCard(h)],
 	)
 }
 
-const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html =>
+const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model, offer: Offer): Html =>
 	h.div(
 		[h.Class("space-y-6")],
 		[
@@ -336,6 +352,7 @@ const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html 
 				h,
 				Arr.filter(plans, (plan) => !plan.addOn && !plan.autoEnable),
 				model.loadingPlanId,
+				offer,
 			),
 			compliance(h),
 		],

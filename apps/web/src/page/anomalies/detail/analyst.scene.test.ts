@@ -144,6 +144,26 @@ describe("anomaly detail, analyst", () => {
 		)
 	})
 
+	test("on the no-card trial, a member is asked for a card while an analyst still sees the permission denial", () => {
+		const trialView = withViewInputs(pageView, { context: { ...context, aiCardGate: "trial" } })()
+		scene(
+			{ update: pageUpdate, view: trialView },
+			given(loaded(MEMBER)),
+			themed(),
+			expectView(role("link", { name: "Add card to use AI" })).toExist(),
+			expectView(role("button", { name: "Open investigation" })).toBeAbsent(),
+		)
+		// The denial wins: a card would not let an analyst start one.
+		scene(
+			{ update: pageUpdate, view: trialView },
+			given(loaded(ANALYST)),
+			themed(),
+			expectView(role("link", { name: "Add card to use AI" })).toBeAbsent(),
+			expectView(role("button", { name: "Open investigation" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("investigations:run").message })).toExist(),
+		)
+	})
+
 	test("an answer for another org leaves the page's grants as they were", () => {
 		const model = loaded(ANALYST)
 		const other = pageUpdate(model, Message.CompletedFetchSession({ orgId: "org_other", grants: MEMBER }))

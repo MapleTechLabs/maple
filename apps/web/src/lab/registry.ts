@@ -217,7 +217,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/billing-orgs",
 		title: "Billing orgs",
 		description:
-			"The Billing tab for a member org, a billing org with members, and a standalone org linking to another (`?state=`).",
+			"The Billing tab for a member org, a billing org with members, a standalone org linking to another, and an org on the no-card trial (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -282,6 +282,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Dashboard share",
 		description:
 			"The dashboard's Share dialog, open: not shared, shared with no expiry, a link that expires and one that already has (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/trial-banners",
+		title: "Trial banners",
+		description:
+			"The no-card trial's banners over fixtures: signals at their cap, the last days, a cap coming up, and the trial ended.",
 		kind: "lab",
 		session: "none",
 	},

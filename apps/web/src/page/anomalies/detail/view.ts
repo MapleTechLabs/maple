@@ -1,3 +1,5 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { aiCardAction } from "../../kit/billing/ai-card-gate"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { isStaleOpenIncident, RESOLVE_REASON_LABEL } from "@maple/web-data/anomalies/format"
 import { SEVERITY_TONE, severityToneFor } from "@maple/views/lib/anomaly-display"
@@ -39,7 +41,13 @@ type H = HtmlBuilder<Message>
 const anomaliesHref = (status: AnomalyIncidentDocument["status"] | null): string =>
 	alertsHref(status === "open" ? { signal: "anomaly" } : { signal: "anomaly", anomalyStatus: "all" })
 
-const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html => {
+const headerActions = (
+	h: H,
+	model: Model,
+	incident: AnomalyIncidentDocument,
+	timeZone: string,
+	aiCardGate: AiCardGate | undefined,
+): Html => {
 	const isOpen = incident.status === "open"
 	const isStale = isStaleOpenIncident(incident, model.nowMs)
 	const tone = severityToneFor(incident)
@@ -70,18 +78,21 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 								: "Resolved",
 						],
 		),
+		// The permission denial wins: the card link only takes a start button the viewer could use.
 		gatedControl(h, model, "investigations:run", (isLocked) =>
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					isDisabled: isLocked || isBusy,
-					isLoading: model.busy === "investigate",
-					attributes: [h.OnClick(Message.ClickedInvestigate())],
-				},
-				[icon(h, "PulseIcon"), "Open investigation"],
-			),
+			aiCardGate !== undefined && !isLocked
+				? aiCardAction(h, aiCardGate)
+				: button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: isLocked || isBusy,
+							isLoading: model.busy === "investigate",
+							attributes: [h.OnClick(Message.ClickedInvestigate())],
+						},
+						[icon(h, "PulseIcon"), "Open investigation"],
+					),
 		),
 		...(isOpen
 			? [
@@ -165,7 +176,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h,
 					{
 						titleContent: anomalyTitle(h, state.incident),
-						actions: headerActions(h, model, state.incident, timeZone),
+						actions: headerActions(h, model, state.incident, timeZone, inputs.context.aiCardGate),
 						rightPanel: anomalySidebar(h, {
 							incident: state.incident,
 							isBusy: model.busy !== null,

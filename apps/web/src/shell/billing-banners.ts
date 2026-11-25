@@ -2,10 +2,17 @@ import { type BillingCustomer, CustomerPortalRequest } from "@maple/domain/http"
 import {
 	getActivePlan,
 	getLapsedPlan,
+	getNoCardTrial,
 	getPastDueSubscription,
 	getQuotaStatus,
+	getTrialNotice,
+	hasEndedNoCardTrial,
+	type TrialNotice,
 } from "../page/kit/billing/plan-gating"
-import { Effect, Option } from "effect"
+import { TRIAL_SIGNAL_GB } from "@maple/domain/billing"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
+import { getBrowserTimeZone } from "@maple/ui/lib/timezone"
+import { Array as Arr, Effect, Option, String as Str } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { load } from "foldkit/navigation"
@@ -18,8 +25,8 @@ import { icon } from "@maple/views/ui/icon"
 import { Message } from "./message"
 import { hstackClass } from "@maple/views/ui/stack"
 
-// The Clerk-mode billing banners above the page body:
-// subscription ended, payment failed and the usage quota, all read from the Autumn customer.
+// The Clerk-mode billing banners above the page body: subscription or trial ended, payment failed,
+// and the usage quota (or, on the no-card trial, its caps and last days), all read from the Autumn customer.
 
 /** `useSessionDismiss("quota-banner-approaching")`. */
 export const QUOTA_DISMISS_KEY = "quota-banner-approaching"
@@ -69,23 +76,89 @@ const banner = (h: H, variant: "crit" | "warn", children: ReadonlyArray<Html>): 
 		[alert(h, { variant }, [icon(h, "CircleWarningIcon", { size: 16 }), ...children])],
 	)
 
-/** The org held a plan and it lapsed. */
+const BILLING_HREF = hrefOf(AppRoute.Settings({ search: { tab: "billing" } }))
+
+/** The org held a plan (or the no-card trial) and it lapsed. */
 const subscriptionEnded = (h: H, customer: BillingCustomer): ReadonlyArray<Html> => {
 	const lapsed = getLapsedPlan(customer)
 	if (lapsed === null) return []
+	const isTrial = hasEndedNoCardTrial(customer)
 	const planName = lapsed.plan?.name ?? lapsed.planId
 	return [
 		banner(h, "crit", [
-			alertTitle(h, ["Subscription ended"]),
+			alertTitle(h, [isTrial ? "Your free trial has ended" : "Subscription ended"]),
 			alertDescription(h, [
-				planName ? `Your ${planName} plan has ended.` : "Your plan has ended.",
-				" Your existing data is still here, but new telemetry is being rejected until you pick a plan.",
+				isTrial
+					? "Your data is still here, but new telemetry is being rejected. Subscribe to keep ingesting."
+					: `${planName ? `Your ${planName} plan has ended.` : "Your plan has ended."} Your existing data is still here, but new telemetry is being rejected until you pick a plan.`,
 			]),
 			alertAction(h, [
 				linkButton(h, { size: "sm", href: hrefOf(AppRoute.SelectPlan({ search: {} })) }, [
-					"Choose a plan",
+					isTrial ? "Subscribe" : "Choose a plan",
 				]),
 			]),
+		]),
+	]
+}
+
+/** The capped signals (their feature ids are their names): "logs", "logs and traces", "logs, traces and metrics". */
+const signalList = (featureIds: ReadonlyArray<string>): string =>
+	Option.match(Arr.last(featureIds), {
+		onNone: () => "",
+		onSome: (last) =>
+			featureIds.length === 1 ? last : `${Arr.join(Arr.dropRight(featureIds, 1), ", ")} and ${last}`,
+	})
+
+/** The no-card trial asking for a card: a signal at its cap, its last days, or a cap coming up. */
+const trialBanner = (h: H, notice: TrialNotice, isApproachingDismissed: boolean): ReadonlyArray<Html> => {
+	if (notice._tag === "Approaching" && isApproachingDismissed) return []
+	const endsOn = formatDateInTimezone(notice.trial.endsAt, {
+		timeZone: getBrowserTimeZone(),
+		withYear: false,
+	})
+	const noCharge = ` You won't be charged before ${endsOn}.`
+	const copy =
+		notice._tag === "Capped"
+			? {
+					title: `${Str.capitalize(signalList(notice.featureIds))} ingest is paused`,
+					body: `You've used the trial's ${TRIAL_SIGNAL_GB} GB of ${signalList(notice.featureIds)}. Add a card to resume and lift every cap.${noCharge}`,
+				}
+			: notice._tag === "Ending"
+				? {
+						title:
+							notice.trial.daysRemaining <= 1
+								? "Your free trial ends within a day"
+								: `Your free trial ends in ${notice.trial.daysRemaining} days`,
+						body: `Add a card to keep ingesting after ${endsOn}. Nothing is charged before then.`,
+					}
+				: {
+						title: `You're nearing the trial's ${TRIAL_SIGNAL_GB} GB of ${signalList(notice.featureIds)}`,
+						body: `Ingest for a signal pauses at its cap. Add a card to lift the caps.${noCharge}`,
+					}
+	const isApproaching = notice._tag === "Approaching"
+	return [
+		banner(h, notice._tag === "Capped" ? "crit" : "warn", [
+			alertTitle(h, [copy.title]),
+			alertDescription(h, [copy.body]),
+			alertAction(
+				h,
+				[
+					linkButton(h, { size: "sm", href: BILLING_HREF }, ["Add card"]),
+					...(isApproaching
+						? [
+								iconButton(
+									h,
+									{
+										label: "Dismiss",
+										attributes: [h.OnClick(Message.ClickedDismissQuotaBanner())],
+									},
+									[icon(h, "XmarkIcon")],
+								),
+							]
+						: []),
+				],
+				hstackClass({ gap: "2" }),
+			),
 		]),
 	]
 }
@@ -136,7 +209,7 @@ const quota = (h: H, customer: BillingCustomer, isApproachingDismissed: boolean)
 						{
 							size: "sm",
 							variant: isOver ? "default" : "outline",
-							href: hrefOf(AppRoute.Settings({ search: { tab: "billing" } })),
+							href: BILLING_HREF,
 						},
 						[isOver ? "Upgrade plan" : "View usage"],
 					),
@@ -159,17 +232,25 @@ const quota = (h: H, customer: BillingCustomer, isApproachingDismissed: boolean)
 	]
 }
 
-/** The three banners in order; nothing before the customer is known. */
+/** The banners in order; nothing before the customer is known. The trial's caps replace the quota's. */
 export const billingBanners = (
 	h: H,
 	maybeCustomer: Option.Option<BillingCustomer>,
 	isQuotaApproachingDismissed: boolean,
+	nowMs: number,
 ): ReadonlyArray<Html> =>
 	Option.match(maybeCustomer, {
 		onNone: () => [],
-		onSome: (customer) => [
-			...subscriptionEnded(h, customer),
-			...paymentFailed(h, customer),
-			...quota(h, customer, isQuotaApproachingDismissed),
-		],
+		onSome: (customer) => {
+			const notice = getTrialNotice(customer, nowMs)
+			return [
+				...subscriptionEnded(h, customer),
+				...paymentFailed(h, customer),
+				...(getNoCardTrial(customer, nowMs) !== null
+					? notice === null
+						? []
+						: trialBanner(h, notice, isQuotaApproachingDismissed)
+					: quota(h, customer, isQuotaApproachingDismissed)),
+			]
+		},
 	})

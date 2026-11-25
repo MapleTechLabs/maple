@@ -222,7 +222,7 @@ const overview = (
 	const investigation = linkedInvestigationOf(model)
 	const fix =
 		canRunInvestigations(model) || investigation !== null
-			? [getItFixedPanel(h, model, issue, investigation)]
+			? [getItFixedPanel(h, model, issue, investigation, inputs.context.aiCardGate)]
 			: []
 	return vstack(h, { gap: "4" }, [
 		...mergedNotice(h, model, issue),

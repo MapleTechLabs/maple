@@ -62,7 +62,7 @@ import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
 import * as Policy from "@maple/domain/policy"
 import { identityOf, isSameIdentity, type SessionIdentity } from "./platform/session-identity"
-import { getActivePlan, hasSelectedPlan } from "./page/kit/billing/plan-gating"
+import { getActivePlan, getAiCardGate, hasSelectedPlan } from "./page/kit/billing/plan-gating"
 import {
 	AppRoute,
 	flaggedRouteRedirect,
@@ -271,6 +271,12 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 									clerkOrganizationOf(model),
 									(organization) => organization.flags.llmEvals,
 								),
+							...Option.match(
+								Option.fromNullishOr(
+									isClerkAuthEnabled ? getAiCardGate(customerOf(model.customer)) : null,
+								),
+								{ onNone: () => undefined, onSome: (aiCardGate) => ({ aiCardGate }) },
+							),
 						})),
 					),
 	}),
@@ -524,6 +530,7 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 					maybeOrganization: inputs.maybeOrganization,
 					memberships: inputs.memberships,
 					customer: customerOf(model.customer),
+					customerReadAtMs: model.customer.readAtMs ?? 0,
 					maybeGrants: Option.flatMap(
 						Option.fromNullishOr(model.clerkSnapshot),
 						(snapshot) => snapshot.maybeGrants,
@@ -881,9 +888,19 @@ const withSettledPlan = (step: UpdateReturn): UpdateReturn => {
 	return { ...next, commands: [...(step.commands ?? []), ...(next.commands ?? [])] }
 }
 
-const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]): UpdateReturn => {
+const settledCustomer = (
+	model: Model,
+	orgId: string,
+	data: CustomerSlot["data"],
+	readAtMs?: number,
+): UpdateReturn => {
 	if (model.customer.orgId !== orgId) return { model }
-	const next = modifyFields(model, { customer: () => ({ orgId, data }) })
+	const next = modifyFields(model, {
+		customer: (slot) => {
+			const at = readAtMs ?? slot.readAtMs
+			return at === undefined ? { orgId, data } : { orgId, data, readAtMs: at }
+		},
+	})
 	const access = accessOf(next.customer)
 	const settled = withSettledPlan(settle(next))
 	const known = sessionIdentityOf(model)
@@ -1123,6 +1140,10 @@ const foldMessage = (model: Model, message: Message) =>
 		SucceededCheckSession: ({ orgId }) => signedIn(Option.some(orgId))(model),
 		FailedCheckSession: () => signedOut(model),
 		ChangedSelfHostedSession: () => ({ model, commands: [CheckSession()] }),
+		ElapsedTrialRefresh: () =>
+			model.customer.orgId === null
+				? { model }
+				: { model, commands: [LoadCustomer({ orgId: model.customer.orgId, refresh: true })] },
 		CompletedSaveSessionToken: () => ({ model, commands: [CheckSession()] }),
 		CompletedLoadClerk: ({ snapshot }) =>
 			appliedClerkSnapshot(snapshot, true)(modifyFields(model, { clerk: () => ClerkPhase.Loaded() })),
@@ -1130,8 +1151,8 @@ const foldMessage = (model: Model, message: Message) =>
 			signedOut(modifyFields(model, { clerk: () => ClerkPhase.Failed({ message }) })),
 		ChangedClerkSession: ({ snapshot }) => changedClerkSession(model, snapshot),
 		CompletedWaitForAuthSettle: () => (model.session._tag === "Resolving" ? signedOut(model) : { model }),
-		SucceededLoadCustomer: ({ orgId, customer }) =>
-			settledCustomer(model, orgId, CustomerData.Success({ data: customer })),
+		SucceededLoadCustomer: ({ orgId, customer, readAtMs }) =>
+			settledCustomer(model, orgId, CustomerData.Success({ data: customer }), readAtMs),
 		FailedLoadCustomer: ({ orgId }) =>
 			settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
 		ElapsedCustomerGrace: ({ orgId }) => elapsedCustomerGrace(model, orgId),

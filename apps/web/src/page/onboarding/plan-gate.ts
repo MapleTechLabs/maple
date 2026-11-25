@@ -15,8 +15,12 @@ import { AppRoute, hrefOf, type Redirect } from "../../route"
 export const CustomerData = AsyncData.Schema(BillingCustomer, Schema.Literal("Failed"))
 export type CustomerData = typeof CustomerData.schema.Type
 
-/** The customer of the org it was read for; another org's answer is stale. */
-export const CustomerSlot = Schema.Struct({ orgId: Schema.NullOr(Schema.String), data: CustomerData.schema })
+/** The customer of the org it was read for; another org's answer is stale. `readAtMs`: its last read. */
+export const CustomerSlot = Schema.Struct({
+	orgId: Schema.NullOr(Schema.String),
+	data: CustomerData.schema,
+	readAtMs: Schema.optionalKey(Schema.Number),
+})
 export type CustomerSlot = typeof CustomerSlot.Type
 
 export const initCustomer = (): CustomerSlot => ({ orgId: null, data: CustomerData.Idle() })

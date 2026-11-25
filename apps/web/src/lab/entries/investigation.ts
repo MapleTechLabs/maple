@@ -1,3 +1,4 @@
+import { labAiCardGate } from "../ai-card-gate-flag"
 import { OrgId } from "@maple/domain"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import type { Command } from "foldkit"
@@ -19,6 +20,7 @@ const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab"),
 	pinnedNamespace: null,
 	timeZone: "UTC",
+	...labAiCardGate(),
 }
 
 const diagnosed = Option.getOrThrow(Arr.findFirst(VERDICT_LAB_CASES, (entry) => entry.key === "diagnosed"))

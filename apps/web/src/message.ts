@@ -26,12 +26,14 @@ export const Message = defineMessageUnion({
 	SucceededCheckSession: { orgId: OrgId },
 	FailedCheckSession: { failure: SessionCheckFailure },
 	ChangedSelfHostedSession: {},
+	ElapsedTrialRefresh: {},
 	CompletedSaveSessionToken: {},
 	CompletedLoadClerk: { snapshot: ClerkSnapshot },
 	FailedLoadClerk: { message: Schema.String },
 	ChangedClerkSession: { snapshot: ClerkSnapshot },
 	CompletedWaitForAuthSettle: {},
-	SucceededLoadCustomer: { orgId: Schema.String, customer: BillingCustomer },
+	/** `readAtMs`: when it was read, the clock the trial banners count days by. */
+	SucceededLoadCustomer: { orgId: Schema.String, customer: BillingCustomer, readAtMs: Schema.Number },
 	FailedLoadCustomer: { orgId: Schema.String },
 	/** The plan gate's splash waited out its grace: a slow customer read no longer holds the app. */
 	ElapsedCustomerGrace: { orgId: Schema.String },

@@ -31,11 +31,12 @@ const checklistOf = (
 	nowMs: number,
 ): V2OnboardingChecklist => {
 	const steps = [
-		step("send_telemetry", "Send your first telemetry", done[0] ?? false),
-		step("connect_github", "Connect GitHub", done[1] ?? false),
-		step("create_alert_rule", "Create an alert with a destination", done[2] ?? false),
-		step("connect_mcp_agent", "Connect an MCP agent", done[3] ?? false),
-		step("invite_teammate", "Invite a teammate", done[4] ?? false, true),
+		step("add_card", "Add a card", done[0] ?? false),
+		step("send_telemetry", "Send your first telemetry", done[1] ?? false),
+		step("connect_github", "Connect GitHub", done[2] ?? false),
+		step("create_alert_rule", "Create an alert with a destination", done[3] ?? false),
+		step("connect_mcp_agent", "Connect an MCP agent", done[4] ?? false),
+		step("invite_teammate", "Invite a teammate", done[5] ?? false, true),
 	]
 	const required = Arr.filter(steps, (entry) => !entry.optional)
 	return {
@@ -90,14 +91,14 @@ const panelOf = (h: HtmlBuilder<Message>, model: OnboardingChecklist.Model): Rea
 export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const inProgress = modelOf(
 		model.nowMs,
-		checklistOf("in_progress", [true, true, false, false, false], model.nowMs),
+		checklistOf("in_progress", [false, true, true, false, false, false], model.nowMs),
 	)
 	const claimable = modelOf(
 		model.nowMs,
-		checklistOf("claimable", [true, true, true, true, false], model.nowMs),
+		checklistOf("claimable", [true, true, true, true, true, false], model.nowMs),
 	)
 	const claimed = {
-		...modelOf(model.nowMs, checklistOf("claimed", [true, true, true, true, true], model.nowMs)),
+		...modelOf(model.nowMs, checklistOf("claimed", [true, true, true, true, true, true], model.nowMs)),
 		isJustClaimed: true,
 	}
 	return h.div(

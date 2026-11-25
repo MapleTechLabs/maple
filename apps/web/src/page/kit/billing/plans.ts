@@ -1,5 +1,4 @@
 import { Array as Arr, Option, String as Str } from "effect"
-export const TRIAL_DURATION_DAYS = 14
 
 const DEFAULT_PLAN = "starter"
 

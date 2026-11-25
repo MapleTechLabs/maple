@@ -1,4 +1,4 @@
-import { BillingCustomer, BillingSubscription } from "@maple/domain/http"
+import { BillingBalance, BillingCustomer, BillingSubscription } from "@maple/domain/http"
 import type { V2OnboardingChecklist } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -196,10 +196,36 @@ const lapsed = new BillingCustomer({
 	],
 })
 
+const DAY = 24 * 60 * 60 * 1000
+const NOW = 1_800_000_000_000
+
 const bannerView =
-	(customer: BillingCustomer) =>
+	(customer: BillingCustomer, nowMs = 0) =>
 	(_: null, h: HtmlBuilder<Message>): Html =>
-		h.div([], billingBanners(h, Option.some(customer), false))
+		h.div([], billingBanners(h, Option.some(customer), false, nowMs))
+
+const logs = (usage: number) =>
+	new BillingBalance({
+		granted: 100,
+		usage,
+		remaining: 100 - usage,
+		unlimited: false,
+		overageAllowed: false,
+	})
+
+const onTrial = (daysLeft: number, usage: number) =>
+	new BillingCustomer({
+		id: "org_1",
+		subscriptions: [
+			new BillingSubscription({ planId: "trial", status: "active", trialEndsAt: NOW + daysLeft * DAY }),
+		],
+		balances: { logs: logs(usage) },
+	})
+
+const banners = (customer: BillingCustomer) => ({
+	update: (model: null) => ({ model }),
+	view: bannerView(customer, NOW),
+})
 
 describe("billing banners", () => {
 	test("a lapsed plan asks to choose a plan again", () => {
@@ -216,5 +242,53 @@ describe("billing banners", () => {
 		const dismissed = update(shell, ShellMessage.ClickedDismissQuotaBanner())
 		expect(dismissed.model.isQuotaApproachingDismissed).toBe(true)
 		expect(names(dismissed)).toEqual(["DismissQuotaBanner"])
+	})
+})
+
+describe("no-card trial banners", () => {
+	const addCard = role("link", { name: "Add card" })
+
+	test("a signal at its cap says its ingest is paused and links to adding a card", () => {
+		scene(
+			banners(onTrial(9, 100)),
+			given(null),
+			expectView(text("Logs ingest is paused")).toExist(),
+			expectView(addCard).toHaveAttr("href", "/settings/billing"),
+			// The trial's caps replace the paid plan's quota banner.
+			expectView(text(/usage limit/)).not.toExist(),
+		)
+	})
+
+	test("the last days ask for a card before ingest stops", () => {
+		scene(
+			banners(onTrial(2, 10)),
+			given(null),
+			expectView(text("Your free trial ends in 2 days")).toExist(),
+			expectView(addCard).toExist(),
+		)
+	})
+
+	test("a cap coming up warns, and a quiet trial shows nothing", () => {
+		scene(
+			banners(onTrial(9, 85)),
+			given(null),
+			expectView(text(/nearing the trial's 100 GB of logs/)).toExist(),
+		)
+		scene(banners(onTrial(9, 10)), given(null), expectView(addCard).not.toExist())
+	})
+
+	test("an ended trial asks to subscribe, not to pick a plan again", () => {
+		const ended = new BillingCustomer({
+			id: "org_1",
+			subscriptions: [
+				new BillingSubscription({ planId: "trial", status: "expired", trialEndsAt: NOW - DAY }),
+			],
+		})
+		scene(
+			banners(ended),
+			given(null),
+			expectView(text("Your free trial has ended")).toExist(),
+			expectView(role("link", { name: "Subscribe" })).toHaveAttr("href", "/select-plan"),
+		)
 	})
 })

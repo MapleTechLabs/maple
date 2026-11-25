@@ -308,7 +308,7 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 }
 
 const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
-	h.div([h.Class("space-y-6")], [PricingCardsView.planCards(h, PLANS, null), compliance(h)]),
+	h.div([h.Class("space-y-6")], [PricingCardsView.planCards(h, PLANS, null, "Trial"), compliance(h)]),
 )
 
 const complete = (h: HtmlBuilder<Message>): Html =>
@@ -345,6 +345,7 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 			planStep: QuickStartTeamView.planStep(
 				h,
 				false,
+				"Trial",
 				h.submodel({
 					slotId: "lab-onboarding-plans",
 					model: null,

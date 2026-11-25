@@ -235,7 +235,8 @@ const replace = (model: Model, timeZone: string): Model =>
 	placeGraph(modifyFields(model, { canvas: (canvas) => ({ ...canvas, movedByUser: false }) }), timeZone)
 
 /** The header's primary button, by status. */
-const primaryKind = (investigation: V2Investigation): "resolve" | "restart" =>
+/** What the header's primary button does: "restart" is a new AI run (Run again, Reopen). */
+export const primaryKind = (investigation: V2Investigation): "resolve" | "restart" =>
 	investigation.status === "failed" ||
 	investigation.status === "inconclusive" ||
 	investigation.status === "resolved"

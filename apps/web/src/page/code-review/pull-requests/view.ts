@@ -128,6 +128,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			h,
 			active: "pull-requests",
 			search: model.search,
+			...(inputs.context.aiCardGate === undefined
+				? undefined
+				: { aiCardGate: inputs.context.aiCardGate }),
 			toolbar: filters.actions,
 			filters: [
 				searchBox(h, {

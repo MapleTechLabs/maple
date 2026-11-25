@@ -1,6 +1,6 @@
 import type { BillingCustomer } from "@maple/domain/http"
 import { hasLapsedPlan } from "../kit/billing/plan-gating"
-import { TRIAL_DURATION_DAYS } from "../kit/billing/plans"
+import { TRIAL_DURATION_DAYS, TRIAL_SIGNAL_GB } from "@maple/domain/billing"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -90,7 +90,7 @@ const planHeading = (h: H, isReactivating: boolean): Html =>
 			[
 				isReactivating
 					? "Your data is still here. Choose a plan to start ingesting again. Cancel anytime."
-					: `Try Maple free for ${TRIAL_DURATION_DAYS} days. You won't be charged until the trial ends. Cancel anytime.`,
+					: `Try Maple free for ${TRIAL_DURATION_DAYS} days, no credit card needed. ${TRIAL_SIGNAL_GB} GB each of logs, traces and metrics included.`,
 			],
 		),
 	])
@@ -144,6 +144,8 @@ export const view = (h: H, model: Model, customer: BillingCustomer | undefined):
 								slotId: "pricing-cards",
 								model: model.pricing,
 								view: PricingCardsView.view,
+								// An org that never held a plan gets the no-card trial here too.
+								viewInputs: { offer: hasLapsedPlan(customer) ? "Subscribe" : "Trial" },
 								toParentMessage: toPricing,
 							}),
 						],

@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { PlansListResponse, loadPlans, resolveOffer } from "./pricing-offer"
 
 /** A `POST /v1/plans.list` body as Autumn returns it (trimmed of fields the offer ignores). */
@@ -106,6 +106,41 @@ describe("pricing offer", () => {
 			["traces", 50, 0.25, 1],
 			["product_events", 1_000_000, 5, 1_000_000],
 		])
+	})
+
+	it("takes the trial length from the trial plan and never renders it as a tier", () => {
+		const withTrialPlan = {
+			list: [
+				...recorded.list.map((plan) =>
+					plan.id === "startup" ? { ...plan, free_trial: null } : plan,
+				),
+				{
+					id: "trial",
+					name: "Free trial",
+					add_on: false,
+					free_trial: { duration_length: 14 },
+					items: [{ feature_id: "logs", included: 100, unlimited: false, price: null }],
+				},
+			],
+		}
+		const warnings: Array<unknown> = []
+		const warn = vi.spyOn(console, "warn").mockImplementation((...args) => {
+			warnings.push(...args)
+		})
+		const offer = resolveOffer(Option.some(Schema.decodeSync(PlansListResponse)(withTrialPlan)))
+		warn.mockRestore()
+		expect([offer.name, offer.price, offer.hasTrial, offer.trialDuration]).toEqual([
+			"Startup",
+			49,
+			true,
+			14,
+		])
+		expect(offer.allotments.map((a) => [a.featureId, a.included])).toEqual([
+			["logs", 50],
+			["traces", 50],
+			["product_events", 1_000_000],
+		])
+		expect(warnings).toEqual([])
 	})
 
 	it("posts to plans.list with the bearer key and the pinned api version", async () => {

@@ -241,6 +241,21 @@ describe("billing tab", () => {
 		})
 	})
 
+	test("only a bought plan or add-on ends the wait, never the trial, the free row or an auto-enabled one", () => {
+		const returning = init(ADMIN, true, true).model
+		const holding = (subscription: { planId: string; addOn?: boolean; autoEnable?: boolean }) =>
+			Schema.decodeSync(BillingCustomer)({
+				id: "org_acme",
+				subscriptions: [{ status: "active", ...subscription }],
+			})
+		expect(customerChanged(returning, holding({ planId: "trial" }))).toBeNull()
+		expect(customerChanged(returning, holding({ planId: "free" }))).toBeNull()
+		expect(customerChanged(returning, holding({ planId: "starter", autoEnable: true }))).toBeNull()
+		expect(
+			customerChanged(returning, holding({ planId: "bringyourowncloud", addOn: true }))?.checkout,
+		).toBe("Confirmed")
+	})
+
 	test("the wait gives up after the timeout with the notice, and an idle tab never polls", () => {
 		const timedOut = update(
 			init(ADMIN, true, true).model,
