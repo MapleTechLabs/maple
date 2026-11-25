@@ -30,7 +30,7 @@ const policy = (logs: RetentionDays | null = null) =>
 		],
 	})
 
-const ADMIN: ReadonlyArray<Policy.Permission> = ["telemetry:read", "retention:manage"]
+const ADMIN: ReadonlyArray<Policy.Permission> = ["telemetry:read", "sources:manage", "retention:manage"]
 const MEMBER: ReadonlyArray<Policy.Permission> = ["telemetry:read"]
 
 const loaded = (grants = ADMIN, logs: RetentionDays | null = null) =>
@@ -47,27 +47,40 @@ describe("retention tab", () => {
 		expect(names).toContain("FetchRetentionSourceNames")
 	})
 
-	test("a shorter period says what is hidden now and when it is gone", () => {
-		const edited = update(loaded(), Message.ChangedPeriod({ signal: "logs", value: "7" })).model
+	test("a shorter period hides older data when nothing keeps it longer", () => {
+		const edited = update(loaded(), Message.ChangedPeriod({ signal: "traces", value: "7" })).model
 		scene(
 			{ update, view: withViewInputs(view, inputs)() },
 			given(edited),
 			expectView(
 				text(
-					"Logs older than 1 week are hidden once you save, and deleted by Dec 18. Switch back before then to see them again.",
+					"Spans older than 1 week are hidden once you save. Switch back to see them again while they are still stored.",
 				),
 			).toExist(),
 			expectView(text("1 unsaved change")).toExist(),
 		)
 	})
 
-	test("a longer period says it applies from now on and when the history fills in", () => {
+	test("a shorter period hides nothing while a source keeps longer", () => {
+		const edited = update(loaded(), Message.ChangedPeriod({ signal: "logs", value: "7" })).model
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(edited),
+			expectView(
+				text(
+					"Logs received from now on are kept for 1 week. Logs already stored keep the period they arrived under.",
+				),
+			).toExist(),
+		)
+	})
+
+	test("a longer period applies from now on and names the day the full history is there", () => {
 		const edited = update(loaded(), Message.ChangedPeriod({ signal: "traces", value: "90" })).model
 		scene(
 			{ update, view: withViewInputs(view, inputs)() },
 			given(edited),
 			expectView(
-				text("Applies to spans received from now on. 90 days of history fills in by Jan 24, 2027."),
+				text("Applies to spans received from now on. 90 days of history is there by Feb 23, 2027."),
 			).toExist(),
 		)
 	})
@@ -124,6 +137,14 @@ describe("retention tab", () => {
 			given(named),
 			expectView(role("link", { name: "checkout-api" })).toExist(),
 			expectView(text("Logs 6 months")).toExist(),
+		)
+		// Without Manage sources the name is not a link to a tab the viewer cannot open.
+		const retentionOnly = { ...named, grants: ["telemetry:read", "retention:manage"] as const }
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(retentionOnly),
+			expectView(role("link", { name: "checkout-api" })).not.toExist(),
+			expectView(text("checkout-api")).toExist(),
 		)
 	})
 

@@ -1,3 +1,4 @@
+import type { V2RetentionPolicy } from "@maple/domain/http/v2"
 import { RETENTION_PERIODS, type RetentionDays, type RetentionSignal } from "@maple/domain/retention"
 import { Array as Arr, Option, String as Str } from "effect"
 
@@ -53,8 +54,8 @@ export const periodLabel = (days: number): string => {
 	}
 }
 
-/** The options a period select offers, the default marked. */
-export const periodOptions = (defaultDays: number) =>
+/** The options a period select offers, the default marked when there is one. */
+export const periodOptions = (defaultDays?: number) =>
 	Arr.map(RETENTION_PERIODS, (days) => ({
 		value: String(days),
 		label: days === defaultDays ? `${periodLabel(days)} (default)` : periodLabel(days),
@@ -63,23 +64,6 @@ export const periodOptions = (defaultDays: number) =>
 /** A select's value back to a period, when it is one. */
 export const parsePeriod = (value: string): Option.Option<RetentionDays> =>
 	Arr.findFirst(RETENTION_PERIODS, (days) => String(days) === value)
-
-/**
- * What saving `to` over `from` does. Rows keep the period they were stored under: a shorter one
- * hides older data at once and deletes it as that period ends, so going back before then brings it
- * back; a longer one applies to new data, so the full history fills in over time.
- */
-export type RetentionChange =
-	| { readonly _tag: "Unchanged" }
-	| { readonly _tag: "Shorter"; readonly deletedByMs: number }
-	| { readonly _tag: "Longer"; readonly fullHistoryFromMs: number }
-
-export const changeOf = (from: number, to: number, nowMs: number): RetentionChange =>
-	to === from
-		? { _tag: "Unchanged" }
-		: to < from
-			? { _tag: "Shorter", deletedByMs: nowMs + (from - to) * DAY_MS }
-			: { _tag: "Longer", fullHistoryFromMs: nowMs + (to - from) * DAY_MS }
 
 /** "Dec 25", or "Feb 23, 2027" outside the current year. */
 export const dayLabel = (ms: number, nowMs: number, timeZone: string): string => {
@@ -91,21 +75,52 @@ export const dayLabel = (ms: number, nowMs: number, timeZone: string): string =>
 	return format.format(ms)
 }
 
-/** The sentence under a changed row, saying what saving it does and when. */
-export const changeSentence = (
+/** One row's edit: the organization's period, or one source's (`null` follows the organization). */
+export type RetentionEdit =
+	| { readonly _tag: "Organization"; readonly days: number }
+	| { readonly _tag: "Source"; readonly sourceId: string; readonly days: number | null }
+
+/** How far back reads reach for `signal` with `edit` applied: the longest any source keeps it. */
+export const horizonWith = (
+	policy: V2RetentionPolicy,
 	signal: RetentionSignal,
-	change: RetentionChange,
-	to: number,
+	edit: RetentionEdit,
+): number => {
+	const organization = edit._tag === "Organization" ? edit.days : policy.organization.days[signal]
+	const listed = Arr.flatMap(policy.sources, (source) => {
+		const own =
+			edit._tag === "Source" && source.source_id === edit.sourceId ? edit.days : source.set[signal]
+		return own === null ? [] : [own]
+	})
+	const added =
+		edit._tag === "Source" &&
+		edit.days !== null &&
+		!Arr.some(policy.sources, (source) => source.source_id === edit.sourceId)
+			? [edit.days]
+			: []
+	return Arr.reduce([...listed, ...added], organization, Math.max)
+}
+
+/**
+ * The sentence under a changed row, saying what saving does. Rows keep the period in force when
+ * they arrived, and reads reach as far as the longest period any source keeps: a shorter period
+ * hides data only when that horizon moves in, and a longer one builds up as new data arrives.
+ */
+export const changeSentence = (
+	policy: V2RetentionPolicy,
+	signal: RetentionSignal,
+	change: Readonly<{ from: number; to: number; edit: RetentionEdit }>,
 	nowMs: number,
 	timeZone: string,
 ): string | null => {
 	const noun = SIGNAL_NOUNS[signal]
-	switch (change._tag) {
-		case "Unchanged":
-			return null
-		case "Shorter":
-			return `${noun} older than ${periodLabel(to)} are hidden once you save, and deleted by ${dayLabel(change.deletedByMs, nowMs, timeZone)}. Switch back before then to see them again.`
-		case "Longer":
-			return `Applies to ${Str.toLowerCase(noun)} received from now on. ${periodLabel(to)} of history fills in by ${dayLabel(change.fullHistoryFromMs, nowMs, timeZone)}.`
-	}
+	const lower = Str.toLowerCase(noun)
+	if (change.to === change.from) return null
+	if (change.to > change.from)
+		return `Applies to ${lower} received from now on. ${periodLabel(change.to)} of history is there by ${dayLabel(nowMs + change.to * DAY_MS, nowMs, timeZone)}.`
+	const before = policy.read_horizon_days[signal]
+	const after = horizonWith(policy, signal, change.edit)
+	return after < before
+		? `${noun} older than ${periodLabel(after)} are hidden once you save. Switch back to see them again while they are still stored.`
+		: `${noun} received from now on are kept for ${periodLabel(change.to)}. ${noun} already stored keep the period they arrived under.`
 }

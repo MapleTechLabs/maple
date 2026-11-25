@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { V2RetentionDays, V2RetentionPolicy } from "@maple/domain/http/v2"
 import { RETENTION_SIGNALS, type RetentionSignal } from "@maple/domain/retention"
 import { AsyncData, Submodel } from "foldkit"
@@ -17,7 +18,6 @@ import { gatedControl } from "../../kit/session-grants"
 import { docsLink } from "../../kit/signal-empty-state"
 import { adminOnlyNote, sectionNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import {
-	changeOf,
 	changeSentence,
 	periodLabel,
 	periodOptions,
@@ -45,13 +45,8 @@ const rowDescription = (
 ): Html => {
 	const from = policy.organization.days[signal]
 	const to = draft[signal]
-	const sentence = changeSentence(
-		signal,
-		changeOf(from, to, inputs.nowMs),
-		to,
-		inputs.nowMs,
-		inputs.timeZone,
-	)
+	const edit = { _tag: "Organization", days: to } as const
+	const sentence = changeSentence(policy, signal, { from, to, edit }, inputs.nowMs, inputs.timeZone)
 	if (sentence !== null)
 		return typography(h, { size: "sm", tone: "foreground", className: "font-prose" }, [sentence])
 	const overriding = overridingSources(policy, signal)
@@ -122,7 +117,7 @@ const signalsSection = (h: H, model: Model, inputs: Inputs): Html =>
 			id: "settings-retention-signals",
 			title: "Organization",
 			description: [
-				"How long Maple keeps each signal. A shorter period hides older data right away; a longer one applies to data received from now on.",
+				"How long Maple keeps each signal. Data keeps the period in force when it arrived, and each change says what it does before you save.",
 			],
 			padded: false,
 		},
@@ -208,11 +203,21 @@ const sourcesSection = (h: H, model: Model): ReadonlyArray<Html> =>
 											attributes: [h.Key(source.source_id)],
 										},
 										[
-											textLink(
-												h,
-												{ href: sourceHrefById(source.source_id, "settings") },
-												[sourceName(model, source.source_id)],
-											),
+											// A source's settings need Manage sources; without it the name is plain text.
+											Policy.can(model.grants, "sources:manage")
+												? textLink(
+														h,
+														{
+															href: sourceHrefById(
+																source.source_id,
+																"settings",
+															),
+														},
+														[sourceName(model, source.source_id)],
+													)
+												: typography(h, { size: "sm" }, [
+														sourceName(model, source.source_id),
+													]),
 											typography(h, { size: "sm", tone: "muted", truncate: true }, [
 												overrideSummary(source.set),
 											]),

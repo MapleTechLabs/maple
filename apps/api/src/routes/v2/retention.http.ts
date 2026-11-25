@@ -122,10 +122,12 @@ export const HttpV2RetentionLive = HttpApiBuilder.group(MapleApiV2, "retention",
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const storage = yield* requireManagedStorage(tenant.orgId)
-					const current = yield* retention.get(tenant.orgId)
-					const next = applyRetentionPatch(current.overrides, payload)
-					const policy = yield* retention.setOrganization(tenant.orgId, tenant.userId, next)
-					const changes = auditChanges(current.overrides, next)
+					const { before, policy } = yield* retention.updateOrganization(
+						tenant.orgId,
+						tenant.userId,
+						(current) => applyRetentionPatch(current, payload),
+					)
+					const changes = auditChanges(before, policy.overrides)
 					if (changes !== undefined) yield* recordHttpAudit("retention.updated", { changes })
 					return toV2RetentionPolicy(policy, storage)
 				}),
@@ -134,14 +136,17 @@ export const HttpV2RetentionLive = HttpApiBuilder.group(MapleApiV2, "retention",
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const storage = yield* requireManagedStorage(tenant.orgId)
-					const current = yield* retention.get(tenant.orgId)
-					const overrides = Option.match(
-						Arr.findFirst(current.sources, (source) => source.sourceId === params.id),
+					const { before, policy } = yield* retention.updateSource(
+						tenant.orgId,
+						tenant.userId,
+						params.id,
+						(current) => applyRetentionPatch(current, payload),
+					)
+					const after = Option.match(
+						Arr.findFirst(policy.sources, (source) => source.sourceId === params.id),
 						{ onNone: (): RetentionOverrides => ({}), onSome: (source) => source.overrides },
 					)
-					const next = applyRetentionPatch(overrides, payload)
-					const policy = yield* retention.setSource(tenant.orgId, tenant.userId, params.id, next)
-					const changes = auditChanges(overrides, next)
+					const changes = auditChanges(before, after)
 					if (changes !== undefined)
 						yield* recordHttpAudit("retention.source_updated", {
 							changes,

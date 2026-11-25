@@ -150,7 +150,7 @@ describe("source retention", () => {
 		)
 	})
 
-	test("following the organization again says what that does and when", () => {
+	test("following the organization again says when the longer history is there", () => {
 		// Traces go from its own 1 week to the organization's 30 days.
 		const edited = pick(loaded(7), "traces", "inherit")
 		scene(
@@ -158,12 +158,12 @@ describe("source retention", () => {
 			given(edited),
 			resolveTheme,
 			expectView(
-				text("Applies to spans received from now on. 30 days of history fills in by Dec 18."),
+				text("Applies to spans received from now on. 30 days of history is there by Dec 25."),
 			).toExist(),
 		)
 	})
 
-	test("a shorter own period says what is hidden now and when it is gone", () => {
+	test("a shorter own period hides nothing while the organization keeps longer", () => {
 		const edited = pick(loaded(7), "logs", "14")
 		scene(
 			{ update: pageUpdate, view },
@@ -171,7 +171,7 @@ describe("source retention", () => {
 			resolveTheme,
 			expectView(
 				text(
-					"Logs older than 2 weeks are hidden once you save, and deleted by Feb 9, 2027. Switch back before then to see them again.",
+					"Logs received from now on are kept for 2 weeks. Logs already stored keep the period they arrived under.",
 				),
 			).toExist(),
 		)

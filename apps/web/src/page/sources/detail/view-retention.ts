@@ -9,7 +9,6 @@ import { settingRow } from "@maple/views/ui/setting-row"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { typography } from "@maple/views/ui/typography"
 import {
-	changeOf,
 	changeSentence,
 	periodLabel,
 	periodOptions,
@@ -33,10 +32,12 @@ const rowDescription = (
 	draft: RetentionSet,
 	signal: RetentionSignal,
 	clock: Clock,
+	sourceId: string,
 ): Html => {
 	const from = effectiveDays(policy, stored, signal)
 	const to = effectiveDays(policy, draft, signal)
-	const sentence = changeSentence(signal, changeOf(from, to, clock.nowMs), to, clock.nowMs, clock.timeZone)
+	const edit = { _tag: "Source", sourceId, days: draft[signal] } as const
+	const sentence = changeSentence(policy, signal, { from, to, edit }, clock.nowMs, clock.timeZone)
 	return sentence === null
 		? typography(h, { size: "sm", tone: "muted", className: "font-prose" }, [SIGNAL_DESCRIPTIONS[signal]])
 		: typography(h, { size: "sm", tone: "foreground", className: "font-prose" }, [sentence])
@@ -57,7 +58,7 @@ const signalRow = (
 	return settingRow(h, {
 		ids: { control: id, label: `${id}-label`, description: `${id}-description` },
 		label: SIGNAL_LABELS[signal],
-		description: rowDescription(h, policy, stored, draft, signal, clock),
+		description: rowDescription(h, policy, stored, draft, signal, clock, model.sourceId ?? ""),
 		className: "p-4",
 		control: [
 			gatedControl(h, { grants: model.grants ?? [] }, "retention:manage", (isDisabled) =>
@@ -79,9 +80,7 @@ const signalRow = (
 							INHERIT,
 							`Organization (${periodLabel(policy.organization.days[signal])})`,
 						),
-						...Arr.map(periodOptions(policy.defaults[signal]), (option) =>
-							nativeOption(option.value, option.label),
-						),
+						...Arr.map(periodOptions(), (option) => nativeOption(option.value, option.label)),
 					],
 				),
 			),

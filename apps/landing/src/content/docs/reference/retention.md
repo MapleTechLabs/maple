@@ -13,7 +13,7 @@ Traces, logs, metrics, session replays, product events and profiles each have a 
 
 Data is stored under the period in force when it arrived:
 
-- **A shorter period** hides older data right away. It is deleted when the period it was stored under ends, so switching back before then brings it back.
+- **A shorter period** hides older data right away, unless another source still keeps that signal longer. Hidden data is deleted when the period it was stored under ends, so switching back before then brings it back.
 - **A longer period** applies to data received from then on. The full history fills in over time; data already stored keeps its earlier period.
 - **Reads** reach as far back as the longest period any of your sources keeps.
 

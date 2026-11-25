@@ -193,6 +193,25 @@ describe("RetentionService", () => {
 		),
 	)
 
+	it.effect("two concurrent edits of different signals both land, each with what it changed from", () =>
+		withDb(() =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const [traces, logs] = yield* Effect.all(
+					[
+						retention.updateOrganization(ORG, ANA, (current) => ({ ...current, traces: 7 })),
+						retention.updateOrganization(ORG, ANA, (current) => ({ ...current, logs: 90 })),
+					],
+					{ concurrency: 2 },
+				)
+				const policy = yield* retention.get(ORG)
+				assert.deepStrictEqual(policy.overrides, { traces: 7, logs: 90 })
+				// Whichever ran second saw the first one's write.
+				assert.isTrue(traces.before.logs === 90 || logs.before.traces === 7)
+			}),
+		),
+	)
+
 	it.effect("refuses a period that cannot be stored, as a bad request and without writing", () =>
 		withDb((db) =>
 			Effect.gen(function* () {

@@ -104,7 +104,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedRetry: () => ({
 			model: {
 				...model,
-				policy: AsyncData.isFailure(model.policy) ? model.policy : AsyncData.Loading(),
+				policy: AsyncData.Loading(),
 			},
 			commands: [FetchRetention()],
 		}),
