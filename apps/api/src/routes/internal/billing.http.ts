@@ -568,7 +568,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							emitPlanStartedFromAttach(productEvents, {
 								orgId: tenant.orgId,
 								userId: tenant.userId,
-								planId: payload.planId,
+								// The plan actually attached: Startup when the rollout fallback ran.
+								planId: attachedPlanId,
 								result: attached,
 							}),
 						)
