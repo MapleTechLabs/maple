@@ -466,16 +466,17 @@ describe("RetentionService.readHorizon", () => {
 					db,
 					RetentionService.use((other) => other.setOrganization(ORG, ANA, { traces: 7 })),
 				)
+				// The first reader starts the load; the rest read the org that set a period, so a
+				// reader that gave up on the load early would answer the default 30.
 				const horizons = yield* Effect.forEach(
-					[ORG, ...Arr.makeBy(11, (index) => decodeOrgId(`org_${index}`))],
+					[decodeOrgId("org_first"), ...Arr.makeBy(11, () => ORG)],
 					(orgId) => retention.readHorizon(orgId),
 					{ concurrency: "unbounded" },
 				)
 				assert.strictEqual(database.calls, 1)
-				// None of them fell back to the defaults while the first was still reading.
 				assert.deepStrictEqual(
 					Arr.map(horizons, (horizon) => horizon.days.traces),
-					[7, ...Arr.makeBy(11, () => DEFAULT_RETENTION_DAYS.traces)],
+					[DEFAULT_RETENTION_DAYS.traces, ...Arr.makeBy(11, () => 7)],
 				)
 			}),
 		),
