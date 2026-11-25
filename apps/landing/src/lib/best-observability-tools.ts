@@ -21,6 +21,8 @@ export interface BestTool {
 	cons: string[]
 	/** Internal link to an existing /compare/* page, when one exists. */
 	comparePath?: string
+	/** Internal link to the tool's own "<tool> alternatives" roundup, when one exists. */
+	alternativesPath?: string
 }
 
 export const lastUpdated = "June 2026"
@@ -58,6 +60,7 @@ export const bestObservabilityTools: BestTool[] = [
 		rank: 2,
 		name: "Grafana (LGTM stack)",
 		slug: "grafana",
+		alternativesPath: "/alternatives/grafana",
 		url: "https://grafana.com/oss/",
 		bestFor: "Teams that want maximum flexibility and don't mind assembling components",
 		license: "AGPLv3",
@@ -111,6 +114,7 @@ export const bestObservabilityTools: BestTool[] = [
 		rank: 5,
 		name: "OpenObserve",
 		slug: "openobserve",
+		alternativesPath: "/alternatives/openobserve",
 		url: "https://openobserve.ai/",
 		bestFor: "Cost-sensitive teams with very high log volume",
 		license: "AGPLv3",
@@ -127,9 +131,10 @@ export const bestObservabilityTools: BestTool[] = [
 		rank: 6,
 		name: "Uptrace",
 		slug: "uptrace",
+		alternativesPath: "/alternatives/uptrace",
 		url: "https://uptrace.dev/",
 		bestFor: "A lightweight OpenTelemetry APM on a budget",
-		license: "Source-available (BSL → Apache 2.0)",
+		license: "AGPLv3",
 		summary:
 			"Uptrace is a lightweight, OpenTelemetry-native APM backed by ClickHouse, covering traces, logs, and metrics. It's easy to stand up for smaller deployments that want OTel support without much operational weight.",
 		pros: [
@@ -138,7 +143,7 @@ export const bestObservabilityTools: BestTool[] = [
 			"Unified traces, logs, and metrics",
 		],
 		cons: [
-			"Source-available (BSL), not OSI open source",
+			"Roles, SSO and retention past 14 days need a paid self-hosted edition",
 			"Smaller ecosystem and team than larger projects",
 		],
 	},

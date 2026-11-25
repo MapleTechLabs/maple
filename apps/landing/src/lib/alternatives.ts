@@ -1371,7 +1371,514 @@ const sentry: AlternativesPage = {
 	],
 }
 
-export const alternativesPages: AlternativesPage[] = [datadog, sentry, grafana, newRelic, dash0]
+const UPTRACE_SOURCES = [
+	checkedNow("Uptrace pricing", "https://uptrace.dev/pricing"),
+	checkedNow("Uptrace self-hosted editions", "https://uptrace.dev/editions"),
+	checkedNow(
+		"Uptrace on GitHub (AGPL-3.0, ClickHouse and PostgreSQL)",
+		"https://github.com/uptrace/uptrace",
+	),
+	checkedNow("Uptrace metrics query language", "https://uptrace.dev/features/querying/metrics"),
+	checkedNow("Uptrace features", "https://uptrace.dev/"),
+]
+
+const OPENOBSERVE_SELF_HOST_SOURCES = [
+	checkedNow("OpenObserve on GitHub (AGPL-3.0)", "https://github.com/openobserve/openobserve"),
+	checkedNow(
+		"OpenObserve high-availability deployment",
+		"https://openobserve.ai/docs/administration/deployment/ha-deployment/",
+	),
+]
+
+const MAPLE_SELF_HOST_SOURCE = checkedNow("Maple self-hosting docs", "https://maple.dev/docs/self-hosting")
+
+/** Maple's own feature pages, for the features these two roundups weigh against the vendor. */
+const MAPLE_FEATURE_SOURCES = [
+	checkedNow("Maple alerts, on-call schedules and escalation", "https://maple.dev/features/alerts"),
+	checkedNow("Maple uptime monitoring", "https://maple.dev/features/uptime-monitoring"),
+	checkedNow("Maple browser sessions (replay)", "https://maple.dev/features/browser-sessions"),
+	checkedNow("Maple metrics, dashboards and PromQL", "https://maple.dev/features/metrics-dashboards"),
+	checkedNow("Maple MCP server", "https://maple.dev/features/ai-mcp-integration"),
+]
+
+const UPTRACE_ALERTING_SOURCE = checkedNow(
+	"Uptrace alerting and notification channels",
+	"https://uptrace.dev/features/alerting",
+)
+
+const OPENOBSERVE_ALERTING_SOURCE = checkedNow(
+	"OpenObserve alert destinations",
+	"https://openobserve.ai/docs/user-guide/alerts/destinations/",
+)
+
+const uptrace: AlternativesPage = {
+	slug: "uptrace",
+	vendor: "Uptrace",
+	vendorUrl: "https://uptrace.dev",
+	seoTitle: "Uptrace Alternatives (2026): 6 OpenTelemetry Tools Compared",
+	seoDescription:
+		"Six Uptrace alternatives compared on what their free self-hosted editions include, pricing and PromQL, plus when to stay on Uptrace. Written by the Maple team, with sources.",
+	title: "Uptrace alternatives",
+	blurb: "Six OpenTelemetry tools compared on their free self-hosted editions and pricing, and when Uptrace is still the cheaper choice.",
+	lede: "Uptrace is an OpenTelemetry APM on ClickHouse with one of the lowest per-GB rates around and an AGPL-3.0 Community edition. Teams look elsewhere when they need what its paid editions hold back (roles, SSO and retention past 14 days on a self-hosted install), when they want uptime checks, on-call and session replay in the same app as their traces, or when they want Prometheus queries and rules exactly as written. These are the six tools worth comparing, and when to stay.",
+	updated: "2026-11-25",
+	disclosure:
+		"We build Maple and list it first because this is our site: that placement is our bias, not a ranking. The rest start with the tools you can self-host for free, then the hosted ones. Every price comes from the vendor's own pricing page, linked at the bottom with the month we checked it.",
+	method: "How we compared: in November 2026 we read Uptrace's pricing, editions and documentation pages and its GitHub repository, and re-read each alternative's pricing page. Other facts repeat sourced rows from our side-by-side comparison pages. Uptrace, OpenObserve and ClickStack have no comparison page, so their facts link to their own pages below. We did not benchmark the tools against each other; treat this as a map of trade-offs, not a test result.",
+	keyColumn: "Free self-hosted edition",
+	baseline: {
+		name: "Uptrace (for reference)",
+		pricing:
+			"Cloud: 50 GB of spans and logs free each month, then from $0.075 per GB; metrics from $0.025 per million data points",
+		openSource: "AGPL-3.0 Community edition; paid self-hosted editions from $39/mo",
+		keyFact:
+			"Community: no usage cap, 14 days of retention, basic alerting; RBAC from $199/mo (to 200 GB a day), SSO from $499/mo (to 500 GB a day)",
+	},
+	quickAnswer: [
+		{
+			team: "Cost is the main reason you are looking",
+			pick: "Stay on Uptrace",
+			why: "50 GB a month free on its cloud and per-GB rates that fall with volume are hard to beat; none of the hosted plans below has a lower per-GB rate for traces and logs.",
+		},
+		{
+			team: "Small team on OpenTelemetry that also wants uptime checks and on-call",
+			pick: "Maple",
+			why: "Traces, logs and metrics with uptime checks, on-call schedules, SLOs, error issues and session replay in one hosted app. It costs more per GB than Uptrace Cloud.",
+		},
+		{
+			team: "Self-hosting and needs SSO and roles without a license fee",
+			pick: "OpenObserve",
+			why: "Its self-hosted Enterprise edition includes SSO, RBAC and an audit trail, free up to 50 GB of ingestion a day.",
+		},
+		{
+			team: "Prometheus queries and alert rules must carry over as written",
+			pick: "SigNoz or Grafana",
+			why: "Both run PromQL itself, and Prometheus rules carry over; Uptrace runs its own dialect that is backwards compatible with PromQL.",
+		},
+		{
+			team: "Already runs ClickHouse",
+			pick: "ClickStack",
+			why: "An MIT-licensed UI and collector that can point at the ClickHouse you already operate.",
+		},
+	],
+	stayIf: [
+		"Price per GB is what you optimize. Uptrace Cloud gives 50 GB of spans and logs free every month, then starts at $0.075 per GB and falls with volume; Maple charges $0.30 per GB after its included 100 GB per signal.",
+		"You self-host and the Community edition covers you: AGPL-3.0, no usage cap, dashboards and basic alerting. Maple's self-hosted version has no alerting, dashboards or PromQL yet.",
+		"You want a hard budget cap on the hosted bill. Uptrace Cloud lets you set one, and says it never bills above it.",
+		"You need long, cheap retention on a hosted plan: Uptrace Cloud keeps data four weeks by default and offers cold storage for up to 100 weeks at $0.01 per GB-month for spans and logs. (The self-hosted Community edition keeps 14 days.)",
+		"Your alerts already reach the right people. Uptrace alerting sends to email, Slack, Microsoft Teams, PagerDuty, Opsgenie, incident.io, Alertmanager and webhooks, among others.",
+	],
+	alternatives: [
+		{
+			id: "maple",
+			name: "Maple",
+			url: "https://maple.dev",
+			ours: true,
+			pickIf: "You want uptime checks, on-call, SLOs and session replay in the same app as your traces, and a hosted service is fine.",
+			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
+			openSource: "Source-available (FSL-1.1, Apache 2.0 after two years), not open source",
+			keyFact: "One container for one team; no alerting, dashboards or PromQL yet",
+			summary:
+				"Maple covers the same ground as Uptrace for traces, logs and metrics, all OpenTelemetry, with no per-seat or per-host fee and an MCP server for agents. What it adds is the rest of the on-call loop in the same app: uptime checks and cron heartbeats, on-call schedules with escalation, SLOs with burn-rate alerts, errors grouped into issues, and browser session replay linked to the trace behind each click. We did not find uptime checks, on-call schedules, SLOs or session replay in Uptrace's feature list. It is not the cheaper option: Uptrace's per-GB rate is a fraction of Maple's.",
+			pros: [
+				"Uptime checks, cron heartbeats and on-call schedules with escalation (email, Slack, Discord)",
+				"SLOs with burn-rate alerts, and errors grouped into issues with an owner and a state",
+				"Session replay linked to traces, PromQL on Maple Cloud, and a hosted MCP server",
+				"No per-seat fee; a 14-day trial on Maple Cloud",
+			],
+			cons: [
+				"Costs more per GB than Uptrace Cloud, with no free plan",
+				"The self-hosted version is one container for one team, without alerting, dashboards or PromQL",
+				"Source-available under FSL-1.1, not an OSI open-source license like Uptrace's AGPL-3.0",
+				"30 days for traces and logs and 90 for metrics; longer only on Enterprise",
+			],
+		},
+		{
+			id: "signoz",
+			name: "SigNoz",
+			url: "https://signoz.io",
+			pickIf: "You want a self-hosted OpenTelemetry APM on ClickHouse like Uptrace, but with PromQL itself and an MIT core.",
+			pricing: "$49/mo including $49 of usage, then $0.30 per GB of logs and traces",
+			openSource: "MIT core, SSO and RBAC under a commercial license",
+			keyFact:
+				"Community edition: multi-user with roles and Google OAuth; SAML, OIDC and fine-grained RBAC are commercial",
+			summary:
+				"SigNoz is the nearest neighbour to Uptrace: OpenTelemetry-native, stored in ClickHouse, with traces, logs and metrics in one app. The differences are in the details. It runs PromQL itself, so Prometheus rules carry over, and it documents self-hosted installs for Docker, Swarm and Helm. Its core is MIT rather than AGPL, and its cloud has no user-based pricing.",
+			pros: [
+				"PromQL in dashboards, and Prometheus rules carry over",
+				"Multi-user Community edition with roles and Google OAuth",
+				"MIT core, a looser license than AGPL",
+			],
+			cons: [
+				"Cloud starts at $49 a month and costs more per GB than Uptrace Cloud",
+				"15 days for logs and traces and one month for metrics by default",
+				"SAML, OIDC and fine-grained RBAC sit under the commercial license",
+			],
+			compareSlug: "signoz",
+		},
+		{
+			id: "openobserve",
+			name: "OpenObserve",
+			url: "https://openobserve.ai",
+			pickIf: "You self-host and want SSO and RBAC for free, or want storage on S3-compatible object storage.",
+			pricing: "Cloud $0.50 per GB ingested (annual), plus $0.01 per GB queried",
+			openSource:
+				"AGPL-3.0 open-source edition; Enterprise edition free to self-host up to 50 GB a day",
+			keyFact: "AGPL edition, plus an Enterprise edition with SSO and RBAC free up to 50 GB a day",
+			summary:
+				"OpenObserve is a single Rust binary that stores telemetry as Parquet files, on object storage in a cluster. It covers logs, metrics, traces, RUM, session replay and error tracking, with SQL for logs and traces and SQL or PromQL for metrics. For an Uptrace user the draw is the self-hosted Enterprise edition: SSO, RBAC and an audit trail at no cost below 50 GB a day, where Uptrace charges from $199 a month for roles.",
+			pros: [
+				"SSO, RBAC and audit trail free when self-hosted below 50 GB a day",
+				"RUM, session replay and error tracking alongside traces",
+				"Unlimited users on Cloud; metrics kept 15 months",
+			],
+			cons: [
+				"Cloud costs several times Uptrace's per-GB rate, and queries are billed per GB scanned",
+				"A highly available install is a Helm chart with PostgreSQL, NATS and object storage",
+			],
+		},
+		{
+			id: "clickstack",
+			name: "ClickStack (formerly HyperDX)",
+			url: "https://clickhouse.com/clickstack",
+			pickIf: "You already run ClickHouse, or want an MIT-licensed stack for searching logs and traces.",
+			pricing: "Free to self-host; managed on ClickHouse Cloud",
+			openSource: "Open source (MIT)",
+			keyFact: "All of it, under MIT; one all-in-one Docker image to try it",
+			summary:
+				"ClickStack is ClickHouse's own observability stack: a UI, a preconfigured OpenTelemetry Collector and ClickHouse. Like Uptrace it keeps everything in ClickHouse, but it leans on search: Lucene-style filters for logs and traces, SQL for deeper questions, and session replay in the same store. The UI can connect to a ClickHouse you already run.",
+			pros: [
+				"MIT license, with nothing held back for a paid edition in the repository",
+				"Full-text search plus SQL over the same data",
+				"Session replay alongside logs and traces",
+			],
+			cons: [
+				"No PromQL in its documentation; metrics are queried with SQL or the builder",
+				"At volume you operate ClickHouse yourself, or move to ClickHouse Cloud",
+			],
+		},
+		{
+			id: "grafana",
+			name: "Grafana / LGTM",
+			url: "https://grafana.com",
+			pickIf: "Your team works in PromQL and dashboards-as-code, and you can run several services.",
+			pricing: "Free tier, then $19/mo + $8 per user beyond three, $0.55 per GB of logs and traces",
+			openSource: "AGPL-3.0 (Grafana, Loki, Tempo, Mimir); Cloud is proprietary",
+			keyFact: "Everything, under AGPL-3.0, as four services to run",
+			summary:
+				"Grafana with Loki, Tempo and Mimir is a self-hosted stack under the same AGPL-3.0 license as Uptrace's Community edition. PromQL, LogQL and TraceQL each cover one signal, the plugin catalog reaches almost any data source, and Grafana Cloud runs it all for you. Coming from Uptrace, the cost is operational: four services instead of one app.",
+			pros: [
+				"PromQL, LogQL and TraceQL; dashboards-as-code",
+				"Hundreds of plugins and community dashboards",
+				"Self-hostable under AGPL, or managed on Grafana Cloud",
+			],
+			cons: [
+				"Self-hosting means running four services",
+				"Cloud adds $8 per active user beyond three, and its log and trace rate is above Uptrace's",
+				"A query language per signal",
+			],
+			compareSlug: "grafana",
+		},
+		{
+			id: "better-stack",
+			name: "Better Stack",
+			url: "https://betterstack.com",
+			pickIf: "You want hosted logs and traces with phone and SMS paging and browser checks.",
+			pricing: "Bundles from $30/mo; logs and traces $0.10/GB + $0.05/GB-month stored (EU)",
+			openSource: "No; SaaS, custom VPC on Enterprise",
+			keyFact: "None; SaaS only",
+			summary:
+				"Better Stack is an incident platform with telemetry attached: uptime checks, Playwright browser checks, on-call schedules with phone and SMS, and a Slack incident bot, fed by logs, traces, errors and replays sent over OTLP. It takes PromQL too. It is the pick when paging matters more than self-hosting.",
+			pros: [
+				"Uptime, Playwright checks, and on-call with phone and SMS",
+				"Low log and trace ingest rate, with storage billed separately",
+				"PromQL and SQL",
+			],
+			cons: [
+				"Closed source, with no self-hosting",
+				"Anyone on call needs a $34/mo Responder license",
+				"Metrics billed on stored size, from $0.50 per GB-month",
+			],
+			compareSlug: "better-stack",
+		},
+	],
+	faqs: [
+		{
+			question: "What is the best Uptrace alternative?",
+			answer: "It depends on why you are leaving. If you want PromQL itself and Helm installs on ClickHouse, SigNoz. If you self-host and need SSO and roles without a license fee, OpenObserve's Enterprise edition is free up to 50 GB a day. If you already run ClickHouse, ClickStack. If you want uptime checks, on-call and session replay next to your traces in one hosted app, Maple. If price is the reason, stay: Uptrace Cloud is cheaper per GB than every hosted plan here. We build Maple, so weigh our view accordingly.",
+		},
+		{
+			question: "Is Uptrace open source?",
+			answer: "Yes. The Community edition on GitHub is licensed AGPL-3.0, free with no usage cap, and keeps 14 days of data. Paid self-hosted editions add custom retention (Starter, $39 a month up to 50 GB a day), RBAC and alert routing (Team, $199 up to 200 GB a day) and SSO (Business, $499 up to 500 GB a day); above that, Enterprise is priced by quote. Uptrace Cloud keeps four weeks by default, with cold storage up to 100 weeks. Maple, by comparison, is source-available under FSL-1.1 and becomes Apache 2.0 two years after each release; it is not open source.",
+		},
+		{
+			question: "Which Uptrace alternatives can I self-host for free?",
+			answer: "SigNoz (MIT core), OpenObserve (AGPL-3.0, plus an Enterprise edition free up to 50 GB a day), ClickStack (MIT) and the Grafana stack (AGPL-3.0). Maple self-hosts as one container for one team, without alerting, dashboards or PromQL yet. Better Stack is hosted only.",
+		},
+		{
+			question: "Does Uptrace support PromQL?",
+			answer: "Uptrace has its own metrics query language that it describes as backwards compatible with PromQL, with extras such as global where filters and query-wide group by. Existing PromQL queries can be reused. SigNoz, Grafana, OpenObserve and Better Stack run PromQL itself; Maple runs it on Maple Cloud only.",
+		},
+		{
+			question: "Is anything cheaper than Uptrace?",
+			answer: "Not among the hosted plans here. At list prices, 1 TB a month of logs and traces split evenly costs about $71 on Uptrace Cloud (950 GB past the free 50 GB at its starting $0.075; volume discounts may lower it), about $279 on Maple ($39 including 100 GB of each, then 800 GB at $0.30), about $300 on SigNoz Cloud and about $500 on OpenObserve Cloud before its query charge. The free self-hosted options (Uptrace Community, SigNoz, OpenObserve, ClickStack, Grafana) cost only the infrastructure you run them on.",
+		},
+		{
+			question: "How hard is it to move off Uptrace?",
+			answer: "Sending the data is the easy part. Uptrace takes OpenTelemetry, so with any OTLP backend you add a second exporter to the Collector, run both while you check the new tool, then remove the Uptrace exporter. Dashboards, alert rules and saved queries do not travel over OTLP, so plan to rebuild the ones you use.",
+		},
+	],
+	sources: [
+		...UPTRACE_SOURCES,
+		UPTRACE_ALERTING_SOURCE,
+		MAPLE_SOURCE,
+		MAPLE_SELF_HOST_SOURCE,
+		...MAPLE_FEATURE_SOURCES,
+		...pricingSource("signoz"),
+		...OPENOBSERVE_SOURCES,
+		...OPENOBSERVE_SELF_HOST_SOURCES,
+		...CLICKSTACK_SOURCES,
+		...pricingSource("grafana"),
+		...pricingSource("better-stack"),
+	],
+}
+
+const openobserve: AlternativesPage = {
+	slug: "openobserve",
+	vendor: "OpenObserve",
+	vendorUrl: "https://openobserve.ai",
+	seoTitle: "OpenObserve Alternatives (2026): 6 Tools on PromQL and Query Billing",
+	seoDescription:
+		"Six OpenObserve alternatives compared on PromQL, self-hosting and query billing, including OpenObserve vs SigNoz, and when to stay. Written by the Maple team, with sources.",
+	title: "OpenObserve alternatives",
+	blurb: "Six tools compared on PromQL, self-hosting and how they bill queries, including how OpenObserve and SigNoz differ.",
+	lede: "OpenObserve is a Rust platform that stores logs, metrics and traces as Parquet on object storage, under AGPL-3.0, with a cloud that bills per GB ingested and per GB queried. Teams look elsewhere when the query meter makes the bill hard to predict, when a highly available self-hosted install (Kubernetes, PostgreSQL, NATS and a bucket) is more than they want to run, or when they want an APM built around traces and ClickHouse. These are the six tools worth comparing, and when to stay.",
+	updated: "2026-11-25",
+	disclosure:
+		"We build Maple and list it first because this is our site: that placement is our bias, not a ranking. The rest start with the self-hostable OpenTelemetry tools closest to OpenObserve, then hosted ones. Every price comes from the vendor's own pricing page, linked at the bottom with the month we checked it.",
+	method: "How we compared: in November 2026 we read OpenObserve's pricing page, documentation and GitHub repository, and re-read each alternative's pricing page. Other facts repeat sourced rows from our side-by-side comparison pages. OpenObserve, Uptrace and ClickStack have no comparison page, so their facts link to their own pages below. We did not benchmark the tools against each other; treat this as a map of trade-offs, not a test result.",
+	keyColumn: "PromQL",
+	baseline: {
+		name: "OpenObserve (for reference)",
+		pricing: "Cloud $0.50 per GB ingested (annual), plus $0.01 per GB queried",
+		openSource: "AGPL-3.0 open-source edition; Enterprise edition free to self-host up to 50 GB a day",
+		keyFact: "Yes, for metrics; SQL for logs and traces",
+	},
+	quickAnswer: [
+		{
+			team: "Self-hosting, and want an OpenTelemetry APM on ClickHouse instead",
+			pick: "SigNoz",
+			why: "Traces, logs and metrics in ClickHouse with PromQL, and Docker, Swarm and Helm installs.",
+		},
+		{
+			team: "On OpenObserve Cloud and want a bill without a query meter",
+			pick: "Maple",
+			why: "Billed per GB ingested ($39 a month with 100 GB per signal, then $0.30 per GB) with no charge for queries, plus uptime checks, on-call and SLOs in the same app.",
+		},
+		{
+			team: "Want the lowest per-GB rate, hosted or self-hosted",
+			pick: "Uptrace",
+			why: "50 GB a month free on its cloud, then from $0.075 per GB, and an AGPL-3.0 Community edition.",
+		},
+		{
+			team: "Log and trace search is most of the work",
+			pick: "ClickStack",
+			why: "Full-text search and SQL over one ClickHouse store, under an MIT license.",
+		},
+		{
+			team: "Debugging requests you cannot reproduce",
+			pick: "Honeycomb",
+			why: "BubbleUp compares the slow or failing requests against the rest, attribute by attribute.",
+		},
+	],
+	stayIf: [
+		"You self-host below 50 GB a day. The Enterprise edition is free there and includes SSO, RBAC, an audit trail and sensitive data redaction, which SigNoz and Uptrace sell under a commercial license or paid edition.",
+		"You want 15 months of metric retention on a hosted plan. By default Maple keeps metrics 90 days and SigNoz one month.",
+		"You want object storage as the only data store: a single binary on one node, or a cluster writing Parquet to S3, GCS or MinIO, with no ClickHouse to run.",
+		"Your queries are SQL. Logs and traces are queried with SQL and metrics with SQL or PromQL, and that carries over to tools on ClickHouse only after rewriting to their schemas.",
+	],
+	alternatives: [
+		{
+			id: "maple",
+			name: "Maple",
+			url: "https://maple.dev",
+			ours: true,
+			pickIf: "You are on OpenObserve Cloud and want a bill with no query meter, plus uptime and on-call in the same app.",
+			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
+			openSource: "Source-available (FSL-1.1, Apache 2.0 after two years), not open source",
+			keyFact: "Yes, on Maple Cloud only",
+			summary:
+				"Maple is an OpenTelemetry backend for traces, logs and metrics with a per-GB price and no charge for running queries, so a busy dashboard does not move the bill. PromQL runs on Maple Cloud, Grafana dashboards import, and around the telemetry it keeps uptime checks, on-call schedules with escalation, SLOs, errors grouped into issues and browser session replay. It is the weaker choice if you self-host: Maple's self-hosted version is one container for one team, with no alerting, dashboards or PromQL yet.",
+			pros: [
+				"No per-query charge; $0.30 per GB after the included 100 GB per signal",
+				"Uptime checks, cron heartbeats and on-call schedules with escalation (email, Slack, Discord)",
+				"SLOs with burn-rate alerts, error issues, and session replay linked to traces",
+				"PromQL and a Grafana dashboard import on Maple Cloud",
+			],
+			cons: [
+				"The self-hosted version has no alerting, dashboards, PromQL or team accounts yet",
+				"Metrics kept 90 days, against OpenObserve Cloud's 15 months",
+				"Source-available under FSL-1.1, not open source like OpenObserve's AGPL-3.0 edition",
+				"Younger, with a smaller community, and no free plan on Maple Cloud (a 14-day trial)",
+			],
+		},
+		{
+			id: "signoz",
+			name: "SigNoz",
+			url: "https://signoz.io",
+			pickIf: "You self-host and want a trace-first APM on ClickHouse, with PromQL.",
+			pricing: "$49/mo including $49 of usage, then $0.30 per GB of logs and traces",
+			openSource: "MIT core, SSO and RBAC under a commercial license",
+			keyFact: "Yes",
+			summary:
+				"SigNoz is the closest self-hosted match to OpenObserve. Both are self-hostable, OpenTelemetry-native and take PromQL. They differ underneath: SigNoz stores everything in ClickHouse and opens on APM views of services and traces, while OpenObserve writes Parquet files to object storage. SigNoz's core is MIT, a looser license than AGPL, and its cloud bills per GB with no query charge or user fee.",
+			pros: [
+				"PromQL in dashboards, and Prometheus rules carry over",
+				"Docker, Swarm and Helm installs, with a multi-user Community edition",
+				"No query meter and no user-based pricing on SigNoz Cloud",
+			],
+			cons: [
+				"15 days for logs and traces and one month for metrics by default",
+				"SAML, OIDC and fine-grained RBAC sit under the commercial license",
+				"Self-hosting means running ClickHouse",
+			],
+			compareSlug: "signoz",
+		},
+		{
+			id: "uptrace",
+			name: "Uptrace",
+			url: "https://uptrace.dev",
+			pickIf: "You want the lowest per-GB rate and an AGPL-3.0 tool you can self-host.",
+			pricing: "Cloud: 50 GB of spans and logs free each month, then from $0.075 per GB",
+			openSource: "AGPL-3.0 Community edition; paid self-hosted editions from $39/mo",
+			keyFact: "Its own dialect, backwards compatible with PromQL",
+			summary:
+				"Uptrace is an OpenTelemetry APM on ClickHouse, with PostgreSQL for metadata, and the cheapest hosted rate here: a free 50 GB a month, then a per-GB rate that falls with volume, and a hard budget cap. The Community edition is AGPL-3.0 like OpenObserve's. Self-hosted, it keeps 14 days of data; custom retention, RBAC and SSO come with paid editions priced by daily volume ($39 to $499 a month up to 500 GB a day). Uptrace Cloud keeps four weeks by default.",
+			pros: [
+				"50 GB a month free on Cloud, and low per-GB rates after that",
+				"Hard monthly budget cap on Cloud",
+				"Cold storage for up to 100 weeks",
+			],
+			cons: [
+				"Community edition keeps 14 days; RBAC from $199/mo and SSO from $499/mo",
+				"Its metrics language is PromQL-compatible, not PromQL itself",
+			],
+		},
+		{
+			id: "clickstack",
+			name: "ClickStack (formerly HyperDX)",
+			url: "https://clickhouse.com/clickstack",
+			pickIf: "Logs and traces are most of your volume, and you want full-text search and SQL over them.",
+			pricing: "Free to self-host; managed on ClickHouse Cloud",
+			openSource: "Open source (MIT)",
+			keyFact: "Not in its documentation",
+			summary:
+				"ClickStack is ClickHouse's observability stack: a UI, a preconfigured OpenTelemetry Collector and ClickHouse. It is the closest match to how OpenObserve users already work: search logs and traces, then drop to SQL. Session replay lives in the same store. The trade is PromQL, which its documentation does not cover.",
+			pros: [
+				"MIT license; the collector, store and UI scale independently",
+				"Lucene-style search plus SQL over one store",
+				"An all-in-one Docker image to try it on a laptop",
+			],
+			cons: [
+				"No PromQL in its documentation, so OpenObserve PromQL panels are rebuilt in SQL",
+				"Swaps object storage for a ClickHouse cluster to run, or ClickHouse Cloud",
+			],
+		},
+		{
+			id: "grafana",
+			name: "Grafana / LGTM",
+			url: "https://grafana.com",
+			pickIf: "PromQL and dashboards-as-code are how your team works.",
+			pricing: "Free tier, then $19/mo + $8 per user beyond three, $0.55 per GB of logs and traces",
+			openSource: "AGPL-3.0 (Grafana, Loki, Tempo, Mimir); Cloud is proprietary",
+			keyFact: "Yes",
+			summary:
+				"Grafana with Loki, Tempo and Mimir shares OpenObserve's license (AGPL-3.0) and its object-storage design, split across one service per signal. PromQL dashboards and recording rules carry over unchanged, and the plugin catalog connects almost any data source. The cost is four services and three query languages.",
+			pros: [
+				"PromQL dashboards and recording rules carry over unchanged",
+				"Object storage underneath, as with OpenObserve",
+				"A plugin catalog that reaches non-telemetry data sources",
+			],
+			cons: [
+				"Loki, Tempo and Mimir are separate services to deploy and scale",
+				"Cloud adds $8 per active user beyond three, where OpenObserve Cloud has unlimited users",
+				"Logs and traces in LogQL and TraceQL, not SQL",
+			],
+			compareSlug: "grafana",
+		},
+		{
+			id: "honeycomb",
+			name: "Honeycomb",
+			url: "https://www.honeycomb.io",
+			pickIf: "You debug by slicing high-cardinality traces and want a free plan to start.",
+			pricing: "Free up to 20M events/mo; Pro $3.00 per million events, from $150",
+			openSource: "No (Refinery is Apache 2.0); Private Cloud on Enterprise",
+			keyFact: "No",
+			summary:
+				"Honeycomb is a hosted query engine for wide events. BubbleUp ranks every attribute of a slow or failing slice of requests against the baseline. It bills per event, not per GB stored or scanned, so queries cost nothing extra, and it keeps 60 days of events on every plan, including the free one.",
+			pros: [
+				"BubbleUp outlier analysis, heatmaps and SLOs with burn-rate alerts",
+				"A free plan with 20M events a month",
+				"No charge per query",
+			],
+			cons: [
+				"Closed source; no self-hosting outside Enterprise",
+				"No PromQL and no SQL",
+				"Frontend observability is an Enterprise add-on",
+			],
+			compareSlug: "honeycomb",
+		},
+	],
+	faqs: [
+		{
+			question: "What is the best OpenObserve alternative?",
+			answer: "Start from the reason you are leaving. To keep self-hosting with PromQL on an APM built on ClickHouse, SigNoz. For the lowest per-GB rate, Uptrace. For log and trace search under MIT, ClickStack. If you are on OpenObserve Cloud and the query charge is the problem, SigNoz Cloud, Maple and Honeycomb do not bill per query, and Uptrace Cloud offers a hard budget cap. We build Maple, so weigh our view accordingly.",
+		},
+		{
+			question: "OpenObserve or SigNoz: which should I pick?",
+			answer: "Both are self-hostable, OpenTelemetry-native and take PromQL. Pick OpenObserve if you want object storage as the only store, SSO and RBAC free below 50 GB a day when self-hosted, or 15 months of metrics on its cloud. Pick SigNoz if you want ClickHouse underneath, an APM built around traces, an MIT core, and a cloud with no per-query charge.",
+		},
+		{
+			question: "Which OpenObserve alternatives support PromQL?",
+			answer: "SigNoz and Grafana run PromQL in dashboards, and Prometheus rules carry over to both. Maple runs PromQL queries on Maple Cloud, not when self-hosted. Uptrace runs its own dialect, backwards compatible with PromQL. ClickStack's documentation has no PromQL, and Honeycomb uses its own query builder.",
+		},
+		{
+			question: "Is OpenObserve open source?",
+			answer: "Yes. The open-source edition is AGPL-3.0. The Enterprise edition is under a commercial agreement and is free to self-host up to 50 GB of ingestion a day, with SSO, RBAC and an audit trail. Maple, by comparison, is source-available under FSL-1.1 and becomes Apache 2.0 two years after each release; it is not open source.",
+		},
+		{
+			question: "What would 500 GB a month cost on each?",
+			answer: "At list prices, for 500 GB of logs and traces split evenly and before metrics: OpenObserve Cloud is $250 ($0.50 per GB on an annual commitment) plus $0.01 per GB queried, so dashboards scanning 10 TB in the month add $100. SigNoz Cloud is about $150 ($0.30 per GB, with the $49 minimum counted toward it). Maple is $129 ($39 including 100 GB of logs and 100 GB of traces, then 300 GB at $0.30). Uptrace Cloud is about $34 (450 GB past the free 50 GB at its starting $0.075). Self-hosted, the cost is your own infrastructure and time. Check each pricing page for the tier you land in.",
+		},
+		{
+			question: "How hard is it to move off OpenObserve?",
+			answer: "The pipeline moves cleanly: point the OpenTelemetry Collector at both backends, compare, then remove the OpenObserve exporter. Logs and traces queried in SQL need rewriting for the new tool's schema or query language, PromQL panels carry over to tools that run PromQL, and alerts and dashboards are rebuilt by hand.",
+		},
+	],
+	sources: [
+		...OPENOBSERVE_SOURCES,
+		...OPENOBSERVE_SELF_HOST_SOURCES,
+		OPENOBSERVE_ALERTING_SOURCE,
+		MAPLE_SOURCE,
+		MAPLE_SELF_HOST_SOURCE,
+		...MAPLE_FEATURE_SOURCES,
+		...pricingSource("signoz"),
+		...UPTRACE_SOURCES,
+		...CLICKSTACK_SOURCES,
+		...pricingSource("grafana"),
+		...pricingSource("honeycomb"),
+	],
+}
+
+export const alternativesPages: AlternativesPage[] = [
+	datadog,
+	sentry,
+	grafana,
+	newRelic,
+	dash0,
+	uptrace,
+	openobserve,
+]
 
 export const alternativesBySlug = (slug: string) => alternativesPages.find((page) => page.slug === slug)
 
