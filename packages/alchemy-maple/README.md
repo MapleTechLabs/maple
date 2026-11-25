@@ -208,7 +208,9 @@ Full docs: [maple.dev/docs/iac/alchemy](https://maple.dev/docs/iac/alchemy).
 
 `@maple-dev/alchemy/vite` gives each built JS file a debug id and moves its source maps out of the
 deployed output (`.maple/sourcemaps/<outDir>` by default), so they are never served. `Maple.SourceMaps`
-uploads them after the build, so error stacks in Maple show your original source.
+uploads them after the build, so error stacks in Maple show your original source. An app that does
+not deploy with Alchemy uses [`@maple-dev/vite`](https://www.npmjs.com/package/@maple-dev/vite)
+instead, which uploads at the end of `vite build`.
 
 ```typescript
 // vite.config.ts

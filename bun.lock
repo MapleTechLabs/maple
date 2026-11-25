@@ -1047,11 +1047,13 @@
     "packages/sourcemaps": {
       "name": "@maple/sourcemaps",
       "dependencies": {
+        "@effect/platform-node": "catalog:effect",
         "effect": "catalog:effect",
       },
       "devDependencies": {
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
+        "vite": "catalog:",
       },
     },
     "packages/status-page": {
@@ -1120,6 +1122,25 @@
         "typescript": "catalog:tooling",
         "vite": "catalog:",
         "vitest": "catalog:",
+      },
+    },
+    "packages/vite": {
+      "name": "@maple-dev/vite",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform-node": "catalog:effect",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@maple/sourcemaps": "workspace:*",
+        "@types/node": "catalog:tooling",
+        "tsdown": "^0.23.7",
+        "typescript": "catalog:tooling",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "vite": ">=6.0.0",
       },
     },
     "packages/web-data": {
@@ -1566,6 +1587,8 @@
     "@maple-dev/effect-sdk": ["@maple-dev/effect-sdk@workspace:packages/effect-sdk"],
 
     "@maple-dev/oxlint-config": ["@maple-dev/oxlint-config@workspace:lib/oxlint-config"],
+
+    "@maple-dev/vite": ["@maple-dev/vite@workspace:packages/vite"],
 
     "@maple-examples/alchemy": ["@maple-examples/alchemy@workspace:examples/alchemy-maple"],
 

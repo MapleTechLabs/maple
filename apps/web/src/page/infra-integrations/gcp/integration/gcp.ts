@@ -1,26 +1,115 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { GcpResourcesResponse } from "@maple/domain/http"
-import { V2GcpSetupScripts } from "@maple/domain/http/v2"
-import { GcpConnectorId } from "@maple/primitives"
+import { V2GcpConnector, V2GcpSetupScripts } from "@maple/domain/http/v2"
+import { GcpConnectorId, GcpLogRuntime } from "@maple/primitives"
 import { gcpLogVolume } from "../usage"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { MapleApiV2Client } from "../../../../platform/api-clients"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
+import * as Select from "@maple/views/ui/select"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { IntegrationStatuses } from "../../../../data/integration-statuses"
 import { FleetRead, loadFleet, loadResources } from "../data"
-import { Message } from "../../../integrations/message"
-import { ConfigureModel } from "./gcp-configure-schema"
-import { LogVolume, RemovedConnector } from "./gcp-schema"
+import { Capability, ConfigureModel, GcpFlags, SetupMethod } from "./gcp-configure-schema"
+import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
 
 export { RemovedConnector } from "./gcp-schema"
+
+const result = <A, AI>(schema: Schema.Codec<A, AI>) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
+
+/** The Google Cloud module's messages, the configure wizard's among them, carried in `GotGcpMessage`. */
+export const GcpMessage = defineMessageUnion({
+	CompletedGcpLogVolume: result(LogVolume),
+	CompletedGcpFleet: result(Schema.Array(FleetRead)),
+	CompletedGcpInventory: result(GcpResourcesResponse),
+	GotWorkloadFilterMessage: { message: ToggleGroup.Message },
+	GotGcpMenuMessage: { id: GcpConnectorId, message: Menu.Message },
+	GotGcpDisconnectDialogMessage: { message: Dialog.Message },
+	ConfirmedGcpDisconnect: {},
+	/** A Google Cloud source's Delete: opens the removal dialog for its connector. */
+	ClickedGcpDisconnect: { id: Schema.String },
+	CompletedGcpDisconnect: {
+		id: GcpConnectorId,
+		cleanupScript: Schema.NullOr(Schema.String),
+		failure: Schema.NullOr(LoadFailure),
+	},
+	CompletedReadGcpRemoved: { removed: Schema.Array(RemovedConnector) },
+	CompletedWriteGcpRemoved: {},
+	ClickedDismissCleanup: { id: Schema.String },
+	GotGcpDismissDialogMessage: { message: Dialog.Message },
+	ConfirmedDismissCleanup: {},
+	GotGcpCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	CompletedGcpScripts: result(V2GcpSetupScripts),
+	ClickedGcpScriptToggle: {},
+	ClickedGcpScriptRetry: {},
+	ClickedGcpConfigure: { target: ConfigureTarget },
+	/** Cancel, Close and Done: the wizard unmounts at once. */
+	ClosedGcpConfigure: {},
+	GotGcpConfigureDialogMessage: { message: Dialog.Message },
+	GotGcpScopeTypeMessage: { message: ToggleGroup.Message },
+	GotGcpScopeFieldMessage: { field: Schema.Literals(["scopeId", "hostProjectId"]), message: Field.Message },
+	/** The scope step's form submit (Continue or Enter). */
+	SubmittedGcpCreate: {},
+	ToggledGcpCollect: { capability: Capability },
+	/** A connection's feature switch: Edit data opens with that change drafted, to save from there. */
+	ToggledGcpFeature: { id: Schema.String, capability: Capability },
+	ClickedGcpLogFilter: {},
+	GotGcpFilterModeMessage: { message: Select.Message },
+	ClickedGcpForwardOutput: {},
+	ClickedGcpUseOpenTelemetry: {},
+	ToggledGcpRuntime: { runtime: GcpLogRuntime },
+	CompletedGcpCreate: {
+		opens: Schema.Number,
+		connector: Schema.NullOr(V2GcpConnector),
+		failure: Schema.NullOr(LoadFailure),
+	},
+	/** The data step's Continue, Save or "Save and continue". */
+	ClickedGcpChooseApply: {},
+	GotGcpConfirmDialogMessage: { message: Dialog.Message },
+	ConfirmedGcpSave: {},
+	CompletedGcpUpdate: {
+		opens: Schema.Number,
+		id: GcpConnectorId,
+		flags: GcpFlags,
+		failure: Schema.NullOr(LoadFailure),
+	},
+	ClickedGcpRunEdit: {},
+	CompletedGcpConfigureScripts: result(V2GcpSetupScripts),
+	ClickedGcpConfigureScriptRetry: {},
+	ClickedGcpScriptExpand: {},
+	/** The Method step: a row, or the code flavour under it. */
+	ClickedGcpMethod: { method: SetupMethod },
+	GotGcpFlavourMessage: { message: ToggleGroup.Message },
+	ClickedGcpMethodContinue: {},
+	ClickedGcpManualStep: { title: Schema.String, firstTitle: Schema.NullOr(Schema.String) },
+	ClickedGcpCopyPrompt: { prompt: Schema.String },
+	CompletedGcpPromptCopy: { isCopied: Schema.Boolean },
+	ClickedGcpPromptBack: {},
+	ClickedGcpConfirmRemoval: {},
+	CompletedGcpConfirmRemoval: { failure: Schema.NullOr(LoadFailure) },
+	/** The status poll: 10 s while a connection settles, else every minute. */
+	TickedGcpRefresh: {},
+})
+export type GcpMessage = typeof GcpMessage.Type
+
+/** The hub's Google Cloud status read, which the sidebar shares (`IntegrationStatuses`). */
+export const GCP_STATUS_READ = {
+	name: "LoadIntegrationsGcpStatus",
+	read: (refresh: boolean) => Effect.flatMap(IntegrationStatuses, (statuses) => statuses.gcp({ refresh })),
+}
 
 export const GcpCardModel = Schema.Struct({
 	/** The band's 24h window, resolved from the page clock. */
@@ -77,7 +166,7 @@ const GCP_LOG_SOURCE = { key: "maple_ingest_source", value: "gcp-logpush" } as c
 
 export const LoadLogVolume = Command.define("LoadGcpIntegrationLogVolume", {
 	args: { key: Schema.String, window: TimeWindow },
-	messages: [Message.CompletedGcpLogVolume],
+	messages: [GcpMessage.CompletedGcpLogVolume],
 	execute: ({ key, window }) =>
 		getCustomChartTimeSeries({
 			data: {
@@ -97,27 +186,27 @@ export const LoadLogVolume = Command.define("LoadGcpIntegrationLogVolume", {
 					parseWarehouseDateTime(window.endTime),
 				),
 			),
-			settleTo((result) => Message.CompletedGcpLogVolume({ key, result })),
+			settleTo((result) => GcpMessage.CompletedGcpLogVolume({ key, result })),
 		),
 })
 
 export const LoadFleet = Command.define("LoadGcpIntegrationFleet", {
 	args: { key: Schema.String, window: TimeWindow },
-	messages: [Message.CompletedGcpFleet],
+	messages: [GcpMessage.CompletedGcpFleet],
 	execute: ({ key, window }) =>
-		Effect.map(loadFleet(window), (result) => Message.CompletedGcpFleet({ key, result })),
+		Effect.map(loadFleet(window), (result) => GcpMessage.CompletedGcpFleet({ key, result })),
 })
 
 export const LoadInventory = Command.define("LoadGcpIntegrationInventory", {
 	args: { key: Schema.String },
-	messages: [Message.CompletedGcpInventory],
+	messages: [GcpMessage.CompletedGcpInventory],
 	execute: ({ key }) =>
-		Effect.map(loadResources({}), (result) => Message.CompletedGcpInventory({ key, result })),
+		Effect.map(loadResources({}), (result) => GcpMessage.CompletedGcpInventory({ key, result })),
 })
 
 export const DeleteConnector = Command.define("DeleteGcpConnector", {
 	args: { id: GcpConnectorId },
-	messages: [Message.CompletedGcpDisconnect],
+	messages: [GcpMessage.CompletedGcpDisconnect],
 	execute: ({ id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -126,13 +215,13 @@ export const DeleteConnector = Command.define("DeleteGcpConnector", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedGcpDisconnect({
+					GcpMessage.CompletedGcpDisconnect({
 						id,
 						cleanupScript: null,
 						failure: toLoadFailure(error),
 					}),
 				onSuccess: (cleanupScript) =>
-					Message.CompletedGcpDisconnect({ id, cleanupScript, failure: null }),
+					GcpMessage.CompletedGcpDisconnect({ id, cleanupScript, failure: null }),
 			}),
 		),
 })
@@ -140,12 +229,12 @@ export const DeleteConnector = Command.define("DeleteGcpConnector", {
 /** `gcpIntegration.setupScripts` with an empty payload: the sink keeps its filter. */
 export const LoadScripts = Command.define("LoadGcpSetupScripts", {
 	args: { key: Schema.String, id: GcpConnectorId },
-	messages: [Message.CompletedGcpScripts],
+	messages: [GcpMessage.CompletedGcpScripts],
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.gcpIntegration.setupScripts({ params: { id }, payload: {} })
-		}).pipe(settleTo((result) => Message.CompletedGcpScripts({ key, result }))),
+		}).pipe(settleTo((result) => GcpMessage.CompletedGcpScripts({ key, result }))),
 })
 
 const storageKey = (orgId: string) => `maple.gcp.removed-connectors.${orgId}`
@@ -154,10 +243,10 @@ const encodeRemoved = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Remov
 
 export const ReadRemoved = Command.define("ReadGcpRemovedConnectors", {
 	args: { orgId: Schema.String },
-	messages: [Message.CompletedReadGcpRemoved],
+	messages: [GcpMessage.CompletedReadGcpRemoved],
 	execute: ({ orgId }) =>
 		Effect.sync(() =>
-			Message.CompletedReadGcpRemoved({
+			GcpMessage.CompletedReadGcpRemoved({
 				removed: Option.getOrElse(
 					Option.flatMap(readLocalStorage(storageKey(orgId)), decodeRemoved),
 					() => [],
@@ -168,11 +257,11 @@ export const ReadRemoved = Command.define("ReadGcpRemovedConnectors", {
 
 export const WriteRemoved = Command.define("WriteGcpRemovedConnectors", {
 	args: { orgId: Schema.String, removed: Schema.Array(RemovedConnector) },
-	messages: [Message.CompletedWriteGcpRemoved],
+	messages: [GcpMessage.CompletedWriteGcpRemoved],
 	execute: ({ orgId, removed }) =>
 		Effect.sync(() => {
 			// Best effort: private mode and blocked site data throw here.
 			writeLocalStorage(storageKey(orgId), encodeRemoved(removed))
-			return Message.CompletedWriteGcpRemoved()
+			return GcpMessage.CompletedWriteGcpRemoved()
 		}),
 })

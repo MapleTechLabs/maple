@@ -7,12 +7,25 @@ import {
 	SupabaseIntegrationStatus,
 	VercelIntegrationStatus,
 	CloudflareUsageResponse,
+	GithubInstallationSelection,
 } from "@maple/domain/http"
-import { V2ChatConnectorList, V2PlanetScaleIntegration, V2ScrapeTarget } from "@maple/domain/http/v2"
-import { SupabaseProjectRef } from "@maple/primitives"
+import {
+	encodePublicId,
+	PublicIdPrefixes,
+	Timestamp,
+	type V2AwsConnection,
+	V2ChatConnectorList,
+	V2GcpIntegration,
+	V2PlanetScaleIntegration,
+	V2ScrapeTarget,
+} from "@maple/domain/http/v2"
+import { AwsMetricStream } from "@maple/domain/aws"
+import { AwsAccountId, AwsConnectionId, SupabaseProjectRef } from "@maple/primitives"
 import { Array as Arr, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
+import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Menu from "@maple/views/ui/menu"
 import * as Field from "@maple/views/ui/field"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
@@ -23,7 +36,11 @@ import { cardStatusOf, overviewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
+	AWS_PROVIDER,
 	CHAT_PROVIDER,
+	GCP_PROVIDER,
+	GITHUB_PROVIDER,
+	PROMETHEUS_PROVIDER,
 	providerModuleOf,
 	RAILWAY_PROVIDER,
 	SUPABASE_PROVIDER,
@@ -35,7 +52,12 @@ import { PlanetscaleMessage } from "../infra-integrations/planetscale/integratio
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import { VERCEL_STATUS } from "../../lab/vercel-infra-fixtures"
 import { init, update } from "./update"
-import { closedPopup, receivedCallback, receivedRelay } from "./update-connect"
+import { clickedConnect, closedPopup, receivedCallback, receivedRelay } from "./update-connect"
+import { GithubMessage } from "./github"
+import { PrometheusMessage } from "./prometheus"
+import { AwsMessage } from "../infra-integrations/aws/integration/aws"
+import { GcpMessage } from "../infra-integrations/gcp/integration/gcp"
+import { view as pageView } from "./view"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -53,6 +75,9 @@ const chat = (message: ChatMessage) => Message.GotChatMessage({ message })
 const searchConsole = (message: SearchConsoleMessage) => Message.GotSearchConsoleMessage({ message })
 const vercel = (message: VercelMessage) => Message.GotVercelMessage({ message })
 const planetscale = (message: PlanetscaleMessage) => Message.GotPlanetscaleMessage({ message })
+const scrape = (message: PrometheusMessage) => Message.GotPrometheusMessage({ message })
+const aws = (message: AwsMessage) => Message.GotAwsMessage({ message })
+const gcp = (message: GcpMessage) => Message.GotGcpMessage({ message })
 
 const planetscaleStatus = (connected: boolean) =>
 	Schema.decodeSync(V2PlanetScaleIntegration)({
@@ -256,7 +281,7 @@ describe("provider modules", () => {
 	})
 
 	test("Railway's first-sync poll runs only on its own card while an environment waits", () => {
-		const ticker = RAILWAY_PROVIDER.ticker
+		const ticker = RAILWAY_PROVIDER.tickers[0]
 		expect(ticker?.isActive(withRailway({ integration: "railway" }, railwayStatus(true)))).toBe(true)
 		expect(ticker?.isActive(withRailway({ integration: "railway" }, railwayStatus(false)))).toBe(false)
 		expect(ticker?.isActive(withRailway({}, railwayStatus(true)))).toBe(false)
@@ -264,11 +289,11 @@ describe("provider modules", () => {
 
 	test("Supabase's card clock ticks only while the connected card shows, and its tick reads the page clock", () => {
 		const shown = withSupabase({ integration: "supabase" }, supabaseStatus(true))
-		const ticker = SUPABASE_PROVIDER.ticker
+		const ticker = SUPABASE_PROVIDER.tickers[0]
 		expect(ticker?.isActive(shown)).toBe(true)
 		expect(ticker?.isActive(withSupabase({ integration: "supabase" }, supabaseStatus(false)))).toBe(false)
 		expect(ticker?.isActive(withSupabase({}, supabaseStatus(true)))).toBe(false)
-		expect(ticker === null ? [] : names(pageUpdate(shown, ticker.tick).commands)).toEqual([
+		expect(ticker === undefined ? [] : names(pageUpdate(shown, ticker.tick).commands)).toEqual([
 			"ReadIntegrationsClock",
 		])
 	})
@@ -285,11 +310,292 @@ describe("provider modules", () => {
 	})
 
 	test("one module serves every chat connector's page, and only those", () => {
-		expect(providerModuleOf("chat-slack")?.id).toBe("chat")
-		expect(providerModuleOf("chat-discord")?.id).toBe("chat")
-		expect(providerModuleOf("linear")?.id).toBe("linear")
-		expect(providerModuleOf("github")).toBeUndefined()
-		expect(providerModuleOf(null)).toBeUndefined()
+		expect(providerModuleOf("chat-slack").id).toBe("chat")
+		expect(providerModuleOf("chat-discord").id).toBe("chat")
+		expect(providerModuleOf("linear").id).toBe("linear")
+		expect(providerModuleOf("github").id).toBe("github")
+		expect(providerModuleOf("prometheus").id).toBe("prometheus")
+		expect(providerModuleOf("warpstream").id).toBe("prometheus")
+		expect(providerModuleOf("gcp").id).toBe("gcp")
+	})
+
+	test("GitHub's account choice comes through its module and holds new connects until it settles", () => {
+		const selection = Schema.decodeSync(GithubInstallationSelection)({
+			state: "selection-1",
+			needsApproval: [],
+			unavailable: 0,
+			installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
+			installations: [
+				{
+					id: "202",
+					accountLogin: "acme",
+					accountType: "organization",
+					repositorySelection: "selected",
+				},
+			],
+		})
+		const model = init({ search: { integration: "github" } }, context).model
+		const chosen = receivedCallback(model, context, "github", "success", null, selection)
+		expect(chosen.model.githubCard.selection).toEqual(selection)
+		expect(chosen.outMessage).toBeUndefined()
+		const picking = pageUpdate(
+			chosen.model,
+			Message.GotGithubMessage({
+				message: GithubMessage.ClickedSelectGithubInstallation({ installationId: "202" }),
+			}),
+		)
+		expect(GITHUB_PROVIDER.blocksConnect(picking.model)).toBe(true)
+		expect(clickedConnect(picking.model, context).model).toBe(picking.model)
+	})
+
+	test("GitHub's force-poll window ends with one last read", () => {
+		const delayed = GITHUB_PROVIDER.delayed
+		const model = init({ search: { integration: "github" } }, context).model
+		expect(delayed?.versionOf(model)).toBe(null)
+		const polling = {
+			...model,
+			githubCard: { ...model.githubCard, isForcePolling: true, forcePollVersion: 2 },
+		}
+		expect(delayed?.versionOf(polling)).toBe(2)
+		const fired = delayed?.fire(2) ?? []
+		const ended = Arr.reduce(fired, polling, (next, message) => pageUpdate(next, message).model)
+		expect(ended.githubCard.isForcePolling).toBe(false)
+		// The last read is the poll's own tick.
+		expect(fired[0]).toEqual(GITHUB_PROVIDER.tickers[0]?.tick)
+	})
+
+	test("Prometheus and WarpStream share one scrape-target module, its polls and its badges", () => {
+		const target = Schema.decodeSync(V2ScrapeTarget)({
+			id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
+			object: "scrape_target",
+			name: "redis exporter",
+			service_name: null,
+			url: "https://redis.internal:9121/metrics",
+			target_type: "prometheus",
+			organization: null,
+			include_branches: [],
+			exclude_branches: [],
+			scrape_interval_seconds: 60,
+			labels_json: null,
+			auth_type: "none",
+			has_credentials: false,
+			managed_by: null,
+			enabled: true,
+			last_scrape_at: null,
+			last_scrape_error: null,
+			created_at: "2026-09-01T00:00:00.000Z",
+			updated_at: "2026-09-02T00:00:00.000Z",
+		})
+		const [targetsPoll, checksPoll] = PROMETHEUS_PROVIDER.tickers
+		const warpstream = init({ search: { integration: "warpstream" } }, context).model
+		expect(targetsPoll?.isActive(warpstream)).toBe(true)
+		expect(targetsPoll?.isActive(init({ search: { integration: "github" } }, context).model)).toBe(false)
+		// The checks poll waits for a selection and starts over when it changes.
+		expect(checksPoll?.dependency(warpstream)).toBe(null)
+		const selected = pageUpdate(warpstream, scrape(PrometheusMessage.ClickedTarget({ id: target.id })))
+		expect(names(selected.commands)).toEqual(["FetchScrapeTargetChecks"])
+		expect(checksPoll?.dependency(selected.model)).toBe(target.id)
+		const loaded = pageUpdate(
+			warpstream,
+			Message.CompletedLoadScrapeTargets({
+				key: warpstream.statuses.scrapeTargets.key ?? "",
+				result: Result.succeed([target]),
+			}),
+		).model
+		// The list poll re-reads the targets through the hub.
+		expect(names(targetsPoll === undefined ? [] : pageUpdate(loaded, targetsPoll.tick).commands)).toEqual(
+			["LoadIntegrationsScrapeTargets"],
+		)
+		expect(cardStatusOf(loaded.statuses, "prometheus", NOW)).toEqual({
+			label: "1 target · 1 enabled",
+			variant: "ok",
+		})
+		expect(cardStatusOf(loaded.statuses, "warpstream", NOW)).toEqual({
+			label: "Via Prometheus",
+			variant: "outline",
+		})
+	})
+
+	test("AWS is a module: its setup and stream polls, its badges, and a module change in place", () => {
+		const id = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const connection = (overrides: Partial<V2AwsConnection>): V2AwsConnection => ({
+			id,
+			object: "aws_connection",
+			account_id: Schema.decodeSync(AwsAccountId)("123456789012"),
+			role_arn: "arn:aws:iam::123456789012:role/MapleIntegration-018f2b3c4d5e4f708192a3b4",
+			oidc_issuer: "https://api.maple.dev/oidc/aws",
+			oidc_subject: "aws-connection:018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+			modules: [],
+			granted_modules: null,
+			template_version: null,
+			setup_outdated: false,
+			verified_at: null,
+			last_checked_at: null,
+			last_check_error: null,
+			metric_stream: null,
+			metric_stream_changed_at: null,
+			metrics_last_received_at: null,
+			metrics_last_error: null,
+			created_at: Schema.decodeSync(Timestamp)("2026-09-21T12:00:00.000Z"),
+			...overrides,
+		})
+		const withAws = (model: Model, connections: ReadonlyArray<V2AwsConnection>) =>
+			pageUpdate(
+				model,
+				Message.CompletedLoadAws({
+					key: model.statuses.aws.key ?? "",
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [{ module: "cost", title: "Cost", summary: "", available: true }],
+						connections,
+					}),
+				}),
+			).model
+		expect(providerModuleOf("aws").id).toBe("aws")
+		const [pendingPoll, watchPoll] = AWS_PROVIDER.tickers
+		const pending = withAws(init({ search: { integration: "aws" } }, context).model, [connection({})])
+		// The setup re-check runs only while this connection's setup is open.
+		expect(pendingPoll?.isActive(pending)).toBe(false)
+		const opened = pageUpdate(pending, aws(AwsMessage.ClickedAwsSetup({ id }))).model
+		expect(pendingPoll?.isActive(opened)).toBe(true)
+		expect(names(pendingPoll === undefined ? [] : pageUpdate(opened, pendingPoll.tick).commands)).toEqual(
+			["CheckAwsConnection"],
+		)
+		expect(cardStatusOf(opened.statuses, "aws", NOW)).toEqual({ label: "Finish setup", variant: "warn" })
+		expect(overviewOf(opened.statuses, NOW, "aws")).toMatchObject({ health: "pending" })
+		// A verified, streaming connection is watched; elsewhere nothing is.
+		const streaming = connection({
+			verified_at: Schema.decodeSync(Timestamp)("2026-09-30T12:00:00.000Z"),
+			metric_stream: Schema.decodeSync(AwsMetricStream)({
+				regions: ["us-east-1"],
+				namespaces: ["AWS/ECS"],
+			}),
+			metrics_last_received_at: Schema.decodeSync(Timestamp)("2026-10-01T11:59:00.000Z"),
+		})
+		const watched = withAws(init({ search: { integration: "aws" } }, context).model, [streaming])
+		expect(watchPoll?.isActive(watched)).toBe(true)
+		expect(watchPoll?.isActive(withAws(init({ search: {} }, context).model, [streaming]))).toBe(false)
+		// Its tick re-reads the status.
+		expect(names(watchPoll === undefined ? [] : pageUpdate(watched, watchPoll.tick).commands)).toContain(
+			"LoadIntegrationsAwsStatus",
+		)
+		expect(cardStatusOf(watched.statuses, "aws", NOW)).toEqual({ label: "1 account", variant: "ok" })
+		// An answered module change shows in the status before its re-read lands.
+		const changed = pageUpdate(
+			watched,
+			aws(
+				AwsMessage.CompletedAwsModules({
+					id,
+					connection: { ...streaming, modules: ["cost"] },
+					error: null,
+				}),
+			),
+		)
+		const connections = AsyncData.getOrElse(
+			AsyncData.map(changed.model.statuses.aws.data, (status) => status.connections),
+			() => [],
+		)
+		expect(connections[0]?.modules).toEqual(["cost"])
+		expect(names(changed.commands)).toContain("LoadAwsSetup")
+		expect(changed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Cost turned on",
+				description: "Run the setup again in AWS to grant it.",
+			}),
+		)
+	})
+
+	test("Google Cloud is a module: its status polls, the cleanup and run polls, its badges and header", () => {
+		const connector = (id: string, over: Readonly<Record<string, unknown>>) => ({
+			id: encodePublicId(
+				PublicIdPrefixes.gcpConnector,
+				`00000000-0000-4000-8000-00000000040${id === "one" ? 1 : 2}`,
+			),
+			object: "gcp_connector",
+			scope_type: "project",
+			scope_id: `acme-${id}`,
+			project_id: `acme-${id}`,
+			logs_enabled: true,
+			metrics_enabled: false,
+			created_at: "2026-09-01T00:00:00.000Z",
+			last_log_received_at: "2026-10-01T11:58:00.000Z",
+			last_log_error: null,
+			applied_logs_enabled: true,
+			applied_metrics_enabled: false,
+			setup_reported_at: "2026-09-01T00:05:00.000Z",
+			last_metrics_received_at: null,
+			last_metrics_error: null,
+			discovered_project_count: 1,
+			last_resources_error: null,
+			...over,
+		})
+		const withGcp = (model: Model, connectors: ReadonlyArray<Readonly<Record<string, unknown>>>) => {
+			const clocked = pageUpdate(model, Message.CompletedReadClock({ nowMs: NOW })).model
+			return pageUpdate(
+				clocked,
+				Message.CompletedLoadGcp({
+					key: clocked.statuses.gcp.key ?? "",
+					result: Result.succeed(
+						Schema.decodeUnknownSync(V2GcpIntegration)({
+							object: "gcp_integration",
+							metrics_available: true,
+							connectors,
+						}),
+					),
+				}),
+			).model
+		}
+		const page = init({ search: { integration: "gcp" } }, context).model
+		const [settlingPoll, steadyPoll, cleanupPoll, runPoll] = GCP_PROVIDER.tickers
+		// A connection that needs attention is read every 10 s; a healthy one every minute.
+		const settling = withGcp(page, [connector("one", { last_log_error: "denied" })])
+		expect([settlingPoll?.isActive(settling), steadyPoll?.isActive(settling)]).toEqual([true, false])
+		const healthy = withGcp(page, [connector("one", {})])
+		expect([settlingPoll?.isActive(healthy), steadyPoll?.isActive(healthy)]).toEqual([false, true])
+		const hub = withGcp(init({ search: {} }, context).model, [connector("one", {})])
+		expect([settlingPoll?.isActive(hub), steadyPoll?.isActive(hub)]).toEqual([false, false])
+		// A tick re-reads the status and the clock.
+		const ticked = names(steadyPoll === undefined ? [] : pageUpdate(healthy, steadyPoll.tick).commands)
+		expect(ticked).toContain("LoadIntegrationsGcpStatus")
+		expect(ticked).toContain("ReadIntegrationsClock")
+		// The cleanup dialog of a reported connection keeps reading the status while it is open.
+		expect(cleanupPoll?.isActive(healthy)).toBe(false)
+		const shownId = AsyncData.getOrElse(
+			AsyncData.map(healthy.statuses.gcp.data, (status) => status.connectors),
+			() => [],
+		)[0]?.id
+		const cleanup =
+			shownId === undefined
+				? healthy
+				: pageUpdate(
+						healthy,
+						gcp(
+							GcpMessage.GotGcpMenuMessage({
+								id: shownId,
+								message: Menu.Message.ClickedItem({
+									index: 0,
+									item: { kind: "Item", value: "disconnect" },
+								}),
+							}),
+						),
+					).model
+		expect(cleanupPoll?.isActive(cleanup)).toBe(true)
+		// The wizard's run step polls until the run is confirmed.
+		expect(runPoll?.isActive(healthy)).toBe(false)
+		expect(cardStatusOf(healthy.statuses, "gcp", NOW)).toEqual({ label: "1 connection", variant: "ok" })
+		expect(overviewOf(healthy.statuses, NOW, "gcp")).toMatchObject({
+			kind: "connected",
+			health: "healthy",
+			context: "Project acme-one",
+		})
+		// The header names how many connections share the worst state.
+		scene(
+			{ update: pageUpdate, view: withViewInputs(pageView, { context })() },
+			given(withGcp(page, [connector("one", {}), connector("two", { last_log_error: "denied" })])),
+			expectView(text(" · 1 of 2 connections")).toExist(),
+		)
 	})
 
 	test("a module drives the shared disconnect dialog and owns its confirm", () => {
@@ -366,13 +672,13 @@ describe("provider modules", () => {
 			connectedAt: NOW - 60_000,
 			lastSuccessAt: null,
 		})
-		const ticker = VERCEL_PROVIDER.ticker
+		const ticker = VERCEL_PROVIDER.tickers[0]
 		expect(ticker?.isActive(withVercel({ integration: "vercel" }, settling))).toBe(true)
 		expect(ticker?.isActive(withVercel({ integration: "vercel" }, VERCEL_STATUS))).toBe(false)
 		expect(ticker?.isActive(withVercel({}, settling))).toBe(false)
 		const shown = withVercel({ integration: "vercel" }, settling)
 		// The tick re-reads the status, then the clock that ends the window.
-		const sent = ticker === null ? [] : names(pageUpdate(shown, ticker.tick).commands)
+		const sent = ticker === undefined ? [] : names(pageUpdate(shown, ticker.tick).commands)
 		expect(sent.indexOf("LoadIntegrationsVercelStatus")).toBeGreaterThanOrEqual(0)
 		expect(sent.indexOf("LoadIntegrationsVercelStatus")).toBeLessThan(
 			sent.indexOf("ReadIntegrationsClock"),

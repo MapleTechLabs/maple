@@ -11,6 +11,7 @@ import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import {
+	AwsMessage,
 	isMetricsPanelOpen,
 	isSavingMetricsOf,
 	LoadAwsSetup,
@@ -28,6 +29,7 @@ import { view as pageView } from "../../../integrations/view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+const awsMsg = (message: AwsMessage) => Message.GotAwsMessage({ message })
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
@@ -90,22 +92,24 @@ const withCost = (model: Model, connections: ReadonlyArray<V2AwsConnection>): Mo
 }
 
 const typed = (value: string): Model =>
-	pageUpdate(entered(), Message.GotAwsAccountIdMessage({ message: Field.Message.ChangedValue({ value }) }))
-		.model
+	pageUpdate(
+		entered(),
+		awsMsg(AwsMessage.GotAwsAccountIdMessage({ message: Field.Message.ChangedValue({ value }) })),
+	).model
 
 describe("aws card", () => {
 	test("an account ID pasted with dashes is sent once; one too short never is", () => {
-		const short = pageUpdate(typed("12345678901"), Message.SubmittedAwsAccount())
+		const short = pageUpdate(typed("12345678901"), awsMsg(AwsMessage.SubmittedAwsAccount()))
 		expect(names(short.commands)).toEqual([])
 		expect(short.model.awsCard.createError).toBe("An AWS account ID is 12 digits.")
 
-		const sent = pageUpdate(typed(" 1234-5678-9012 "), Message.SubmittedAwsAccount())
+		const sent = pageUpdate(typed(" 1234-5678-9012 "), awsMsg(AwsMessage.SubmittedAwsAccount()))
 		expect(names(sent.commands)).toEqual(["CreateAwsConnection"])
-		expect(names(pageUpdate(sent.model, Message.SubmittedAwsAccount()).commands)).toEqual([])
+		expect(names(pageUpdate(sent.model, awsMsg(AwsMessage.SubmittedAwsAccount())).commands)).toEqual([])
 	})
 
 	test("a new connection asks for the role only: the stream is picked once Maple sees the account", () => {
-		const sent = pageUpdate(typed("123456789012"), Message.SubmittedAwsAccount())
+		const sent = pageUpdate(typed("123456789012"), awsMsg(AwsMessage.SubmittedAwsAccount()))
 		const [create] = sent.commands ?? []
 		expect(create?.name).toBe("CreateAwsConnection")
 		expect(create?.args).toEqual({ request: { account_id: "123456789012" } })
@@ -125,17 +129,17 @@ describe("aws card", () => {
 			expectView(role("button", { name: "Edit data", expanded: true })).toExist(),
 		)
 
-		const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
+		const opened = pageUpdate(model, awsMsg(AwsMessage.ClickedAwsMetrics({ id: connectionId }))).model
 		const edited = Arr.reduce(
 			[
-				Message.ToggledAwsRegion({ id: connectionId, region: "eu-central-1" }),
-				Message.ToggledAwsRegion({ id: connectionId, region: "us-east-1" }),
-				Message.ToggledAwsNamespace({ id: connectionId, namespace: "AWS/SQS" }),
+				awsMsg(AwsMessage.ToggledAwsRegion({ id: connectionId, region: "eu-central-1" })),
+				awsMsg(AwsMessage.ToggledAwsRegion({ id: connectionId, region: "us-east-1" })),
+				awsMsg(AwsMessage.ToggledAwsNamespace({ id: connectionId, namespace: "AWS/SQS" })),
 			],
 			opened,
 			(next, message) => pageUpdate(next, message).model,
 		)
-		const sent = pageUpdate(edited, Message.SubmittedAwsMetrics({ id: connectionId }))
+		const sent = pageUpdate(edited, awsMsg(AwsMessage.SubmittedAwsMetrics({ id: connectionId })))
 		const [update] = sent.commands ?? []
 		expect(update?.name).toBe("UpdateAwsMetricStream")
 		expect(update?.args).toEqual({
@@ -147,16 +151,20 @@ describe("aws card", () => {
 		})
 		// A second submit while saving sends nothing.
 		expect(
-			names(pageUpdate(sent.model, Message.SubmittedAwsMetrics({ id: connectionId })).commands),
+			names(
+				pageUpdate(sent.model, awsMsg(AwsMessage.SubmittedAwsMetrics({ id: connectionId }))).commands,
+			),
 		).toEqual([])
 
 		const saved = pageUpdate(
 			sent.model,
-			Message.CompletedAwsMetricStream({
-				id: connectionId,
-				connection: connection({ verified_at, metric_stream: stream }),
-				error: null,
-			}),
+			awsMsg(
+				AwsMessage.CompletedAwsMetricStream({
+					id: connectionId,
+					connection: connection({ verified_at, metric_stream: stream }),
+					error: null,
+				}),
+			),
 		)
 		expect(isMetricsPanelOpen(saved.model.awsCard.metrics, connectionId)).toBe(false)
 		expect(saved.model.awsCard.metrics).toMatchObject({ selection: { regions: ["eu-central-1"] } })
@@ -169,9 +177,9 @@ describe("aws card", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const none = pageUpdate(
 			withStatus(entered(), [connection({ verified_at })]),
-			Message.ToggledAwsRegion({ id: connectionId, region: "us-east-1" }),
+			awsMsg(AwsMessage.ToggledAwsRegion({ id: connectionId, region: "us-east-1" })),
 		).model
-		const sent = pageUpdate(none, Message.SubmittedAwsMetrics({ id: connectionId }))
+		const sent = pageUpdate(none, awsMsg(AwsMessage.SubmittedAwsMetrics({ id: connectionId })))
 		expect(names(sent.commands)).toEqual([])
 		expect(metricsErrorOf(sent.model.awsCard.metrics, connectionId)).toBe(
 			"Pick at least one region and one service.",
@@ -181,32 +189,36 @@ describe("aws card", () => {
 	test("a stream saved while the setup is open reads the script again", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const model = withStatus(entered(), [connection({ verified_at })])
-		const open = pageUpdate(model, Message.ClickedAwsSetup({ id: connectionId })).model
+		const open = pageUpdate(model, awsMsg(AwsMessage.ClickedAwsSetup({ id: connectionId }))).model
 		const loaded = pageUpdate(
 			open,
-			Message.CompletedLoadAwsSetup({
-				key: open.awsCard.setup.key ?? "",
-				result: Result.succeed({
-					object: "aws_connection.setup",
-					stack_name: "maple-integration",
-					stack_region: "us-east-1",
-					setup_script: "no stream",
-					cleanup_script: "",
-					cloudformation_template: "{}",
-					terraform: "",
-					metrics_stack_name: null,
-					metrics_cloudformation_template: null,
+			awsMsg(
+				AwsMessage.CompletedLoadAwsSetup({
+					key: open.awsCard.setup.key ?? "",
+					result: Result.succeed({
+						object: "aws_connection.setup",
+						stack_name: "maple-integration",
+						stack_region: "us-east-1",
+						setup_script: "no stream",
+						cleanup_script: "",
+						cloudformation_template: "{}",
+						terraform: "",
+						metrics_stack_name: null,
+						metrics_cloudformation_template: null,
+					}),
 				}),
-			}),
+			),
 		).model
-		const saving = pageUpdate(loaded, Message.SubmittedAwsMetrics({ id: connectionId })).model
+		const saving = pageUpdate(loaded, awsMsg(AwsMessage.SubmittedAwsMetrics({ id: connectionId }))).model
 		const saved = pageUpdate(
 			saving,
-			Message.CompletedAwsMetricStream({
-				id: connectionId,
-				connection: connection({ verified_at, metric_stream: stream }),
-				error: null,
-			}),
+			awsMsg(
+				AwsMessage.CompletedAwsMetricStream({
+					id: connectionId,
+					connection: connection({ verified_at, metric_stream: stream }),
+					error: null,
+				}),
+			),
 		)
 		expect(names(saved.commands)).toContain("LoadAwsSetup")
 	})
@@ -215,12 +227,18 @@ describe("aws card", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const opened = pageUpdate(
 			withStatus(entered(), [connection({ verified_at })]),
-			Message.ClickedAwsMetrics({ id: connectionId }),
+			awsMsg(AwsMessage.ClickedAwsMetrics({ id: connectionId })),
 		).model
-		const sent = pageUpdate(opened, Message.SubmittedAwsMetrics({ id: connectionId })).model
+		const sent = pageUpdate(opened, awsMsg(AwsMessage.SubmittedAwsMetrics({ id: connectionId }))).model
 		const failed = pageUpdate(
 			sent,
-			Message.CompletedAwsMetricStream({ id: connectionId, connection: null, error: "Not allowed." }),
+			awsMsg(
+				AwsMessage.CompletedAwsMetricStream({
+					id: connectionId,
+					connection: null,
+					error: "Not allowed.",
+				}),
+			),
 		).model
 		expect(isMetricsPanelOpen(failed.awsCard.metrics, connectionId)).toBe(true)
 		expect(metricsErrorOf(failed.awsCard.metrics, connectionId)).toBe("Not allowed.")
@@ -235,20 +253,28 @@ describe("aws card", () => {
 				connection({ verified_at }),
 				connection({ id: otherId, verified_at }),
 			])
-			const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
-			const sent = pageUpdate(opened, Message.SubmittedAwsMetrics({ id: connectionId })).model
-			const other = pageUpdate(sent, Message.ClickedAwsMetrics({ id: otherId })).model
-			return pageUpdate(other, Message.ToggledAwsRegion({ id: otherId, region: "eu-central-1" })).model
+			const opened = pageUpdate(model, awsMsg(AwsMessage.ClickedAwsMetrics({ id: connectionId }))).model
+			const sent = pageUpdate(
+				opened,
+				awsMsg(AwsMessage.SubmittedAwsMetrics({ id: connectionId })),
+			).model
+			const other = pageUpdate(sent, awsMsg(AwsMessage.ClickedAwsMetrics({ id: otherId }))).model
+			return pageUpdate(
+				other,
+				awsMsg(AwsMessage.ToggledAwsRegion({ id: otherId, region: "eu-central-1" })),
+			).model
 		}
 
 		test("its failure is a toast, and the other connection's pick stays as it was", () => {
 			const failed = pageUpdate(
 				moved(),
-				Message.CompletedAwsMetricStream({
-					id: connectionId,
-					connection: null,
-					error: "Not allowed.",
-				}),
+				awsMsg(
+					AwsMessage.CompletedAwsMetricStream({
+						id: connectionId,
+						connection: null,
+						error: "Not allowed.",
+					}),
+				),
 			)
 			expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
 			expect(metricsErrorOf(failed.model.awsCard.metrics, otherId)).toBeNull()
@@ -258,11 +284,13 @@ describe("aws card", () => {
 		test("its success keeps the other panel open and does not open the first one's setup", () => {
 			const saved = pageUpdate(
 				moved(),
-				Message.CompletedAwsMetricStream({
-					id: connectionId,
-					connection: connection({ metric_stream: stream }),
-					error: null,
-				}),
+				awsMsg(
+					AwsMessage.CompletedAwsMetricStream({
+						id: connectionId,
+						connection: connection({ metric_stream: stream }),
+						error: null,
+					}),
+				),
 			)
 			expect(isMetricsPanelOpen(saved.model.awsCard.metrics, otherId)).toBe(true)
 			expect(saved.model.awsCard.setupId).toBeNull()
@@ -271,8 +299,8 @@ describe("aws card", () => {
 	})
 
 	test("a new connection opens its setup and re-reads the status", () => {
-		const sent = pageUpdate(typed("123456789012"), Message.SubmittedAwsAccount()).model
-		const created = pageUpdate(sent, Message.SucceededAwsCreate({ connection: connection() }))
+		const sent = pageUpdate(typed("123456789012"), awsMsg(AwsMessage.SubmittedAwsAccount())).model
+		const created = pageUpdate(sent, awsMsg(AwsMessage.SucceededAwsCreate({ connection: connection() })))
 		expect(created.model.awsCard.setupId).toBe(connectionId)
 		expect(created.model.awsCard.accountId.value).toBe("")
 		expect(names(created.commands)).toContain("LoadAwsSetup")
@@ -282,21 +310,23 @@ describe("aws card", () => {
 	test("while waiting, a tick checks quietly; the first success closes the setup with a toast", () => {
 		const waiting = pageUpdate(
 			withStatus(entered(), [connection()]),
-			Message.ClickedAwsSetup({ id: connectionId }),
+			awsMsg(AwsMessage.ClickedAwsSetup({ id: connectionId })),
 		).model
-		const ticked = pageUpdate(waiting, Message.TickedAwsPending())
+		const ticked = pageUpdate(waiting, awsMsg(AwsMessage.TickedAwsPending()))
 		expect(names(ticked.commands)).toEqual(["CheckAwsConnection"])
 		// A check in flight is not sent twice.
-		expect(names(pageUpdate(ticked.model, Message.TickedAwsPending()).commands)).toEqual([])
+		expect(names(pageUpdate(ticked.model, awsMsg(AwsMessage.TickedAwsPending())).commands)).toEqual([])
 
 		const stillWaiting = pageUpdate(
 			ticked.model,
-			Message.CompletedAwsCheck({
-				id: connectionId,
-				quiet: true,
-				connection: connection(),
-				failure: null,
-			}),
+			awsMsg(
+				AwsMessage.CompletedAwsCheck({
+					id: connectionId,
+					quiet: true,
+					connection: connection(),
+					failure: null,
+				}),
+			),
 		)
 		expect(stillWaiting.outMessage).toBeUndefined()
 		expect(stillWaiting.model.awsCard.setupId).toBe(connectionId)
@@ -308,7 +338,14 @@ describe("aws card", () => {
 		})
 		const done = pageUpdate(
 			ticked.model,
-			Message.CompletedAwsCheck({ id: connectionId, quiet: true, connection: verified, failure: null }),
+			awsMsg(
+				AwsMessage.CompletedAwsCheck({
+					id: connectionId,
+					quiet: true,
+					connection: verified,
+					failure: null,
+				}),
+			),
 		)
 		expect(done.model.awsCard.setupId).toBeNull()
 		// The check is newer than the page clock: it is read again so "checked" is not in the future.
@@ -325,27 +362,29 @@ describe("aws card", () => {
 	test("opening another connection's setup never shows the first one's script meanwhile", () => {
 		const other = Schema.decodeSync(AwsConnectionId)("028f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
 		const model = withStatus(entered(), [connection(), connection({ id: other })])
-		const first = pageUpdate(model, Message.ClickedAwsSetup({ id: connectionId }))
+		const first = pageUpdate(model, awsMsg(AwsMessage.ClickedAwsSetup({ id: connectionId })))
 		const [load] = first.commands ?? []
 		const loaded = pageUpdate(
 			first.model,
-			Message.CompletedLoadAwsSetup({
-				key: first.model.awsCard.setup.key ?? "",
-				result: Result.succeed({
-					object: "aws_connection.setup",
-					stack_name: "maple-integration-first",
-					stack_region: "us-east-1",
-					setup_script: "first",
-					cleanup_script: "first",
-					cloudformation_template: "{}",
-					terraform: "",
-					metrics_stack_name: null,
-					metrics_cloudformation_template: null,
+			awsMsg(
+				AwsMessage.CompletedLoadAwsSetup({
+					key: first.model.awsCard.setup.key ?? "",
+					result: Result.succeed({
+						object: "aws_connection.setup",
+						stack_name: "maple-integration-first",
+						stack_region: "us-east-1",
+						setup_script: "first",
+						cleanup_script: "first",
+						cloudformation_template: "{}",
+						terraform: "",
+						metrics_stack_name: null,
+						metrics_cloudformation_template: null,
+					}),
 				}),
-			}),
+			),
 		).model
 		expect(load?.name).toBe("LoadAwsSetup")
-		const switched = pageUpdate(loaded, Message.ClickedAwsSetup({ id: other })).model
+		const switched = pageUpdate(loaded, awsMsg(AwsMessage.ClickedAwsSetup({ id: other }))).model
 		expect(switched.awsCard.setupId).toBe(other)
 		expect(AsyncData.getData(switched.awsCard.setup.data)._tag).toBe("None")
 	})
@@ -353,16 +392,23 @@ describe("aws card", () => {
 	test("a click during a background check gets that check's result as a toast", () => {
 		const waiting = pageUpdate(
 			withStatus(entered(), [connection()]),
-			Message.ClickedAwsSetup({ id: connectionId }),
+			awsMsg(AwsMessage.ClickedAwsSetup({ id: connectionId })),
 		).model
-		const polling = pageUpdate(waiting, Message.TickedAwsPending()).model
-		const clicked = pageUpdate(polling, Message.ClickedAwsCheck({ id: connectionId }))
+		const polling = pageUpdate(waiting, awsMsg(AwsMessage.TickedAwsPending())).model
+		const clicked = pageUpdate(polling, awsMsg(AwsMessage.ClickedAwsCheck({ id: connectionId })))
 		// The check in flight answers for both: no second call to AWS.
 		expect(names(clicked.commands)).toEqual([])
 		const failing = connection({ last_check_error: "Maple cannot assume the role yet." })
 		const done = pageUpdate(
 			clicked.model,
-			Message.CompletedAwsCheck({ id: connectionId, quiet: true, connection: failing, failure: null }),
+			awsMsg(
+				AwsMessage.CompletedAwsCheck({
+					id: connectionId,
+					quiet: true,
+					connection: failing,
+					failure: null,
+				}),
+			),
 		)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
@@ -377,16 +423,18 @@ describe("aws card", () => {
 		const other = Schema.decodeSync(AwsConnectionId)("028f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
 		const open = pageUpdate(
 			withStatus(entered(), [connection(), connection({ id: other })]),
-			Message.ClickedAwsSetup({ id: connectionId }),
+			awsMsg(AwsMessage.ClickedAwsSetup({ id: connectionId })),
 		).model
-		const polling = pageUpdate(open, Message.TickedAwsPending()).model
+		const polling = pageUpdate(open, awsMsg(AwsMessage.TickedAwsPending())).model
 		const verified = connection({
 			id: other,
 			verified_at: Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z"),
 		})
 		const done = pageUpdate(
 			polling,
-			Message.CompletedAwsCheck({ id: other, quiet: true, connection: verified, failure: null }),
+			awsMsg(
+				AwsMessage.CompletedAwsCheck({ id: other, quiet: true, connection: verified, failure: null }),
+			),
 		)
 		expect(done.model.awsCard.setupId).toBe(connectionId)
 		expect(done.outMessage).toBeUndefined()
@@ -545,28 +593,30 @@ describe("aws card", () => {
 		const key = arrived.model.awsCard.ingest[connectionId]?.key ?? ""
 		const loaded = pageUpdate(
 			arrived.model,
-			Message.CompletedLoadAwsIngest({
-				id: connectionId,
-				key,
-				result: Result.succeed({
-					object: "aws_connection.ingest",
-					window_start: Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z"),
-					window_end: Schema.decodeSync(Timestamp)("2026-10-23T09:00:00.000Z"),
-					data_points: 3600,
-					last_point_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
-					groups: [
-						{
-							namespace: "AWS/ECS",
-							region: "us-east-1",
-							metrics: 12,
-							data_points: 3600,
-							resources: 9,
-							sample_resources: ["api", "checkout"],
-							last_point_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
-						},
-					],
+			awsMsg(
+				AwsMessage.CompletedLoadAwsIngest({
+					id: connectionId,
+					key,
+					result: Result.succeed({
+						object: "aws_connection.ingest",
+						window_start: Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z"),
+						window_end: Schema.decodeSync(Timestamp)("2026-10-23T09:00:00.000Z"),
+						data_points: 3600,
+						last_point_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+						groups: [
+							{
+								namespace: "AWS/ECS",
+								region: "us-east-1",
+								metrics: 12,
+								data_points: 3600,
+								resources: 9,
+								sample_resources: ["api", "checkout"],
+								last_point_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+							},
+						],
+					}),
 				}),
-			}),
+			),
 		).model
 		scene(
 			{ update: pageUpdate, view },
@@ -583,7 +633,7 @@ describe("aws card", () => {
 	test("a status read that finds the open setup verified closes it", () => {
 		const waiting = pageUpdate(
 			withStatus(entered(), [connection()]),
-			Message.ClickedAwsSetup({ id: connectionId }),
+			awsMsg(AwsMessage.ClickedAwsSetup({ id: connectionId })),
 		).model
 		const verified = connection({ verified_at: Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z") })
 		const status: V2AwsIntegration = {
@@ -603,9 +653,9 @@ describe("aws card", () => {
 	test("a disconnect keeps the stack's cleanup script until it is dismissed", () => {
 		const confirming = pageUpdate(
 			withStatus(entered(), [connection()]),
-			Message.ClickedAwsDisconnect({ id: connectionId }),
+			awsMsg(AwsMessage.ClickedAwsDisconnect({ id: connectionId })),
 		).model
-		const sent = pageUpdate(confirming, Message.ConfirmedAwsDisconnect())
+		const sent = pageUpdate(confirming, awsMsg(AwsMessage.ConfirmedAwsDisconnect()))
 		expect(names(sent.commands)).toEqual(["DeleteAwsConnection"])
 		const removed = {
 			connectionId,
@@ -614,14 +664,14 @@ describe("aws card", () => {
 		}
 		const done = pageUpdate(
 			sent.model,
-			Message.CompletedAwsDisconnect({ id: connectionId, removed, error: null }),
+			awsMsg(AwsMessage.CompletedAwsDisconnect({ id: connectionId, removed, error: null })),
 		)
 		expect(done.model.awsCard.removed).toEqual([removed])
 		// The role outlives the connection, so the script outlives the page.
 		expect(names(done.commands)).toContain("WriteAwsRemovedStacks")
 		expect(names(done.commands)).toContain("LoadIntegrationsAwsStatus")
 
-		const dismissed = pageUpdate(done.model, Message.DismissedAwsRemoved({ connectionId }))
+		const dismissed = pageUpdate(done.model, awsMsg(AwsMessage.DismissedAwsRemoved({ connectionId })))
 		expect(dismissed.model.awsCard.removed).toEqual([])
 		expect(names(dismissed.commands)).toEqual(["WriteAwsRemovedStacks"])
 	})
@@ -630,24 +680,26 @@ describe("aws card", () => {
 		const other = Schema.decodeSync(AwsConnectionId)("028f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
 		const confirming = pageUpdate(
 			withStatus(entered(), [connection(), connection({ id: other })]),
-			Message.ClickedAwsDisconnect({ id: connectionId }),
+			awsMsg(AwsMessage.ClickedAwsDisconnect({ id: connectionId })),
 		).model
-		const sent = pageUpdate(confirming, Message.ConfirmedAwsDisconnect()).model
+		const sent = pageUpdate(confirming, awsMsg(AwsMessage.ConfirmedAwsDisconnect())).model
 		const reopened = pageUpdate(
-			pageUpdate(sent, Message.ClickedAwsSetup({ id: other })).model,
-			Message.ClickedAwsDisconnect({ id: other }),
+			pageUpdate(sent, awsMsg(AwsMessage.ClickedAwsSetup({ id: other }))).model,
+			awsMsg(AwsMessage.ClickedAwsDisconnect({ id: other })),
 		).model
 		const done = pageUpdate(
 			reopened,
-			Message.CompletedAwsDisconnect({
-				id: connectionId,
-				removed: {
-					connectionId,
-					accountId: "123456789012",
-					cleanupScript: "aws cloudformation delete-stack",
-				},
-				error: null,
-			}),
+			awsMsg(
+				AwsMessage.CompletedAwsDisconnect({
+					id: connectionId,
+					removed: {
+						connectionId,
+						accountId: "123456789012",
+						cleanupScript: "aws cloudformation delete-stack",
+					},
+					error: null,
+				}),
+			),
 		).model
 		expect(done.awsCard.disconnectId).toBe(other)
 		expect(done.awsCard.disconnectDialog.isOpen).toBe(true)
@@ -710,8 +762,10 @@ describe("aws card", () => {
 		test("its switch asks for the module beside the others", () => {
 			const model = withSecurity([verified({ modules: ["cost"], granted_modules: ["cost"] })])
 			expect(
-				pageUpdate(model, Message.ToggledAwsModule({ id: connectionId, module: "security" }))
-					.commands,
+				pageUpdate(
+					model,
+					awsMsg(AwsMessage.ToggledAwsModule({ id: connectionId, module: "security" })),
+				).commands,
 			).toEqual(
 				expect.arrayContaining([
 					expect.objectContaining({
@@ -726,15 +780,17 @@ describe("aws card", () => {
 			const model = withSecurity([verified({ modules: ["cost"], granted_modules: ["cost"] })])
 			const saving = pageUpdate(
 				model,
-				Message.ToggledAwsModule({ id: connectionId, module: "security" }),
+				awsMsg(AwsMessage.ToggledAwsModule({ id: connectionId, module: "security" })),
 			).model
 			const refused = pageUpdate(
 				saving,
-				Message.CompletedAwsModules({
-					id: connectionId,
-					connection: null,
-					error: "Not allowed here",
-				}),
+				awsMsg(
+					AwsMessage.CompletedAwsModules({
+						id: connectionId,
+						connection: null,
+						error: "Not allowed here",
+					}),
+				),
 			).model
 			const save = refused.awsCard.moduleSave
 			expect(moduleErrorOf(save, connectionId, "security")).toBe("Not allowed here")
@@ -789,15 +845,20 @@ describe("aws card", () => {
 				expectView(text("Reading")).not.toExist(),
 				expectView(text("Needs a stack update")).not.toExist(),
 			)
-			const sent = pageUpdate(model, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
+			const sent = pageUpdate(
+				model,
+				awsMsg(AwsMessage.ToggledAwsModule({ id: connectionId, module: "cost" })),
+			)
 			expect(Arr.map(sent.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
 				{ name: UpdateAwsModules.name, args: { id: connectionId, modules: ["inventory", "cost"] } },
 			])
 			// A second toggle while saving sends nothing.
 			expect(
 				names(
-					pageUpdate(sent.model, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
-						.commands,
+					pageUpdate(
+						sent.model,
+						awsMsg(AwsMessage.ToggledAwsModule({ id: connectionId, module: "cost" })),
+					).commands,
 				),
 			).toEqual([])
 		})
@@ -806,15 +867,17 @@ describe("aws card", () => {
 			const model = withCost(entered(), [verified()])
 			const sent = pageUpdate(
 				model,
-				Message.ToggledAwsModule({ id: connectionId, module: "cost" }),
+				awsMsg(AwsMessage.ToggledAwsModule({ id: connectionId, module: "cost" })),
 			).model
 			const saved = pageUpdate(
 				sent,
-				Message.CompletedAwsModules({
-					id: connectionId,
-					connection: verified({ modules: ["cost"], setup_outdated: true }),
-					error: null,
-				}),
+				awsMsg(
+					AwsMessage.CompletedAwsModules({
+						id: connectionId,
+						connection: verified({ modules: ["cost"], setup_outdated: true }),
+						error: null,
+					}),
+				),
 			)
 			expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
 			expect(names(saved.commands)).toContain("LoadAwsSetup")
@@ -854,10 +917,10 @@ describe("aws card", () => {
 				click(role("button", { name: "Update the stack" })),
 				Command.resolve(
 					LoadAwsSetup,
-					Message.CompletedLoadAwsSetup({
+					AwsMessage.CompletedLoadAwsSetup({
 						key:
-							pageUpdate(waiting, Message.ClickedAwsSetup({ id: connectionId })).model.awsCard
-								.setup.key ?? "",
+							pageUpdate(waiting, awsMsg(AwsMessage.ClickedAwsSetup({ id: connectionId })))
+								.model.awsCard.setup.key ?? "",
 						result: Result.succeed({
 							object: "aws_connection.setup",
 							stack_name: "maple-integration-with-cost",
@@ -903,21 +966,26 @@ describe("aws card", () => {
 			const model = withCost(entered(), [
 				verified({ modules: ["inventory", "cost"], granted_modules: ["inventory", "cost"] }),
 			])
-			const sent = pageUpdate(model, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
+			const sent = pageUpdate(
+				model,
+				awsMsg(AwsMessage.ToggledAwsModule({ id: connectionId, module: "cost" })),
+			)
 			expect(Arr.map(sent.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
 				{ name: UpdateAwsModules.name, args: { id: connectionId, modules: ["inventory"] } },
 			])
 			const saved = pageUpdate(
 				sent.model,
-				Message.CompletedAwsModules({
-					id: connectionId,
-					connection: verified({
-						modules: ["inventory"],
-						granted_modules: ["inventory", "cost"],
-						setup_outdated: true,
+				awsMsg(
+					AwsMessage.CompletedAwsModules({
+						id: connectionId,
+						connection: verified({
+							modules: ["inventory"],
+							granted_modules: ["inventory", "cost"],
+							setup_outdated: true,
+						}),
+						error: null,
 					}),
-					error: null,
-				}),
+				),
 			)
 			expect(saved.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Cost turned off" })
 			scene(
@@ -940,7 +1008,7 @@ describe("aws card", () => {
 				expectView(costSwitch).toBeDisabled(),
 				Command.resolve(
 					UpdateAwsModules,
-					Message.CompletedAwsModules({
+					AwsMessage.CompletedAwsModules({
 						id: connectionId,
 						connection: null,
 						error: "Cost is not available for this organization.",
@@ -965,8 +1033,10 @@ describe("aws card", () => {
 			)
 			expect(
 				names(
-					pageUpdate(member, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
-						.commands,
+					pageUpdate(
+						member,
+						awsMsg(AwsMessage.ToggledAwsModule({ id: connectionId, module: "cost" })),
+					).commands,
 				),
 			).toEqual([])
 		})

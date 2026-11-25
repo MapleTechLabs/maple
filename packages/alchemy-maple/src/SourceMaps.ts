@@ -1,19 +1,15 @@
-// BOUNDARY-FILE: This module reads source map files and a manifest from disk before upload.
 import { createHash } from "node:crypto"
-import { SOURCE_MAP_MAX_BYTES } from "@maple/sourcemaps/limits"
 import {
-	existingDebugId,
-	findJsFiles,
-	isIndexMap,
-	MANIFEST_FILE,
-	mapsNoSources,
-	mapDebugId,
-	mapUsers,
-	SourceMapsManifest,
+	type PlannedMap,
+	planMaps,
+	skipReason,
+	uploadBody,
+	uploadedDebugIds,
+	uploadParams,
 } from "@maple/sourcemaps"
-import { Array as Arr, Effect, Option, Order, Result, Schema, String as Str } from "effect"
-import { FileSystem } from "effect/FileSystem"
-import { Path } from "effect/Path"
+import { Array as Arr, Effect, Option, Order } from "effect"
+import type { FileSystem } from "effect/FileSystem"
+import type { Path } from "effect/Path"
 import { isResolved } from "alchemy/Diff"
 import * as Provider from "alchemy/Provider"
 import { Resource } from "alchemy/Resource"
@@ -86,75 +82,9 @@ export type SourceMaps = Resource<
  */
 export const SourceMaps = Resource<SourceMaps>("Maple.SourceMaps")
 
-interface PlannedMap {
-	readonly minifiedPath: string
-	readonly debugId: Option.Option<string>
-	readonly bytes: Uint8Array
-}
-
-const decodeManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(SourceMapsManifest))
-
-/** The served path of a file below the deploy root, `urlPrefix` first, never with a leading slash. */
-export const minifiedPathFor = (urlPrefix: string | undefined, file: string): string => {
-	const prefix = urlPrefix ?? ""
-	const joined = prefix === "" || Str.endsWith("/")(prefix) ? `${prefix}${file}` : `${prefix}/${file}`
-	return Str.replace(/^(?:~\/|\/)+/, "")(joined)
-}
+export { minifiedPathFor } from "@maple/sourcemaps"
 
 const sha256 = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex")
-
-/** Every map in `props.dir` with the path and debug id it uploads under; none when the dir is absent. */
-const planMaps = (props: SourceMapsProps) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystem
-		const path = yield* Path
-		const readError = (cause: unknown) =>
-			new MapleSourceMapsReadError({
-				message: `Could not read source maps in ${props.dir}`,
-				path: props.dir,
-				cause,
-			})
-		if (!(yield* fs.exists(props.dir).pipe(Effect.mapError(readError)))) return []
-		const manifestPath = path.join(props.dir, MANIFEST_FILE)
-		if (yield* fs.exists(manifestPath).pipe(Effect.mapError(readError))) {
-			const manifest = yield* fs
-				.readFileString(manifestPath)
-				.pipe(Effect.flatMap(decodeManifest), Effect.mapError(readError))
-			return yield* Effect.forEach(manifest.files, (entry) =>
-				Effect.mapBoth(fs.readFile(path.join(props.dir, entry.map)), {
-					onFailure: readError,
-					onSuccess: (bytes): PlannedMap => ({
-						minifiedPath: minifiedPathFor(props.urlPrefix, entry.file),
-						debugId: Option.fromNullishOr(entry.debugId),
-						bytes,
-					}),
-				}),
-			)
-		}
-		// No manifest: maps beside their JS files, as `maple sourcemaps upload` reads them.
-		const files = yield* findJsFiles(props.dir).pipe(Effect.mapError(readError))
-		const users = mapUsers(files)
-		return yield* Effect.forEach(
-			Arr.flatMap(files, (js) =>
-				Option.toArray(Option.map(js.mapPath, (mapPath) => ({ js, mapPath }))),
-			),
-			({ js, mapPath }) =>
-				Effect.mapBoth(fs.readFile(mapPath), {
-					onFailure: readError,
-					onSuccess: (bytes): PlannedMap => {
-						const shared = (users.get(mapPath) ?? 0) > 1
-						return {
-							minifiedPath: minifiedPathFor(props.urlPrefix, js.file),
-							// The file's own id; a shared map's id belongs to no one file.
-							debugId: Option.orElse(existingDebugId(js.code), () =>
-								shared ? Option.none() : mapDebugId(new TextDecoder().decode(bytes)),
-							),
-							bytes,
-						}
-					},
-				}),
-		)
-	})
 
 /** Changes when any map, its path or debug id, or the props it uploads under change. */
 export const sourceMapsDigest = (props: SourceMapsProps, maps: ReadonlyArray<PlannedMap>): string =>
@@ -181,50 +111,6 @@ export const sourceMapsDigest = (props: SourceMapsProps, maps: ReadonlyArray<Pla
 		),
 	)
 
-const byRelease = (props: SourceMapsProps) => props.matchBy === "release"
-const hasRelease = (props: SourceMapsProps) => props.release !== undefined && props.release !== ""
-
-/** Why a map is not uploaded, or none when it is. */
-const skipReason = (props: SourceMapsProps, map: PlannedMap): Option.Option<string> => {
-	if (map.bytes.byteLength > SOURCE_MAP_MAX_BYTES) return Option.some("it is over 10 MiB")
-	const text = new TextDecoder().decode(map.bytes)
-	if (isIndexMap(text)) return Option.some("index source maps are not supported")
-	if (mapsNoSources(text)) return Option.some("it maps no sources")
-	if (byRelease(props) && !hasRelease(props)) return Option.some('`matchBy: "release"` needs a release')
-	if (Option.isNone(map.debugId) && !hasRelease(props))
-		return Option.some("it has no debug id and no release is set")
-	return Option.none()
-}
-
-const uploadQuery = (props: SourceMapsProps, map: PlannedMap): string => {
-	const params: Array<[string, string]> = [
-		["minified_path", map.minifiedPath],
-		["service", props.service],
-	]
-	if (!byRelease(props) && Option.isSome(map.debugId)) params.push(["debug_id", map.debugId.value])
-	if (hasRelease(props)) params.push(["version", props.release ?? ""])
-	return new URLSearchParams(params).toString()
-}
-
-const MapJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
-const decodeMapJson = Schema.decodeUnknownResult(MapJson)
-const encodeMapJson = Schema.encodeResult(MapJson)
-
-/**
- * The body to upload. Matched by release, the map's own `debugId` / `debug_id` go too, or the server
- * would file it under that id and one release's upload would replace another's.
- */
-const uploadBody = (props: SourceMapsProps, map: PlannedMap): Uint8Array => {
-	if (!byRelease(props)) return map.bytes
-	return Result.match(
-		Result.flatMap(
-			decodeMapJson(new TextDecoder().decode(map.bytes)),
-			({ debugId: _a, debug_id: _b, ...rest }) => encodeMapJson(rest),
-		),
-		{ onFailure: () => map.bytes, onSuccess: (text) => new TextEncoder().encode(text) },
-	)
-}
-
 export const SourceMapsProvider = () =>
 	Provider.effect(
 		SourceMaps,
@@ -232,7 +118,16 @@ export const SourceMapsProvider = () =>
 			const api = yield* MapleApi
 			const platform = yield* Effect.context<FileSystem | Path>()
 			const plan = (props: SourceMapsProps) =>
-				Effect.map(planMaps(props), (maps) => ({ maps, digest: sourceMapsDigest(props, maps) })).pipe(
+				planMaps(props.dir, props.urlPrefix).pipe(
+					Effect.mapBoth({
+						onSuccess: (maps) => ({ maps, digest: sourceMapsDigest(props, maps) }),
+						onFailure: (cause) =>
+							new MapleSourceMapsReadError({
+								message: `Could not read source maps in ${props.dir}`,
+								path: props.dir,
+								cause,
+							}),
+					}),
 					Effect.provide(platform),
 				)
 			// A redeploy of an unchanged build skips the bundler, so no maps were written this run.
@@ -277,7 +172,7 @@ export const SourceMapsProvider = () =>
 						sendable,
 						(map) =>
 							api.upload(
-								`/v2/source_maps?${uploadQuery(news, map)}`,
+								`/v2/source_maps?${new URLSearchParams(uploadParams(news, map)).toString()}`,
 								uploadBody(news, map),
 								"application/json",
 							),
@@ -286,9 +181,7 @@ export const SourceMapsProvider = () =>
 					yield* Effect.logInfo(`Uploaded ${sendable.length} source map(s) for ${news.service}`)
 					return {
 						uploaded: sendable.length,
-						debugIds: byRelease(news)
-							? []
-							: Arr.dedupe(Arr.getSomes(Arr.map(sendable, (map) => map.debugId))),
+						debugIds: uploadedDebugIds(news, sendable),
 						digest: planned.digest,
 					}
 				}),

@@ -1,5 +1,6 @@
-import { Array as Arr, Option } from "effect"
-import { Command as FoldkitCommand } from "foldkit"
+import type { GithubInstallationSelection } from "@maple/domain/http"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -7,7 +8,8 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { RAILWAY } from "../infra-integrations/railway/integration/railway-provider"
 import { SUPABASE } from "../infra-integrations/supabase/integration/supabase-provider"
 import * as Dialog from "@maple/views/ui/dialog"
-import { type IntegrationId, integrationOfSearch } from "./catalog"
+import type { ProviderId } from "../kit/providers"
+import { type ChatIntegrationId, type IntegrationId, integrationOfSearch } from "./catalog"
 import { SEARCH_CONSOLE } from "./search-console-provider"
 import { LINEAR } from "./linear-provider"
 import { VERCEL } from "../infra-integrations/vercel/integration/vercel-provider"
@@ -15,8 +17,12 @@ import { PLANETSCALE } from "../infra-integrations/planetscale/integration/plane
 import { CLOUDFLARE } from "../infra-integrations/cloudflare/integration/cloudflare-provider"
 import { CHAT } from "./chat-provider"
 import { FLEET } from "./fleet/fleet-provider"
-import { ReadClock, TrackDisconnected } from "./command"
-import type { FlowSpec, FlowStage } from "./flow"
+import { GITHUB } from "./github-provider"
+import { PROMETHEUS } from "./prometheus-provider"
+import { AWS } from "../infra-integrations/aws/integration/aws-provider"
+import { GCP } from "../infra-integrations/gcp/integration/gcp-provider"
+import { ReadClock, TrackConnected, TrackDisconnected } from "./command"
+import type { FlowContext, FlowSpec, FlowStage } from "./flow"
 import { Message } from "./message"
 import { canManage, type Model, type Statuses } from "./model"
 import type { CardStatus, IntegrationOverview } from "./overview"
@@ -24,7 +30,7 @@ import type {
 	HubRequest,
 	ProviderEnv,
 	ProviderModule,
-	ProviderReturn,
+	ProviderUpdate,
 	StatusAnswer,
 	StatusContext,
 } from "./provider"
@@ -48,11 +54,16 @@ type Mount<K extends keyof Statuses, S, M, Msg> = Readonly<{
 /** A mounted module as the hub sees it: its types closed over, so every provider fits one list. */
 export type MountedProvider = Readonly<{
 	id: string
-	owns: (id: IntegrationId) => boolean
 	onEnter: (model: Model, context: PageContext) => Return
 	onSession: (model: Model, context: PageContext) => Return
 	onClock: (model: Model, context: PageContext) => Return
 	onConnectStart: (model: Model, context: PageContext) => Return
+	blocksConnect: (model: Model) => boolean
+	onConnectOpened: (model: Model, context: PageContext) => Return
+	/** `null`: the module takes no account choice. */
+	onConnectPayload:
+		| ((model: Model, context: PageContext, payload: GithubInstallationSelection) => Return)
+		| null
 	onConnected: (model: Model, context: PageContext) => Return
 	onRelayedConnect: (model: Model, context: PageContext) => Return
 	replacesConnectedRead: boolean
@@ -62,34 +73,50 @@ export type MountedProvider = Readonly<{
 	/** `null`: the hub's own disconnect runs. */
 	onConfirmDisconnect: ((model: Model, context: PageContext) => Return) | null
 	isDisconnecting: (model: Model) => boolean
-	ticker: Readonly<{
-		everyMs: number
-		fast: Readonly<{ everyMs: number; ticks: number }> | null
-		isActive: (model: Model) => boolean
-		tick: Message
+	tickers: ReadonlyArray<
+		Readonly<{
+			everyMs: number
+			fast: Readonly<{ everyMs: number; ticks: number }> | null
+			isActive: (model: Model) => boolean
+			/** `null` while inactive; a change restarts the ticks. */
+			dependency: (model: Model) => string | null
+			tick: Message
+		}>
+	>
+	delayed: Readonly<{
+		afterMs: number
+		versionOf: (model: Model) => number | null
+		fire: (version: number) => ReadonlyArray<Message>
 	}> | null
 	card: (
 		h: HtmlBuilder<Message>,
 		model: Model,
 		timeZone: string,
 		focusId: string | null,
+		integration: IntegrationId,
 	) => ReadonlyArray<Html>
 	headerActions: ((h: HtmlBuilder<Message>, model: Model) => ReadonlyArray<Html>) | null
 	headerStatus: ((h: HtmlBuilder<Message>, model: Model, timeZone: string) => Html | undefined) | null
 	/** `null`: the generic flow. */
-	flow: ((model: Model) => FlowSpec) | null
-	flowView: ((h: HtmlBuilder<Message>, model: Model, stage: FlowStage, timeZone: string) => Html) | null
+	flow: ((model: Model, integration: IntegrationId, context: FlowContext) => FlowSpec) | null
+	flowView:
+		| ((
+				h: HtmlBuilder<Message>,
+				model: Model,
+				stage: FlowStage,
+				timeZone: string,
+				integration: IntegrationId,
+		  ) => Html)
+		| null
 	cardStatus: (statuses: Statuses, context: Omit<StatusContext, "statuses">) => CardStatus | null
 	overview: (statuses: Statuses, context: Omit<StatusContext, "statuses">) => IntegrationOverview
 }>
 
-const ownsOf =
-	<S, M, Msg>(module: ProviderModule<S, M, Msg>) =>
-	(id: IntegrationId | null): boolean =>
-		id !== null && (module.owns === undefined ? id === module.id : module.owns(id))
-
-const isShownIn = <S, M, Msg>(model: Model, module: ProviderModule<S, M, Msg>): boolean =>
-	ownsOf(module)(integrationOfSearch(model.search.integration))
+/** The page shows one of the module's ids: `MODULE_OF` points that id at it. */
+const isShownIn = <S, M, Msg>(model: Model, module: ProviderModule<S, M, Msg>): boolean => {
+	const shown = integrationOfSearch(model.search.integration)
+	return shown !== null && providerModuleOf(shown).id === module.id
+}
 
 /** A step of the page's shared disconnect dialog. */
 export const withDisconnectDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -124,6 +151,13 @@ const applyRequest =
 				return withDisconnectDialog(model, Dialog.close(model.disconnect.dialog))
 			case "TrackDisconnected":
 				return { model, commands: [TrackDisconnected({ provider: request.provider })] }
+			case "TrackConnected":
+				return { model, commands: [TrackConnected({ provider: request.provider })] }
+			case "Navigate":
+				return {
+					model,
+					outMessage: PageOutMessage.RequestedNavigation({ url: request.url, isReplace: false }),
+				}
 		}
 	}
 
@@ -132,7 +166,7 @@ const run = <K extends keyof Statuses, S, M, Msg>(
 	mount: Mount<K, S, M, Msg>,
 	model: Model,
 	context: PageContext,
-	step: (sub: M, env: ProviderEnv<S>) => ProviderReturn<M, Msg>,
+	step: (sub: M, env: ProviderEnv<S>) => ProviderUpdate<M, Msg, S>,
 ): Return => {
 	const env: ProviderEnv<S> = {
 		status: mount.slot(model.statuses),
@@ -140,12 +174,26 @@ const run = <K extends keyof Statuses, S, M, Msg>(
 		isShown: isShownIn(model, mount.module),
 		canManage: canManage(model),
 		integration: integrationOfSearch(model.search.integration),
+		isConnecting: model.connect.active !== null,
 		context,
 	}
 	const result = step(mount.get(model), env)
+	// An unchanged sub-model keeps the Model, as a no-op update did before.
+	const stepped = result.model === mount.get(model) ? model : mount.set(model, result.model)
+	const patch = result.status
+	const slot = env.status
+	const patched: Model =
+		patch === undefined
+			? stepped
+			: {
+					...stepped,
+					statuses: {
+						...stepped.statuses,
+						[mount.statusName]: { ...slot, data: AsyncData.map(slot.data, patch) },
+					},
+				}
 	const requested = chain(
-		// An unchanged sub-model keeps the Model, as a no-op update did before.
-		result.model === mount.get(model) ? model : mount.set(model, result.model),
+		patched,
 		Arr.map(result.requests ?? [], (request) => applyRequest(mount.statusName, context, request)),
 	)
 	return {
@@ -168,14 +216,15 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 } => {
 	const { module } = spec
 	const hook =
-		(step: ((sub: M, env: ProviderEnv<S>) => ProviderReturn<M, Msg>) | undefined) =>
+		(step: ((sub: M, env: ProviderEnv<S>) => ProviderUpdate<M, Msg, S>) | undefined) =>
 		(model: Model, context: PageContext): Return =>
 			step === undefined ? { model } : run(spec, model, context, step)
-	const subscription = module.subscription
 	const isDisconnecting = module.isDisconnecting
+	const blocksConnect = module.blocksConnect
+	const onConnectPayload = module.onConnectPayload
+	const delayed = module.delayed
 	return {
 		id: module.id,
-		owns: ownsOf(module),
 		initial: module.init,
 		update: (model, message, context) =>
 			run(spec, model, context, (sub, env) => module.update(sub, message, env)),
@@ -183,6 +232,13 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 		onSession: hook(module.onSession),
 		onClock: hook(module.onClock),
 		onConnectStart: hook(module.onConnectStart),
+		blocksConnect: (model) => blocksConnect !== undefined && blocksConnect(spec.get(model)),
+		onConnectOpened: hook(module.onConnectOpened),
+		onConnectPayload:
+			onConnectPayload === undefined
+				? null
+				: (model, context, payload) =>
+						run(spec, model, context, (sub, env) => onConnectPayload(sub, payload, env)),
 		onConnected: hook(module.onConnected),
 		onRelayedConnect: hook(module.onRelayedConnect),
 		replacesConnectedRead: module.replacesConnectedRead === true,
@@ -197,21 +253,33 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 				? { model }
 				: run(spec, model, context, (sub, env) => onStatus(sub, env, answer))
 		},
-		ticker:
-			subscription === undefined
+		tickers: Arr.map(module.subscriptions ?? [], (subscription) => {
+			const isActive = (model: Model) =>
+				subscription.isActive(spec.get(model), {
+					status: spec.slot(model.statuses),
+					nowMs: model.nowMs,
+					isShown: isShownIn(model, module),
+					canManage: canManage(model),
+					integration: integrationOfSearch(model.search.integration),
+					isConnecting: model.connect.active !== null,
+				})
+			const restartKey = subscription.restartKey
+			return {
+				everyMs: subscription.everyMs,
+				fast: subscription.fast ?? null,
+				isActive,
+				dependency: (model: Model) =>
+					isActive(model) ? (restartKey === undefined ? "" : restartKey(spec.get(model))) : null,
+				tick: spec.toHub(subscription.tick),
+			}
+		}),
+		delayed:
+			delayed === undefined
 				? null
 				: {
-						everyMs: subscription.everyMs,
-						fast: subscription.fast ?? null,
-						isActive: (model) =>
-							subscription.isActive(spec.get(model), {
-								status: spec.slot(model.statuses),
-								nowMs: model.nowMs,
-								isShown: isShownIn(model, module),
-								canManage: canManage(model),
-								integration: integrationOfSearch(model.search.integration),
-							}),
-						tick: spec.toHub(subscription.tick),
+						afterMs: delayed.afterMs,
+						versionOf: (model) => delayed.versionOf(spec.get(model)),
+						fire: (version) => Arr.map(delayed.fire(version), spec.toHub),
 					},
 		card: module.card,
 		headerActions: module.headerActions ?? null,
@@ -304,23 +372,73 @@ export const FLEET_PROVIDER = mount({
 	toHub: (message) => Message.GotFleetMessage({ message }),
 })
 
-/** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
-export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
-	RAILWAY_PROVIDER,
-	SUPABASE_PROVIDER,
-	SEARCH_CONSOLE_PROVIDER,
-	LINEAR_PROVIDER,
-	CHAT_PROVIDER,
-	VERCEL_PROVIDER,
-	PLANETSCALE_PROVIDER,
-	CLOUDFLARE_PROVIDER,
-	FLEET_PROVIDER,
-]
+export const GITHUB_PROVIDER = mount({
+	module: GITHUB,
+	statusName: "github",
+	slot: (statuses) => statuses.github,
+	get: (model) => model.githubCard,
+	set: (model, githubCard) => ({ ...model, githubCard }),
+	toHub: (message) => Message.GotGithubMessage({ message }),
+})
 
-export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>
-	id === null
-		? undefined
-		: Option.getOrUndefined(Arr.findFirst(PROVIDER_MODULES, (provider) => provider.owns(id)))
+export const PROMETHEUS_PROVIDER = mount({
+	module: PROMETHEUS,
+	statusName: "scrapeTargets",
+	slot: (statuses) => statuses.scrapeTargets,
+	get: (model) => model.prometheusCard,
+	set: (model, prometheusCard) => ({ ...model, prometheusCard }),
+	toHub: (message) => Message.GotPrometheusMessage({ message }),
+})
+
+export const AWS_PROVIDER = mount({
+	module: AWS,
+	statusName: "aws",
+	slot: (statuses) => statuses.aws,
+	get: (model) => model.awsCard,
+	set: (model, awsCard) => ({ ...model, awsCard }),
+	toHub: (message) => Message.GotAwsMessage({ message }),
+})
+
+export const GCP_PROVIDER = mount({
+	module: GCP,
+	statusName: "gcp",
+	slot: (statuses) => statuses.gcp,
+	get: (model) => model.gcpCard,
+	set: (model, gcpCard) => ({ ...model, gcpCard }),
+	toHub: (message) => Message.GotGcpMessage({ message }),
+})
+
+/**
+ * Each page id's module, in hook order; `chat` serves every `chat-<connector>` page. A
+ * `ProviderId` without a module here does not compile.
+ */
+const MODULE_OF = {
+	railway: RAILWAY_PROVIDER,
+	supabase: SUPABASE_PROVIDER,
+	"google-search-console": SEARCH_CONSOLE_PROVIDER,
+	linear: LINEAR_PROVIDER,
+	chat: CHAT_PROVIDER,
+	vercel: VERCEL_PROVIDER,
+	planetscale: PLANETSCALE_PROVIDER,
+	cloudflare: CLOUDFLARE_PROVIDER,
+	fleet: FLEET_PROVIDER,
+	github: GITHUB_PROVIDER,
+	prometheus: PROMETHEUS_PROVIDER,
+	warpstream: PROMETHEUS_PROVIDER,
+	aws: AWS_PROVIDER,
+	gcp: GCP_PROVIDER,
+} satisfies { readonly [K in ProviderId | "chat"]: MountedProvider }
+
+/** Every module once, in `MODULE_OF`'s order. */
+export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = Arr.dedupeWith(
+	Rec.values(MODULE_OF),
+	(a, b) => a === b,
+)
+
+const isChatIntegration = (id: IntegrationId): id is ChatIntegrationId => Str.startsWith("chat-")(id)
+
+export const providerModuleOf = (id: IntegrationId): MountedProvider =>
+	MODULE_OF[isChatIntegration(id) ? "chat" : id]
 
 /** Runs one hook on every module, in order. */
 export const everyProvider = (

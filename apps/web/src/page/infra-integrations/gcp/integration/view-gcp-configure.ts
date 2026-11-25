@@ -3,9 +3,12 @@ import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { skeleton } from "@maple/views/ui/skeleton"
 import type { ConfigureModel } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { GcpMessage } from "./gcp"
+import { toHub } from "./view-gcp-parts"
 import type { Model } from "../../../integrations/model"
 import { configureConnector, metricsAvailable } from "./update-gcp-configure"
+import { gcpConnectors } from "./update-gcp"
 import { chooseConfirm, chooseStage } from "./view-gcp-configure-choose"
 import { configureHeader, configurePanel } from "./view-gcp-configure-parts"
 import { methodApplyStage, methodStage } from "./view-gcp-configure-method"
@@ -24,7 +27,7 @@ const stages = (
 	close: ReadonlyArray<ChildAttribute>,
 	timeZone: string,
 ): ReadonlyArray<Html> => {
-	const connector = configureConnector(model, configure)
+	const connector = configureConnector(gcpConnectors(model), configure)
 	const available = metricsAvailable(model)
 	if (connector === undefined)
 		return [configureHeader(h, ["Google Cloud"], 1), configurePanel(h, [skeleton(h, "h-40 w-full")])]
@@ -47,13 +50,13 @@ const stages = (
 export const gcpConfigure = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	const configure = model.gcpCard.configure
 	if (configure === null || configure.target._tag === "New") return []
-	const connector = configureConnector(model, configure)
+	const connector = configureConnector(gcpConnectors(model), configure)
 	return [
 		h.submodel({
 			slotId: "gcp-configure",
 			model: configure.dialog,
 			view: DialogView.view,
-			toParentMessage: (message) => Message.GotGcpConfigureDialogMessage({ message }),
+			toParentMessage: (message) => toHub(GcpMessage.GotGcpConfigureDialogMessage({ message })),
 			viewInputs: {
 				hasTrigger: false,
 				hasDescription: false,

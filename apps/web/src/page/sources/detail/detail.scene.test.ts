@@ -30,12 +30,21 @@ import { AppRoute } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/primitives"
-import { Message as IntegrationMessage } from "../../integrations/embed"
+import {
+	AwsMessage,
+	GcpMessage,
+	Message as IntegrationMessage,
+	PrometheusMessage,
+} from "../../integrations/embed"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, isSettingsDirty, routeChanged, sourceOf, update } from "./update"
 import { breadcrumbsOf, view as pageView } from "./view"
 import { focusIdOf } from "../kit/shared"
+
+const scrape = (message: PrometheusMessage) => IntegrationMessage.GotPrometheusMessage({ message })
+const awsMsg = (message: AwsMessage) => IntegrationMessage.GotAwsMessage({ message })
+const gcpMsg = (message: GcpMessage) => IntegrationMessage.GotGcpMessage({ message })
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -460,20 +469,24 @@ describe("integration sources", () => {
 		const deleted = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedTargetDelete({
-					id: Schema.decodeSync(ScrapeTargetId)(uuid),
-					failure: null,
-				}),
+				message: scrape(
+					PrometheusMessage.CompletedTargetDelete({
+						id: Schema.decodeSync(ScrapeTargetId)(uuid),
+						failure: null,
+					}),
+				),
 			}),
 		)
 		expect(deleted.outMessage?._tag === "RequestedNavigation" && deleted.outMessage.url).toBe("/sources")
 		const toggled = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedToggle({
-					id: Schema.decodeSync(ScrapeTargetId)(uuid),
-					failure: null,
-				}),
+				message: scrape(
+					PrometheusMessage.CompletedToggle({
+						id: Schema.decodeSync(ScrapeTargetId)(uuid),
+						failure: null,
+					}),
+				),
 			}),
 		)
 		expect(names(toggled.commands)).toContain("FetchSourceDetailList")
@@ -659,11 +672,13 @@ describe("integration sources", () => {
 			const done = pageUpdate(
 				withStatus(loaded(gcp(connectorId))),
 				Message.GotConnectionMessage({
-					message: IntegrationMessage.CompletedGcpDisconnect({
-						id: Schema.decodeSync(GcpConnectorId)(connectorUuid),
-						cleanupScript: "gcloud ...",
-						failure: null,
-					}),
+					message: gcpMsg(
+						GcpMessage.CompletedGcpDisconnect({
+							id: Schema.decodeSync(GcpConnectorId)(connectorUuid),
+							cleanupScript: "gcloud ...",
+							failure: null,
+						}),
+					),
 				}),
 			)
 			expect(done.outMessage?._tag === "RequestedNavigation" && done.outMessage.url).toBe(
@@ -837,12 +852,14 @@ describe("integration focus", () => {
 		const checked = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedAwsCheck({
-					id: connection,
-					quiet: false,
-					connection: awsConnection(connection),
-					failure: null,
-				}),
+				message: awsMsg(
+					AwsMessage.CompletedAwsCheck({
+						id: connection,
+						quiet: false,
+						connection: awsConnection(connection),
+						failure: null,
+					}),
+				),
 			}),
 		)
 		expect(names(checked.commands)).toContain("FetchSourceDetailList")
@@ -851,12 +868,14 @@ describe("integration focus", () => {
 		const polled = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedAwsCheck({
-					id: connection,
-					quiet: true,
-					connection: awsConnection(connection),
-					failure: null,
-				}),
+				message: awsMsg(
+					AwsMessage.CompletedAwsCheck({
+						id: connection,
+						quiet: true,
+						connection: awsConnection(connection),
+						failure: null,
+					}),
+				),
 			}),
 		)
 		expect(names(polled.commands)).not.toContain("FetchSourceDetailList")
@@ -877,12 +896,12 @@ describe("integration focus", () => {
 		).model
 		const polling = pageUpdate(
 			withStatus,
-			Message.GotConnectionMessage({ message: IntegrationMessage.TickedAwsPending() }),
+			Message.GotConnectionMessage({ message: awsMsg(AwsMessage.TickedAwsPending()) }),
 		)
 		expect(names(polling.commands)).toContain("CheckAwsConnection")
 		const clicking = pageUpdate(
 			polling.model,
-			Message.GotConnectionMessage({ message: IntegrationMessage.ClickedAwsCheck({ id: connection }) }),
+			Message.GotConnectionMessage({ message: awsMsg(AwsMessage.ClickedAwsCheck({ id: connection })) }),
 		)
 		// The poll in flight answers for the click: no second call to AWS.
 		expect(names(clicking.commands)).not.toContain("CheckAwsConnection")
@@ -890,12 +909,14 @@ describe("integration focus", () => {
 		const answered = pageUpdate(
 			clicked,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedAwsCheck({
-					id: connection,
-					quiet: true,
-					connection: awsConnection(connection),
-					failure: null,
-				}),
+				message: awsMsg(
+					AwsMessage.CompletedAwsCheck({
+						id: connection,
+						quiet: true,
+						connection: awsConnection(connection),
+						failure: null,
+					}),
+				),
 			}),
 		)
 		expect(names(answered.commands)).toContain("FetchSourceDetailList")
@@ -992,7 +1013,7 @@ describe("integration focus", () => {
 		const done = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedAwsDisconnect({ id: connection, removed, error: null }),
+				message: awsMsg(AwsMessage.CompletedAwsDisconnect({ id: connection, removed, error: null })),
 			}),
 		)
 		expect(done.outMessage?._tag === "RequestedNavigation" && done.outMessage.url).toBe(
@@ -1004,11 +1025,13 @@ describe("integration focus", () => {
 		const elsewhere = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedAwsDisconnect({
-					id: other,
-					removed: { ...removed, connectionId: other },
-					error: null,
-				}),
+				message: awsMsg(
+					AwsMessage.CompletedAwsDisconnect({
+						id: other,
+						removed: { ...removed, connectionId: other },
+						error: null,
+					}),
+				),
 			}),
 		)
 		expect(elsewhere.outMessage?._tag).not.toBe("RequestedNavigation")

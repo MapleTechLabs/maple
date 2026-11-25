@@ -35,15 +35,17 @@ export const VERCEL: ProviderModule<VercelIntegrationStatus, VercelCardModel, Ve
 	init: initVercelCard,
 	update,
 	// Re-reads the status (and the clock that ends the window) while a fresh connection settles.
-	subscription: {
-		everyMs: VERCEL_SETTLING_REFRESH_MS,
-		isActive: (_model, env) =>
-			env.isShown &&
-			Option.exists(AsyncData.getData(env.status.data), (status) =>
-				isVercelSettling(status, env.nowMs),
-			),
-		tick: VercelMessage.TickedSettle(),
-	},
+	subscriptions: [
+		{
+			everyMs: VERCEL_SETTLING_REFRESH_MS,
+			isActive: (_model, env) =>
+				env.isShown &&
+				Option.exists(AsyncData.getData(env.status.data), (status) =>
+					isVercelSettling(status, env.nowMs),
+				),
+			tick: VercelMessage.TickedSettle(),
+		},
+	],
 	card: vercelCard,
 	headerActions: vercelHeaderActions,
 	headerStatus: vercelHeaderStatus,

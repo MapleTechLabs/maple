@@ -10,9 +10,10 @@ import * as Checkbox from "@maple/views/ui/checkbox"
 import { labelIdOf } from "@maple/views/ui/choice"
 import { icon } from "@maple/views/ui/icon"
 import { OTEL_DOCS } from "./gcp-configure-copy"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { GCP_LINK, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import { externalLink } from "./view-gcp-configure-parts"
-import { GCP_LINK } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
@@ -49,7 +50,7 @@ const runtimeRow = (
 		[
 			...Checkbox.view(h, {
 				model: { isChecked: checked },
-				toParentMessage: () => Message.ToggledGcpRuntime({ runtime: value }),
+				toParentMessage: () => toHub(GcpMessage.ToggledGcpRuntime({ runtime: value })),
 				id: `${inputId}-checkbox`,
 				inputId,
 			}),
@@ -92,7 +93,7 @@ export const runtimeFields = (
 								}),
 								GCP_LINK,
 							),
-							attributes: [h.OnClick(Message.ClickedGcpUseOpenTelemetry())],
+							attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpUseOpenTelemetry()))],
 						},
 						["Use OpenTelemetry instead"],
 					),

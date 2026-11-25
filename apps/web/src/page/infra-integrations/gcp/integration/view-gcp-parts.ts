@@ -11,12 +11,16 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { spinner } from "@maple/views/ui/spinner"
 import { Message } from "../../../integrations/message"
+import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
+
+/** A Google Cloud module message, as the hub carries it. */
+export const toHub = (message: GcpMessage): Message => Message.GotGcpMessage({ message })
 
 export const GCP_LINK = "underline underline-offset-2 hover:no-underline active:no-underline"
 export const SMALL = "text-xs/5 text-pretty text-muted-foreground"
@@ -32,7 +36,7 @@ export const copyOf = (
 	CopyButton.view(h, {
 		...options,
 		model: model.gcpCard.copies[id] ?? CopyButton.init(),
-		toParentMessage: (message) => Message.GotGcpCopyMessage({ id, message }),
+		toParentMessage: (message) => toHub(GcpMessage.GotGcpCopyMessage({ id, message })),
 		value,
 	})
 
@@ -111,7 +115,10 @@ export const scriptBlock = (
 						}),
 						GCP_LINK,
 					),
-					attributes: [h.AriaExpanded(shown), h.OnClick(Message.ClickedGcpScriptToggle())],
+					attributes: [
+						h.AriaExpanded(shown),
+						h.OnClick(toHub(GcpMessage.ClickedGcpScriptToggle())),
+					],
 				},
 				[shown ? "Hide the script" : "Read the script"],
 			),
@@ -131,7 +138,7 @@ export const scriptBlock = (
 								size: "sm",
 								variant: "outline",
 								isLoading: options.failure.isRetrying,
-								attributes: [h.OnClick(Message.ClickedGcpScriptRetry())],
+								attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpScriptRetry()))],
 							},
 							["Try again"],
 						),

@@ -11,7 +11,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
-import { Message as IntegrationMessage } from "../../integrations/embed"
+import { AwsMessage, Message as IntegrationMessage } from "../../integrations/embed"
+
+const awsMsg = (message: AwsMessage) => IntegrationMessage.GotAwsMessage({ message })
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -83,7 +85,7 @@ const withConnections = (
 const withAccountId = (model: Model, value: string): Model =>
 	inner(
 		model,
-		IntegrationMessage.GotAwsAccountIdMessage({ message: Field.Message.ChangedValue({ value }) }),
+		awsMsg(AwsMessage.GotAwsAccountIdMessage({ message: Field.Message.ChangedValue({ value }) })),
 	)
 
 /** What submitting the account form sends. */
@@ -91,7 +93,7 @@ const submitted = (model: Model) =>
 	Arr.map(
 		pageUpdate(
 			model,
-			Message.GotIntegrationsMessage({ message: IntegrationMessage.SubmittedAwsAccount() }),
+			Message.GotIntegrationsMessage({ message: awsMsg(AwsMessage.SubmittedAwsAccount()) }),
 		).commands ?? [],
 		({ name, args }) => ({ name, args }),
 	)
@@ -124,11 +126,13 @@ describe("aws connect flow", () => {
 		}
 		const disconnected = inner(
 			flowing,
-			IntegrationMessage.CompletedAwsDisconnect({
-				id,
-				removed: { connectionId: id, accountId: "123456789012", cleanupScript: "echo done" },
-				error: null,
-			}),
+			awsMsg(
+				AwsMessage.CompletedAwsDisconnect({
+					id,
+					removed: { connectionId: id, accountId: "123456789012", cleanupScript: "echo done" },
+					error: null,
+				}),
+			),
 		)
 		const reloaded = inner(
 			disconnected,
@@ -191,7 +195,7 @@ describe("aws connect flow", () => {
 		const none =
 			id === null
 				? choosing
-				: inner(choosing, IntegrationMessage.ToggledAwsRegion({ id, region: "us-east-1" }))
+				: inner(choosing, awsMsg(AwsMessage.ToggledAwsRegion({ id, region: "us-east-1" })))
 		scene(
 			{ update: pageUpdate, view },
 			given(none),
@@ -217,7 +221,7 @@ describe("aws connect flow", () => {
 						pageUpdate(
 							live,
 							Message.GotIntegrationsMessage({
-								message: IntegrationMessage.SubmittedAwsMetrics({ id }),
+								message: awsMsg(AwsMessage.SubmittedAwsMetrics({ id })),
 							}),
 						).commands,
 					)
@@ -290,7 +294,7 @@ describe("aws connect flow", () => {
 			const toggled = pageUpdate(
 				model,
 				Message.GotIntegrationsMessage({
-					message: IntegrationMessage.ToggledAwsModule({ id, module: "audit" }),
+					message: awsMsg(AwsMessage.ToggledAwsModule({ id, module: "audit" })),
 				}),
 			)
 			expect(names(toggled.commands)).toContain("UpdateAwsModules")
@@ -312,7 +316,7 @@ describe("aws connect flow", () => {
 			const id = idOf(model)
 			expect(id).not.toBeNull()
 			if (id === null) return
-			const open = inner(model, IntegrationMessage.ClickedAwsSetup({ id }))
+			const open = inner(model, awsMsg(AwsMessage.ClickedAwsSetup({ id })))
 			scene(
 				{ update: pageUpdate, view },
 				given(open),
@@ -320,7 +324,7 @@ describe("aws connect flow", () => {
 			)
 			const checked = pageUpdate(
 				open,
-				Message.GotIntegrationsMessage({ message: IntegrationMessage.ClickedAwsCheck({ id }) }),
+				Message.GotIntegrationsMessage({ message: awsMsg(AwsMessage.ClickedAwsCheck({ id })) }),
 			)
 			expect(names(checked.commands)).toContain("CheckAwsConnection")
 		})
@@ -348,7 +352,7 @@ describe("aws connect flow", () => {
 
 		test("ticked, the connection is created with the cost module and the stack lists its policy", () => {
 			const model = withAccountId(withConnections([], [COST_MODULE]), "123456789012")
-			const ticked = inner(model, IntegrationMessage.ToggledAwsNewModule({ module: "cost" }))
+			const ticked = inner(model, awsMsg(AwsMessage.ToggledAwsNewModule({ module: "cost" })))
 			scene(
 				{ update: pageUpdate, view },
 				given(model),
@@ -386,7 +390,7 @@ describe("aws connect flow", () => {
 				// The stack summary lists the policy the module adds.
 				expectView(text("Security policy")).toExist(),
 			)
-			const ticked = inner(model, IntegrationMessage.ToggledAwsNewModule({ module: "security" }))
+			const ticked = inner(model, awsMsg(AwsMessage.ToggledAwsNewModule({ module: "security" })))
 			expect(submitted(ticked)).toEqual([
 				{
 					name: "CreateAwsConnection",
@@ -406,7 +410,7 @@ describe("aws connect flow", () => {
 				expectView(text(COST_MODULE.summary)).not.toExist(),
 			)
 			// A tick left over from before the module was withdrawn is not sent either.
-			const stale = inner(model, IntegrationMessage.ToggledAwsNewModule({ module: "cost" }))
+			const stale = inner(model, awsMsg(AwsMessage.ToggledAwsNewModule({ module: "cost" })))
 			expect(submitted(stale)).toEqual([
 				{ name: "CreateAwsConnection", args: { request: { account_id: "123456789012" } } },
 			])

@@ -7,7 +7,12 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
-import { HubRequest, type ProviderEnv, type ProviderReturn } from "../../../integrations/provider"
+import {
+	andThen as then,
+	HubRequest,
+	type ProviderEnv,
+	type ProviderReturn,
+} from "../../../integrations/provider"
 import { ingestPhaseOf } from "../ingest"
 import {
 	ALL_CLOUDFLARE_FEATURES,
@@ -34,16 +39,6 @@ const withCard = (model: CloudflareCardModel, card: Partial<CloudflareCardModel>
 	...model,
 	...card,
 })
-
-/** Both answers concatenated: the second step's model, every request and Command in order. */
-const then = (first: Return, second: (model: CloudflareCardModel) => Return): Return => {
-	const next = second(first.model)
-	return {
-		model: next.model,
-		requests: [...(first.requests ?? []), ...(next.requests ?? [])],
-		commands: [...(first.commands ?? []), ...(next.commands ?? [])],
-	}
-}
 
 export const requestUsage = (model: CloudflareCardModel, env: Env, mode: Keyed.RequestMode): Return => {
 	const key = requestKey(env.context.orgId, "integrations.cloudflareUsage", {})

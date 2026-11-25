@@ -27,8 +27,8 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 import { Message as IntegrationMessage } from "../../integrations/embed"
-import { subscriptions } from "../../integrations/embed"
-import { SelectGithubInstallation } from "../../integrations/github"
+import { GithubMessage, SelectGithubInstallation } from "../../integrations/github"
+import { GITHUB_PROVIDER } from "../../integrations/provider-modules"
 import { STATUS_READS, TrackConnected } from "../../integrations/command"
 
 const context: PageContext = {
@@ -37,6 +37,7 @@ const context: PageContext = {
 	timeZone: "UTC",
 }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+const github = (message: GithubMessage) => IntegrationMessage.GotGithubMessage({ message })
 const view = withViewInputs(pageView, { context })()
 const inner = (model: Model, message: IntegrationMessage) =>
 	pageUpdate(model, Message.GotIntegrationsMessage({ message })).model
@@ -296,7 +297,7 @@ describe("github connect flow", () => {
 		const picked = pageUpdate(
 			discovered().model,
 			Message.GotIntegrationsMessage({
-				message: IntegrationMessage.ClickedSelectGithubInstallation({ installationId: "202" }),
+				message: github(GithubMessage.ClickedSelectGithubInstallation({ installationId: "202" })),
 			}),
 		)
 		expect(Arr.map(picked.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
@@ -306,7 +307,7 @@ describe("github connect flow", () => {
 			pageUpdate(
 				picked.model,
 				Message.GotIntegrationsMessage({
-					message: IntegrationMessage.ClickedSelectGithubInstallation({ installationId: "101" }),
+					message: github(GithubMessage.ClickedSelectGithubInstallation({ installationId: "101" })),
 				}),
 			).commands ?? [],
 		).toHaveLength(0)
@@ -319,11 +320,13 @@ describe("github connect flow", () => {
 		const connected = pageUpdate(
 			picked.model,
 			Message.GotIntegrationsMessage({
-				message: IntegrationMessage.CompletedSelectGithubInstallation({
-					state: "selection-1",
-					installationId: "202",
-					failure: null,
-				}),
+				message: github(
+					GithubMessage.CompletedSelectGithubInstallation({
+						state: "selection-1",
+						installationId: "202",
+						failure: null,
+					}),
+				),
 			}),
 		)
 		expect(Arr.map(connected.commands ?? [], ({ name }) => name)).toContain("TrackIntegrationConnected")
@@ -348,18 +351,20 @@ describe("github connect flow", () => {
 	test("a consumed or expired choice returns to authorization instead of retrying the old state", () => {
 		const picked = inner(
 			discovered().model,
-			IntegrationMessage.ClickedSelectGithubInstallation({ installationId: "202" }),
+			github(GithubMessage.ClickedSelectGithubInstallation({ installationId: "202" })),
 		)
 		const failed = pageUpdate(
 			picked,
 			Message.GotIntegrationsMessage({
-				message: IntegrationMessage.CompletedSelectGithubInstallation({
-					state: "selection-1",
-					installationId: "202",
-					failure: toLoadFailure(
-						new IntegrationsValidationError({ message: "Connection expired." }),
-					),
-				}),
+				message: github(
+					GithubMessage.CompletedSelectGithubInstallation({
+						state: "selection-1",
+						installationId: "202",
+						failure: toLoadFailure(
+							new IntegrationsValidationError({ message: "Connection expired." }),
+						),
+					}),
+				),
 			}),
 		)
 		expect(failed.commands ?? []).toHaveLength(0)
@@ -378,15 +383,17 @@ describe("github connect flow", () => {
 	])("selection keeps reading until repository discovery finishes ($state)", (initial) => {
 		const picked = inner(
 			discovered().model,
-			IntegrationMessage.ClickedSelectGithubInstallation({ installationId: "202" }),
+			github(GithubMessage.ClickedSelectGithubInstallation({ installationId: "202" })),
 		)
 		const saved = inner(
 			picked,
-			IntegrationMessage.CompletedSelectGithubInstallation({
-				state: "selection-1",
-				installationId: "202",
-				failure: null,
-			}),
+			github(
+				GithubMessage.CompletedSelectGithubInstallation({
+					state: "selection-1",
+					installationId: "202",
+					failure: null,
+				}),
+			),
 		)
 		const delayed = inner(
 			saved,
@@ -401,8 +408,7 @@ describe("github connect flow", () => {
 				),
 			}),
 		)
-		const isPolling = (model: Model) =>
-			subscriptions.githubPoll.modelToDependencies({ model: model.integrations, context }).isPolling
+		const isPolling = (model: Model) => GITHUB_PROVIDER.tickers[0]?.isActive(model.integrations) === true
 		expect(isPolling(delayed)).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
@@ -412,7 +418,7 @@ describe("github connect flow", () => {
 		)
 		const ticked = pageUpdate(
 			delayed,
-			Message.GotIntegrationsMessage({ message: IntegrationMessage.TickedGithubPoll() }),
+			Message.GotIntegrationsMessage({ message: github(GithubMessage.TickedGithubPoll()) }),
 		)
 		expect(Arr.map(ticked.commands ?? [], ({ name }) => name)).toContain("LoadIntegrationsGithubStatus")
 		const syncing = inner(
@@ -447,9 +453,7 @@ describe("github connect flow", () => {
 		const complete = withStatus(
 			status({ repositories: [], repositoryDiscovery: { _tag: "Complete", requestId: "discovery-1" } }),
 		)
-		expect(
-			subscriptions.githubPoll.modelToDependencies({ model: complete.integrations, context }).isPolling,
-		).toBe(false)
+		expect(GITHUB_PROVIDER.tickers[0]?.isActive(complete.integrations)).toBe(false)
 		scene(
 			{ update: pageUpdate, view },
 			given(complete),
@@ -473,9 +477,7 @@ describe("github connect flow", () => {
 				},
 			}),
 		)
-		expect(
-			subscriptions.githubPoll.modelToDependencies({ model: failed.integrations, context }).isPolling,
-		).toBe(false)
+		expect(GITHUB_PROVIDER.tickers[0]?.isActive(failed.integrations)).toBe(false)
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
@@ -535,7 +537,7 @@ describe("github connect flow", () => {
 			click(role("button", { name: "Connect acme" })),
 			Command.resolve(
 				SelectGithubInstallation,
-				IntegrationMessage.CompletedSelectGithubInstallation({
+				GithubMessage.CompletedSelectGithubInstallation({
 					state: selection.state,
 					installationId: "202",
 					failure: null,

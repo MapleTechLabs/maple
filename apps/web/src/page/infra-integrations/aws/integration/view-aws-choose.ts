@@ -6,8 +6,9 @@ import { label } from "@maple/views/ui/label"
 import { heading } from "@maple/views/ui/heading"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { switchControl } from "@maple/views/ui/switch"
-import { type AwsSelection, selectionOf } from "./aws"
-import { Message } from "../../../integrations/message"
+import { AwsMessage, type AwsSelection, selectionOf } from "./aws"
+import type { Message } from "../../../integrations/message"
+import { toHub } from "./view-aws-setup"
 import type { Model } from "../../../integrations/model"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
@@ -76,7 +77,9 @@ const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection):
 						...Checkbox.view(h, {
 							model: { isChecked: isPicked },
 							toParentMessage: () =>
-								Message.ToggledAwsRegion({ id: connection.id, region: region.code }),
+								toHub(
+									AwsMessage.ToggledAwsRegion({ id: connection.id, region: region.code }),
+								),
 							id: `${inputId}-root`,
 							inputId,
 							ariaLabel:
@@ -121,7 +124,7 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 						inputId: `${id}-input`,
 						isChecked: isPicked,
 						labelledBy: `${id}-label`,
-						onToggle: Message.ToggledAwsNamespace({ id: connection.id, namespace }),
+						onToggle: toHub(AwsMessage.ToggledAwsNamespace({ id: connection.id, namespace })),
 					}),
 				],
 			)
