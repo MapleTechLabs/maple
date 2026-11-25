@@ -94,9 +94,17 @@ export const V2OnboardingChecklist = Schema.Struct({
 			reward_amount_usd: 30,
 			deadline_at: "2026-07-28T12:00:00.000Z",
 			claimed_at: null,
-			completed_count: 2,
-			total_count: 4,
+			completed_count: 3,
+			total_count: 5,
 			steps: [
+				{
+					object: "onboarding_checklist_step",
+					id: "add_card",
+					title: "Add a card",
+					completed: true,
+					href: "/settings/billing",
+					optional: false,
+				},
 				{
 					object: "onboarding_checklist_step",
 					id: "send_telemetry",

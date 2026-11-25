@@ -14,6 +14,7 @@ const NOW = CREATED + 6 * 60 * 60 * 1000
 const allDone: OnboardingChecklistInputs = {
 	orgCreatedAtMs: CREATED,
 	rewardClaimedAtMs: null,
+	cardAdded: true,
 	telemetryPresent: true,
 	githubConnected: true,
 	alertRuleCount: 1,
@@ -36,13 +37,15 @@ describe("evaluateOnboardingChecklist", () => {
 		expect(Arr.map(report.steps, (step) => step.id)).toEqual([...ONBOARDING_CHECKLIST_STEP_IDS])
 		expect(report.status).toBe("in_progress")
 		expect(report.completedCount).toBe(0)
-		expect(report.totalCount).toBe(4)
+		expect(report.totalCount).toBe(5)
 		expect(report.deadlineAtMs).toBe(CREATED + ONBOARDING_REWARD_WINDOW_MS)
 	})
 
 	it("is claimable only when every step is done inside the window", () => {
 		expect(evaluateOnboardingChecklist(allDone, NOW).status).toBe("claimable")
 		expect(evaluateOnboardingChecklist({ ...allDone, mcpKeyUsed: false }, NOW).status).toBe("in_progress")
+		// The card is the first step: the reward discounts a paid plan, and the trial has none.
+		expect(evaluateOnboardingChecklist({ ...allDone, cardAdded: false }, NOW).status).toBe("in_progress")
 	})
 
 	it("treats the deadline itself as inside the window", () => {
@@ -99,6 +102,6 @@ describe("evaluateOnboardingChecklist", () => {
 		expect(ids(allDone).at(-1)).toBe("join_slack_channel")
 		const withoutChannel = evaluateOnboardingChecklist({ ...allDone, supportChannelCreated: false }, NOW)
 		expect(withoutChannel.status).toBe("claimable")
-		expect(withoutChannel.totalCount).toBe(4)
+		expect(withoutChannel.totalCount).toBe(5)
 	})
 })

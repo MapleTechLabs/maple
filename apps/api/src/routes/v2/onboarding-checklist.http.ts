@@ -16,6 +16,7 @@ import {
 
 /** Copy and destination per step. The web renders these verbatim so the list reads the same everywhere. */
 const STEP_PRESENTATION = {
+	add_card: { title: "Add a card", href: "/settings/billing" },
 	send_telemetry: { title: "Send your first telemetry", href: "/settings/ingestion" },
 	connect_github: { title: "Connect GitHub", href: "/integrations?integration=github" },
 	create_alert_rule: { title: "Create an alert with a destination", href: "/alerts" },
