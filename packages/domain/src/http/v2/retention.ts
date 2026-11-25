@@ -51,8 +51,14 @@ export const V2RetentionSource = Schema.Struct({
 	description: "A source that keeps at least one signal for a period of its own.",
 })
 
+export const V2RetentionStorage = Schema.Literals(["managed", "own_warehouse"]).annotate({
+	description:
+		"Where the organization's telemetry is stored. `own_warehouse` keeps the retention set in that ClickHouse, and these periods do not apply.",
+})
+
 export const V2RetentionPolicy = Schema.Struct({
 	object: Schema.Literal("retention_policy"),
+	storage: V2RetentionStorage,
 	periods: Schema.Array(RetentionDays).annotate({
 		description: "The periods a signal can be kept for, in days.",
 	}),
@@ -76,6 +82,7 @@ export const V2RetentionPolicy = Schema.Struct({
 	examples: [
 		wireExample({
 			object: "retention_policy",
+			storage: "managed",
 			periods: [...RETENTION_PERIODS],
 			defaults: { traces: 30, logs: 30, metrics: 90, sessions: 30, events: 365, profiles: 14 },
 			organization: {

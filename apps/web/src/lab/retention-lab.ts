@@ -52,9 +52,10 @@ const NOTHING_SET = { traces: null, logs: null, metrics: null, sessions: null, e
 const CHECKOUT = "4f0d7c2e-8a51-4b6e-9c1d-2a7e5b3f9d10"
 const STAGING = "9b2c4d6e-1f3a-4c5b-8d7e-0a1b2c3d4e5f"
 
-const policy = (withSources: boolean) =>
+const policy = (withSources: boolean, storage: "managed" | "own_warehouse" = "managed") =>
 	Schema.decodeSync(V2RetentionPolicy)({
 		object: "retention_policy",
+		storage,
 		periods: [3, 7, 14, 30, 60, 90, 180, 365, 730],
 		defaults: DEFAULTS,
 		organization: { set: { ...NOTHING_SET, logs: 90 }, days: { ...DEFAULTS, logs: 90 } },
@@ -96,7 +97,12 @@ export const init = (flags: Flags): Return => {
 					]
 				: [
 						RetentionModel.Message.CompletedFetchPolicy({
-							result: Result.succeed(policy(flags.state !== "no-sources")),
+							result: Result.succeed(
+								policy(
+									flags.state !== "no-sources",
+									flags.state === "own-warehouse" ? "own_warehouse" : "managed",
+								),
+							),
 						}),
 						RetentionModel.Message.CompletedFetchSources({
 							result: Result.succeed([

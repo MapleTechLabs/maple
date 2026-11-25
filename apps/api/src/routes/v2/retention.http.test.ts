@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -18,6 +18,7 @@ import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/aud
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { RetentionService } from "@maple/backend/services/retention/RetentionService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer, Phase1ResourceStubsLayer } from "./v2-test-support"
 import { HttpV2RetentionLive } from "./retention.http"
@@ -44,7 +45,24 @@ const testConfig = () =>
 const ORG = Schema.decodeSync(OrgId)("org_retention_e2e")
 const USER = Schema.decodeSync(UserId)("user_retention_e2e")
 
-const makeHarness = () => {
+/** Where the org stores telemetry, as the warehouse settings would answer. */
+const warehouseOf = (ownWarehouse: boolean) =>
+	Layer.mock(OrgClickHouseSettingsService)({
+		resolveRuntimeConfig: () =>
+			Effect.succeed(
+				ownWarehouse
+					? Option.some({
+							backend: "clickhouse" as const,
+							url: "https://ch.example",
+							user: "u",
+							password: "p",
+							database: "d",
+						})
+					: Option.none(),
+			),
+	})
+
+const makeHarness = (ownWarehouse = false) => {
 	const testDb = createTestDb(createdDbs)
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -66,7 +84,7 @@ const makeHarness = () => {
 			),
 	})
 	const routes = HttpApiBuilder.layer(HttpApi.make("MapleApiV2").add(MapleApiV2.groups.retention)).pipe(
-		Layer.provide(HttpV2RetentionLive),
+		Layer.provide(HttpV2RetentionLive.pipe(Layer.provide(warehouseOf(ownWarehouse)))),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
@@ -186,6 +204,17 @@ describe("v2 retention", () => {
 			logs: 90,
 		})
 		expect(status).toBe(404)
+		await harness.dispose()
+	})
+
+	it("an org on its own ClickHouse reads its storage and cannot set Maple's periods", async () => {
+		const harness = makeHarness(true)
+		const token = await harness.key()
+		const read = await harness.request("GET", "/v2/retention", token)
+		expect(read.body.storage).toBe("own_warehouse")
+		const refused = await harness.request("PATCH", "/v2/retention", token, { logs: 90 })
+		expect(refused.status).toBe(400)
+		expect(harness.auditActions()).toEqual([])
 		await harness.dispose()
 	})
 })

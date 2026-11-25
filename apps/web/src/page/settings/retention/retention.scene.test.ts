@@ -16,6 +16,7 @@ const SOURCE_ID = encodePublicId(PublicIdPrefixes.source, SOURCE_UUID)
 const policy = (logs: RetentionDays | null = null) =>
 	Schema.decodeSync(V2RetentionPolicy)({
 		object: "retention_policy",
+		storage: "managed",
 		periods: [3, 7, 14, 30, 60, 90, 180, 365, 730],
 		defaults: DEFAULTS,
 		organization: { set: { ...NOTHING_SET, logs }, days: { ...DEFAULTS, logs: logs ?? 30 } },
@@ -123,6 +124,21 @@ describe("retention tab", () => {
 			given(named),
 			expectView(role("link", { name: "checkout-api" })).toExist(),
 			expectView(text("Logs 6 months")).toExist(),
+		)
+	})
+
+	test("an org on its own ClickHouse is told its cluster keeps the retention, with no pickers", () => {
+		const own = update(
+			init(ADMIN).model,
+			Message.CompletedFetchPolicy({
+				result: Result.succeed({ ...policy(), storage: "own_warehouse" }),
+			}),
+		).model
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(own),
+			expectView(text("Your ClickHouse keeps its own retention")).toExist(),
+			expectView(role("combobox", { name: "Logs" })).not.toExist(),
 		)
 	})
 })

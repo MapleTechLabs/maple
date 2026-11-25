@@ -2,6 +2,7 @@ import type { V2RetentionDays, V2RetentionPolicy } from "@maple/domain/http/v2"
 import { RETENTION_SIGNALS, type RetentionSignal } from "@maple/domain/retention"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { errorState } from "@maple/views/ui/error-state"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { settingRow } from "@maple/views/ui/setting-row"
@@ -10,6 +11,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
+import { AppRoute, hrefOf } from "../../../route"
 import { saveBar } from "../../kit/save-bar"
 import { gatedControl } from "../../kit/session-grants"
 import { docsLink } from "../../kit/signal-empty-state"
@@ -101,6 +103,18 @@ const signalRow = (
 	})
 }
 
+/** An org on its own ClickHouse keeps that cluster's retention; nothing here would apply. */
+const ownWarehouseNotice = (h: H): Html =>
+	alert(h, { variant: "info", role: "status", className: "m-4 w-auto" }, [
+		alertTitle(h, ["Your ClickHouse keeps its own retention"]),
+		alertDescription(h, [
+			"Telemetry is stored in your organization's own ClickHouse, so it is kept for as long as the tables there say. ",
+			textLink(h, { href: hrefOf(AppRoute.Settings({ search: { tab: "data-platform" } })) }, [
+				"Data platform",
+			]),
+		]),
+	])
+
 const signalsSection = (h: H, model: Model, inputs: Inputs): Html =>
 	settingsSection(
 		h,
@@ -120,12 +134,14 @@ const signalsSection = (h: H, model: Model, inputs: Inputs): Html =>
 				}),
 				{
 					onSome: ({ policy, draft }) =>
-						h.div(
-							[h.Class("divide-y")],
-							Arr.map(RETENTION_SIGNALS, (signal) =>
-								signalRow(h, model, policy, draft, signal, inputs),
-							),
-						),
+						policy.storage === "own_warehouse"
+							? ownWarehouseNotice(h)
+							: h.div(
+									[h.Class("divide-y")],
+									Arr.map(RETENTION_SIGNALS, (signal) =>
+										signalRow(h, model, policy, draft, signal, inputs),
+									),
+								),
 					onNone: () =>
 						AsyncData.isFailure(model.policy)
 							? errorState(h, {
