@@ -756,24 +756,47 @@ describe("RolesService, roles limited to namespaces", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("refuses the scoped read as a ticked permission: only namespaces set it", () => {
+	// A role's permission list carries the scoped read, so an editor that echoes the list names it.
+	it.effect("ignores the scoped read named in a save: only the namespaces set it", () => {
 		const { clerk, layer } = setup([], [])
 		return Effect.gen(function* () {
 			const roles = yield* RolesService
-			const reasons = yield* Effect.forEach([[], ["checkout"]], (namespaces) =>
-				conflictReason(
-					roles.create(
-						adminTenant,
-						new CreateRoleRequest({
-							name: "Checkout team",
-							permissions: [Policy.SCOPED_READ],
-							namespaces,
-						}),
-					),
-				),
+			const unlimited = yield* roles.create(
+				adminTenant,
+				new CreateRoleRequest({ name: "Support", permissions: [Policy.SCOPED_READ, "support:join"] }),
 			)
-			assert.deepStrictEqual(reasons, ["not_grantable", "not_grantable"])
-			assert.deepStrictEqual(clerk.state.writes, [])
+			assert.deepStrictEqual(unlimited.permissions, ["support:join"])
+			assert.deepStrictEqual(unlimited.namespaces, [])
+			const limited = yield* roles.create(
+				adminTenant,
+				new CreateRoleRequest({
+					name: "Checkout team",
+					permissions: [Policy.SCOPED_READ, "support:join"],
+					namespaces: ["checkout"],
+				}),
+			)
+			assert.deepStrictEqual(limited.permissions, [Policy.SCOPED_READ, "support:join"])
+			assert.deepStrictEqual(clerk.state.roles[1]?.namespaces, ["checkout"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	// What an editor that predates namespaces does: echo the role's permissions, name no namespaces.
+	it.effect("saves a limited role back from its own permission list, keeping the limit", () => {
+		const { layer } = setup([scopedRole(["checkout"])], [])
+		return Effect.gen(function* () {
+			const { role } = yield* (yield* RolesService).update(
+				adminTenant,
+				SCOPED,
+				new UpdateRoleRequest({
+					expectedUpdatedAt: 1,
+					name: "Renamed",
+					description: "",
+					permissions: [Policy.SCOPED_READ, "support:join"],
+				}),
+			)
+			assert.strictEqual(role.name, "Renamed")
+			assert.deepStrictEqual(role.permissions, [Policy.SCOPED_READ, "support:join"])
+			assert.deepStrictEqual(role.namespaces, ["checkout"])
 		}).pipe(Effect.provide(layer))
 	})
 
