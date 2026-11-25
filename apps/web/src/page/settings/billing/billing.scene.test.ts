@@ -243,7 +243,7 @@ describe("billing tab", () => {
 
 	test("only a bought plan or add-on ends the wait, never the trial, the free row or an auto-enabled one", () => {
 		const returning = init(ADMIN, true, true).model
-		const holding = (subscription: Record<string, unknown>) =>
+		const holding = (subscription: { planId: string; addOn?: boolean; autoEnable?: boolean }) =>
 			Schema.decodeSync(BillingCustomer)({
 				id: "org_acme",
 				subscriptions: [{ status: "active", ...subscription }],
