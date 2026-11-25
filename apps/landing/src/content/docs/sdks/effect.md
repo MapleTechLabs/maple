@@ -7,7 +7,7 @@ navLabel: "Effect"
 sdk: "effect"
 ---
 
-`@maple-dev/effect-sdk` is Maple's SDK for Effect applications. It runs on Node.js, Bun, Deno, browsers and Cloudflare Workers, and provides an Effect Layer that sets up OpenTelemetry traces, logs and metrics, fills in resource attributes from the runtime, and sends everything to Maple's ingest for your region. In most setups an ingest key from **Settings → Ingestion** is the only configuration it needs.
+`@maple-dev/effect-sdk` is Maple's SDK for Effect applications. It runs on Node.js, Bun, Deno, browsers and Cloudflare Workers. It provides an Effect Layer that sets up OpenTelemetry traces, logs and metrics, fills in resource attributes from the runtime and sends everything to Maple's ingest for your region. In most setups an ingest key from **Settings → Ingestion** is the only configuration it needs.
 
 ## Install
 
@@ -107,7 +107,11 @@ const TracerLive = Maple.layer({
 })
 ```
 
-A dropped subtree starts unsampled. Outgoing HTTP calls under it send `traceparent` with the sampled flag off, so downstream services that honour the flag drop their part of the trace too. Errors inside the subtree never reach error tracking, so keep real work (processing a job the poll found) outside the dropped span, or drop only the empty polls with `dropSpan`. Effect's span levels give the same result without a Maple option: `Effect.withSpan("JobQueue.poll", { level: "Debug" })` with `Tracer.MinimumTraceLevel` set to `"Info"`.
+A dropped subtree starts unsampled. Outgoing HTTP calls under it send `traceparent` with the sampled flag off, so downstream services that honor the flag drop their part of the trace too.
+
+Errors inside the subtree never reach error tracking. Keep real work (processing a job the poll found) outside the dropped span, or drop only the empty polls with `dropSpan`.
+
+Effect's span levels give the same result without a Maple option: `Effect.withSpan("JobQueue.poll", { level: "Debug" })` with `Tracer.MinimumTraceLevel` set to `"Info"`.
 
 ### Expected failures
 

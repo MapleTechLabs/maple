@@ -163,7 +163,7 @@ Cost shows as unpriced, because Claude's spans carry token counts without a pric
 - **No spans at all.** Register the tracer provider before the first Claude call, and check that `ANTHROPIC_OPEN_TELEMETRY` isn't `false`.
 - **Every request is its own session.** Pass `conversationId` on each request.
 - **The last spans of a script are missing.** Call `sdk.shutdown()` before the process exits.
-- **API spans don't nest under your spans, or tokens are counted twice.** Register the W3C trace context propagator (`NodeSDK` does) and keep the client's `propagation` option on. With `@opentelemetry/auto-instrumentations-node`, set `propagation: false` on the Claude client instead: its undici instrumentation adds a second `traceparent` header.
+- **API spans don't nest under your spans, or tokens are counted twice.** Register the W3C trace context propagator (`NodeSDK` does) and keep the client's `propagation` option on. With `@opentelemetry/auto-instrumentations-node`, set `propagation: false` on the Claude client instead, because that package's undici instrumentation adds a second `traceparent` header.
 - **The Console shows Failing with 401.** The `Authorization` header is wrong, or the key belongs to the other region.
 - **The transcript is empty.** The client or the destination is in metadata-only mode.
 

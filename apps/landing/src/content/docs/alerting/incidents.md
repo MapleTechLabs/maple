@@ -25,7 +25,7 @@ An incident has two statuses, **open** and **resolved**. A resolved incident sta
 
 **Acknowledge**, in the **Inbox** or on the incident's page, marks an open incident as handled. Maple stops reminders and pending escalation chain steps for it, and the **Timeline** records who acknowledged it. An escalation from warning to critical clears the acknowledgement.
 
-**Resolve**, on the incident's page, closes an open incident by hand. Everyone it notified gets the all-clear, which says who resolved it, and its [escalation chain](/docs/alerting/escalation-chains) stops. If the rule still breaches, Maple opens no new incident for that rule and group until a check reads healthy or reads no data, and for a day at most.
+**Resolve**, on the incident's page, closes an open incident by hand. Everyone the incident notified gets the all-clear, which says who resolved it. The incident's [escalation chain](/docs/alerting/escalation-chains) stops. If the rule still breaches, Maple opens no new incident for that rule and group until a check reads healthy or reads no data, and for a day at most.
 
 The **Inbox**, the incident's page and a rule's **History** show how long an incident stood before it was first acknowledged.
 
@@ -48,7 +48,7 @@ If Maple cannot confirm the traffic, the incident stays open. The **Inbox** mark
 | Raw span counts fell while sample-weighted counts did not (sampling changed). | When the signal settles, or after 6 hours.                   |
 | Maple could not verify telemetry for the service.                             | On the next successful check.                                |
 
-If the breach reappears while the incident is waiting, it goes back to firing. If the time limit passes without a breach, Maple resolves the incident and says so in the resolve reason.
+If the breach reappears while the incident is waiting, the incident goes back to firing. If the time limit passes without a breach, Maple resolves the incident and says so in the resolve reason.
 
 ## What a notification contains
 
@@ -63,12 +63,12 @@ The built-in format carries:
 
 A rule's **Message template** replaces the title and body for Slack, Hazel, Discord, Telegram, Google Chat, Microsoft Teams, PagerDuty, incident.io and Linear destinations. Email and webhook destinations use the built-in format. PagerDuty receives a stable `dedup_key` so the trigger and resolve land on the same PagerDuty incident. The webhook payload is in the [alert webhooks reference](/docs/reference/webhooks).
 
-If a delivery fails with an error that can be retried, Maple retries it up to 5 attempts, with a delay that doubles from 1 minute up to 15 minutes.
+If a delivery fails with an error that can be retried, Maple retries it, for up to 5 attempts in total, with a delay that doubles from 1 minute up to 15 minutes.
 
 ## Where to see incidents
 
 - **Alerts → Inbox.** Lists every open incident with its severity, rule and group, the current value against the threshold, and how long it has been open. Below it, **Last 24 hours** charts recent incidents per rule, and **Blind spots** lists rules that cannot fire, notify or keep up: **Error**, **Stale**, **No data**, **Slowed down**, **Unrouted** and **Delivery**. When nothing is firing, **Headroom** shows how close each rule is to its threshold.
-- **The incident's page.** Click an incident. It charts the signal, shows a **Timeline** of the incident and its notifications, and links to the related traces, logs and error issue.
+- **The incident's page.** Click an incident. The page charts the signal, shows a **Timeline** of the incident and its notifications, and links to the related traces, logs and error issue.
 - **The rule's page.** Click a rule under **Alerts → Rules**. The list filters rules by **Firing**, **Blind**, **Healthy** and **Disabled**. The **Overview** tab charts the signal with the threshold and lists recent checks. The **History** tab lists past incidents, filterable by **All**, **Fired** and **Resolved**, with **Total triggered**, **Avg resolution** and **Top contributors**.
 - **MCP.** `list_alert_incidents` and `get_incident_timeline` on the [MCP server](/docs/reference/mcp) return the same data to an AI assistant.
 

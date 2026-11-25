@@ -60,7 +60,7 @@ Destinations belong to the Cloudflare account, not to one Worker. Every Worker i
 
 ## 2. Point your Worker at them
 
-Add an `observability` block to the Worker's Wrangler config. The names must match the destination names exactly.
+Add an `observability` block to the Worker's Wrangler config. The names in `destinations` must match the destination names exactly.
 
 ```jsonc
 // wrangler.jsonc

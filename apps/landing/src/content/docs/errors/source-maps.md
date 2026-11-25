@@ -33,7 +33,7 @@ Maple matches each frame to an uploaded map in one of two ways:
 - **By debug id** (recommended). The Vite plugin or `maple sourcemaps inject` writes a unique id into each built JS file and its map. When the file runs, it registers that id, and [`@maple-dev/browser`](/docs/frontend) 0.17.0 or later sends the ids of the scripts in an error's stack as `maple.exception.debug_ids` on the exception event. Maple then picks the map by id, whatever URL the file was served from. Ids written by Sentry's debug id tooling work too.
 - **By release and path**. A map uploaded with a service and release is matched to frames from that `service.name` and `service.version` whose URL path ends with the map's file path. `assets/app.js` matches `https://cdn.example.com/static/assets/app.js`, but `app.js` does not match `assets/myapp.js`. Use this when your telemetry reports no debug ids.
 
-Release matching needs `service.version` on your telemetry to equal the release you upload under. The CLI defaults the release to the build's git commit, so either set `service.version` to that commit or pass the same value to both.
+Release matching needs `service.version` on your telemetry to equal the release you upload under. The CLI defaults the release to the build's git commit. Either set `service.version` to that commit, or use one value of your own for both the release and `service.version`.
 
 ## Upload with the Vite plugin
 
@@ -88,7 +88,17 @@ Without a key, or without `service`, the plugin logs a warning and keeps the map
 | `mapsDir`      | Where the maps go, relative to the Vite root.                                                                                     |
 | `environments` | The Vite environments whose output is processed. Defaults to `["client"]`, the browser bundle.                                    |
 
-Maps upload four at a time. A request that gets a 429, a 5xx or no response is retried up to 4 times. The plugin skips a map with a warning when it is over 10 MiB, when it is an index map (one with `sections`), when it maps no sources, when `matchBy: "release"` is set without a `release`, or when its file has no debug id and no `release` is set. `failOnError` covers failed uploads and maps that cannot be read. A missing key or `service`, and skipped maps, only warn.
+Maps upload four at a time. A request that gets a 429, a 5xx or no response is retried up to 4 times.
+
+The plugin skips a map with a warning when:
+
+- The map is over 10 MiB.
+- The map is an index map (one with `sections`).
+- The map maps no sources.
+- `matchBy: "release"` is set without a `release`.
+- The map's file has no debug id and no `release` is set.
+
+`failOnError` covers failed uploads and maps that cannot be read. A missing key or `service`, and skipped maps, only warn.
 
 On the first build with the plugin, a chunk whose hashed name did not change gets new contents, because the debug id goes in after the file is named. A browser or CDN that cached that chunk may serve the old copy for that one release. Later builds are deterministic.
 
@@ -121,7 +131,14 @@ Use the [Maple CLI](/docs/reference/cli) 0.6.0 or later in your CI, after the bu
 | `--release`    | The `service.version` your app reports. Defaults to `git rev-parse HEAD` in the build directory when `--service` is set.                            |
 | `--url-prefix` | The path the files are served under, prepended to each file's path in the build directory. Set it when `dist/app.js` is served as `/static/app.js`. |
 
-The command uploads one map per JS file, four at a time, and prints each one. It skips a map with a warning when it is over 10 MiB, when it is an index map (one with `sections`), when it lives outside the build directory, or when it has no debug id and no `--service` and `--release` were given. A run that uploads nothing, or where any upload fails, exits non-zero so CI stops.
+The command uploads one map per JS file, four at a time, and prints each one. It skips a map with a warning when:
+
+- The map is over 10 MiB.
+- The map is an index map (one with `sections`).
+- The map lives outside the build directory.
+- The map has no debug id and no `--service` and `--release` were given.
+
+A run that uploads nothing, or where any upload fails, exits non-zero so CI stops.
 
 ## Upload with Alchemy
 
@@ -185,7 +202,7 @@ curl -X POST "https://api.maple.dev/v2/source_maps?minified_path=assets/index-Bx
 ```
 
 - A map must be a version 3 source map with a non-empty `sources` array. Index maps (`sections`) are refused with a 400; emit a regular map.
-- Maps over 10 MiB are refused with a 413, the largest map Maple can symbolicate with.
+- Maps over 10 MiB are refused with a 413. 10 MiB is the largest map Maple can symbolicate with.
 - Uploading a map with the same debug id replaces it. Uploading a map without a debug id for the same service, version and path replaces it too.
 
 `GET /v2/source_maps` lists your maps, filtered by `service`, `version` or `debug_id`. `DELETE /v2/source_maps/{id}` deletes one. Any member can list; uploading and deleting take an engineer or admin and the `source_maps:write` scope. See the [API reference](/docs/reference/api).
@@ -198,7 +215,9 @@ Frames count as library code when their original path is under `node_modules/`, 
 
 ## Grouping on mapped frames
 
-When an organization has source maps, a browser error that groups on its stack frames uses the mapped frames: each in-app frame's original file and function, never a line or column, so a fix elsewhere in the file does not split the issue. A frame with no recovered function name uses its file plus the text of its original source line. A stack that maps nothing groups as before, and [`maple.fingerprint`](/docs/errors/overview#set-the-grouping-yourself) and your organization's grouping rules still come first.
+When an organization has source maps, a browser error that groups on its stack frames uses the mapped frames. Each in-app frame counts by its original file and function, never a line or column, so a fix elsewhere in the file does not split the issue. A frame with no recovered function name uses its file plus the text of its original source line.
+
+A stack that maps nothing groups as before. [`maple.fingerprint`](/docs/errors/overview#set-the-grouping-yourself) and your organization's grouping rules still come first.
 
 - The first map your organization uploads re-groups its browser errors once, as they recur. Issues that deploys had split can then join one issue.
 - An error whose stack carries a debug id waits up to 1 hour from its first sighting for its map before it is grouped. Upload maps in the same pipeline step as the deploy, so they arrive before the first error.

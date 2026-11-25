@@ -52,7 +52,7 @@ Import `./maple` first in your client entry, before the app renders and before o
 
 ## Connect browser traces to your backend
 
-Each request span sends a W3C `traceparent` header, and your backend's span joins the same trace. Same-origin requests always send it; a request to another origin only when its URL matches `propagateTraceHeaderCorsUrls`. That API must allow the header in its CORS preflight:
+Each request span sends a W3C `traceparent` header, and your backend's span joins the same trace. Same-origin requests always send the header. A request to another origin sends it only when its URL matches `propagateTraceHeaderCorsUrls`. That API must allow the header in its CORS preflight:
 
 ```http
 Access-Control-Allow-Headers: content-type, authorization, traceparent, tracestate
@@ -64,7 +64,7 @@ List only your own APIs: third parties would receive your trace ids, and many re
 
 Three calls turn one route change into one trace:
 
-- `MapleBrowser.startNavigation(path)` opens a span. The first call in a page is `pageload`, later calls are `navigate`. A navigation still open is ended with `maple.navigation.interrupted: true` and keeps the generic name.
+- `MapleBrowser.startNavigation(path)` opens a span. The first call in a page is `pageload`, later calls are `navigate`. If a navigation is still open, the call ends it with `maple.navigation.interrupted: true`, and that span keeps the generic name.
 - `MapleBrowser.traced(name, fn, { isFailure })` runs a route's data loading in a child span. A throw marks the span `Error` and is rethrown, unless `isFailure` returns `false`.
 - `MapleBrowser.endNavigation(template)` renames the span to `navigate /projects/:id` and ends it.
 
@@ -147,7 +147,7 @@ What you get:
 
 ### Using a router library
 
-Look for these in its API and make the same calls:
+Look for these in the library's API and make the same calls:
 
 - **Navigation start** (`beforeNavigate`, `beforeEach`, `NavigationStart`, `useBeforeLeave`): `startNavigation(path)`. If the router emits nothing for the first route, call `startNavigation(location.pathname)` after `init`. Skip redirects the router starts while a navigation is open, or the first span ends as interrupted.
 - **Navigation end** (`afterNavigate`, `afterEach`, `NavigationEnd`, a router state going from loading to idle), including failed and cancelled navigations: `endNavigation(template)`.
@@ -173,7 +173,7 @@ async function loadUser({ id }: Params) {
 }
 ```
 
-Install it yourself even though the SDK depends on it: strict package managers like pnpm don't resolve the SDK's copy for you.
+Install `@opentelemetry/api` yourself even though the SDK depends on it: strict package managers like pnpm don't resolve the SDK's copy for you.
 
 ## Multi-page apps
 
@@ -197,7 +197,7 @@ Bundle it with your asset pipeline, for example `npx esbuild assets/maple.ts --b
 
 ### Join the server's trace
 
-The page load joins the trace of the request that rendered the page when the response carries a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag. Maple has no server helper for this: set up OpenTelemetry on the server ([Instrument your application](/docs/instrumentation)), then write the active span's context into the response. In Node.js:
+The page load joins the trace of the request that rendered the page when the response carries a `Server-Timing: traceparent;desc="…"` entry or the page has a `<meta name="traceparent">` tag. Maple has no server helper for this: set up OpenTelemetry on the server ([Instrument your application](/docs/instrumentation)), then write the active span's context into the response. In Node.js:
 
 ```bash
 npm install @opentelemetry/api

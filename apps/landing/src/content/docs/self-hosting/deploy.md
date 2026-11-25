@@ -42,10 +42,10 @@ Then run `docker compose up -d`. On a machine reachable from the internet, chang
 
 Create a service from the image `ghcr.io/mapletechlabs/maple:latest` and give it:
 
-- a persistent volume mounted at `/data`;
-- the two secrets as environment variables;
-- an HTTP health check on `/health`, which needs no credentials;
-- exactly one instance. The store is a local database, so a second replica would not share it.
+- A persistent volume mounted at `/data`.
+- The two secrets as environment variables.
+- An HTTP health check on `/health`, which needs no credentials.
+- Exactly one instance. The store is a local database, so a second replica would not share it.
 
 The server listens on `$PORT` when the platform sets one, and on `4318` otherwise. Platforms that terminate TLS for you work as is: the session cookie is marked `Secure` when the request arrives over HTTPS, and the dashboard works on whatever hostname the platform assigns.
 

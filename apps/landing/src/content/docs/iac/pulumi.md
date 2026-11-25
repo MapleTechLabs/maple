@@ -7,7 +7,7 @@ icon: "pulumi"
 navLabel: "Pulumi"
 ---
 
-The Maple provider for [Pulumi](https://www.pulumi.com) manages Maple configuration from a Pulumi program: dashboards, alert rules and their destinations, uptime monitors, scrape targets and API keys. It is the [Terraform provider](/docs/iac/terraform) packaged for Pulumi, so it has the same resources, the same validation and talks to the same public [v2 API](/docs/reference/api).
+The Maple provider for [Pulumi](https://www.pulumi.com) manages Maple configuration from a Pulumi program: dashboards, alert rules and their destinations, uptime monitors, scrape targets and API keys. It is the [Terraform provider](/docs/iac/terraform) packaged for Pulumi, so it has the same resources and the same validation, and it talks to the same public [v2 API](/docs/reference/api).
 
 |            |                                                                                 |
 | ---------- | ------------------------------------------------------------------------------- |
@@ -130,7 +130,7 @@ The rule shows up under **Alerts** in Maple. Change it in the program and run `p
 | `maple.ApiKey`           | [`maple_api_key`](/docs/iac/terraform-resources#maple_api_key)                     |
 | `maple.getIngestKeys`    | [`maple_ingest_keys`](/docs/iac/terraform-resources#maple_ingest_keys) (function)  |
 
-Every field is the Terraform attribute in `camelCase`: `signal_type` is `signalType`, `destination_ids` is `destinationIds`. The [Terraform resource reference](/docs/iac/terraform-resources) lists each one, which are required and which take Maple's default when left out. Your editor shows the same through the SDK's types.
+Every field is the Terraform attribute in `camelCase`: `signal_type` is `signalType`, `destination_ids` is `destinationIds`. The [Terraform resource reference](/docs/iac/terraform-resources) lists each field, which fields are required and which take Maple's default when left out. Your editor shows the same through the SDK's types.
 
 ## Bring existing configuration under Pulumi
 
@@ -157,7 +157,7 @@ new maple.UptimeMonitor("api", {
 })
 ```
 
-A value Maple fills in that you did not write, such as an HTTP monitor's `method: "GET"`, is not a change. A value you wrote that is different in Maple is, and the next `pulumi up` puts yours back.
+A value Maple fills in that you did not write, such as an HTTP monitor's `method: "GET"`, is not a change. A value you wrote that is different in Maple is a change, and the next `pulumi up` puts yours back.
 
 The quickest way to get a dashboard's widget documents is to build it in Maple and import it.
 
@@ -177,7 +177,7 @@ Reading ingest keys needs a key created by an org admin.
 
 ## Rotate API keys
 
-Set `rotate` on an API key to any value and change it to roll the key. Pulumi creates a replacement with the same name and scopes first, then revokes the old key, so anything that reads the key's `secret` picks up the new one in the same `pulumi up`:
+Set `rotate` on an API key to any value. Change the value to roll the key. Pulumi creates a replacement with the same name and scopes first, then revokes the old key, so anything that reads the key's `secret` picks up the new one in the same `pulumi up`:
 
 ```typescript
 const grafana = new maple.ApiKey("grafana", {
@@ -189,7 +189,7 @@ const grafana = new maple.ApiKey("grafana", {
 export const grafanaKey = grafana.secret
 ```
 
-This is the one difference from Terraform, which rolls the key in place: Pulumi cannot change a resource's ID during an update, so a rotation is a replacement. Changing any other field of a key, such as its scopes, replaces it too.
+Rotation is the one difference from Terraform, which rolls the key in place. Pulumi cannot change a resource's ID during an update, so a rotation is a replacement. Changing any other field of a key, such as its scopes, replaces it too.
 
 ## Removing things
 

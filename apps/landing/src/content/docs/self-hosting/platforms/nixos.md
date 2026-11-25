@@ -59,7 +59,7 @@ Each secret file holds one of the [two secrets](/docs/self-hosting#the-two-secre
 | `onDirtyStore`       | automatic   | After an unclean stop: restore the last checkpoint once one exists, start fresh before that (as the image) |
 | `extraArgs`          | `[]`        | Extra arguments for `maple start`                                                                          |
 
-Telemetry and checkpoints live in `/var/lib/maple`, owned by the `maple` system user. Back it up as described in [Operations](/docs/self-hosting/operations), and run commands that change the store as that user:
+Telemetry and checkpoints live in `/var/lib/maple`, owned by the `maple` system user. Back up that directory as described in [Operations](/docs/self-hosting/operations), and run commands that change the store as that user:
 
 ```bash
 sudo -u maple HOME=/var/lib/maple maple checkpoint
@@ -69,8 +69,10 @@ Read-only commands such as `maple services` can run as any user with `MAPLE_LOCA
 
 ## Upgrades
 
-The flake follows Maple releases. Run `nix flake update maple` and rebuild. `maple update` is disabled in a Nix install. Roll back with your previous generation like any other NixOS change, but note that a store opened by a newer version may refuse to start on an older one.
+The flake follows Maple releases. Run `nix flake update maple` and rebuild. `maple update` is disabled in a Nix install. Roll back with your previous generation like any other NixOS change. A store opened by a newer version may refuse to start on an older one.
 
 ## Without NixOS
 
-`nix run github:MapleTechLabs/maple -- start` runs Maple Local on any Linux machine with Nix, and on Apple Silicon macOS when the pinned release has a bundle for it. Maple's license is the [FSL](https://fsl.software), which nixpkgs counts as unfree: the flake's own package builds without any setting, but the `overlays.default` overlay needs `maple` allowed in your `allowUnfreePredicate`.
+`nix run github:MapleTechLabs/maple -- start` runs Maple Local on any Linux machine with Nix, and on Apple Silicon macOS when the pinned release has a bundle for it.
+
+Maple's license is the [FSL](https://fsl.software), which nixpkgs counts as unfree. The flake's own package builds without any setting, but the `overlays.default` overlay needs `maple` allowed in your `allowUnfreePredicate`.

@@ -6,13 +6,21 @@ order: 11
 icon: "vercel"
 ---
 
-The Vercel integration connects one Vercel team to Maple with an access token. Maple creates three drains on the team: a log drain for request, function, build and edge logs, a trace drain for deployment traces, and an AI Gateway drain for model usage and cost. The data appears under **Infrastructure → Vercel**, in the [logs](/docs/explore/logs) and [traces](/docs/explore/traces) explorers, and AI Gateway requests also appear in Agent Sessions. You can also turn on drains for Speed Insights (Core Web Vitals), Web Analytics (page views and events) and the team's audit log. Maple also keeps a list of the team's projects and recent deployments.
+The Vercel integration connects one Vercel team to Maple with an access token. Maple creates three drains on the team:
+
+- A log drain for request, function, build and edge logs.
+- A trace drain for deployment traces.
+- An AI Gateway drain for model usage and cost.
+
+The data appears under **Infrastructure → Vercel** and in the [logs](/docs/explore/logs) and [traces](/docs/explore/traces) explorers. AI Gateway requests also appear in **Agent sessions**.
+
+You can also turn on drains for Speed Insights (Core Web Vitals), Web Analytics (page views and events) and the team's audit log. Maple also keeps a list of the team's projects and recent deployments.
 
 ## Prerequisites
 
 - The Vercel team is on the Pro or Enterprise plan. Vercel offers drains only on those plans.
 - A Vercel access token, created at [vercel.com/account/settings/tokens](https://vercel.com/account/settings/tokens). Scope it to the team you want to connect and set an expiry date.
-- You are an admin of the Maple organization.
+- You are an admin or engineer in the Maple organization.
 - Optional drains have their own requirements: Speed Insights needs Speed Insights Plus on the project, Web Analytics needs Web Analytics enabled on the project, and the audit log needs an Enterprise team.
 
 ## Connect
@@ -22,7 +30,7 @@ The Vercel integration connects one Vercel team to Maple with an access token. M
 3. Pick the team. Maple skips this step when the token can see only one team.
 4. Choose **All projects** or pick the projects to forward.
 5. Set the sampling rate. The default, 100%, forwards every log and trace.
-6. Switch logs, traces and AI Gateway on or off. Speed Insights, Web Analytics and the audit log are off by default; switch on the ones you want.
+6. Switch logs, traces and AI Gateway on or off. Speed Insights, Web Analytics and the audit log are off by default. Switch on the ones you want.
 7. Click **Connect**.
 
 Maple creates the drains right away. The first logs arrive with the next request to a forwarded project.
@@ -40,9 +48,13 @@ Maple adds one drain per switch that is on:
 | `Maple Web Analytics`  | One event per page view and per custom event                  | Off     |
 | `Maple audit log`      | One event per change on the team, for the whole team          | Off     |
 
-Every drain sends to Maple's ingest endpoint and authenticates with your organization's ingest key. If you rotate the ingest key, Maple updates the drains. The sampling rate applies to logs and traces only; the other drains forward every event, so spend totals, Web Vitals percentiles and visitor counts stay exact. The audit log drain always covers the whole team, whatever projects you pick.
+Every drain sends to Maple's ingest endpoint and authenticates with your organization's ingest key. If you rotate the ingest key, Maple updates the drains.
 
-If Vercel refuses an optional drain, for example the audit log on a team that is not on Enterprise, Maple marks only that drain as refused, shows Vercel's reason, and keeps the other drains running. It tries again on each sync. When you change projects, sampling, or the switches in Maple, Maple updates the drains on Vercel immediately. You can see them under **Team Settings → Drains** on Vercel; edit them from Maple, not from Vercel.
+The sampling rate applies to logs and traces only. The other drains forward every event, so spend totals, Web Vitals percentiles and visitor counts stay exact. The audit log drain always covers the whole team, whatever projects you pick.
+
+If Vercel refuses an optional drain, for example the audit log on a team that is not on Enterprise, Maple marks only that drain as refused, shows Vercel's reason and keeps the other drains running. Maple tries again on each sync.
+
+When you change projects, sampling or the switches in Maple, Maple updates the drains on Vercel immediately. You can see the drains under **Team Settings → Drains** on Vercel. Edit them from Maple, not from Vercel.
 
 ## Cost
 
@@ -68,7 +80,9 @@ Request logs carry `http.request.method`, `url.path` (and `url.query` when the r
 
 ### Traces
 
-Vercel sends deployment traces with the `vercel.projectId` and `vercel.deploymentId` resource attributes. Its platform spans come in two services: `vercel.edge-network` for routing and caching, and `vercel.serverless-runtime` for functions. Maple moves each function invocation (`Invoke Function`) and its outbound calls to a service named after the project, the same name its logs use, so every project is its own service on the service map with its own dependencies. Cold-start steps (`Start VM`, `Spawn Node.js`, `Init User Code`) and `waitUntil` stay under `vercel.serverless-runtime`. Every function span keeps `maple_vercel.platform_service = vercel.serverless-runtime` as a resource attribute.
+Vercel sends deployment traces with the `vercel.projectId` and `vercel.deploymentId` resource attributes. Its platform spans come in two services: `vercel.edge-network` for routing and caching, and `vercel.serverless-runtime` for functions.
+
+Maple moves each function invocation (`Invoke Function`) and its outbound calls to a service named after the project, the same name its logs use. Every project is then its own service on the service map with its own dependencies. Cold-start steps (`Start VM`, `Spawn Node.js`, `Init User Code`) and `waitUntil` stay under `vercel.serverless-runtime`. Every function span keeps `maple_vercel.platform_service = vercel.serverless-runtime` as a resource attribute.
 
 ### Speed Insights and Web Analytics
 
@@ -79,20 +93,32 @@ These drains arrive as logs, each under its own `service.name`: `vercel-speed-in
 
 ### Audit log
 
-Audit events do not arrive as logs. They go to the audit log in the Security section, which only organization admins can read: an audit event names a person, their email and their IP address, and every member can read logs.
+Audit events do not arrive as logs. They go to the audit log in the Security section, which only organization admins can read. The reason is that an audit event names a person, their email and their IP address, and every member can read logs.
 
-Each event shows who acted (name, email and id), the action as Vercel names it, such as `drain-created`, what it was done to, the time, the IP address and user agent, and the event's payload as Vercel sent it. A payload over 32 KB is not kept. Maple accepts audit events only from the drain it creates on your team; a drain you add by hand on Vercel is refused.
+Each event shows:
+
+- Who acted (name, email and id).
+- The action as Vercel names it, such as `drain-created`, and what it was done to.
+- The time, the IP address and the user agent.
+- The event's payload as Vercel sent it. A payload over 32 KB is not kept.
+
+Maple accepts audit events only from the drain it creates on your team. A drain you add by hand on Vercel is refused.
 
 A self-hosted gateway stores audit events in the audit log only when it writes to the warehouse itself and `INGEST_AUDIT_TRAIL_ENABLED` is `true`. Without the setting, or when the gateway forwards telemetry to a collector, audit events arrive as logs under the `vercel-audit-log` service, where every member can read them.
 
 ## AI Gateway
 
-Requests that go through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) arrive through the AI Gateway drain. Maple stores each request as a trace under the service `ai-gateway`: the root span carries the model, the provider, input, cached and output tokens, time to first token, and the cost in USD (`vercel.ai_gateway.cost.total`), and each provider attempt is a child span, so retries and failovers show. Vercel sends no prompt or completion content.
+Requests that go through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) arrive through the AI Gateway drain. Maple stores each request as a trace under the service `ai-gateway`:
+
+- The root span carries the model, the provider, input, cached and output tokens, time to first token, and the cost in USD (`vercel.ai_gateway.cost.total`).
+- Each provider attempt is a child span, so retries and failovers show.
+
+Vercel sends no prompt or completion content.
 
 AI Gateway data shows in two places:
 
 - **Infrastructure → Vercel**: spend per project, with a **No project** row for requests made outside one (an API key used elsewhere). A project's **AI Gateway** tab breaks its spend, requests, tokens and latency down by model.
-- **Agent Sessions**, with the vendor **Vercel AI Gateway**. Each gateway request is its own session.
+- **Agent sessions**, with the vendor **Vercel AI Gateway**. Each gateway request is its own session.
 
 ## Richer traces with `@vercel/otel`
 
@@ -123,7 +149,7 @@ The trace drain forwards these spans to Maple. You do not need to configure an e
 
 - **Service map**: each project with its outbound calls, from its function spans, and an edge from `vercel.edge-network` to every project it invokes. A project's Infrastructure tab links to its Vercel project page.
 - [Logs](/docs/explore/logs): filter by `service.name` (the project name) or `vercel.project.id`. Speed Insights and Web Analytics are under their own `service.name`.
-- [Traces](/docs/explore/traces): your `@vercel/otel` service, the deployment traces, and `ai-gateway`.
+- [Traces](/docs/explore/traces): your `@vercel/otel` service, the deployment traces and `ai-gateway`.
 - **Dashboards**: the **Vercel** template charts requests, cache, errors and AI Gateway usage.
 
 ## Troubleshooting

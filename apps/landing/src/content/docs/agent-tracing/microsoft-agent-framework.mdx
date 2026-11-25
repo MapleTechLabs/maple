@@ -130,7 +130,7 @@ Maple groups turns into a session by `gen_ai.conversation.id`.
 <LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "csharp", label: ".NET" }]}>
 <LanguageTab id="python">
 
-This processor sets it on every span started inside a `conversation()` block:
+This processor sets `gen_ai.conversation.id` on every span started inside a `conversation()` block:
 
 ```py
 # maple_tracing.py
@@ -159,7 +159,7 @@ def conversation(conversation_id: str):
         _conversation_id.reset(token)
 ```
 
-Wrap each request in it. Use `session.session_id` as the id, or create the session with your own chat id: `agent.create_session(session_id=chat_id)`.
+Wrap each request in a `conversation()` block. Use `session.session_id` as the id, or create the session with your own chat id: `agent.create_session(session_id=chat_id)`.
 
 ```py
 from agent_framework import Agent, AgentSession
@@ -173,12 +173,14 @@ async def handle_message(agent: Agent, session: AgentSession, text: str) -> str:
     return response.text
 ```
 
-When streaming, keep the whole `async for` loop inside the block. Don't pass the `conversation_id` chat option instead; it turns off MAF's in-memory history.
+When streaming, keep the whole `async for` loop inside the block.
+
+Don't pass the `conversation_id` chat option instead. That option turns off MAF's in-memory history.
 
 </LanguageTab>
 <LanguageTab id="csharp">
 
-In .NET, use an `Activity` processor with an `AsyncLocal` and set it before `RunAsync`:
+In .NET, use an `Activity` processor with an `AsyncLocal`, and set the `AsyncLocal` before `RunAsync`:
 
 ```csharp
 using System.Diagnostics;
@@ -281,11 +283,15 @@ else:
 trace.set_tracer_provider(provider)
 ```
 
-Wrap each turn in `with conversation(thread.id):`. Pass messages positionally, as in `await agent.get_response(text, thread=thread)`; the `messages=` keyword records an empty input. Only `ChatCompletionAgent` calls produce a transcript; calling the kernel directly doesn't.
+Wrap each turn in `with conversation(thread.id):`.
+
+Pass messages positionally, as in `await agent.get_response(text, thread=thread)`. The `messages=` keyword records an empty input.
+
+Only `ChatCompletionAgent` calls produce a transcript. Calling the kernel directly doesn't.
 
 ## Verify
 
-Run a conversation of two or three turns where one turn calls a tool. Within about a minute, **Agent sessions** shows one session for it, labeled **Microsoft Agent Framework** or **Semantic Kernel**, with one turn per `agent.run()`, the transcript, and tool calls with their arguments and results. Cost shows as unpriced; MAF doesn't emit cost.
+Run a conversation of two or three turns where one turn calls a tool. Within about a minute, **Agent sessions** shows one session for the conversation, labeled **Microsoft Agent Framework** or **Semantic Kernel**, with one turn per `agent.run()`, the transcript, and tool calls with their arguments and results. Cost shows as unpriced, because MAF doesn't emit cost.
 
 ## Troubleshooting
 

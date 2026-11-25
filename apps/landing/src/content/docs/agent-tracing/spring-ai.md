@@ -74,7 +74,9 @@ public static void main(String[] args) {
 
 Spring Boot doesn't read `.env` files, so set `MAPLE_INGEST_KEY` in the environment that starts the JVM.
 
-For an EU organization, use `https://ingest.eu.maple.dev`. This property takes the full URL, so keep `/v1/traces` on the end. To skip metrics, replace the two metrics lines with `management.otlp.metrics.export.enabled=false`.
+For an EU organization, use `https://ingest.eu.maple.dev`. The tracing `endpoint` property takes the full URL, so keep `/v1/traces` on the end.
+
+To skip metrics, replace the two metrics lines with `management.otlp.metrics.export.enabled=false`.
 
 Keep `management.tracing.sampling.probability=1.0`. Boot's default of `0.1` silently drops nine turns out of ten.
 
@@ -184,7 +186,9 @@ public class MapleAiObservationConfig {
 
 If your app already defines a `ToolExecutionExceptionProcessor`, add the `error()` call to it instead of adding a second bean.
 
-The transcript comes from `maple.ai.capture-content=true`. Spring AI's own `log-prompt` and `log-completion` settings only write to the application log. Set it to `false` to keep message and tool content out of Maple; everything else still shows up, with an empty transcript. A failed tool's exception message is still sent.
+The transcript comes from `maple.ai.capture-content=true`. Spring AI's own `log-prompt` and `log-completion` settings only write to the application log.
+
+Set `maple.ai.capture-content` to `false` to keep message and tool content out of Maple. Everything else still shows up, with an empty transcript. A failed tool's exception message is still sent.
 
 ## Group turns into one session
 
@@ -221,7 +225,9 @@ public class ChatService {
 }
 ```
 
-Use the conversation id your app already stores. Set it on the request, as above, and never with `defaultAdvisors` on the builder, which puts every user in one session. The parameter works without a chat memory advisor. Sub-agent calls inside tools don't need it.
+Use the conversation id your app already stores. Set it on the request, as above. Never set it with `defaultAdvisors` on the builder, which puts every user in one session.
+
+The parameter works without a chat memory advisor. Sub-agent calls inside tools don't need it.
 
 ## Exit command-line apps explicitly
 

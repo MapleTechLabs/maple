@@ -72,10 +72,15 @@ Built-in rules pick their services and environments here:
 
 ### SQL
 
-**SQL** (`raw_query`) runs your own ClickHouse SQL. The query must include `$__orgFilter` and a `$__timeFilter(...)` on the time column, and return a time bucket and a numeric `value`. **Reduce each window by** turns the buckets in the window into one value: **Last bucket**, **Sum**, **Average**, **Minimum** or **Maximum**.
+**SQL** (`raw_query`) runs your own ClickHouse SQL. The query must:
+
+- Include `$__orgFilter` and a `$__timeFilter(...)` on the time column.
+- Return a time bucket and a numeric `value`.
+
+**Reduce each window by** turns the buckets in the window into one value: **Last bucket**, **Sum**, **Average**, **Minimum** or **Maximum**.
 
 - To evaluate several groups, return a `group` column.
-- Return a `samples` column with the number of events behind each row. **Minimum samples** sums it. Without it, every row counts as one sample, so the minimum counts buckets rather than events.
+- Return a `samples` column with the number of events behind each row. **Minimum samples** sums that column. Without a `samples` column, every row counts as one sample, so the minimum counts buckets rather than events.
 - A query that returns no rows is a no-data check.
 
 The editor times the query as you write it and shows **Query time** against the limit of the check interval. See the [SQL reference](/docs/reference/sql) for the macros, and [Query time limits](/docs/alerting/rule-evaluation#query-time-limits) for the limits.
@@ -84,7 +89,11 @@ For **Query builder** and **SQL** rules the query carries its own filters, so th
 
 ### Anomaly
 
-**Anomaly** (`anomaly`) has no query and no threshold. It notifies when Maple's [anomaly detection](/docs/alerting/anomalies) opens an anomaly in the rule's scope: **Services**, **Environment** and **Signals** (**Error rate**, **p95 latency**, **Throughput**, **Error spikes**, **Log volume**). An empty field covers every value, but a new rule needs at least one of them set. The organization's default anomaly rule already covers everything, and the most specific rule handles each anomaly. The chart and the **Alert when** card are not shown for this mode.
+**Anomaly** (`anomaly`) has no query and no threshold. It notifies when Maple's [anomaly detection](/docs/alerting/anomalies) opens an anomaly in the rule's scope. The scope has three fields: **Services**, **Environment** and **Signals** (**Error rate**, **p95 latency**, **Throughput**, **Error spikes**, **Log volume**).
+
+An empty field covers every value, but a new rule needs at least one of the three fields set. The organization's default anomaly rule already covers everything, and the most specific rule handles each anomaly.
+
+The chart and the **Alert when** card are not shown for this mode.
 
 ## Alert when
 
@@ -94,15 +103,19 @@ The chart above the cards replays the rule over a past range. It shows the value
 
 The **Alert when** card has three parts:
 
-- **Thresholds** reads as a sentence: the **Severity** (Warning or Critical), then **when the value**, the condition and the value. The condition is one of: is above, is at or above, is below, is at or below, equals, is not, is between or is outside. The last two use **From** and **To**. The above and below conditions also take an optional recovery value (**Recovers below** or **Recovers above**). With one set, the incident clears only once the signal crosses back over it.
+- **Thresholds** reads as a sentence: the **Severity** (Warning or Critical), then **when the value**, the condition and the value.
+    - The condition is one of: is above, is at or above, is below, is at or below, equals, is not, is between or is outside. The last two use **From** and **To**.
+    - The above and below conditions also take an optional recovery value (**Recovers below** or **Recovers above**). With a recovery value set, the incident clears only once the signal crosses back over that value.
 - **How it is checked** sets the window, how many breaches open an incident, the sample floor and the check interval.
 - **After it fires** sets when the incident resolves, how often it reminds, and what an empty window means.
 
 ### Warning and critical tiers
 
-A rule starts with one tier. On a **Warning** rule, **Add critical tier** adds a second, stricter threshold. An open incident escalates to **Critical** when the value crosses it, and drops back to **Warning** when it recovers. Each tier has its own recovery value and its own destinations, and a critical incident also notifies the warning tier's destinations.
+A rule starts with one tier. On a **Warning** rule, **Add critical tier** adds a second, stricter threshold. An open incident escalates to **Critical** when the value crosses the critical threshold, and drops back to **Warning** when the value recovers.
 
-Tiers work with the above and below conditions. Equals, is not, is between and is outside have one tier, and saving drops a critical tier.
+Each tier has its own recovery value and its own destinations. A critical incident also notifies the warning tier's destinations.
+
+Tiers work with the above and below conditions. Equals, is not, is between and is outside have one tier, and saving a rule with one of those conditions drops its critical tier.
 
 ### Fields and defaults
 
@@ -136,7 +149,7 @@ Click **Add destination** to attach an existing destination, or create one from 
 
 **Send test** delivers a test notification for this rule to the selected destinations.
 
-**Message template** customizes the **Title** and **Body (Markdown)** of Slack, Hazel, Discord, Telegram, Google Chat, Microsoft Teams, PagerDuty, incident.io and Linear notifications with `{{ variable }}` substitution, for example `{{ rule.name }}`, `{{ value }}` or `{{ links.app }}`. Leave it blank for the built-in format. Email and webhook destinations always use the built-in format.
+**Message template** customizes the **Title** and **Body (Markdown)** of a notification with `{{ variable }}` substitution, for example `{{ rule.name }}`, `{{ value }}` or `{{ links.app }}`. It applies to Slack, Hazel, Discord, Telegram, Google Chat, Microsoft Teams, PagerDuty, incident.io and Linear notifications. Leave it blank for the built-in format. Email and webhook destinations always use the built-in format.
 
 ## Name
 
@@ -177,7 +190,7 @@ For a warning and a critical tier, send `thresholds` in place of `severity`, `th
 ]
 ```
 
-To preview a rule over a past range, `POST /v2/alerts/rules/preview` with the rule under `rule` and the range in `start_time` and `end_time`. It needs the `alerts:read` scope and sends nothing.
+To preview a rule over a past range, `POST /v2/alerts/rules/preview` with the rule under `rule` and the range in `start_time` and `end_time`. The preview needs the `alerts:read` scope and sends no notification.
 
 ```bash
 curl -X POST https://api.maple.dev/v2/alerts/rules/preview \
@@ -205,9 +218,11 @@ The response lists the value and status of each window per group in `series`, an
 
 ## Audit log detections
 
-A **detection** is an alert rule that counts audit events. It fires when a set number of matching events arrive within a window, for example 5 or more failed sign-ins in 10 minutes. It is not one of the query modes above: organization admins create, edit and delete detections under **Security → Detections**, and the alert rules API does not create or change them.
+A **detection** is an alert rule that counts audit events. It fires when a set number of matching events arrive within a window, for example 5 or more failed sign-ins in 10 minutes.
 
-A detection matches events by **Platform**, **Category** and **Outcome**, each of which can stay on **Any**, and optionally by one exact **Action**, written as the platform names it, such as `team.member.role.updated`. With no filters it counts every audit event. It cannot match on who acted: a detection never names a person.
+A detection is not one of the query modes above. Organization admins create, edit and delete detections under **Security → Detections**. The alert rules API does not create or change them.
+
+A detection matches events by **Platform**, **Category** and **Outcome**. Each of the three can stay on **Any**. A detection can also match one exact **Action**, written as the platform names it, such as `team.member.role.updated`. With no filters, it counts every audit event. It cannot match on who acted: a detection never names a person.
 
 | Field    | Values                                      |
 | -------- | ------------------------------------------- |

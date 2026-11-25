@@ -115,7 +115,7 @@ Every data point carries the checked address in `http.url`.
 ### Alert when an endpoint stops answering
 
 1. Open **Metrics** and open `httpcheck.status`.
-2. Set **Aggregate** to `max`, **Where** to `attr.http.status_class = "2xx"`, and **Group by** to `attr.http.url`. Keep the `attr.` prefix on the filter, or it is dropped when the chart becomes a rule.
+2. Set **Aggregate** to `max`, **Where** to `attr.http.status_class = "2xx"`, and **Group by** to `attr.http.url`. Keep the `attr.` prefix on the filter, or the filter is dropped when the chart becomes a rule.
 3. Click **Create alert**.
 4. Under **Alert when**, set the condition to **is below** and **Threshold** to `1`.
 5. Under **How it is checked**, set **Window** to 2 and **Minimum samples** to 1. A two-minute window holds two data points per URL, so the default of 50 would skip every check.

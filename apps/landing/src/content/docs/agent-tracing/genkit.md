@@ -46,7 +46,7 @@ For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends 
 
 ## Add the span processor
 
-Create `genkit-for-maple.ts` and copy it as is. It turns each flow into an `invoke_agent` span, each model call into a `chat` span with its messages and token counts, and each tool call into an `execute_tool` span:
+Create `genkit-for-maple.ts` and copy the code below into it as is. The processor turns each flow into an `invoke_agent` span, each model call into a `chat` span with its messages and token counts, and each tool call into an `execute_tool` span:
 
 ```ts
 // genkit-for-maple.ts
@@ -191,9 +191,11 @@ if (process.env.GENKIT_ENV !== "dev") {
 }
 ```
 
-Keep `GenkitForMaple` before the exporting processor. `disableGenkitOTelInitialization()` stops Genkit from starting its own OpenTelemetry SDK, which can't export to Maple. It also turns off `enableFirebaseTelemetry()` and `enableGoogleCloudTelemetry()`, so traces stop going to Google Cloud.
+Keep `GenkitForMaple` before the exporting processor.
 
-Runs under `genkit start` keep their traces in the Developer UI and send nothing to Maple. To trace them in Maple too, remove the `if`, and the Developer UI shows no traces.
+`disableGenkitOTelInitialization()` stops Genkit from starting its own OpenTelemetry SDK, which can't export to Maple. The call also turns off `enableFirebaseTelemetry()` and `enableGoogleCloudTelemetry()`, so traces stop going to Google Cloud.
+
+Runs under `genkit start` keep their traces in the Developer UI and send nothing to Maple. To trace them in Maple instead, remove the `if`. The Developer UI then shows no traces.
 
 If your app already starts OpenTelemetry (Sentry, auto-instrumentation, your own `NodeTracerProvider`), add both processors to that provider instead of creating a `NodeSDK`, and keep the `disableGenkitOTelInitialization()` call.
 
@@ -236,7 +238,11 @@ Chats with an agent from `ai.defineAgent()` (in `genkit/beta`) already carry Gen
 
 ## Flush before the process exits
 
-`BatchSpanProcessor` exports every few seconds, so a short-lived process can exit before its last spans are sent. In a script, call `await sdk.shutdown()` in a `finally` block before exiting. In a serverless handler, call `await spanProcessor.forceFlush()` after the flow returns. In a long-running server, call `sdk.shutdown()` on `SIGTERM`.
+`BatchSpanProcessor` exports every few seconds, so a short-lived process can exit before its last spans are sent.
+
+- In a script, call `await sdk.shutdown()` in a `finally` block before exiting.
+- In a serverless handler, call `await spanProcessor.forceFlush()` after the flow returns.
+- In a long-running server, call `sdk.shutdown()` on `SIGTERM`.
 
 ## Verify
 
