@@ -2,7 +2,7 @@
 import { createHmac } from "node:crypto"
 import { assert, describe, it } from "@effect/vitest"
 import { mintOrgReadJwt } from "./tinybird-jwt"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 const decodePart = (part: string): unknown => JSON.parse(Buffer.from(part, "base64url").toString("utf8"))
 
@@ -112,15 +112,25 @@ describe("mintOrgReadJwt", () => {
 		])
 	})
 
-	it("mints the same token with no bounds as before there were any", () => {
-		const input = {
+	it("leaves every datasource on the bare org filter when there are no bounds", () => {
+		const jwt = mintOrgReadJwt({
 			signingKey: SIGNING_KEY,
 			workspaceId: "ws-uuid-123",
 			orgId: "org_abc",
 			datasourceNames: ["traces", "logs"],
+			readBounds: new Map(),
 			nowSeconds: 1_000,
 			ttlSeconds: 600,
+		})
+		const decoded = decodePart(Str.split(".")(jwt)[1] ?? "") as {
+			scopes: ReadonlyArray<{ resource: string; filter: string }>
 		}
-		assert.strictEqual(mintOrgReadJwt({ ...input, readBounds: new Map() }), mintOrgReadJwt(input))
+		assert.deepStrictEqual(
+			Arr.map(decoded.scopes, (scope) => [scope.resource, scope.filter]),
+			[
+				["traces", "OrgId = 'org_abc'"],
+				["logs", "OrgId = 'org_abc'"],
+			],
+		)
 	})
 })
