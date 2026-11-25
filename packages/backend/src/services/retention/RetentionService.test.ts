@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Result, Schema } from "effect"
+import { Array as Arr, Effect, Fiber, Layer, Result, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, SourceId, UserId } from "@maple/domain/http"
 import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
@@ -10,11 +10,12 @@ import {
 	makeSwitchableDatabase,
 	queryFirstRow,
 	testEdgeCache,
+	TestReadHorizonMemoLive,
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
 import {
 	DEFAULT_READ_HORIZON,
-	READ_HORIZON_CACHE_MAX_ENTRIES,
+	READ_HORIZON_LOAD_TIMEOUT_MS,
 	READ_HORIZON_RETRY_MS,
 	READ_HORIZON_TTL_MS,
 	RetentionService,
@@ -31,7 +32,11 @@ const decodeSourceId = Schema.decodeSync(SourceId)
 const withDb = <A, E>(run: (db: TestDb) => Effect.Effect<A, E, RetentionService>) => {
 	const db = createTestDb(trackedDbs)
 	return run(db).pipe(
-		Effect.provide(RetentionService.layer.pipe(Layer.provide(Layer.merge(db.layer, testEdgeCache(db))))),
+		Effect.provide(
+			RetentionService.layer.pipe(
+				Layer.provide(Layer.mergeAll(db.layer, testEdgeCache(db), TestReadHorizonMemoLive)),
+			),
+		),
 	)
 }
 
@@ -46,7 +51,9 @@ const withSwitchableDb = <A, E>(
 	const database = makeSwitchableDatabase(db)
 	return run(database.state, db).pipe(
 		Effect.provide(
-			RetentionService.layer.pipe(Layer.provide(Layer.merge(database.layer, testEdgeCache(db)))),
+			RetentionService.layer.pipe(
+				Layer.provide(Layer.mergeAll(database.layer, testEdgeCache(db), TestReadHorizonMemoLive)),
+			),
 		),
 	)
 }
@@ -55,7 +62,11 @@ const withSwitchableDb = <A, E>(
 const fromAnotherIsolate = <A, E>(db: TestDb, effect: Effect.Effect<A, E, RetentionService>) =>
 	effect.pipe(
 		Effect.provide(
-			Layer.fresh(RetentionService.layer).pipe(Layer.provide(Layer.merge(db.layer, testEdgeCache(db)))),
+			Layer.fresh(RetentionService.layer).pipe(
+				Layer.provide(
+					Layer.mergeAll(db.layer, testEdgeCache(db), Layer.fresh(TestReadHorizonMemoLive)),
+				),
+			),
 		),
 	)
 
@@ -309,6 +320,7 @@ describe("RetentionService.readHorizon", () => {
 		withSwitchableDb((database, db) =>
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
+				yield* retention.readHorizon(ORG)
 				const known = yield* retention.setOrganization(ORG, ANA, { traces: 7 })
 				yield* fromAnotherIsolate(
 					db,
@@ -337,7 +349,13 @@ describe("RetentionService.readHorizon", () => {
 			effect.pipe(
 				Effect.provide(
 					Layer.fresh(RetentionService.layer).pipe(
-						Layer.provide(Layer.merge(database.layer, testEdgeCache(db))),
+						Layer.provide(
+							Layer.mergeAll(
+								database.layer,
+								testEdgeCache(db),
+								Layer.fresh(TestReadHorizonMemoLive),
+							),
+						),
 					),
 				),
 			)
@@ -369,28 +387,70 @@ describe("RetentionService.readHorizon", () => {
 		})
 	})
 
-	it.effect("forgets the organization read longest ago once the cache is full", () =>
-		withSwitchableDb((database) =>
+	it.effect("a new service instance in the same isolate answers from what the isolate holds", () =>
+		withDb((db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				yield* retention.readHorizon(ORG)
+				yield* fromAnotherIsolate(
+					db,
+					RetentionService.use((other) => other.setOrganization(ORG, ANA, { traces: 7 })),
+				)
+				// A cron lane builds the service again on every fire; a policy read would answer 7.
+				const again = yield* RetentionService.use((next) => next.readHorizon(ORG)).pipe(
+					Effect.provide(
+						Layer.fresh(RetentionService.layer).pipe(
+							Layer.provide(
+								Layer.mergeAll(db.layer, testEdgeCache(db), TestReadHorizonMemoLive),
+							),
+						),
+					),
+				)
+				assert.deepStrictEqual(again, DEFAULT_READ_HORIZON)
+			}),
+		),
+	)
+
+	it.effect("reading many organizations costs one policy read, not one each", () =>
+		withSwitchableDb((database, db) =>
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
 				const decodeOrgId = Schema.decodeSync(OrgId)
-				// Unreadable policies are cached like any other and cost no query to fill with.
-				database.down = true
-				yield* retention.readHorizon(ORG)
-				yield* retention.readHorizon(OTHER_ORG)
-				yield* Effect.forEach(
-					Arr.makeBy(READ_HORIZON_CACHE_MAX_ENTRIES - 2, (index) => decodeOrgId(`org_${index}`)),
-					(orgId) => retention.readHorizon(orgId),
-					{ discard: true },
+				yield* fromAnotherIsolate(
+					db,
+					RetentionService.use((other) => other.setOrganization(OTHER_ORG, ANA, { logs: 7 })),
 				)
-				// Reading ORG again makes OTHER_ORG the oldest, so one more organization evicts it.
 				yield* retention.readHorizon(ORG)
-				yield* retention.readHorizon(decodeOrgId("org_one_more"))
+				const horizons = yield* Effect.forEach(
+					[ORG, OTHER_ORG, ...Arr.makeBy(20, (index) => decodeOrgId(`org_${index}`))],
+					(orgId) => retention.readHorizon(orgId),
+					{ concurrency: 5 },
+				)
+				assert.strictEqual(database.calls, 1)
+				assert.deepStrictEqual(
+					Arr.map(horizons, (horizon) => horizon.days.logs),
+					[DEFAULT_RETENTION_DAYS.logs, 7, ...Arr.makeBy(20, () => DEFAULT_RETENTION_DAYS.logs)],
+				)
+			}),
+		),
+	)
+
+	it.effect("a policy read that hangs gives way to the fallback instead of holding the read", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				yield* retention.setOrganization(ORG, ANA, { traces: 7 })
+				yield* retention.readHorizon(ORG)
+				database.stalled = true
+				yield* TestClock.adjust(READ_HORIZON_TTL_MS)
+				const read = yield* Effect.forkChild(retention.readHorizon(ORG))
+				yield* TestClock.adjust(READ_HORIZON_LOAD_TIMEOUT_MS)
+				assert.strictEqual((yield* Fiber.join(read)).days.traces, 7)
+
+				// The stalled database is left alone until the retry is due.
 				const attempts = database.calls
-				yield* retention.readHorizon(ORG)
+				assert.strictEqual((yield* retention.readHorizon(ORG)).days.traces, 7)
 				assert.strictEqual(database.calls, attempts)
-				yield* retention.readHorizon(OTHER_ORG)
-				assert.isAbove(database.calls, attempts)
 			}),
 		),
 	)
