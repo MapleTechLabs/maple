@@ -314,6 +314,7 @@ describe("current local schema identity", () => {
 			// every projection into this table has to match that order.
 			"TraceId",
 			"SpanId",
+			"RetentionDays",
 		])
 		const productEventsView = Option.getOrUndefined(
 			Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === "product_events_mv"),
@@ -339,10 +340,11 @@ describe("current local schema identity", () => {
 				{ onNone: () => [], onSome: (object) => Arr.map(object.columns, (column) => column.name) },
 			)
 		expect(sessionEventColumns(localSchemaSnapshot(10).manifest)).not.toContain("VisitorId")
-		expect(sessionEventColumns(LOCAL_SCHEMA_MANIFEST).slice(-3)).toEqual([
+		expect(sessionEventColumns(LOCAL_SCHEMA_MANIFEST).slice(-4)).toEqual([
 			"VisitorId",
 			"UserId",
 			"GroupId",
+			"RetentionDays",
 		])
 		const v10Names = new Set(Arr.map(localSchemaSnapshot(10).manifest.objects, (object) => object.name))
 		// The frozen v11 manifest, not the current one: v14 adds objects of its

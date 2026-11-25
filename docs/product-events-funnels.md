@@ -419,6 +419,11 @@ lookup.
     if you remove the FORWARD_QUERY"); following that suggestion reintroduces the loss. Per the
     Tinybird rules the forward query can be deleted in a _later_ deploy, once this one has compacted.
 
+    The `RetentionDays` deploy is the exception that proves it: no view is created there, both
+    existing views change with `DEPLOYMENT_METHOD alter`, and Tinybird then plans the new column as
+    an in-place `ALTER TABLE` only when the forward query is absent. So that one deploy ships
+    without it, and `forwardQuery: "SELECT *"` goes back in the deploy after (a no-op plan).
+
     **The populate is one-shot and overlap-prone.** Unlike BYO and local, the managed surface has no
     `DELETE WHERE Source = 'trace'` step, so running it twice double-inserts, and running it after
     the MV is already live double-counts every annotated span ingested between MV creation and the

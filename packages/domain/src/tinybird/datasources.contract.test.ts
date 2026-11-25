@@ -8,6 +8,7 @@ import {
 	metricsSum,
 	traces,
 } from "./datasources"
+import { INGEST_UNWRITTEN_COLUMNS } from "./ingest-token"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /**
@@ -133,8 +134,10 @@ function topLevelKey(jsonPath: string): string | null {
 
 function emittedTopLevelKeys(datasource: AnyDatasource): Set<string> {
 	const keys = new Set<string>()
-	for (const column of Rec.values(datasource.options.schema)) {
+	for (const [name, column] of Rec.toEntries(datasource.options.schema)) {
 		if (getColumnType(column).modifiers.defaultExpression !== undefined) continue
+		// The encoder does not write these yet; the table default fills them.
+		if (INGEST_UNWRITTEN_COLUMNS.has(name)) continue
 		const path = getColumnJsonPath(column)
 		if (!path) continue
 		const top = topLevelKey(path)

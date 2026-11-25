@@ -1,4 +1,5 @@
 import { Array as Arr, Record as Rec } from "effect"
+import { DEFAULT_RETENTION_DAYS } from "../retention"
 
 /**
  * The span-attribute contract that turns an instrumented span into a product
@@ -140,7 +141,7 @@ export const PERSON_PROPERTY_VALUE_SQL = `multiIf(
 
 /**
  * The `product_events` projection of one annotated span, in SCHEMA column order
- * (`TraceId`/`SpanId` last, where `ADD COLUMN` put them). `Kind = 'custom'`
+ * (`TraceId`/`SpanId`, then `RetentionDays`, where `ADD COLUMN` put them). `Kind = 'custom'`
  * because a trace-derived event is a tracked event, not a page view; provenance
  * lives in `Source`.
  *
@@ -190,7 +191,8 @@ export const PRODUCT_EVENTS_TRACE_PROJECTION_SQL = `OrgId,
     )
   ) AS Attributes,
   TraceId,
-  SpanId`
+  SpanId,
+  toUInt16(${DEFAULT_RETENTION_DAYS.events}) AS RetentionDays`
 
 /**
  * Maple's own spans that ARE a product event (`mcp_tool_called`,

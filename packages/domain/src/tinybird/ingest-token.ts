@@ -22,6 +22,12 @@ export const INGEST_INSERT_DATASOURCES = [
 ] as const
 
 /**
+ * Columns with a JSON path the gateway does not write yet, so the table's default fills them. Its
+ * insert mappings leave them out: a self-managed cluster below migration 75 has no `RetentionDays`.
+ */
+export const INGEST_UNWRITTEN_COLUMNS: ReadonlySet<string> = new Set(["RetentionDays"])
+
+/**
  * Every datasource the append token covers: the insert list plus the audit trail, which the
  * gateway writes outside it. Emitted into Rust as `APPEND_TOKEN_DATASOURCES`, where a test holds
  * the gateway's own datasource constants to it.
