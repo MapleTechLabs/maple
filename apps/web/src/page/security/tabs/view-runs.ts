@@ -276,21 +276,23 @@ export const startRunAction = (h: H, model: Model, aiCardGate: AiCardGate | unde
 	if (Option.isNone(found)) return undefined
 	const target = found.value
 	const isRunning = Arr.some(runsForTarget(model, target.id), isLive)
-	if (aiCardGate !== undefined) return aiCardAction(h, aiCardGate)
+	// The permission denial wins: the card link only takes a start button the viewer could use.
 	return gatedControl(h, model, "security_audit:run", (isLocked) =>
-		button(
-			h,
-			{
-				size: "sm",
-				isLoading: model.startingTargetId === target.id,
-				isDisabled: isLocked || isRunning || model.startingTargetId !== null,
-				attributes: [
-					h.OnClick(Message.ClickedStartRun({ targetId: target.id })),
-					...(isRunning ? [h.Title("One audit runs per target at a time")] : []),
-				],
-			},
-			[icon(h, "MediaPlayIcon"), "Start run"],
-		),
+		aiCardGate !== undefined && !isLocked
+			? aiCardAction(h, aiCardGate)
+			: button(
+					h,
+					{
+						size: "sm",
+						isLoading: model.startingTargetId === target.id,
+						isDisabled: isLocked || isRunning || model.startingTargetId !== null,
+						attributes: [
+							h.OnClick(Message.ClickedStartRun({ targetId: target.id })),
+							...(isRunning ? [h.Title("One audit runs per target at a time")] : []),
+						],
+					},
+					[icon(h, "MediaPlayIcon"), "Start run"],
+				),
 	)
 }
 

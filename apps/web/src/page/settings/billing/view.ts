@@ -186,7 +186,7 @@ const afterTrial = (model: Model): string =>
 		{
 			onNone: () => "",
 			onSome: (plan) =>
-				plan.price == null
+				plan.price?.amount == null
 					? ""
 					: ` After that, ${plan.name} is $${plan.price.amount}/${plan.price.interval ?? "month"} plus usage.`,
 		},

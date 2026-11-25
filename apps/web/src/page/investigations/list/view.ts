@@ -619,11 +619,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				[h.Class("contents")],
 				[
 					...(notice === null ? [] : [notice]),
-					...(inputs.context.aiCardGate === undefined
-						? canRun
+					// Only for who may start one: the card notice takes the bar's place, nothing more.
+					...(canRun
+						? inputs.context.aiCardGate === undefined
 							? [bar(h, model)]
-							: []
-						: [aiCardNotice(h, inputs.context.aiCardGate, { className: "mb-4" })]),
+							: [aiCardNotice(h, inputs.context.aiCardGate, { className: "mb-4" })]
+						: []),
 				],
 			),
 		},

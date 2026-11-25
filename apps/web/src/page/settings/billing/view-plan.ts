@@ -2,7 +2,7 @@ import { isPricingCardFeature } from "@maple/domain/billing"
 import type { CatalogPlan } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { getActivePlan, getTrialStatus } from "../../kit/billing/plan-gating"
-import { TRIAL_PLAN_ID } from "@maple/domain/billing"
+import { STARTUP_PLAN_ID, TRIAL_PLAN_ID } from "@maple/domain/billing"
 import { getPlanFeatures, sentenceCasePlanName } from "../../kit/billing/plans"
 import { featureUnit, type SpendModel } from "./spend"
 import { formatCount } from "../../kit/billing/usage"
@@ -269,7 +269,7 @@ const offerPanel = (
 	model: Model,
 	plan: CatalogPlan,
 	addOns: ReadonlyArray<CatalogPlan>,
-	/** `isOnNoCardTrial`: the org is on the no-card trial, so subscribing is adding its card. */
+	/** `isOnNoCardTrial`: on the no-card trial and this is Startup, so subscribing adds the card for $0 today. */
 	options: Readonly<{ isCustom: boolean; trialText: string | null; isOnNoCardTrial: boolean }>,
 ): Html => {
 	const isActive = !options.isCustom && plan.customerEligibility?.status === "active"
@@ -428,7 +428,12 @@ const planOffer = (
 					[
 						...(isCustom && spend !== null ? [customPlanPlate(h, spend)] : []),
 						...Arr.map(offers, (plan) =>
-							offerPanel(h, model, plan, addOns, { isCustom, trialText, isOnNoCardTrial }),
+							// Only a Startup attach carries the trial's days; any other plan bills on subscribe.
+							offerPanel(h, model, plan, addOns, {
+								isCustom,
+								trialText,
+								isOnNoCardTrial: isOnNoCardTrial && plan.id === STARTUP_PLAN_ID,
+							}),
 						),
 						compliance(h),
 					],

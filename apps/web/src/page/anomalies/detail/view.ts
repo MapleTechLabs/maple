@@ -78,9 +78,11 @@ const headerActions = (
 								: "Resolved",
 						],
 		),
-		aiCardGate === undefined
-			? gatedControl(h, model, "investigations:run", (isLocked) =>
-					button(
+		// The permission denial wins: the card link only takes a start button the viewer could use.
+		gatedControl(h, model, "investigations:run", (isLocked) =>
+			aiCardGate !== undefined && !isLocked
+				? aiCardAction(h, aiCardGate)
+				: button(
 						h,
 						{
 							size: "sm",
@@ -91,8 +93,7 @@ const headerActions = (
 						},
 						[icon(h, "PulseIcon"), "Open investigation"],
 					),
-				)
-			: aiCardAction(h, aiCardGate),
+		),
 		...(isOpen
 			? [
 					gatedControl(h, model, "incidents:respond", (isLocked) =>

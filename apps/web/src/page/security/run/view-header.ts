@@ -131,32 +131,33 @@ export const runActions = (
 						[icon(h, "FileIcon"), "Report"],
 					),
 				]),
-		// A new run spends AI credits: while that waits on a card, the start asks for one.
-		!isLive(run) && aiCardGate !== undefined
-			? aiCardAction(h, aiCardGate)
-			: gatedControl(h, model, "security_audit:run", (isLocked) =>
-					isLive(run)
-						? button(
-								h,
-								{
-									size: "sm",
-									variant: "destructive-outline",
-									isDisabled: isLocked || model.busy !== null,
-									attributes: [h.OnClick(Message.ClickedCancel())],
-								},
-								["Cancel run"],
-							)
-						: button(
-								h,
-								{
-									size: "sm",
-									isLoading: model.busy === "start",
-									isDisabled: isLocked || model.busy !== null,
-									attributes: [h.OnClick(Message.ClickedStartRun())],
-								},
-								[icon(h, "MediaPlayIcon"), "Start run"],
-							),
-				),
+		// A new run spends AI credits: while that waits on a card, the start asks for one. The
+		// permission denial still wins, so the link only takes a start the viewer could use.
+		gatedControl(h, model, "security_audit:run", (isLocked) =>
+			!isLive(run) && aiCardGate !== undefined && !isLocked
+				? aiCardAction(h, aiCardGate)
+				: isLive(run)
+					? button(
+							h,
+							{
+								size: "sm",
+								variant: "destructive-outline",
+								isDisabled: isLocked || model.busy !== null,
+								attributes: [h.OnClick(Message.ClickedCancel())],
+							},
+							["Cancel run"],
+						)
+					: button(
+							h,
+							{
+								size: "sm",
+								isLoading: model.busy === "start",
+								isDisabled: isLocked || model.busy !== null,
+								attributes: [h.OnClick(Message.ClickedStartRun())],
+							},
+							[icon(h, "MediaPlayIcon"), "Start run"],
+						),
+		),
 	])
 
 const startRunButton = (h: H, model: Model): Html =>

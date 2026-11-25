@@ -301,23 +301,25 @@ const investigateAction = (
 				[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 			),
 		]
-	if (aiCardGate !== undefined) return [aiCardAction(h, aiCardGate)]
 	return [
+		// The permission denial wins: the card link only takes a start button the viewer could use.
 		gatedControl(h, model, "investigations:run", (isLocked) =>
-			button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					isDisabled:
-						isLocked ||
-						model.isStartingInvestigation ||
-						AsyncData.isLoading(model.investigation.data) ||
-						AsyncData.isIdle(model.investigation.data),
-					attributes: [h.OnClick(Message.ClickedInvestigate())],
-				},
-				[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
-			),
+			aiCardGate !== undefined && !isLocked
+				? aiCardAction(h, aiCardGate)
+				: button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							isDisabled:
+								isLocked ||
+								model.isStartingInvestigation ||
+								AsyncData.isLoading(model.investigation.data) ||
+								AsyncData.isIdle(model.investigation.data),
+							attributes: [h.OnClick(Message.ClickedInvestigate())],
+						},
+						[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
+					),
 		),
 	]
 }

@@ -247,24 +247,27 @@ const documentTab = (
 	]
 }
 
-/** What a thread with no turns says, read off the subject's own status. */
-const investigationLead = (h: H, investigation: V2Investigation): Html =>
+/**
+ * What a thread with no turns says, read off the subject's own status. `canAsk` false (Maple AI
+ * waits on a card) drops the offers to ask or retry: the card notice below says what unlocks them.
+ */
+const investigationLead = (h: H, investigation: V2Investigation, canAsk: boolean): Html =>
 	investigation.status === "investigating"
 		? emptyNotice(
 				h,
 				"Investigating",
-				"Maple is gathering evidence. The Transcript tab shows what it is doing as it goes. You can ask a question here without waiting for it to finish.",
+				`Maple is gathering evidence. The Transcript tab shows what it is doing as it goes.${canAsk ? " You can ask a question here without waiting for it to finish." : ""}`,
 			)
 		: investigation.status === "failed"
 			? emptyNotice(
 					h,
 					"Autonomous pass failed",
-					"Maple couldn't complete the investigation. Retry it from the header, or ask a question to continue by hand.",
+					`Maple couldn't complete the investigation.${canAsk ? " Retry it from the header, or ask a question to continue by hand." : ""}`,
 				)
 			: emptyNotice(
 					h,
 					"Ready to investigate",
-					`This ${investigationNoun(contextOf(investigation).kind)} is attached to every message in the thread. Start with a suggestion or ask your own question.`,
+					`This ${investigationNoun(contextOf(investigation).kind)} is attached to every message in the thread.${canAsk ? " Start with a suggestion or ask your own question." : ""}`,
 				)
 
 /** The thread, led by the report until its own turn lands. */
@@ -290,7 +293,7 @@ const conversationTab = (
 			canReply: canDrive,
 			...(aiCardGate === undefined ? undefined : { aiCardGate }),
 			placeholder: placeholderOf(investigation),
-			emptyState: () => investigationLead(h, investigation),
+			emptyState: () => investigationLead(h, investigation, aiCardGate === undefined),
 			scrollerMount: Mount.mapMessage(MountMessageScroller({ focusMessageId: null }), () =>
 				Message.CompletedMountScroller(),
 			),
