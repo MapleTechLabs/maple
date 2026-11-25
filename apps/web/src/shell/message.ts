@@ -115,6 +115,9 @@ export const Message = defineMessageUnion({
 	FailedOpenCustomerPortal: { message: Schema.String },
 	ClickedDismissQuotaBanner: {},
 	CompletedDismissQuotaBanner: {},
+	/** The sidebar's iPhone app card, closed by the signed-in user. */
+	ClickedDismissIosPrompt: { userId: Schema.String },
+	CompletedSaveIosPromptDismissed: {},
 	/** The sidebar's Search row. */
 	ClickedSearch: {},
 	/** Mod+K, anywhere: opens the palette (a no-op while it is open). */

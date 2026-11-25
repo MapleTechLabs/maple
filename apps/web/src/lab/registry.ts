@@ -286,6 +286,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ios-app-prompt",
+		title: "iPhone app prompt",
+		description:
+			"The sidebar's card that points a signed-in user at the iPhone app: App Store badge, a QR code on desktop, and a dismiss that sticks per user.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/trial-banners",
 		title: "Trial banners",
 		description:

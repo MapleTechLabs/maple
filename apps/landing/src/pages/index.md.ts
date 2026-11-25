@@ -13,6 +13,7 @@ import { API_PATHS, GITHUB_URL, SITE_PATHS, apiUrl } from "../lib/agent-resource
 import { absolute, blocks, docHeader, markdown } from "../lib/page-markdown"
 import { featurePath, useCasePath } from "../lib/page-registry"
 import * as m from "../paraglide/messages.js"
+import { IOS_APP_NAME, IOS_APP_STORE_URL } from "@maple/domain/mobile-app"
 import { Array as Arr, String as Str } from "effect"
 
 export const GET: APIRoute = ({ site }) => {
@@ -75,6 +76,7 @@ export const GET: APIRoute = ({ site }) => {
 					`- [Maple API](${url(`${SITE_PATHS.apiDocs}.md`)}): base URL \`${Str.replace(API_PATHS.reference, "")(apiUrl(API_PATHS.reference))}\`, [interactive reference](${apiUrl(API_PATHS.reference)}), [OpenAPI 3.1](${url(SITE_PATHS.openapi)})`,
 					`- [MCP server](${url(`${SITE_PATHS.mcpDocs}.md`)}): \`${apiUrl(API_PATHS.mcp)}\` (Streamable HTTP), [manifest](${url(SITE_PATHS.mcpManifest)})`,
 					`- [Command line tool](${url("/docs/reference/cli.md")}): \`curl -fsSL ${url("/cli/install")} | sh\` or \`brew install Makisuo/tap/maple\``,
+					`- [${IOS_APP_NAME} for iPhone](${IOS_APP_STORE_URL}): ${m.ios_lede()}`,
 					`- [Source code](${GITHUB_URL})`,
 					`- [Site index for agents](${url(SITE_PATHS.llmsTxt)})`,
 				],

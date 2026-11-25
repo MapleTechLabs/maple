@@ -16,6 +16,7 @@ export const LabShellFlags = Schema.Struct({
 		pinnedNamespaces: Schema.Record(Schema.String, Schema.String),
 		dashboardFavorites: Schema.Array(Schema.String),
 		collapsedNavGroups: Schema.optionalKey(Schema.Array(Schema.String)),
+		iosPromptDismissedUsers: Schema.optionalKey(Schema.Array(Schema.String)),
 	}),
 	maybeOrgId: Schema.Option(Schema.String),
 })

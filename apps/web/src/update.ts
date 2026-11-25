@@ -526,6 +526,10 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 		? Option.match(onboardingInputsOf(model), {
 				onNone: () => null,
 				onSome: (inputs) => ({
+					maybeUserId: Option.flatMap(
+						Option.fromNullishOr(model.clerkSnapshot),
+						(snapshot) => snapshot.maybeUserId,
+					),
 					maybeUser: inputs.maybeUser,
 					maybeOrganization: inputs.maybeOrganization,
 					memberships: inputs.memberships,

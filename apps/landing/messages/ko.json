@@ -1623,5 +1623,18 @@
 	"feat_cost_faq_6_q": "AWS 비용을 읽으면 AWS 청구액이 늘어나나요?",
 	"feat_cost_faq_6_a": "조금 늘어납니다. AWS는 Cost Explorer API 요청 한 건당 0.01달러를 청구합니다. 한 소스가 한 달에 500건을 넘으면 Maple은 오래된 기록 불러오기를 다음 달까지 미룹니다. 1,500건에 이르면 다음 달까지 읽기를 멈추므로, 청구액은 AWS 소스 하나당 월 15달러 정도에 그칩니다.",
 	"feat_cost_cta_title": "첫 번째 비용 소스를 연결하세요.",
-	"feat_cost_cta_lede": "AWS 연결이나 AI API 키를 추가하세요. 몇 분 안에 이번 달과 지난달 비용이 나타납니다."
+	"feat_cost_cta_lede": "AWS 연결이나 AI API 키를 추가하세요. 몇 분 안에 이번 달과 지난달 비용이 나타납니다.",
+	"ios_title": "iPhone에서 만나는 Maple.",
+	"ios_lede": "노트북을 열지 않고도 프로덕션에서 무엇이 왜 문제인지 파악하세요. 심각한 알림은 잠금 화면으로 전달되며, Maple Companion은 App Store에서 무료로 받을 수 있습니다.",
+	"ios_point_1_title": "지금 문제가 있나요?",
+	"ios_point_1_body": "프로덕션 상태를 한 화면에서 확인합니다. 최근 1시간의 신호가 담긴 열린 알림, 주의가 필요한 서비스, 지난 24시간의 새로운 항목을 보여 줍니다.",
+	"ios_point_2_title": "왜 알림이 울리나요?",
+	"ios_point_2_body": "인시던트는 규칙이 감지한 내용, 서비스에서 달라진 점, 발생 이후의 타임라인을 보여 줍니다.",
+	"ios_point_3_title": "어떤 요청이 실패했나요?",
+	"ios_point_3_body": "휴대폰에서 트레이스와 로그를 검색하고, 트레이스를 워터폴로 열어 실패한 스팬을 확인하세요.",
+	"ios_badge_alt": "App Store에서 다운로드",
+	"ios_shot_overview_alt": "iPhone 앱의 개요 화면: 열린 알림과 주의가 필요한 서비스",
+	"ios_shot_incident_alt": "iPhone 앱의 인시던트 화면: 규칙이 감지한 내용과 서비스에서 달라진 점",
+	"ios_shot_trace_alt": "iPhone 앱에서 워터폴로 표시한 트레이스",
+	"footer_ios_app": "iPhone 앱"
 }

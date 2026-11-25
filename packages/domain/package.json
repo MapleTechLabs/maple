@@ -75,6 +75,7 @@
 		"./url-redaction": "./src/url-redaction.ts",
 		"./mcp-clients": "./src/mcp-clients.ts",
 		"./mcp-manifest": "./src/mcp-manifest.ts",
+		"./mobile-app": "./src/mobile-app.ts",
 		"./mcp-tool-contract": "./src/mcp-tool-contract.ts",
 		"./mcp-outputs": "./src/mcp-outputs/index.ts",
 		"./permission": "./src/permission.ts",

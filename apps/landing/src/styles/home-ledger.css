@@ -438,6 +438,35 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 	font-size: 14.5px;
 }
 
+/* ── The iPhone app: Apple's badge in the head, three screens that run off their cells ── */
+.ledger-store {
+	display: block;
+	border-radius: 8px;
+}
+.ledger-store img {
+	display: block;
+}
+@media (min-width: 1024px) {
+	.ledger-grid--phones {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+/* The top of a screen with its own corners as a hairline: no bezel, no notch, no shadow. */
+.ledger-phone {
+	overflow: hidden;
+	width: min(100% - 56px, 300px);
+	aspect-ratio: 660 / 860;
+	margin: 28px auto 0;
+	border: 1px solid var(--home-rule);
+	border-bottom: 0;
+	border-radius: 34px 34px 0 0;
+}
+.ledger-phone img {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
 /* ── The offer: PricingTable's card, the width of the sheet ── */
 /* Its own two columns start at 768px, where the price rail is squeezed to nothing. Here the
    rails stack until there is room, and the price is set like the page's display type. */
@@ -633,6 +662,10 @@ html:not([lang="en"]) .monumental-home .faq--split h2 {
 	}
 	.ledger-cell--pad {
 		padding: 20px;
+	}
+	.ledger-phone {
+		width: min(100% - 40px, 300px);
+		margin-top: 20px;
 	}
 	/* The wall becomes two strips: each cell most of the screen wide, the next one showing. */
 	.bento {
