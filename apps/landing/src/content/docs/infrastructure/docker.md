@@ -5,9 +5,13 @@ group: "Infrastructure"
 order: 3
 ---
 
-Maple's Docker agent is a single OpenTelemetry Collector container with read-only access to the Docker socket. Once it runs, **Infrastructure → Containers** lists every container on the host, spans and logs that carry container identity gain an **Infrastructure** tab, and the **Docker Containers** dashboard template fills in.
+Maple's Docker agent is a single OpenTelemetry Collector container with read-only access to the Docker socket. Once it runs:
 
-Running Kubernetes? Use [Kubernetes infrastructure](/docs/infrastructure/kubernetes) instead. The Helm chart covers pods, nodes and workloads across the cluster. For host-level CPU, memory and disk, see [Hosts](/docs/infrastructure/hosts).
+- **Infrastructure → Containers** lists every container on the host.
+- Spans and logs that carry container identity gain an **Infrastructure** tab.
+- The **Docker Containers** dashboard template fills in.
+
+If you run Kubernetes, use [Kubernetes infrastructure](/docs/infrastructure/kubernetes) instead. The Helm chart covers pods, nodes and workloads across the cluster. For host-level CPU, memory and disk, see [Hosts](/docs/infrastructure/hosts).
 
 The agent collects:
 
@@ -21,7 +25,7 @@ All signals are exported over OTLP HTTP to Maple's ingest gateway.
 
 - Docker Engine with the default `json-file` logging driver (for log collection).
 - A **private ingest key**. Copy it from **Settings → Ingestion**.
-- Ports 4317 and 4318 free on the host. If you already run a collector there, drop the `-p` flags below and keep pointing your apps at the existing one. The agent still collects container metrics and logs without them.
+- Ports 4317 and 4318 free on the host. If you already run a collector there, drop the `-p` flags below and keep pointing your apps at the existing one. The agent still collects container metrics and logs without those ports.
 
 ## Install
 
@@ -90,7 +94,7 @@ Open **Infrastructure → Containers**. Containers on the host appear within abo
 | `container.restarts`, `container.uptime`         | Restart count and uptime on the detail page |
 | `container.cpu.limit`, `container.pids.count`    | Returned by the container API; not charted  |
 
-Identity rides on resource attributes: `container.name`, `container.id`, `container.image.name`, `container.runtime`, and `host.name`. The agent reads `host.name` from the Docker daemon, so it reports the host, not the agent container. Container names are only unique per host, so Maple keys every container on `(container.name, host.name)`.
+Identity rides on resource attributes: `container.name`, `container.id`, `container.image.name`, `container.runtime` and `host.name`. The agent reads `host.name` from the Docker daemon, so it reports the host, not the agent container. Container names are only unique per host, so Maple keys every container on `(container.name, host.name)`.
 
 CPU utilization is Docker's percentage. It can exceed 100% on multi-core containers. Most plain-Docker containers run without CPU limits, so read the saturation ranking as a list of the heaviest containers first. It does not measure remaining capacity.
 
@@ -99,7 +103,7 @@ CPU utilization is Docker's percentage. It can exceed 100% on multi-core contain
 Spans and logs open an **Infrastructure** tab when they carry container identity. Kubernetes injects that identity through the OpenTelemetry Operator. Plain Docker has no injection mechanism, so your app's SDK has to set it:
 
 - **`@maple-dev/effect-sdk`** detects Docker identity automatically. It reads `/proc/self/mountinfo`, then `/proc/self/cgroup`, and falls back to the short container id in the hostname.
-- **Any other OpenTelemetry SDK:** set it in your Compose file. Docker's default hostname is the short container id:
+- **Any other OpenTelemetry SDK:** set the identity in your Compose file. Docker's default hostname is the short container id:
 
     ```yaml
     environment:

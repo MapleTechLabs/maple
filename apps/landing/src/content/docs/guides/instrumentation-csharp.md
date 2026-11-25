@@ -9,7 +9,7 @@ sdk: "csharp"
 
 This guide sets up the OpenTelemetry .NET SDK in an ASP.NET Core or generic-host application so it sends traces, logs and metrics to Maple, with instrumentation for ASP.NET Core and `HttpClient`.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -73,7 +73,7 @@ app.MapGet("/", () => "Hello!");
 app.Run();
 ```
 
-When you set `Endpoint` in code, it must include the signal path (`/v1/traces`, `/v1/metrics`, `/v1/logs`). The exporter's default protocol is gRPC, which needs the base URL without a signal path, so the example sets `HttpProtobuf` on each one to keep the paths. Maple accepts either protocol on port 443.
+With `HttpProtobuf`, an `Endpoint` you set in code must include the signal path (`/v1/traces`, `/v1/metrics`, `/v1/logs`). The exporter's default protocol is gRPC, which needs the base URL without a signal path, so the example sets `HttpProtobuf` on each exporter to keep the paths. Maple accepts either protocol on port 443.
 
 The example puts the endpoint and key in source. An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Keeping it in source means the SDK always starts with a complete configuration, so a deploy that is missing an environment variable cannot silently turn telemetry off. To keep the key out of source, use [environment variables](#environment-variables) instead.
 
@@ -180,7 +180,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. `vcs.ref.head.revision` drives deploy markers and the **Recent deploys** panel on each service page. With the [GitHub integration](/docs/integrations/github), the two attributes also drive commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
@@ -188,7 +188,7 @@ export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme
 
 ### Databases
 
-Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+Database instrumentation sets the `db.*` attributes for you. For a driver without instrumentation, set them on a `Client` span:
 
 ```csharp
 using var activity = ActivitySource.StartActivity("SELECT users", ActivityKind.Client);

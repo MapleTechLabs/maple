@@ -23,11 +23,11 @@ https://api.warpstream.com/api/v1/monitoring/prometheus/virtual_clusters/<id>
 
 Replace `<id>` with your virtual cluster ID (`vci_…`).
 
-1. In WarpStream, create a **read-only Agent Key** for the cluster (least privilege; an account-level API key also works if you want one key for several clusters).
-2. In Maple, open **Sources**, click **Connect source**, pick **WarpStream** (or **Prometheus**), and configure:
-    - **Endpoint URL**: the hosted endpoint above, with your virtual cluster ID
-    - **Authentication**: **Basic auth**, with **Username** `prometheus` and **Password** set to the API key
-    - **Scrape interval (seconds)**: 30 to 60 is enough for control-plane metrics
+1. In WarpStream, create a **read-only Agent Key** for the cluster. An account-level API key also works if you want one key for several clusters, but the Agent Key grants less.
+2. In Maple, open **Sources**, click **Connect source**, pick **WarpStream** (or **Prometheus**) and configure:
+    - **Endpoint URL**: the hosted endpoint above, with your virtual cluster ID.
+    - **Authentication**: **Basic auth**, with **Username** `prometheus` and **Password** set to the API key.
+    - **Scrape interval (seconds)**: 30 to 60 is enough for control-plane metrics.
 
     To tag every series with a cluster name, set `labels_json` (for example `{"cluster": "prod-kafka"}`) through the [scrape targets API](/docs/integrations/prometheus#add-a-scrape-target).
 
@@ -41,7 +41,9 @@ Each WarpStream Agent serves the full agent-level metric set (request latency hi
 http://$AGENT_IP:8080/metrics
 ```
 
-Because Agents run inside your VPC under WarpStream's BYOC model, Maple's scraper can only reach them if you expose the endpoint (for example through an internal load balancer with auth, which you can pair with Maple's **Bearer token** or **Basic auth** options). If the Agents are fully private, run an OpenTelemetry Collector next to them with a `prometheus` receiver scraping `:8080/metrics` and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest) instead.
+Agents run inside your VPC under WarpStream's BYOC model, so Maple's scraper can only reach them if you expose the endpoint. For example, expose it through a public load balancer with auth, which you can pair with Maple's **Bearer token** or **Basic auth** options. Maple rejects an endpoint that resolves to a private address.
+
+If the Agents are fully private, run an OpenTelemetry Collector next to them instead, with a `prometheus` receiver scraping `:8080/metrics` and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest).
 
 Add one Maple target per agent (or per load-balanced agent pool), with the agent host in **Endpoint URL**. Every series already carries an `instance` attribute with the target host. To add cluster or agent names, set `labels_json` such as `{"cluster": "...", "agent": "..."}` through the API.
 
@@ -53,12 +55,12 @@ All WarpStream metrics carry the `warpstream_` prefix. From WarpStream's [Import
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `warpstream_consumer_group_lag`                                        | Consumer lag in offsets. The main "are we keeping up" gauge.       |
 | `warpstream_agent_kafka_request_latency`                               | Produce/fetch latency histogram by request type.                   |
-| `warpstream_agent_kafka_request_outcome`                               | Success vs. error counters per Kafka request type.                 |
+| `warpstream_agent_kafka_request_outcome`                               | Success and error counters per Kafka request type.                 |
 | `warpstream_blob_store_operation_latency`                              | Object-store PUT/GET health. Check this first when latency spikes. |
 | `warpstream_agent_control_plane_operation_latency`                     | Agent ↔ control-plane RPC health.                                  |
 | `warpstream_topics_count` / `warpstream_partitions_count` (+ `_limit`) | Headroom against cluster limits.                                   |
 
-Once samples arrive, build dashboards and alert rules on these like any other Maple metric. For example, alert when `warpstream_consumer_group_lag` stays above a threshold for 5 minutes.
+Once samples arrive, build dashboards and alert rules on these metrics like any other Maple metric. For example, alert when `warpstream_consumer_group_lag` stays above a threshold for 5 minutes.
 
 ## Verify
 

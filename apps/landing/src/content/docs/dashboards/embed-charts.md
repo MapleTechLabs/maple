@@ -34,7 +34,7 @@ A chart can only be embedded while its dashboard is shared with **Anyone with th
   <figcaption>The Share dialog. Embeds need <strong>Anyone with the link</strong>.</figcaption>
 </figure>
 
-This makes the whole dashboard viewable, without signing in, by anyone who has the dashboard's own link. If some charts on a dashboard should stay private, move the charts you want to embed to a dashboard of their own.
+Anyone who has the dashboard's own link can then view the whole dashboard without signing in. If some charts on a dashboard should stay private, move the charts you want to embed to a dashboard of their own.
 
 ### 2. Open Embed chart
 
@@ -44,7 +44,7 @@ Hover the chart, open its **⋮** menu and choose **Embed chart**.
   <img src="/screenshots/docs/embed-charts-02-menu.webp" alt="A chart's menu on the dashboard, opened from the three-dot button in its top-right corner, showing an Embed chart item." loading="lazy" />
 </figure>
 
-If the dashboard isn't public yet, the dialog says so and offers to make it public for you. That button does exactly what step 1 does.
+If the dashboard isn't public yet, the dialog says so and offers to make it public for you. The **Make dashboard public** button does what step 1 does.
 
 <figure class="shot">
   <img src="/screenshots/docs/embed-charts-03-not-public.webp" alt="The Embed chart dialog on a dashboard that is not shared. It explains that embeds only work on public dashboards, lists the steps to share it, and has a Make dashboard public button." loading="lazy" />
@@ -84,7 +84,9 @@ Use the **React** tab in JSX. React only accepts `style` as an object, so the HT
 />
 ```
 
-The chart fills the frame, so `height` sets the chart's height. `?embed=true` removes Maple's page header, and the embed has no background of its own: the chart's card sits directly on your page, as in the Fieldnote screenshot. The card has 8px of space around it inside the frame, so pull the iframe out by 8px if its edges need to line up with your own cards.
+The chart fills the frame, so `height` sets the chart's height. `?embed=true` removes Maple's page header. The embed has no background of its own, so the chart's card sits directly on your page, as in the Fieldnote screenshot.
+
+The card has 8px of space around it inside the frame, so pull the iframe out by 8px if its edges need to line up with your own cards.
 
 ## Set theme, time range, refresh and variables in the URL
 
@@ -123,11 +125,11 @@ A relative window, from `range` or from the dashboard, is recalculated on every 
 
 ## Which charts can be embedded
 
-Only charts on a dashboard. Pages such as Traces, Logs, Errors or the Service Map can't be embedded; put the chart you need on a dashboard first.
+Only charts on a dashboard can be embedded. Pages such as Traces, Logs, Errors or the Service map can't be. Put the chart you need on a dashboard first.
 
 On a dashboard, every chart you can add today can be embedded except **Recent Traces**. That covers query builder charts, raw SQL charts, markdown, funnels, paths and the service, error and log presets.
 
-Older dashboards can hold charts built on data sources Maple no longer offers, such as trace facets or metric summaries. Those can't be embedded either. For any chart that can't be embedded, **Embed chart** is greyed out, and hovering it says why.
+Older dashboards can hold charts built on data sources Maple no longer offers, such as trace facets or metric summaries. Those can't be embedded either. For any chart that can't be embedded, **Embed chart** is grayed out, and hovering it says why.
 
 ## FAQ
 
@@ -137,7 +139,7 @@ Pick the option that matches how permanent you want it to be:
 
 - **Turn off every embed on the dashboard, reversibly.** Set the dashboard back to **Not shared** in its Share dialog. Every chart link on it stops working. Set it to **Anyone with the link** again and the same links, and the embeds using them, work again.
 - **Kill one chart's link for good.** Open **Embed chart** on that chart and click **Replace**. The old link never works again, and the dialog shows a new one. Anyone still embedding the chart needs the new link.
-- **Remove one chart's link without replacing it via the API.** Use a key that has `dashboards:write`:
+- **Remove one chart's link through the API, without replacing it.** Use a key that has `dashboards:write`:
 
 ```bash
 curl -X DELETE \
@@ -157,7 +159,7 @@ One of these happened: the dashboard is no longer shared, the chart's link was r
 
 ### Can I embed a whole dashboard?
 
-No. Only a single chart's link can be shown inside another site. The dashboard's own link shows "This link can't be embedded" in an iframe; open it directly or link to it instead.
+No. Only a single chart's link can be shown inside another site. The dashboard's own link shows "This link can't be embedded" in an iframe. Open the dashboard's link directly, or link to it instead.
 
 ### What if my dashboard is shared with "Anyone in this organization"?
 

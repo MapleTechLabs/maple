@@ -9,7 +9,7 @@ sdk: "ruby"
 
 This guide sets up the OpenTelemetry Ruby SDK so your Rails, Sinatra or plain Ruby application sends traces to Maple, with instrumentation for Rails, Active Record, Sidekiq, Net::HTTP and the other libraries in `opentelemetry-instrumentation-all`.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -65,7 +65,9 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/my-rails-app"
 ```
 
-EU organizations use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` to the endpoint itself. `OTEL_SERVICE_NAME` overrides the `service_name` set in the initializer, so you can drop that line once the variable is set everywhere.
+EU organizations use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` to the endpoint itself.
+
+`OTEL_SERVICE_NAME` overrides the `service_name` set in the initializer, so you can drop that line once the variable is set everywhere.
 
 The Ruby exporter speaks OTLP over HTTP with protobuf encoding only. Leave `OTEL_EXPORTER_OTLP_PROTOCOL` unset or set it to `http/protobuf`; with `grpc` the SDK logs a warning and exports nothing. To compress batches, set `OTEL_EXPORTER_OTLP_COMPRESSION=gzip`.
 
@@ -149,7 +151,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `HEROKU_SLUG_COMMIT`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. `vcs.ref.head.revision` drives deploy markers and the **Recent deploys** panel on each service page. With the [GitHub integration](/docs/integrations/github), the two attributes also drive commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `HEROKU_SLUG_COMMIT`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"

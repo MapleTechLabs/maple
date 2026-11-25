@@ -5,7 +5,7 @@ group: "Explore"
 order: 6
 ---
 
-The **Users** page lists everyone your telemetry names, and gives each person a page with their sessions, requests, traces, logs, errors, product events and MCP sessions. It stays empty until your SDKs tell Maple who is signed in.
+The **Users** page lists everyone your telemetry names and gives each person a page with their sessions, requests, traces, logs, errors, product events and MCP sessions. It stays empty until your SDKs tell Maple who is signed in.
 
 ## Let your coding agent do it
 
@@ -32,7 +32,7 @@ Use your app's stable user id (database or auth provider id), never an email or 
 
 ## Browser
 
-After sign-in, and on page load when a session already exists:
+Call `MapleBrowser.identify()` after sign-in, and on page load when a session already exists:
 
 ```ts
 import { MapleBrowser } from "@maple-dev/browser"
@@ -49,7 +49,9 @@ MapleBrowser.identify({
 MapleBrowser.identify(null)
 ```
 
-`groupId` and `groupName` are what the page's **Group by** uses. See [Identifying users](/docs/session-replay/browser-sdk#identifying-users) in the Browser SDK docs for `traits` and the init-time form. With the Effect SDK, call `identify(user.id)` and `clearIdentity()` from `@maple-dev/effect-sdk/client`.
+`groupId` and `groupName` are what the page's **Group by** uses. See [Identifying users](/docs/session-replay/browser-sdk#identifying-users) in the Browser SDK docs for `traits` and the init-time form.
+
+With the Effect SDK, call `identify(user.id)` and `clearIdentity()` from `@maple-dev/effect-sdk/client`.
 
 ## Backend
 
@@ -68,4 +70,4 @@ Any OpenTelemetry SDK works: the key is `user.id` in every language. Put the sam
 
 ## Check it
 
-Sign in to your app, click around, and open **Users**. The person shows up within a minute. If the page is still empty, widen the time range, then open one of your traces and check the root span carries `user.id`.
+Sign in to your app, click around, and open **Users**. The person shows up within a minute. If the page is still empty, widen the time range, then open one of your traces and check that the root span carries `user.id`.

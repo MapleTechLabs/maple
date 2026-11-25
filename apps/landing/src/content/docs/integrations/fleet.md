@@ -17,11 +17,11 @@ Maple only reads. It never runs queries, scripts or device actions, and it never
 
 - You are an admin or engineer in the Maple organization. Connecting, updating the token and disconnecting need one of those roles. Any member can see whether Fleet is connected.
 - A Fleet server Maple can reach over HTTPS from the internet: Fleet's managed cloud, or a self-hosted server with a public address. Maple refuses `http://` addresses and private network addresses, because the token goes with every request.
-- Fleet 4 or Fleet 5, Free or Premium. Vulnerability scores (CVSS, EPSS and CISA's known exploited list) and fleets come with Fleet Premium; on Fleet Free the Devices page lists the CVEs without scores, and every policy is a global one.
+- Fleet 4 or Fleet 5, Free or Premium. Vulnerability scores (CVSS, EPSS and CISA's known exploited list) and fleets come with Fleet Premium. On Fleet Free, the Devices page lists the CVEs without scores, and every policy is a global one.
 
 ## 1. Create an API-only user
 
-Give Maple its own API-only user with the **Observer** role. Observer can read the activity feed, policies, devices and software, and nothing else Maple needs is behind a higher role.
+Give Maple its own API-only user with the **Observer** role. Observer can read the activity feed, policies, devices and software. Nothing Maple needs requires a higher role.
 
 With `fleetctl`, signed in as an admin:
 
@@ -41,7 +41,9 @@ The user needs a global role. A user with roles on single fleets only cannot rea
 2. Enter the address you open Fleet at in **Fleet URL**, for example `https://fleet.example.com`. A pasted API path is fine; Maple keeps the server's address.
 3. Paste the token into **API token** and click **Connect**.
 
-Maple checks the token with your server before saving it: it reads the token's user, the server version and the organization name. If Fleet rejects the token, or its user has no global role, the form says so and nothing is saved. Maple encrypts the token at rest, bound to your organization and to the server's address, so it is only ever sent to that server.
+Maple checks the token with your server before saving it: it reads the token's user, the server version and the organization name. If Fleet rejects the token, or its user has no global role, the form says so and nothing is saved.
+
+Maple encrypts the token at rest, bound to your organization and to the server's address, so it is only ever sent to that server.
 
 The card then shows the organization name, the URL, the server version, the license and the API user with its role. If the user has a role above Observer, the card suggests switching to an Observer user, since Maple only reads.
 
@@ -67,7 +69,10 @@ Activities Fleet runs on its own (automations) show Fleet as the actor. The audi
 
 Once an hour Maple reads the server's devices, policies and vulnerable software, and replaces what the Devices page shows. A policy every device passes again, or a CVE no longer installed anywhere, drops off the page at the next read.
 
-- **Failing policies.** Every policy at least one device fails, wherever it is set: on a fleet, on the devices in no fleet (Fleet calls these Unassigned), or globally across all fleets. Fleet called fleets "teams" before version 4.82; Maple reads both. Devices in no fleet have policies of their own from Fleet 4.57. Each row names the fleet the policy is set for, or **All fleets** for a global one, and the platforms it runs on. Critical policies come first, with how many devices fail each, its resolution, and up to 20 of the failing devices. Fleet recounts a policy's devices about once an hour, so a new policy shows here after its first count.
+- **Failing policies.** Every policy at least one device fails, wherever it is set: on a fleet, on the devices in no fleet (Fleet calls these Unassigned), or globally across all fleets. Each row names the fleet the policy is set for, or **All fleets** for a global one, and the platforms it runs on. Critical policies come first, with how many devices fail each, its resolution, and up to 20 of the failing devices.
+
+    Fleet called fleets "teams" before version 4.82; Maple reads both. Devices in no fleet have policies of their own from Fleet 4.57. Fleet recounts a policy's devices about once an hour, so a new policy shows here after its first count.
+
 - **Vulnerabilities.** One row per CVE across the software versions that carry it, highest score first, with the number of devices and the affected software. Maple reads the 1,000 most installed vulnerable software versions; the page lists up to 500 CVEs.
 
 The Devices page is for engineers and admins, as is the rest of the Security Center.
@@ -75,11 +80,13 @@ The Devices page is for engineers and admins, as is the rest of the Security Cen
 ## When reading fails
 
 - **Fleet rejects the token** (it was deleted, or the user was removed): reading stops and the card reads **Token rejected**. Paste a new token on the card to resume. The audit log continues from where it stopped, so activity from the gap still arrives as long as Fleet still holds it.
-- **Fleet asks Maple to slow down:** Maple waits at least 15 minutes, or as long as Fleet asks, up to an hour.
-- **The server has more than 1,000 fleets:** the Devices sync stops and the card says so, since reading only some fleets would show the rest as passing. The audit log is not affected.
-- **The server is unreachable or answers with an error:** the card and the Devices page show the error, the last findings stay, and the next read tries again.
+- **Fleet asks Maple to slow down**: Maple waits at least 15 minutes, or as long as Fleet asks, up to an hour.
+- **The server has more than 1,000 fleets**: the Devices sync stops and the card says so, since reading only some fleets would show the rest as passing. The audit log is not affected.
+- **The server is unreachable or answers with an error**: the card and the Devices page show the error, the last findings stay, and the next read tries again.
 
-Pointing the integration at a different server makes a new connection: its audit log feed starts over from 7 days back, and the Devices page is empty until its first read, within 5 minutes. Disconnecting removes the token and the Devices findings. Audit log entries already written stay.
+Pointing the integration at a different server makes a new connection. Its audit log feed starts over from 7 days back, and the Devices page is empty until its first read, within 5 minutes.
+
+Disconnecting removes the token and the Devices findings. Audit log entries already written stay.
 
 ## Fleet's own traces
 

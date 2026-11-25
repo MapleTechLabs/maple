@@ -13,7 +13,7 @@ The **Logs** page shows the log records Maple received in the selected time rang
 
 Logs arrive over OTLP, usually from an OpenTelemetry log bridge attached to your existing logger. Writing to stdout alone does not send anything to Maple. The page reads:
 
-- `service.name`, `deployment.environment`, and `service.namespace` resource attributes for the **Service**, **Environment**, and **Namespace** filters.
+- `service.name`, `deployment.environment` and `service.namespace` resource attributes for the **Service**, **Environment** and **Namespace** filters.
 - Severity text (for example `INFO`, `WARN`, `ERROR`) for **Severity** and the chart colors.
 - Trace ID and span ID on the log record for trace correlation. OpenTelemetry log bridges set these automatically when a log is written inside an active span.
 
@@ -28,7 +28,7 @@ The default time range is the last 12 hours. The chart at the top shows log volu
   <figcaption>The volume chart by severity and the log table. Hover a bar for its counts, and click a row to expand it.</figcaption>
 </figure>
 
-The table has **Time**, **Service**, and **Message** columns. The toolbar above it has three controls:
+The table has **Time**, **Service** and **Message** columns. The toolbar above it has three controls:
 
 - **Columns**: pin attributes as extra columns. The picker lists attribute keys seen in the selected time range. Pinned columns are saved in the URL.
 - **Wrap long log lines**.
@@ -69,9 +69,9 @@ The detail sheet opens with the message, a meta strip, and an **Error** or **Fat
 - **Trace**: a **Trace Timeline** of every log in the same trace (up to 200), with span boundaries marked. Shown when the log has a trace ID.
 - **Context**: **Surrounding logs**, the logs written around this one by the same **Instance** or the whole **Service**.
 - **Raw**: the record as a **JSON Payload**.
-- **Infrastructure**: host, container, or Kubernetes details, shown when the log carries those resource attributes.
+- **Infrastructure**: host, container or Kubernetes details, shown when the log carries those resource attributes.
 
-The meta strip shows the timestamp, a `trace:` link, and the span ID. It also has **Open in full page**, copy link to log, and **Log JSON** (copy) actions.
+The meta strip shows the timestamp, a `trace:` link and the span ID. It also has **Open in full page**, copy link to log and **Log JSON** (copy) actions.
 
 ## Move between logs and traces
 
@@ -82,14 +82,14 @@ The meta strip shows the timestamp, a `trace:` link, and the span ID. It also ha
 
 The [MCP server](/docs/reference/mcp) exposes three log tools:
 
-- `search_logs`: filter by service, severity, message text, trace ID, or span ID.
+- `search_logs`: filters logs by service, severity, message text, trace ID or span ID.
 - `mine_log_patterns`: groups recent matching log messages into templates such as `GET /api/users/<*> 200 in <*>ms`, with a count and a service and severity breakdown per template. It samples up to 50,000 recent logs (10,000 by default). Pattern mining is available through MCP only; the Logs page has no patterns view.
-- `compare_log_patterns`: what changed in the logs between two windows. It samples the logs nearest the boundary on each side, clusters them together (error-level logs apart from the rest), and lists templates that are new, gone, or whose share of the logs at least doubled or halved, so a rise in traffic alone flags nothing. Pass `since_deploy` with a `service` to compare the hour after that service's newest deploy with the hour before it.
+- `compare_log_patterns`: reports what changed in the logs between two windows. It samples the logs nearest the boundary on each side and clusters them together (error-level logs apart from the rest). It lists templates that are new, gone, or whose share of the logs at least doubled or halved. Because it compares shares, a rise in traffic alone flags nothing. Pass `since_deploy` with a `service` to compare the hour after that service's newest deploy with the hour before it.
 
 ## Troubleshooting
 
 - **"No logs yet".** Maple has never received a log record for this organization. Add an OpenTelemetry log bridge to your logger and export to the [ingest endpoint](/docs/reference/ingest). See [Instrumentation](/docs/instrumentation).
-- **"No logs in this time range".** Maple has logs, just not in this window. Widen the time range.
+- **"No logs in this time range".** Maple has logs, but none in this window. Widen the time range.
 - **"No logs match these filters".** Your exclusions removed everything. Clear the filters.
 - **Logs have no `trace:` link.** The record has no trace ID. Emit the log inside an active span, with the OpenTelemetry log bridge installed, so the SDK attaches the IDs.
 - **A trace-scoped search returns nothing.** The trace's logs may fall outside the selected time range. Widen it, or open the logs from the trace page, which sets the window for you.

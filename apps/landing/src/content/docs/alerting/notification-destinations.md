@@ -7,7 +7,9 @@ order: 4
 
 A **notification destination** is where Maple delivers an alert when one of your rules fires. You add a destination once and attach it to any number of [alert rules](/docs/alerting/alert-rules). When a rule opens an incident, Maple sends a `trigger`. When the incident resolves, it sends a `resolve`. See [Incidents](/docs/alerting/incidents) for when each is sent.
 
-Destinations live under **Destinations** on **Alerts → Routing**. Click **Add destination** at the top of the page, pick a provider, and fill in the **Connection** fields. You can also create one from **Add destination** while editing a rule. Only engineers and admins can add, edit or delete destinations. Provider credentials are encrypted at rest and never returned to the browser after they are saved.
+Destinations live under **Destinations** on **Alerts → Routing**. Click **Add destination** at the top of the page, pick a provider, and fill in the **Connection** fields. You can also create one from **Add destination** while editing a rule.
+
+Only engineers and admins can add, edit or delete destinations. Provider credentials are encrypted at rest and never returned to the browser after they are saved.
 
 ## Sending a test
 
@@ -17,7 +19,9 @@ If a test fails, Maple shows the provider's own rejection reason in the toast an
 
 ## Failed deliveries
 
-A delivery that fails with an error retrying cannot fix, such as a rejected credential, counts against the destination. After 3 such failures in a row, Maple disables the destination and marks it **auto-disabled** on **Alerts → Routing**. A successful delivery resets the count. Fix the credential, send a test, and turn the row's switch back on.
+A delivery that fails with an error that a retry cannot fix, such as a rejected credential, counts against the destination. After 3 such failures in a row, Maple disables the destination and marks it **auto-disabled** on **Alerts → Routing**. A successful delivery resets the count.
+
+To bring an auto-disabled destination back, fix the credential, send a test, and turn the row's switch back on.
 
 ## Slack
 
@@ -70,10 +74,16 @@ Raise alerts on an incident.io HTTP alert source. Maple sends `firing` on a trig
 
 | Field                      | Notes                                                             |
 | -------------------------- | ----------------------------------------------------------------- |
-| **Alert source config ID** | e.g. `01GW2G3V0S59R238FAHPDS1R66`. Not a secret.                  |
+| **Alert source config ID** | For example `01GW2G3V0S59R238FAHPDS1R66`. Not a secret.           |
 | **Token**                  | The source's secret, sent as `Authorization: Bearer`. Write-only. |
 
-Each event carries the rule, severity, signal, value, threshold, group and links to Maple in `metadata`, so routes and attributes can match on them. A rule with a warning and a critical tier raises critical under its own key, so an escalation pages again even when the warning alert was acknowledged. **Test** opens an alert and resolves it straight away; if the source's route creates incidents automatically, the test can create one too. incident.io accepts 120 events a minute per alert source.
+Each event carries the rule, severity, signal, value, threshold, group and links to Maple in `metadata`, so routes and attributes can match on them.
+
+A rule with a warning and a critical tier raises critical under its own key, so an escalation pages again even when the warning alert was acknowledged.
+
+**Test** opens an alert and resolves it straight away. If the source's route creates incidents automatically, the test can create one too.
+
+incident.io accepts 120 events a minute per alert source.
 
 ## Discord
 
@@ -97,7 +107,9 @@ Post alerts to a Teams channel through a Workflows webhook. Each alert is an Ada
 2. Leave **Who can trigger the flow** on **Anyone**: Maple sends the URL only, without a Microsoft sign-in.
 3. Copy the webhook URL (`https://….environment.api.powerplatform.com/powerautomate/automations/direct/workflows/…&sig=…`) into **Workflows webhook URL**. The `sig` in it is the credential, so treat the URL as a secret.
 
-Office 365 connector URLs (`….webhook.office.com`) were retired in May 2026, and older `logic.azure.com` flow URLs stopped working in November 2025. Maple rejects both and says which one you pasted. Cards post as the Workflows bot; Teams does not let a webhook set its own name or icon.
+Office 365 connector URLs (`….webhook.office.com`) were retired in May 2026, and older `logic.azure.com` flow URLs stopped working in November 2025. Maple rejects both and says which one you pasted.
+
+Cards post as the Workflows bot. Teams does not let a webhook set its own name or icon.
 
 ## Telegram
 

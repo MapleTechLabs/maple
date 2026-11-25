@@ -63,14 +63,14 @@ Service map edges use the same weighting for call counts between services.
 When a service has sampled spans in the selected window:
 
 - **Tilde prefix (`~`).** Throughput is prefixed with `~` to mark it as an estimate. This appears in the services table and on service map nodes and edges.
-- **Traced rate.** The services table shows the rate of spans actually received under the estimate, for example `~8.3 traced`.
+- **Traced rate.** Under the estimate, the services table shows the rate of spans actually received, for example `~8.3 traced`.
 - **Tooltip.** Hovering the throughput cell shows the sampling rate and the extrapolation factor, for example "Estimated from 10% sampled traces (x10 extrapolation)".
 
 ## Limitations
 
 **The estimate is only as good as the weight.** If a sampler drops spans without recording `th` in `tracestate` or a `SampleRate` attribute, Maple counts the surviving spans at weight 1 and underestimates throughput.
 
-**Ingest rules record no weight.** A drop rule under **Settings → Ingestion → Ingest rules** that keeps a sample of matching traces (**Keep a sample**, `keepPercent` in the API) stores no `SampleRate` on the spans it keeps. They count at weight 1, so throughput is underestimated for the traffic the rule matches. Drop rules on metrics ignore the sample and drop every matching data point.
+**Ingest rules record no weight.** A drop rule under **Settings → Ingestion → Ingest rules** that keeps a sample of matching traces (**Keep a sample**, `keepPercent` in the API) stores no `SampleRate` on the spans it keeps. Those spans keep the weight they arrived with, which is 1 unless the SDK sampled them, so throughput is underestimated for the traffic the rule matches. Drop rules on metrics ignore the sample and drop every matching data point.
 
 ## Exact counts with SpanMetrics
 
@@ -99,4 +99,6 @@ service:
             exporters: [otlp_http]
 ```
 
-The first pipeline has no processors, so `span_metrics` counts every span. The `forward/sampled` connector hands the same spans to `traces/sampled`, where `tail_sampling` drops as many as you like before export. A sampler in the first pipeline would run before `span_metrics` and shrink the counts. Configure `tail_sampling` with your policies and `otlp_http` with the Maple endpoint and key. Older Collector releases name the connector `spanmetrics`, the processor `tailsampling` and the exporter `otlphttp`.
+The first pipeline has no processors, so `span_metrics` counts every span. The `forward/sampled` connector hands the same spans to `traces/sampled`, where `tail_sampling` drops as many as you like before export. A sampler in the first pipeline would run before `span_metrics` and shrink the counts.
+
+Configure `tail_sampling` with your policies and `otlp_http` with the Maple endpoint and key. Older Collector releases name the connector `spanmetrics`, the processor `tailsampling` and the exporter `otlphttp`.

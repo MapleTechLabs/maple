@@ -45,7 +45,9 @@ Upgrade with `brew upgrade maple` and remove it with `brew uninstall maple`.
 curl -fsSL https://maple.dev/cli/install | sh
 ```
 
-The script detects your OS and architecture, downloads the matching bundle from the latest GitHub release, installs it into `~/.maple/bin`, clears the macOS Gatekeeper quarantine, and links `maple` onto your `PATH`. Read [`scripts/install.sh`](https://github.com/MapleTechLabs/maple/blob/main/scripts/install.sh) before piping it to a shell. Upgrade in place with `maple update`. To remove it:
+The script detects your OS and architecture, downloads the matching bundle from the latest GitHub release, installs it into `~/.maple/bin`, clears the macOS Gatekeeper quarantine, and links `maple` onto your `PATH`. Read [`scripts/install.sh`](https://github.com/MapleTechLabs/maple/blob/main/scripts/install.sh) before piping it to a shell.
+
+Upgrade in place with `maple update`. To remove Maple Local:
 
 ```bash
 curl -fsSL https://maple.dev/cli/uninstall | sh
@@ -113,12 +115,14 @@ export MAPLE_LOCAL_ACCESS_TOKEN="$(openssl rand -hex 32)"
 maple start --host 0.0.0.0 --offline
 ```
 
-- Exporters send the ingest key as `Authorization: Bearer <key>`, e.g. `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20<key>"`. It can write telemetry, never read it.
-- The dashboard asks for the access token once and keeps you signed in for 30 days. Scripts send it as `Authorization: Bearer <token>`; `maple` CLI commands send it when `MAPLE_LOCAL_ACCESS_TOKEN` is set.
+- Exporters send the ingest key as `Authorization: Bearer <key>`, for example `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20<key>"`. The ingest key can write telemetry, never read it.
+- The dashboard asks for the access token once and keeps you signed in for 30 days. Scripts send the token as `Authorization: Bearer <token>`. `maple` CLI commands send it when `MAPLE_LOCAL_ACCESS_TOKEN` is set.
 
-Without the secrets the server still starts and its banner warns you: anyone who can reach the port can use the UI, run raw SQL through `/local/query`, and send OTLP data. The maintenance routes (checkpoint, scoped delete, day retirement and the local event routes) require a token that `maple start` writes beside the data directory with mode `0600` (`<data-dir>.maintenance-token`, and `<data-dir>.event-consumer-token` for event consumers). They are only as safe as those files. `/local/retention/retire` deletes a day of live data. The full route list is in the [CLI reference](/docs/reference/cli#server-endpoints).
+Without the secrets the server still starts and its banner warns you: anyone who can reach the port can use the UI, run raw SQL through `/local/query` and send OTLP data.
 
-Put a TLS-terminating proxy in front of anything reachable from the internet; the session cookie is marked `Secure` when the proxy forwards `X-Forwarded-Proto: https`. To run it on a server or a container platform, use the image described in [Self-hosting](/docs/self-hosting).
+The maintenance routes (checkpoint, scoped delete, day retirement and the local event routes) require a token that `maple start` writes beside the data directory with mode `0600` (`<data-dir>.maintenance-token`, and `<data-dir>.event-consumer-token` for event consumers). The routes are only as safe as those files. `/local/retention/retire` deletes a day of live data. The full route list is in the [CLI reference](/docs/reference/cli#server-endpoints).
+
+Put a TLS-terminating proxy in front of anything reachable from the internet. The session cookie is marked `Secure` when the proxy forwards `X-Forwarded-Proto: https`. To run Maple Local on a server or a container platform, use the image described in [Self-hosting](/docs/self-hosting).
 
 ## Query from the terminal
 
@@ -161,7 +165,11 @@ Your telemetry and query results stay on your machine. These calls go out by def
 | Release check on GitHub               | At most once a day, only in an interactive terminal    | `MAPLE_NO_UPDATE_CHECK=1` (Homebrew installs set it) |
 | Dashboard page from `local.maple.dev` | When you open the dashboard                            | `maple start --offline`                              |
 
-The CLI sends its own telemetry to `https://ingest.maple.dev` with an ingest key built into the binary. It describes the CLI, not your data: it reports the service name `maple-cli`, the command, its duration and errors. For each OTLP request `maple start` handles it records the signal, the body size and the number of items, never the payload. For each `/local/query` request it records only the timing and whether it succeeded. SQL text, filter values and error messages are never exported, and the CLI's own logs are not sent at all. `MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT` and `MAPLE_ENVIRONMENT` redirect or relabel this export. With `MAPLE_ENDPOINT` unset, the CLI uses `OTEL_EXPORTER_OTLP_ENDPOINT` if it is set, and `MAPLE_REGION=eu` switches the default to `https://ingest.eu.maple.dev`. So if you export `OTEL_EXPORTER_OTLP_ENDPOINT` for your app in the same shell, the CLI's own telemetry goes there too. See [Environment variables](/docs/reference/cli#environment-variables).
+The CLI sends its own telemetry to `https://ingest.maple.dev` with an ingest key built into the binary. It describes the CLI, not your data: it reports the service name `maple-cli`, the command, its duration and errors.
+
+For each OTLP request `maple start` handles, the CLI records the signal, the body size and the number of items, never the payload. For each `/local/query` request it records only the timing and whether it succeeded. SQL text, filter values and error messages are never exported, and the CLI's own logs are not sent at all.
+
+`MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT` and `MAPLE_ENVIRONMENT` redirect or relabel this export. With `MAPLE_ENDPOINT` unset, the CLI uses `OTEL_EXPORTER_OTLP_ENDPOINT` if it is set, and `MAPLE_REGION=eu` switches the default to `https://ingest.eu.maple.dev`. So if you export `OTEL_EXPORTER_OTLP_ENDPOINT` for your app in the same shell, the CLI's own telemetry goes there too. See [Environment variables](/docs/reference/cli#environment-variables).
 
 ## One CLI, two backends
 
@@ -175,9 +183,13 @@ maple use local    # pin it; `maple use auto` undoes this
 
 To sign in without a browser, pipe a token into `maple auth login --with-token`.
 
-For each command, an explicit `--local` or `--remote` wins, then the default pinned with `maple use`, then auto-detect: a set `MAPLE_LOCAL_URL` means local, otherwise a stored login means remote, otherwise the CLI probes the local server (`GET /local/status`).
+For each command, the CLI picks the backend in this order:
 
-Every query command works against both, `maple query` included. Against hosted Maple, the SQL must include `$__orgFilter` and returns at most 100 rows. The macros expand locally too, so one query runs unchanged in both modes. Quote it in single quotes so the shell leaves `$__` alone:
+1. An explicit `--local` or `--remote`.
+2. The default pinned with `maple use`.
+3. Auto-detect: a set `MAPLE_LOCAL_URL` means local, otherwise a stored login means remote, otherwise the CLI probes the local server (`GET /local/status`).
+
+Every query command works against both backends, `maple query` included. Against hosted Maple, the SQL must include `$__orgFilter`, and the query returns at most 100 rows. The macros expand locally too, so one query runs unchanged in both modes. Put the SQL in single quotes so the shell leaves `$__` alone:
 
 ```bash
 maple query 'SELECT count() FROM traces

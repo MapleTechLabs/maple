@@ -102,7 +102,7 @@ Send a request to the Worker and open [Traces](/docs/explore/traces) in Maple. T
 | ------------- | --------------------------- | ------------------------------------------------------------------------------------- |
 | `ingestKey`   | `MAPLE_INGEST_KEY` (secret) | A `Maple.IngestKeys` resource (its private key is used) or a `Redacted` key           |
 | `endpoint`    | `MAPLE_ENDPOINT`            | Defaults to `https://ingest.maple.dev`. Use `https://ingest.eu.maple.dev` for EU orgs |
-| `environment` | `MAPLE_ENVIRONMENT`         | Becomes `deployment.environment.name`, e.g. your Alchemy stage                        |
+| `environment` | `MAPLE_ENVIRONMENT`         | Becomes `deployment.environment.name`, for example your Alchemy stage                 |
 | `local`       | `MAPLE_ENDPOINT`            | A `Local` resource. Under `alchemy dev` only, replaces `ingestKey` and `endpoint`     |
 
 Every other option (`serviceName`, `serviceNamespace`, `dropSpanNames`, `anticipatedErrorIdentifiers`, …) is the Effect SDK's and is forwarded unchanged. See [Effect SDK on Cloudflare Workers](/docs/sdks/effect-cloudflare) for the full list.
@@ -111,7 +111,9 @@ Import `Telemetry` from the `/telemetry` subpath, not the package root, so the M
 
 ## Local development
 
-Under `alchemy dev` your Workers can report to Maple Local instead of your Maple organization: an embedded collector and store that runs inside `alchemy dev`, needs no account or keys, and keeps everything on your machine. Declare one `Local` resource, register `localProviders()`, and pass it to every Worker's `Telemetry`:
+Under `alchemy dev` your Workers can report to Maple Local instead of your Maple organization. Maple Local is an embedded collector and store that runs inside `alchemy dev`. It needs no account or keys and keeps everything on your machine.
+
+Declare one `Local` resource, register `localProviders()` and pass the resource to every Worker's `Telemetry`:
 
 ```typescript
 // observability.ts
@@ -150,12 +152,14 @@ To use the same stack for hosted deploys, also pass `ingestKey` (or `endpoint`):
 | Prop           | Default                            | Notes                                                                          |
 | -------------- | ---------------------------------- | ------------------------------------------------------------------------------ |
 | `dataDir`      | `.alchemy/maple-local/<hash>/data` | One store per stack, stage and resource; it persists across `alchemy dev` runs |
-| `port`         | `4318`                             | Unset, a free port is used when 4318 is taken. A port you set must be free     |
+| `port`         | `4318`                             | When unset, a free port is used if 4318 is taken. A port you set must be free  |
 | `onDirtyStore` | `"fail"`                           | `"wipe"` discards a store left unclean by a crashed server and starts fresh    |
 
 The first run downloads the chDB library Maple pins (the same release the `maple` CLI ships), verifies its checksum and caches it in `~/.maple/cache/libchdb` (about 330 MB, shared across projects). Set `MAPLE_LIBCHDB` to point at a copy you already have. Run `alchemy dev` with Bun, on macOS or Linux.
 
-Maple Local closes its store on exits observed by the JavaScript runtime, including another handler calling `process.exit()` before Alchemy finishes teardown. A death the runtime cannot observe (SIGKILL of the sidecar itself, an OOM kill, or power loss) can still leave the store unclean. Reopening it could crash chDB, so it is refused; set `onDirtyStore: "wipe"` to start fresh. A sharing session that encounters a dirty store during takeover logs the refusal and recovery instructions once, then stops trying to take over.
+Maple Local closes its store on exits observed by the JavaScript runtime, including another handler calling `process.exit()` before Alchemy finishes teardown. A death the runtime cannot observe (SIGKILL of the sidecar itself, an OOM kill, or power loss) can still leave the store unclean. Reopening an unclean store could crash chDB, so Maple Local refuses to open it. Set `onDirtyStore: "wipe"` to start fresh.
+
+A sharing session that encounters a dirty store during takeover logs the refusal and recovery instructions once, then stops trying to take over.
 
 ## Add alerts and dashboards
 
@@ -205,7 +209,7 @@ export default Alchemy.Stack(
 )
 ```
 
-Change a threshold and redeploy, and the rule is updated in place. Remove it from the stack and the next deploy deletes it.
+Change a threshold and redeploy, and the rule is updated in place. Remove the rule from the stack and the next deploy deletes it.
 
 | Resource                                                                      | What it manages                                                                                   |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -228,16 +232,16 @@ Every prop and output is in [Alchemy resources](/docs/iac/alchemy-resources).
 | `MAPLE_API_KEY` | Yes      |                         | A `maple_ak_…` API key with the scopes your resources need                          |
 | `MAPLE_API_URL` | No       | `https://api.maple.dev` | API base URL. Use `https://api.eu.maple.dev` for [EU](/docs/reference/regions) orgs |
 
-The key needs these permissions, depending on which resources the stack declares:
+The key needs these scopes, depending on which resources the stack declares. Some resources also need the key to belong to an org admin:
 
-| Resource                                    | Scope                   | Org admin key |
-| ------------------------------------------- | ----------------------- | ------------- |
-| `Maple.IngestKeys` (used by `Telemetry`)    | `ingest_keys:read`      | Yes           |
-| `Maple.Dashboard`                           | `dashboards:write`      | No            |
-| `Maple.AlertRule`, `Maple.AlertDestination` | `alerts:write`          | Yes           |
-| `Maple.UptimeMonitor`                       | `uptime_monitors:write` | No            |
-| `Maple.StatusPage`                          | `status_pages:write`    | No            |
-| `Maple.ApiKey`                              | `api_keys:write`        | Yes           |
+| Resource                                    | Scope                   | Needs an org admin's key |
+| ------------------------------------------- | ----------------------- | ------------------------ |
+| `Maple.IngestKeys` (used by `Telemetry`)    | `ingest_keys:read`      | Yes                      |
+| `Maple.Dashboard`                           | `dashboards:write`      | No                       |
+| `Maple.AlertRule`, `Maple.AlertDestination` | `alerts:write`          | Yes                      |
+| `Maple.UptimeMonitor`                       | `uptime_monitors:write` | No                       |
+| `Maple.StatusPage`                          | `status_pages:write`    | No                       |
+| `Maple.ApiKey`                              | `api_keys:write`        | Yes                      |
 
 Uptime monitors and status pages also need a key whose role is engineer or above.
 

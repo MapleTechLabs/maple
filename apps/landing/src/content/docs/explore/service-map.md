@@ -5,7 +5,7 @@ group: "Explore"
 order: 5
 ---
 
-The **Service Map** draws your services and the databases they call as a graph. Maple builds it from your traces: an edge appears when one service calls another with trace context propagated, or when a service calls a database. Each node shows throughput, error rate, and latency. Each edge shows call volume and errors. Click a node to see its details.
+The **Service map** draws your services and the databases they call as a graph. Maple builds it from your traces: an edge appears when one service calls another with trace context propagated, or when a service calls a database. Each node shows throughput, error rate and latency. Each edge shows call volume and errors. Click a node to see its details.
 
 ## What creates nodes and edges
 
@@ -32,20 +32,20 @@ When the [PlanetScale integration](/docs/integrations/planetscale) is connected,
 
 ### Calls the map does not draw
 
-Outbound HTTP calls to hosts you do not instrument, and messaging or RPC calls without `db.system.name`, do not appear on the map. They appear on the **Dependencies** tab of the calling [service](/docs/explore/services#dependencies), keyed by `server.address`, `messaging.system`, or `rpc.system`.
+Outbound HTTP calls to hosts you do not instrument, and messaging or RPC calls without `db.system.name`, do not appear on the map. They appear on the **Dependencies** tab of the calling [service](/docs/explore/services#dependencies), keyed by `server.address`, `messaging.system` or `rpc.system`.
 
 See [OpenTelemetry conventions](/docs/concepts/otel-conventions#service-map) for the attributes to set.
 
 ## Read the map
 
-Service nodes show requests per second (**req/s** or **calls/s**), error percentage (**err%**), and average latency (**avg**). A badge shows the runtime platform, such as **Kubernetes**, **Cloudflare Workers**, **AWS Lambda**, or **Web (browser)**. With Kubernetes infrastructure monitoring set up, nodes also show a pod count.
+Service nodes show requests per second (**req/s** or **calls/s**), error percentage (**err%**) and average latency (**avg**). A badge shows the runtime platform, such as **Kubernetes**, **Cloudflare Workers**, **AWS Lambda** or **Web (browser)**. With Kubernetes infrastructure monitoring set up, nodes also show a pod count.
 
 <figure class="shot">
-  <img src="/screenshots/docs/service-map-01-map.webp" alt="The Service Map in 2D: services grouped by namespace, each node showing requests per second, error percentage and average latency, with animated edges to databases such as Postgres, ClickHouse and Tinybird on the right." loading="lazy" />
-  <figcaption>The Service Map. Databases and external services sit to the right of the services that call them.</figcaption>
+  <img src="/screenshots/docs/service-map-01-map.webp" alt="The Service map in 2D: services grouped by namespace, each node showing requests per second, error percentage and average latency, with animated edges to databases such as Postgres, ClickHouse and Tinybird on the right." loading="lazy" />
+  <figcaption>The Service map. Databases and external services sit to the right of the services that call them.</figcaption>
 </figure>
 
-Node color follows error rate. The legend shows **Healthy**, **Degraded** (above 1%), and **Error** (above 5%).
+Node color follows error rate. The legend shows **Healthy**, **Degraded** (above 1%) and **Error** (above 5%).
 
 Each edge shows its call count and, when above zero, its error percentage. Counts come from traced requests. When your SDK samples traces, counts are prefixed with `~` and the real rate may be higher. See [Sampling and throughput](/docs/concepts/sampling-throughput).
 
@@ -59,12 +59,12 @@ The map shows at most 200 edges.
 | Environment                             | Show one `deployment.environment`, or **All environments**. Defaults to `production` when it exists.                                                                           |
 | Time range                              | Defaults to the last 12 hours.                                                                                                                                                 |
 | **Focus a service…**                    | Center the map on one service and its neighbors. Pick **1 hop** or **2 hops**. **Hide rest** hides everything outside the focus instead of dimming it. **Clear focus** resets. |
-| Traffic threshold                       | **All traffic**, or hide edges below 0.1%, 1%, or 5% of the busiest edge. A button shows how many services and edges are hidden.                                               |
-| **Color nodes by**                      | **Service**, **Health**, or **Platform**.                                                                                                                                      |
+| Traffic threshold                       | **All traffic**, or hide edges below 0.1%, 1% or 5% of the busiest edge. A button shows how many services and edges are hidden.                                                |
+| **Color nodes by**                      | **Service**, **Health** or **Platform**.                                                                                                                                       |
 | **Re-sort**                             | Discard manual positions and auto-arrange.                                                                                                                                     |
 | **Zoom In**, **Zoom Out**, **Fit View** | Canvas zoom. You can also scroll to zoom and drag nodes to arrange them.                                                                                                       |
 
-The focused service, hop count, and hide mode are kept in the URL, so you can share a focused view.
+The focused service, hop count and hide mode are kept in the URL, so you can share a focused view.
 
 ## Node details
 
@@ -72,22 +72,29 @@ Click a node to open its side panel. Click the canvas to close it. Click a colla
 
 A service panel has two tabs:
 
-- **Service**: **Throughput**, **Error rate**, **P50 latency**, and **P95 latency**, plus **Dependencies** and **Called by** lists. **View service** opens the [service page](/docs/explore/services).
+- **Service**: **Throughput**, **Error rate**, **P50 latency** and **P95 latency**, plus **Dependencies** and **Called by** lists. **View service** opens the [service page](/docs/explore/services).
 - **Infrastructure**: the Kubernetes workloads running the service. See [Kubernetes](/docs/infrastructure/kubernetes) to set it up.
 
-A database panel shows **Metrics** (**Queries**, **Throughput**, **Error rate**, **P50 latency**, **P95 latency**, and **Avg latency**), **Query activity** over the time range, the **Top query shapes**, and the services it is **Called by**. A database behind a Hyperdrive config from the [Cloudflare integration](/docs/integrations/cloudflare) gets a **Hyperdrive configs** section, and one from the [PlanetScale integration](/docs/integrations/planetscale) a **PlanetScale** section.
+A database panel shows:
+
+- **Metrics**: **Queries**, **Throughput**, **Error rate**, **P50 latency**, **P95 latency** and **Avg latency**.
+- **Query activity** over the time range.
+- **Top query shapes**.
+- **Called by**: the services that call the database.
+- **Hyperdrive configs**, for a database behind a Hyperdrive config from the [Cloudflare integration](/docs/integrations/cloudflare).
+- **PlanetScale**, for a database from the [PlanetScale integration](/docs/integrations/planetscale).
 
 ## Query the map from an assistant
 
-The [MCP server](/docs/reference/mcp) tool `service_map` returns the edges with call counts, error rates, and latency, filtered by service and environment.
+The [MCP server](/docs/reference/mcp) tool `service_map` returns the edges with call counts, error rates and latency, filtered by service and environment.
 
 ## Troubleshooting
 
 - **"No service calls in this window".** Traces are arriving, but no service calls another one yet. Propagate trace context on outgoing HTTP calls so both sides share a trace, or add database instrumentation. If your services are active, widen the time range.
-- **Two services are not connected.** The callee is not instrumented, or the caller drops the `traceparent` header (common across proxies, queues, and custom HTTP clients). Open a trace for the call and check that the callee's `Server` span has the client span as its parent.
+- **Two services are not connected.** The callee is not instrumented, or the caller drops the `traceparent` header (common across proxies, queues and custom HTTP clients). Open a trace for the call and check that the callee's `Server` span has the client span as its parent.
 - **Every database collapses into one node.** Set `db.namespace` on database spans, or at least `server.address`.
 - **The same database appears twice.** Services spell `db.system.name` differently (for example `postgresql` and `PostgreSQL`). Use the OpenTelemetry well-known values.
-- **The Infrastructure tab says "No Kubernetes workloads found".** The service's spans lack Kubernetes workload attributes. See [Kubernetes](/docs/infrastructure/kubernetes).
+- **The Infrastructure tab says "Not linked to any infrastructure".** The service matches no connected platform resource and no Kubernetes workload. Set `OTEL_SERVICE_NAME` to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform. On Kubernetes, see [Kubernetes](/docs/infrastructure/kubernetes).
 
 ## Next steps
 

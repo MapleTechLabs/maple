@@ -212,7 +212,7 @@ export async function handleMessage(conversationId: string, text: string) {
 
 Use the id your app already stores the chat under. A new UUID per request gives you one session per message. If you pass a `session` to `run`, key it by the same id.
 
-For streaming, call `run(agent, text, { stream: true })` inside the `context.with` callback. You can read the stream after it returns.
+For streaming, call `run(agent, text, { stream: true })` inside the `context.with` callback. You can read the stream after the callback returns.
 
 </LanguageTab>
 </LanguageTabs>

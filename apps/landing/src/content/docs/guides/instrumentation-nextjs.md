@@ -9,7 +9,7 @@ sdk: "nextjs"
 
 This guide sets up OpenTelemetry in a Next.js application with `@vercel/otel`, so the spans Next.js emits for requests, rendering, route handlers and middleware reach Maple, along with your logs and metrics. It works with the App Router and the Pages Router.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -115,7 +115,9 @@ Next.js emits spans for its own work, and `@vercel/otel` exports them:
 - **Rendering:** spans for App Router rendering, Pages Router `getServerSideProps`, and route handler execution.
 - **`fetch`:** outgoing `fetch()` calls from server code get client spans, and the trace context is propagated to the service you call.
 
-Set `NEXT_OTEL_VERBOSE=1` to get more spans from Next.js internals. Next.js does not produce metrics of its own, so the metric reader exports the metrics you record with the `@opentelemetry/api` meter.
+Set `NEXT_OTEL_VERBOSE=1` to get more spans from Next.js internals.
+
+Next.js does not produce metrics of its own, so the metric reader exports the metrics you record with the `@opentelemetry/api` meter.
 
 ## Custom spans
 
@@ -151,7 +153,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. `vcs.ref.head.revision` drives deploy markers and the **Recent deploys** panel on each service page. With the [GitHub integration](/docs/integrations/github), the two attributes also drive commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
@@ -159,7 +161,7 @@ export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme
 
 ### Databases
 
-Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+Database instrumentation sets the `db.*` attributes for you. For a driver without instrumentation, set them on a `Client` span:
 
 ```typescript
 import { SpanKind } from "@opentelemetry/api"

@@ -7,9 +7,9 @@ navLabel: "Laravel"
 sdk: "laravel"
 ---
 
-This guide instruments a Laravel application with the [`keepsuit/laravel-opentelemetry`](https://github.com/keepsuit/laravel-opentelemetry) package, which hooks OpenTelemetry into Laravel's HTTP kernel, database, queue, cache and logging, and sends traces, logs and metrics to Maple.
+This guide instruments a Laravel application with the [`keepsuit/laravel-opentelemetry`](https://github.com/keepsuit/laravel-opentelemetry) package. The package hooks OpenTelemetry into Laravel's HTTP kernel, database, queue, cache and logging, and sends traces, logs and metrics to Maple.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ The package pulls in the OpenTelemetry PHP SDK and OTLP exporter, and registers 
 
 ## Configure
 
-The package reads the standard OpenTelemetry environment variables and exports traces, metrics and logs over OTLP by default. Point them at Maple's ingest endpoint with your ingest key:
+The package reads the standard OpenTelemetry environment variables and exports traces, metrics and logs over OTLP by default. Set the variables to Maple's ingest endpoint and your ingest key:
 
 ```env
 # .env
@@ -117,7 +117,9 @@ try {
 }
 ```
 
-Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map). The facade also has `Tracer::traceId()`, `Tracer::activeSpan()` and `Tracer::propagationHeaders()` for correlating logs and propagating context by hand.
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
+
+The facade also has `Tracer::traceId()`, `Tracer::activeSpan()` and `Tracer::propagationHeaders()` for correlating logs and propagating context by hand.
 
 For custom metrics, use the `Meter` facade:
 
@@ -133,7 +135,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. `vcs.ref.head.revision` drives deploy markers and the **Recent deploys** panel on each service page. With the [GitHub integration](/docs/integrations/github), the two attributes also drive commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"

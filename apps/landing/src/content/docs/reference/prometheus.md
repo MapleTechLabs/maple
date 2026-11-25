@@ -32,7 +32,11 @@ Grafana's metric browser, label filters and query builder read the same API, so 
 
 ### One key for every viewer
 
-Grafana sends the data source's key with every query, whoever is looking at the dashboard. All viewers share that key's 600 requests per minute, and every query is recorded in Maple's audit log as that key. A dashboard with many panels and template variables makes one request per panel and variable on each refresh, so a busy dashboard with a short refresh interval can reach the limit. Past it, Maple answers `429` with a `Retry-After` header and Grafana shows the error on the panel. Use a dedicated key per Grafana instance, and a longer refresh interval on large dashboards.
+Grafana sends the data source's key with every query, whoever is looking at the dashboard. All viewers share that key's 600 requests per minute, and every query is recorded in Maple's audit log as that key.
+
+A dashboard with many panels and template variables makes one request per panel and variable on each refresh, so a busy dashboard with a short refresh interval can reach the limit. Past it, Maple answers `429` with a `Retry-After` header and Grafana shows the error on the panel.
+
+Use a dedicated key per Grafana instance, and a longer refresh interval on large dashboards.
 
 ### Provisioning
 
@@ -139,7 +143,7 @@ Errors use Prometheus' envelope, `{"status":"error","errorType":"â€¦","error":"â
 | 503    | `timeout`     | The query ran past the `timeout` parameter or the 30 second limit.                         |
 | 503    | `unavailable` | The metric store could not be reached. Retry.                                              |
 
-For `execution` and `timeout`, narrow the selector with more label matchers, aggregate with `sum by (...)`, or use a larger `step`. Authentication and rate-limit errors (`401`, `403`, `429`) use the [v2 API error format](/docs/reference/authentication) instead.
+For `execution` and `timeout`, narrow the selector with more label matchers, aggregate with `sum by (...)`, or use a larger `step`. Authentication and rate-limit errors (`401`, `403`, `429`) use the [v2 API error format](/docs/reference/api#errors) instead.
 
 ## Not supported
 

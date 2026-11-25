@@ -10,7 +10,7 @@ icon: "openrouter"
 import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
 import LanguageTab from "../../../components/docs/LanguageTab.astro"
 
-OpenRouter Broadcast sends a trace of every request on your OpenRouter account to Maple, with tokens, cost, prompt and completion. You set it up once in the OpenRouter dashboard, then add a `session_id` to your requests. Without it, every model call is its own session.
+OpenRouter Broadcast sends a trace of every request on your OpenRouter account to Maple, with tokens, cost, prompt and completion. You set it up once in the OpenRouter dashboard, then add a `session_id` to your requests. Without a `session_id`, every model call is its own session.
 
 ## Quick setup with a coding agent
 
@@ -114,7 +114,7 @@ OpenRouter's own SDKs have a typed field: `sessionId` in `@openrouter/sdk` and `
 
 ## Nest Broadcast under your own traces
 
-Skip this if OpenRouter is your only source of traces. If your app also sends its own traces to Maple, every model call is recorded twice. Pass the active span's ids in the `trace` field so OpenRouter places its spans inside your trace.
+Skip this section if OpenRouter is your only source of traces. If your app also sends its own traces to Maple, every model call is recorded twice. Pass the active span's ids in the `trace` field so OpenRouter places its spans inside your trace.
 
 <LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
 <LanguageTab id="typescript">
@@ -169,12 +169,14 @@ Broadcast has no tool calls or agent names. For those, trace your app with its [
 
 Run a conversation of three turns with the same `session_id`. After about a minute, open **Agent sessions** and filter by service `openrouter`.
 
-You should see one session named after your `session_id`, with vendor **OpenRouter**, an `LLM Generation` span per model call, and tokens and cost in USD. To keep content out of Maple, turn on **Privacy Mode** on the destination.
+You should see one session named after your `session_id`, with vendor **OpenRouter**, an `LLM Generation` span per model call, and tokens and cost in USD.
+
+To keep content out of Maple, turn on **Privacy Mode** on the destination.
 
 ## Troubleshooting
 
 - **Test Connection fails.** Use the full `https://ingest.maple.dev/v1/traces` URL and valid JSON headers.
-- **Test Connection passes but nothing arrives.** Check the destination's API key filter and data regions against the key and endpoint your app uses, and that you're not using a placeholder key like `MAPLE_TEST`.
+- **Test Connection passes but nothing arrives.** Check the destination's API key filter and data regions against the key and endpoint your app uses. Check that the ingest key in **Headers** isn't a placeholder like `MAPLE_TEST`.
 - **Every call is its own session, named `trace:<id>`.** The request has no `session_id`. Log the outgoing body, since some wrappers drop unknown fields.
 - **Tokens or LLM calls are about double.** Your app and Broadcast both record each call. Nest Broadcast with the `trace` field as shown above.
 

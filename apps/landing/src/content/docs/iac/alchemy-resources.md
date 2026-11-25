@@ -7,7 +7,7 @@ icon: "alchemy"
 navLabel: "Alchemy resources"
 ---
 
-The resources `@maple-dev/alchemy` manages. New here? Start with the [Alchemy quick start](/docs/iac/alchemy).
+This page lists the resources `@maple-dev/alchemy` manages. If you are new to the package, start with the [Alchemy quick start](/docs/iac/alchemy).
 
 | Resource                                           | Lifecycle                                                           | Main output     |
 | -------------------------------------------------- | ------------------------------------------------------------------- | --------------- |
@@ -42,7 +42,7 @@ Effect.gen(function* () {
 | `name`                     | `string`         | Required                                                                                          |
 | `description`              | `string \| null` |                                                                                                   |
 | `tags`                     | `string[]`       |                                                                                                   |
-| `time_range`               | `object`         | e.g. `{ type: "relative", value: "12h" }`                                                         |
+| `time_range`               | `object`         | For example `{ type: "relative", value: "12h" }`                                                  |
 | `widgets`                  | `object[]`       | Typed by the API's widget schema (`Maple.DashboardWidget`)                                        |
 | `sections`                 | `object[]`       | Widgets join one with `section_id` and `tab_id`; their `layout` is relative to the section's grid |
 | `variables`                | `object[]`       | Typed by the API's variable schema (`Maple.DashboardVariable`)                                    |
@@ -137,13 +137,24 @@ Effect.gen(function* () {
 - `signal_type`: `error_rate`, `p95_latency`, `p99_latency`, `apdex`, `throughput`, `builder_query`, `raw_query`
 - `comparator`: `gt`, `gte`, `lt`, `lte`, `eq`, `neq`, `between`, `not_between`
 
-The props type refuses the combinations the API rejects, so they fail to type-check instead of failing the deploy: `group_by` and `exclude_service_names` only without `service_names`, and `exclude_service_names` only with `group_by: ["service.name"]`; `query_builder_draft` on `builder_query` only, which requires it; `raw_query_sql` and `raw_query_reducer` on `raw_query` only, which requires the SQL and reads no named services and no `group_by`; `threshold_upper` with `between` and `not_between` only, which require it; and no `alert_on_no_data` on a grouped rule. Every deploy sends `service_names`, `exclude_service_names`, `group_by` and `alert_on_no_data`, so removing one from props clears it. The API checks the rest, such as the SQL itself, and a failure there fails the deploy with a `400`. See [Alert rules](/docs/alerting/alert-rules) for what each signal measures.
+The props type refuses the combinations the API rejects, so they fail to type-check instead of failing the deploy:
+
+- `group_by` and `exclude_service_names` are allowed only without `service_names`.
+- `exclude_service_names` is allowed only with `group_by: ["service.name"]`.
+- `query_builder_draft` is allowed on `builder_query` rules only, and they require it.
+- `raw_query_sql` and `raw_query_reducer` are allowed on `raw_query` rules only. A `raw_query` rule requires the SQL and reads no named services and no `group_by`.
+- `threshold_upper` is allowed with `between` and `not_between` only, and they require it.
+- `alert_on_no_data` is not allowed on a grouped rule.
+
+Every deploy sends `service_names`, `exclude_service_names`, `group_by` and `alert_on_no_data`, so removing one from props clears it.
+
+The API checks the rest, such as the SQL itself. A failure there fails the deploy with a `400`. See [Alert rules](/docs/alerting/alert-rules) for what each signal measures.
 
 Outputs: `ruleId` (`alrt_…`), `name`, `enabled`.
 
 ### Ownership
 
-Each rule carries one `alchemy:<hash>` tag that identifies the stack, stage and logical resource that owns it. It uses one of Maple's 20 tag slots, which is why `tags` is capped at 19. The tag is what makes state recovery safe:
+Each rule carries one `alchemy:<hash>` tag that identifies the stack, stage and logical resource that owns it. The tag uses one of Maple's 20 tag slots, which is why `tags` is capped at 19. The tag is what makes state recovery safe:
 
 - If Alchemy state is lost, the provider finds the rule by name and takes it back only when the ownership tag matches.
 - A rule with the same name and no matching tag (created in the UI, or by another stack or stage) fails the deploy instead of being overwritten. To take it over deliberately, wrap the resource in Alchemy's `adopt(true)` or deploy with `--adopt`.
@@ -168,8 +179,8 @@ Effect.gen(function* () {
 | ------------------ | ---------- | ------------------------------------------------------------------------------------------------------ |
 | `name`             | `string`   | Required                                                                                               |
 | `config`           | `object`   | Required. `type` is `http`, `tcp`, `dns`, `multistep` or `heartbeat`; the rest as the API documents it |
-| `interval_seconds` | `number`   | 30 to 3600. Unset keeps Maple's                                                                        |
-| `failures_to_down` | `number`   | 1 to 10. Unset keeps Maple's                                                                           |
+| `interval_seconds` | `number`   | 30 to 3600. Unset keeps Maple's value                                                                  |
+| `failures_to_down` | `number`   | 1 to 10. Unset keeps Maple's value                                                                     |
 | `service_name`     | `string`   | Attach the monitor to a service. Unset means none                                                      |
 | `enabled`          | `boolean`  | Defaults to `true`                                                                                     |
 | `destination_ids`  | `string[]` | Notified when the monitor goes down or recovers. Unset means none                                      |
@@ -208,14 +219,14 @@ The props are the page's [config document](https://api.maple.dev/v2/docs) (`PUT 
 | `logo_url`, `logo_dark_url`, `favicon_url`                              | `string \| null`                       | An https URL, or a base64 `data:image/...` URL of at most 128 KB                                                                |
 | `show_powered_by`                                                       | `boolean`                              | Defaults to `true`                                                                                                              |
 | `auto_incidents`                                                        | `"off" \| "draft" \| "publish"`        | Defaults to `off`                                                                                                               |
-| `visibility`                                                            | `"public" \| "password" \| "internal"` | Unset keeps the page's (`public` for a new page)                                                                                |
+| `visibility`                                                            | `"public" \| "password" \| "internal"` | Unset keeps the page's visibility (`public` for a new page)                                                                     |
 | `theme`                                                                 | `object`                               | `preset`, `appearance`, `accent`, `background`, `text`, `card`, `border`, `radius`, `font`. Unset fields take the default theme |
 | `components`                                                            | `object[]`                             | Required, `[]` for none. In display order: `name`, `description`, `group`, `monitor_id`, `manual_status`, `show_uptime`                                  |
 | `password`                                                              | `string \| Redacted`                   | Needed for `visibility: "password"`. Write-only to Maple, but kept in Alchemy state: protect the state as a credential          |
 | `custom_domain`                                                         | `string`                               | Also serve the page on this hostname. Not allowed on an `internal` page                                                         |
 
 - Components are matched to the page's existing ones by name, so their IDs, incidents and uptime history survive reordering and edits. Renaming a component recreates it; leaving one out deletes it.
-- Leave `manual_status` unset and an override a responder sets during an incident stays; a deploy does not undo it. `null` clears it.
+- When `manual_status` is unset, an override a responder sets during an incident stays: a deploy does not undo it. Set `manual_status` to `null` to clear the override.
 - `password` and `custom_domain` are only managed once declared: removing the prop removes the password or domain.
 - A new page is published once it is fully configured, so a half-made page is never served.
 
@@ -269,7 +280,10 @@ Outputs: `publicKey`, `privateKey` (both `Redacted`), `publicRotatedAt`, `privat
 
 ## Drift and sync
 
-- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept. An uptime monitor manages `service_name`, `enabled` and `destination_ids` even when unset (none, `true`, none). A status page is the exception: it is applied as a whole document, so unset fields take their defaults and a component added in the UI is deleted. Only an unset `manual_status` on a declared component, a `visibility` left unset, and a `password` or `custom_domain` the stack never declared, are left alone; removing a declared `password` or `custom_domain` removes it.
+- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept.
+- An alert rule manages `service_names`, `exclude_service_names`, `group_by` and `alert_on_no_data` even when unset: every deploy sends them, so a value set in the UI is cleared.
+- An uptime monitor manages `service_name`, `enabled` and `destination_ids` even when unset (none, `true`, none).
+- A status page is the exception to unmanaged fields: it is applied as a whole document, so unset fields take their defaults and a component added in the UI is deleted. Only these are left alone: an unset `manual_status` on a declared component, a `visibility` left unset, and a `password` or `custom_domain` the stack never declared. Removing a declared `password` or `custom_domain` removes it.
 - `alchemy sync` restores declared dashboard fields, alert rule configuration and status pages to what the stack declares.
 - Alert destination secrets cannot be compared, so drift in them is only caught when you change the prop.
 
@@ -277,4 +291,4 @@ Outputs: `publicKey`, `privateKey` (both `Redacted`), `publicRotatedAt`, `privat
 
 The client retries `429` and `5xx` responses with bounded exponential backoff and honors `retry_after_seconds` from the [error envelope](/docs/reference/api#errors). The API allows 600 requests per 60 seconds per key, which a large stack stays well under.
 
-Failures surface as typed errors in Effect's error channel. An API failure is tagged with the server's own `@maple/http/…` error tag and carries the HTTP `status` and the [error body](/docs/reference/api#errors) (`type`, `code`, `message`); `Maple.MapleErrorTags` has the tags to `catchTag` on. Client-side failures are `MapleApiTransportError`, `MapleApiResponseDecodeError`, `MapleApiProtocolError` and `MapleApiRequestEncodingError`. Rule ownership conflicts are `MapleAlertRuleOwnershipError`, and invalid or reserved rule tags are `MapleAlertRuleTagsError`.
+Failures surface as typed errors in Effect's error channel. An API failure is tagged with the server's own `@maple/http/…` error tag and carries the HTTP `status` and the [error body](/docs/reference/api#errors) (`type`, `code`, `message`). `Maple.MapleErrorTags` has the tags to `catchTag` on. Client-side failures are `MapleApiTransportError`, `MapleApiResponseDecodeError`, `MapleApiProtocolError` and `MapleApiRequestEncodingError`. Rule ownership conflicts are `MapleAlertRuleOwnershipError`, and invalid or reserved rule tags are `MapleAlertRuleTagsError`.

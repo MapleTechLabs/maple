@@ -9,7 +9,7 @@ sdk: "node"
 
 This guide sets up the OpenTelemetry Node.js SDK so your application sends traces, logs and metrics to Maple, with automatic instrumentation for HTTP servers, frameworks and database clients.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -84,7 +84,7 @@ process.on("SIGTERM", () => {
 })
 ```
 
-`@opentelemetry/sdk-logs` 0.220.0 and later, including 3.x, take `{ exporter }`. Older releases take the exporter as the first argument, `new BatchLogRecordProcessor(exporter)`. A current release accepts the exporter as a positional argument without throwing, but then exports no log records.
+`BatchLogRecordProcessor` takes `{ exporter }` in `@opentelemetry/sdk-logs` 0.220.0 and later, including 3.x. Older releases take the exporter as the first argument, `new BatchLogRecordProcessor(exporter)`. A current release accepts the exporter as a positional argument without throwing, but then exports no log records.
 
 On a Node.js version outside those in [Prerequisites](#prerequisites), import `register` from `node:module` instead and call `register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)`. Node.js 26 marks that form as deprecated.
 
@@ -179,7 +179,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. `vcs.ref.head.revision` drives deploy markers and the **Recent deploys** panel on each service page. With the [GitHub integration](/docs/integrations/github), the two attributes also drive commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
@@ -187,7 +187,7 @@ export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme
 
 ### Databases
 
-Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+Database instrumentation sets the `db.*` attributes for you. For a driver without instrumentation, set them on a `Client` span:
 
 ```typescript
 import { SpanKind } from "@opentelemetry/api"

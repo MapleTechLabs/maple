@@ -55,17 +55,23 @@ Five cards break the traffic down, each with its own tabs. Click any row to filt
 
 The sidebar filters by **Traffic**, **Site**, **Page**, **Event**, **Referrer**, **UTM source**, **UTM medium**, **UTM campaign**, **Visitor** (**New** or **Returning**), **Country** and **Language**. Active filters show as chips under the page title. **Clear all** removes them and keeps the time range.
 
-**Traffic** chooses **Humans**, **Bots** or both. Only **Humans** is checked when the page opens. When more than 5% of recorded sessions in the window came from crawlers or automated browsers, a notice says how many and whether they are counted. It only covers bots that ran the browser SDK. Fetchers that do not run JavaScript never create a session.
+**Traffic** chooses **Humans**, **Bots** or both. Only **Humans** is checked when the page opens. When more than 5% of recorded sessions in the window came from crawlers or automated browsers, a notice says how many and whether they are counted. The notice only covers bots that ran the browser SDK. Fetchers that do not run JavaScript never create a session.
 
 When the **Event** filter names an event that annotated spans also produce, a **Traces behind** panel lists sample traces for it. See [Product events from traces](/docs/product-events/from-traces).
 
 ### AI traffic
 
-**AI visits** counts sessions referred by ChatGPT, Claude, Perplexity and other assistants, from the browser SDK. **AI crawlers** lists the crawlers that fetched your pages, and **What AI crawlers read** the pages they were served. Crawlers do not run JavaScript, so their fetches come from your server's traces: HTTP server spans with the crawler's user agent. Crawls follow only the site and page filters.
+**AI visits** counts sessions referred by ChatGPT, Claude, Perplexity and other assistants, from the browser SDK. **AI crawlers** lists the crawlers that fetched your pages, and **What AI crawlers read** lists the pages they were served. Crawlers do not run JavaScript, so their fetches come from your server's traces: HTTP server spans with the crawler's user agent. Crawls follow only the site and page filters.
 
 ### Search
 
-**Search** shows Google Search Console data next to your sessions. Four tiles give **Clicks**, **Impressions**, **CTR** and **Avg position**; pick one to chart it by day. **Queries** lists what people searched. **Pages** lists the pages they found, with the **Sessions** that started on each, its **Bounce** rate and, with an **Event** filter, **Conversions**. Sort either table by a column, type to filter it, or open it larger with **Expand table**. Click **Connect Search Console** and choose the properties to import. Google reports with a delay of 2 to 3 days. Only the **Event** filter applies on this tab.
+**Search** shows Google Search Console data next to your sessions. Click **Connect Search Console** and choose the properties to import. Google reports with a delay of 2 to 3 days.
+
+- Four tiles give **Clicks**, **Impressions**, **CTR** and **Avg position**. Pick one to chart it by day.
+- **Queries** lists what people searched.
+- **Pages** lists the pages they found, with the **Sessions** that started on each, its **Bounce** rate and, with an **Event** filter, **Conversions**.
+
+Sort either table by a column, type to filter it, or open it larger with **Expand table**. Only the **Event** filter applies on this tab.
 
 ## What each part needs
 

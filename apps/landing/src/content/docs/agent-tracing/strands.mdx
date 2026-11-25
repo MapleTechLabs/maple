@@ -72,7 +72,7 @@ For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends 
 
 Without `OTEL_SEMCONV_STABILITY_OPT_IN` the transcript is empty. Strands reads it when the first `Agent` is created, so set it in the environment rather than in code.
 
-To redact message content, append `gen_ai_unredacted_attributes=` with a `;`-separated allowlist of attributes to keep; everything else becomes `[REDACTED]`.
+To redact message content in Python, append `gen_ai_unredacted_attributes=` to `OTEL_SEMCONV_STABILITY_OPT_IN`, with a `;`-separated allowlist of attributes to keep. Everything else becomes `[REDACTED]`. The TypeScript SDK has no such allowlist.
 
 <LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
 <LanguageTab id="python">
@@ -206,7 +206,7 @@ Run a conversation of two or three messages, including one that calls a tool, th
 
 ## Troubleshooting
 
-- **Transcript is empty, but tokens and tools show up.** Add `gen_ai_span_attributes_only` and `gen_ai_latest_experimental` to `OTEL_SEMCONV_STABILITY_OPT_IN`, set before the first `Agent` is created.
+- **Transcript is empty, but tokens and tools show up.** Add `gen_ai_span_attributes_only` and `gen_ai_latest_experimental` to `OTEL_SEMCONV_STABILITY_OPT_IN`, and set the variable before the first `Agent` is created.
 - **Every message is its own session.** Pass `trace_attributes={"session.id": conversation_id}` to the agent, or to the `Swarm` or `Graph` that runs it.
 - **Two users' messages land in one session.** A shared `Agent` carries one `trace_attributes` dict for everyone. Create the agent per request.
 - **Every model call appears twice.** Another instrumentation (OpenLIT, OpenLLMetry, OpenInference, an OpenAI or Bedrock instrumentor) wraps the same calls. Remove it.
