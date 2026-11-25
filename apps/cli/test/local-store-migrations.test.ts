@@ -314,7 +314,13 @@ describe("current local schema identity", () => {
 			// every projection into this table has to match that order.
 			"TraceId",
 			"SpanId",
+			"RetentionDays",
 		])
+		// Aggregating: v68 appends its RetentionDays to the sorting key.
+		const traceIndex = Option.getOrUndefined(
+			Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === "trace_index"),
+		)
+		expect(traceIndex?.orderBy).toBe("(OrgId, TraceId, ServiceName, Bucket, RetentionDays)")
 		const productEventsView = Option.getOrUndefined(
 			Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === "product_events_mv"),
 		)
@@ -339,11 +345,12 @@ describe("current local schema identity", () => {
 				{ onNone: () => [], onSome: (object) => Arr.map(object.columns, (column) => column.name) },
 			)
 		expect(sessionEventColumns(localSchemaSnapshot(10).manifest)).not.toContain("VisitorId")
-		expect(sessionEventColumns(LOCAL_SCHEMA_MANIFEST).slice(-4)).toEqual([
+		expect(sessionEventColumns(LOCAL_SCHEMA_MANIFEST).slice(-5)).toEqual([
 			"VisitorId",
 			"UserId",
 			"GroupId",
 			"RetentionDays",
+			"EventsRetentionDays",
 		])
 		const v10Names = new Set(Arr.map(localSchemaSnapshot(10).manifest.objects, (object) => object.name))
 		// The frozen v11 manifest, not the current one: v14 adds objects of its
@@ -739,12 +746,14 @@ describe("local migration registry", () => {
 			)
 			for (const check of step.counts?.checks ?? []) expect(measured.has(check.key)).toBe(true)
 			// Every statement is idempotent, so a resumed apply lands where it left off. MODIFY TTL
-			// sets a fixed expression, so re-running it changes nothing.
+			// and MODIFY COLUMN ... DEFAULT set a fixed expression, so re-running them changes nothing.
 			for (const statement of stepStatements([
 				...(step.beforeBootstrap ?? []),
 				...(step.afterBootstrap ?? []),
 			]))
-				expect(statement).toMatch(/IF (NOT )?EXISTS|^DELETE FROM |^INSERT INTO | MODIFY TTL /)
+				expect(statement).toMatch(
+					/IF (NOT )?EXISTS|^DELETE FROM |^INSERT INTO | MODIFY TTL | MODIFY COLUMN \w+ \w+ DEFAULT /,
+				)
 		}
 	})
 

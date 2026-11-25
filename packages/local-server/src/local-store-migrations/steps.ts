@@ -14,6 +14,7 @@ import {
 import {
 	addColumns,
 	addIndex,
+	addSortingColumn,
 	backfill,
 	dropColumns,
 	dropTables,
@@ -46,13 +47,12 @@ const ERROR_RETENTION = {
 	targetRetentionDays: 90,
 } as const
 
-/** v67 -> v68: the span projections that copy their span's RetentionDays, and the views that fill them and product_events. */
+/** v67 -> v68: the span projections that copy their span's RetentionDays (trace_index apart, it sorts by it), and the views that fill them and product_events. */
 const RETENTION_STORAGE_SPAN_PROJECTIONS = [
 	"service_map_spans",
 	"service_map_children",
 	"service_overview_spans",
 	"trace_list_mv",
-	"trace_index",
 	"ai_trace_index",
 	"ai_crawler_requests",
 	"scanner_requests",
@@ -2360,6 +2360,12 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 		beforeBootstrap: [
 			...Arr.map(RETENTION_STORAGE_SPAN_PROJECTIONS, (table) =>
 				addColumns(table, [["RetentionDays", "UInt16 DEFAULT 30"]]),
+			),
+			// Aggregating: a plain column must be in the sorting key, so it joins it last.
+			addSortingColumn(
+				"trace_index",
+				["RetentionDays", "UInt16", "30"],
+				["OrgId", "TraceId", "ServiceName", "Bucket", "RetentionDays"],
 			),
 			addColumns("product_events", [["RetentionDays", "UInt16 DEFAULT 365"]]),
 			addColumns("traces", [["EventsRetentionDays", "UInt16 DEFAULT 365"]]),

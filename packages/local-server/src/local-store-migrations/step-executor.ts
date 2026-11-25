@@ -49,6 +49,12 @@ export type StepOperation =
 	| { readonly op: "drop"; readonly kind: "TABLE" | "VIEW"; readonly names: ReadonlyArray<string> }
 	| { readonly op: "backfill"; readonly statements: ReadonlyArray<string> }
 	| { readonly op: "modify-ttl"; readonly table: string; readonly ttl: string }
+	| {
+			readonly op: "add-sorting-column"
+			readonly table: string
+			readonly column: readonly [name: string, type: string, defaultExpression: string]
+			readonly sortingKey: ReadonlyArray<string>
+	  }
 
 export const addColumns = (
 	table: string,
@@ -85,6 +91,17 @@ export const backfill = (...statements: ReadonlyArray<string>): StepOperation =>
 /** `ttl` is the full TTL expression; MODIFY TTL replaces the table's previous one. */
 export const modifyTtl = (table: string, ttl: string): StepOperation => ({ op: "modify-ttl", table, ttl })
 
+/**
+ * Adds a column and appends it to the sorting key in the ALTER that adds it (the only way a column
+ * joins an existing key), then sets its DEFAULT, which ClickHouse refuses on a column added to the
+ * key. Old parts read the DEFAULT. `sortingKey` is the full new key. Rerunning it is a no-op.
+ */
+export const addSortingColumn = (
+	table: string,
+	column: readonly [name: string, type: string, defaultExpression: string],
+	sortingKey: ReadonlyArray<string>,
+): StepOperation => ({ op: "add-sorting-column", table, column, sortingKey })
+
 const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 	switch (operation.op) {
 		case "add-columns":
@@ -105,6 +122,13 @@ const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 			return operation.statements
 		case "modify-ttl":
 			return [`ALTER TABLE ${operation.table} MODIFY TTL ${operation.ttl}`]
+		case "add-sorting-column": {
+			const [name, type, defaultExpression] = operation.column
+			return [
+				`ALTER TABLE ${operation.table} ADD COLUMN IF NOT EXISTS ${name} ${type}, MODIFY ORDER BY (${Arr.join(operation.sortingKey, ", ")})`,
+				`ALTER TABLE ${operation.table} MODIFY COLUMN ${name} ${type} DEFAULT ${defaultExpression}`,
+			]
+		}
 	}
 }
 

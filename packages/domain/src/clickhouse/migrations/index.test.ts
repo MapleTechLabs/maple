@@ -400,6 +400,21 @@ describe("migration 0076: span projections and product events carry their retent
 		}
 		expect(migration_0076_retention_storage.requiredForIngest).toBe(false)
 	})
+	it("adds trace_index's column to its sorting key, then its default, as the schema ships it", () => {
+		const traceIndexAlters = Arr.filter(statements, (stmt) =>
+			Str.startsWith("ALTER TABLE trace_index ")(stmt),
+		)
+		expect(traceIndexAlters).toEqual([
+			"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
+			"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+		])
+		const createTraceIndex = Arr.findFirst(latestSnapshotStatements, (stmt) =>
+			Str.includes("CREATE TABLE IF NOT EXISTS trace_index ")(stmt),
+		)
+		expect(Option.getOrThrow(createTraceIndex)).toContain(
+			"ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
+		)
+	})
 })
 
 describe("migration 0038: legacy db.system spans stay off the external edges", () => {
