@@ -6,10 +6,11 @@ import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import type { ConfigureModel } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { copyOf, SMALL, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
 import { externalLink } from "./view-gcp-configure-parts"
-import { copyOf, SMALL } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -150,7 +151,9 @@ export const manualSteps = (
 							pressable(
 								h,
 								{
-									onClick: Message.ClickedGcpManualStep({ title: step.title, firstTitle }),
+									onClick: toHub(
+										GcpMessage.ClickedGcpManualStep({ title: step.title, firstTitle }),
+									),
 									className:
 										"flex min-w-0 flex-1 items-center gap-3 text-left text-sm font-medium outline-none focus-visible:underline focus-visible:ring-0",
 									attributes: [h.AriaExpanded(expanded)],

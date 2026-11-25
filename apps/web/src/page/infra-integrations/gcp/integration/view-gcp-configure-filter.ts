@@ -8,7 +8,9 @@ import { type FieldState, field, fieldLabel } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { DOCS, OTEL_DOCS } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { GcpMessage } from "./gcp"
+import { toHub } from "./view-gcp-parts"
 import { externalLink } from "./view-gcp-configure-parts"
 import { filterModeSelect } from "./view-gcp-configure-filter-mode"
 import { runtimeFields } from "./view-gcp-configure-runtimes"
@@ -49,7 +51,7 @@ export const logFilter = (
 		h,
 		{
 			isOpen,
-			onToggle: Message.ClickedGcpLogFilter(),
+			onToggle: toHub(GcpMessage.ClickedGcpLogFilter()),
 			panelId: PANEL_ID,
 			triggerClassName:
 				"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -194,7 +196,7 @@ const forwardOutputPrompt = (h: H): Html =>
 			{
 				variant: "outline",
 				size: "sm",
-				attributes: [h.OnClick(Message.ClickedGcpForwardOutput())],
+				attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpForwardOutput()))],
 			},
 			["Forward application output instead"],
 		),

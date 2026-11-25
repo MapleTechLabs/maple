@@ -6,13 +6,14 @@ import { describe, expect, test, vi } from "vitest"
 import * as Menu from "@maple/views/ui/menu"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../../contract"
-import { ReadRemoved, WriteRemoved } from "./gcp"
+import { GcpMessage, ReadRemoved, WriteRemoved } from "./gcp"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
 import { view as pageView } from "../../../integrations/view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
+const gcpMsg = (message: GcpMessage) => Message.GotGcpMessage({ message })
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -67,10 +68,12 @@ const pick = (model: Model, value: string) => {
 	if (id === undefined) throw new Error("no connector")
 	return pageUpdate(
 		model,
-		Message.GotGcpMenuMessage({
-			id,
-			message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value } }),
-		}),
+		gcpMsg(
+			GcpMessage.GotGcpMenuMessage({
+				id,
+				message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value } }),
+			}),
+		),
 	)
 }
 
@@ -89,13 +92,13 @@ describe("google cloud card", () => {
 
 	test("a disconnect keeps the cleanup script and re-reads the status; a failure toasts", () => {
 		const opened = pick(loaded(true), "disconnect").model
-		const sent = pageUpdate(opened, Message.ConfirmedGcpDisconnect())
+		const sent = pageUpdate(opened, gcpMsg(GcpMessage.ConfirmedGcpDisconnect()))
 		expect(names(sent.commands)).toEqual(["DeleteGcpConnector"])
 		const id = connectorId(opened)
 		if (id === undefined) throw new Error("no connector")
 		const done = pageUpdate(
 			sent.model,
-			Message.CompletedGcpDisconnect({ id, cleanupScript: "echo bye", failure: null }),
+			gcpMsg(GcpMessage.CompletedGcpDisconnect({ id, cleanupScript: "echo bye", failure: null })),
 		)
 		expect(Arr.map(done.model.gcpCard.removed, (entry) => entry.cleanupScript)).toEqual(["echo bye"])
 		expect(names(done.commands)).toEqual(
@@ -103,7 +106,13 @@ describe("google cloud card", () => {
 		)
 		const failed = pageUpdate(
 			sent.model,
-			Message.CompletedGcpDisconnect({ id, cleanupScript: null, failure: toLoadFailure("nope") }),
+			gcpMsg(
+				GcpMessage.CompletedGcpDisconnect({
+					id,
+					cleanupScript: null,
+					failure: toLoadFailure("nope"),
+				}),
+			),
 		)
 		expect(failed.model.gcpCard.removed).toEqual([])
 		expect(failed.outMessage).toEqual(
@@ -128,8 +137,8 @@ describe("google cloud card", () => {
 		const read = await Effect.runPromise(ReadRemoved({ orgId: "org_acme" }).effect)
 		const written = await Effect.runPromise(WriteRemoved({ orgId: "org_acme", removed: [] }).effect)
 		vi.unstubAllGlobals()
-		expect(read).toEqual(Message.CompletedReadGcpRemoved({ removed: [] }))
-		expect(written).toEqual(Message.CompletedWriteGcpRemoved())
+		expect(read).toEqual(GcpMessage.CompletedReadGcpRemoved({ removed: [] }))
+		expect(written).toEqual(GcpMessage.CompletedWriteGcpRemoved())
 	})
 
 	describe("a connection's feature switches", () => {
@@ -137,7 +146,10 @@ describe("google cloud card", () => {
 			const model = loaded(true)
 			const id = connectorId(model)
 			if (id === undefined) throw new Error("no connector")
-			const opened = pageUpdate(model, Message.ToggledGcpFeature({ id, capability: "metrics" }))
+			const opened = pageUpdate(
+				model,
+				gcpMsg(GcpMessage.ToggledGcpFeature({ id, capability: "metrics" })),
+			)
 			expect(opened.model.gcpCard.configure?.target).toEqual({
 				_tag: "Connection",
 				id,
@@ -148,8 +160,8 @@ describe("google cloud card", () => {
 				metrics_enabled: false,
 			})
 			// Metrics set up in Google Cloud stop at once in Maple, so the save asks first.
-			const asked = pageUpdate(opened.model, Message.ClickedGcpChooseApply())
-			const saved = pageUpdate(asked.model, Message.ConfirmedGcpSave())
+			const asked = pageUpdate(opened.model, gcpMsg(GcpMessage.ClickedGcpChooseApply()))
+			const saved = pageUpdate(asked.model, gcpMsg(GcpMessage.ConfirmedGcpSave()))
 			expect(Arr.map(saved.commands ?? [], ({ name, args }) => [name, args])).toEqual([
 				["UpdateGcpConnector", expect.objectContaining({ id, payload: { metrics_enabled: false } })],
 			])

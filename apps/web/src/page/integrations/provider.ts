@@ -40,6 +40,7 @@ export type HubRequest =
 	| Readonly<{ _tag: "CloseDisconnect" }>
 	| Readonly<{ _tag: "TrackDisconnected"; provider: string }>
 	| Readonly<{ _tag: "TrackConnected"; provider: string }>
+	| Readonly<{ _tag: "Navigate"; url: string }>
 
 export const HubRequest = {
 	/** Re-reads the provider's own status. */
@@ -67,6 +68,8 @@ export const HubRequest = {
 	trackDisconnected: (provider: string): HubRequest => ({ _tag: "TrackDisconnected", provider }),
 	/** `trackProduct("integration_connected")` for `provider`. */
 	trackConnected: (provider: string): HubRequest => ({ _tag: "TrackConnected", provider }),
+	/** Leaves for another page (Google Cloud's logs and infrastructure links). */
+	navigate: (url: string): HubRequest => ({ _tag: "Navigate", url }),
 }
 
 /** A provider update: its sub-model, its own Commands, and the hub requests that run first. */

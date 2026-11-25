@@ -30,7 +30,12 @@ import { AppRoute } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/primitives"
-import { AwsMessage, Message as IntegrationMessage, PrometheusMessage } from "../../integrations/embed"
+import {
+	AwsMessage,
+	GcpMessage,
+	Message as IntegrationMessage,
+	PrometheusMessage,
+} from "../../integrations/embed"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, isSettingsDirty, routeChanged, sourceOf, update } from "./update"
@@ -39,6 +44,7 @@ import { focusIdOf } from "../kit/shared"
 
 const scrape = (message: PrometheusMessage) => IntegrationMessage.GotPrometheusMessage({ message })
 const awsMsg = (message: AwsMessage) => IntegrationMessage.GotAwsMessage({ message })
+const gcpMsg = (message: GcpMessage) => IntegrationMessage.GotGcpMessage({ message })
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -666,11 +672,13 @@ describe("integration sources", () => {
 			const done = pageUpdate(
 				withStatus(loaded(gcp(connectorId))),
 				Message.GotConnectionMessage({
-					message: IntegrationMessage.CompletedGcpDisconnect({
-						id: Schema.decodeSync(GcpConnectorId)(connectorUuid),
-						cleanupScript: "gcloud ...",
-						failure: null,
-					}),
+					message: gcpMsg(
+						GcpMessage.CompletedGcpDisconnect({
+							id: Schema.decodeSync(GcpConnectorId)(connectorUuid),
+							cleanupScript: "gcloud ...",
+							failure: null,
+						}),
+					),
 				}),
 			)
 			expect(done.outMessage?._tag === "RequestedNavigation" && done.outMessage.url).toBe(

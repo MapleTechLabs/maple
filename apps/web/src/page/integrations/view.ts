@@ -14,7 +14,6 @@ import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
-import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
 import { integrationHeader } from "./view-header"
 import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
 import { providerModuleOf } from "./provider-modules"
@@ -53,13 +52,7 @@ export const cardView = (
 	focusId: string | null = null,
 ): ReadonlyArray<Html> => {
 	const provider = providerModuleOf(integration)
-	if (provider !== undefined) return provider.card(h, model, timeZone, focusId, integration)
-	switch (integration) {
-		case "gcp":
-			return [gcpCard(h, model, timeZone, focusId)]
-		default:
-			return []
-	}
+	return provider === undefined ? [] : provider.card(h, model, timeZone, focusId, integration)
 }
 
 const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): Html => {
@@ -77,10 +70,7 @@ const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): 
 				{
 					connect: connectButton(h, model, integration),
 					actions: provider?.headerActions?.(h, model) ?? undefined,
-					statusLine:
-						integration === "gcp"
-							? gcpHeaderStatus(h, model)
-							: (provider?.headerStatus?.(h, model, timeZone) ?? undefined),
+					statusLine: provider?.headerStatus?.(h, model, timeZone) ?? undefined,
 				},
 				timeZone,
 			),

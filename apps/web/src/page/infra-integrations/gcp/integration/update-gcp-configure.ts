@@ -11,7 +11,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
+import type { PageContext } from "../../../contract"
 import {
 	ConfirmRemoval,
 	CopyPrompt,
@@ -22,8 +22,8 @@ import {
 	LoadConfigureScripts,
 	UpdateConnector,
 } from "./gcp-configure"
-import { CAPABILITIES, SCOPE_TYPES } from "./gcp-configure-copy"
-import { chooseChanges, createRequest } from "./gcp-configure-derive"
+import { CAPABILITIES, CAPABILITY_IDS, SCOPE_TYPES } from "./gcp-configure-copy"
+import { chooseChanges, createRequest, runConfirmed } from "./gcp-configure-derive"
 import type {
 	Capability,
 	ConfigureModel,
@@ -32,57 +32,64 @@ import type {
 	SetupMethod,
 } from "./gcp-configure-schema"
 import type { ConfigureTarget } from "./gcp-schema"
-import { Message } from "../../../integrations/message"
+import { type GcpCardModel, GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
-import { gcpConnectors, refreshInventory, updateGcpCard } from "./update-gcp"
-import { chain, requestStatus } from "../../../integrations/update-status"
+import { HubRequest } from "../../../integrations/provider"
+import {
+	connectorsIn,
+	type Env,
+	readStatus,
+	refreshInventory,
+	type Return,
+	steps,
+	withCard,
+} from "./update-gcp"
 
-type Return = PageReturn<Model, Message>
+// The configure wizard's state changes, as steps of the Google Cloud module.
 
-export const withConfigure = (
-	model: Model,
-	patch: (configure: ConfigureModel) => Partial<ConfigureModel>,
-): Model =>
-	model.gcpCard.configure === null
+type Card = GcpCardModel
+type Connectors = ReadonlyArray<V2GcpConnector>
+
+const withConfigure = (model: Card, patch: (configure: ConfigureModel) => Partial<ConfigureModel>): Card =>
+	model.configure === null
 		? model
-		: {
-				...model,
-				gcpCard: {
-					...model.gcpCard,
-					configure: { ...model.gcpCard.configure, ...patch(model.gcpCard.configure) },
-				},
-			}
+		: { ...model, configure: { ...model.configure, ...patch(model.configure) } }
 
-export const metricsAvailable = (model: Model): boolean =>
-	Option.match(AsyncData.getData(model.statuses.gcp.data), {
+const metricsIn = (slot: Env["status"]): boolean =>
+	Option.match(AsyncData.getData(slot.data), {
 		onNone: () => false,
 		onSome: (status) => status.metrics_available,
 	})
 
-export const savedConnector = (model: Model, configure: ConfigureModel): V2GcpConnector | undefined => {
+export const metricsAvailable = (model: Model): boolean => metricsIn(model.statuses.gcp)
+
+const savedConnector = (connectors: Connectors, configure: ConfigureModel): V2GcpConnector | undefined => {
 	const target = configure.target
 	if (target._tag === "New") return undefined
 	return Option.getOrElse(
-		Arr.findFirst(gcpConnectors(model), (entry) => entry.id === target.id),
+		Arr.findFirst(connectors, (entry) => entry.id === target.id),
 		() => (configure.created?.id === target.id ? configure.created : undefined),
 	)
 }
 
 /** What was just saved, shown over the read until the status read delivers a newer connector. */
-export const configureConnector = (model: Model, configure: ConfigureModel): V2GcpConnector | undefined => {
-	const saved = savedConnector(model, configure)
+export const configureConnector = (
+	connectors: Connectors,
+	configure: ConfigureModel,
+): V2GcpConnector | undefined => {
+	const saved = savedConnector(connectors, configure)
 	return saved === undefined || configure.asked === null ? saved : { ...saved, ...configure.asked }
 }
 
-const dialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+const dialogStep = (model: Card, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: withConfigure(model, () => ({ dialog: step.model })),
 	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotGcpConfigureDialogMessage({ message }),
+		GcpMessage.GotGcpConfigureDialogMessage({ message }),
 	),
 })
 
 /** The script asked for the chosen filter: `undefined` keeps an existing sink's. */
-export const scriptsKey = (
+const scriptsKey = (
 	context: PageContext,
 	connector: V2GcpConnector,
 	filter: LogFilterDraft,
@@ -98,14 +105,18 @@ export const scriptsKey = (
 	}
 }
 
-const requestScripts = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
-	const configure = model.gcpCard.configure
-	const connector = configure === null ? undefined : configureConnector(model, configure)
+/** The wizard's connector as shown, against the status the module sees. */
+const shownConnector = (env: Env, configure: ConfigureModel) =>
+	configureConnector(connectorsIn(env.status), configure)
+
+const requestScripts = (model: Card, env: Env, mode: Keyed.RequestMode): Return => {
+	const configure = model.configure
+	const connector = configure === null ? undefined : shownConnector(env, configure)
 	if (configure === null || connector === undefined || configure.opened === null) return { model }
 	// Without the script the sink is the one found when the step opened.
 	const sinkExists =
 		configure.method === "script" ? connector.applied_logs_enabled === true : configure.sinkExisted
-	const { key, applicationLogs } = scriptsKey(context, connector, configure.filter, sinkExists)
+	const { key, applicationLogs } = scriptsKey(env.context, connector, configure.filter, sinkExists)
 	return Option.match(Keyed.request(configure.scripts, key, mode), {
 		onNone: () => ({ model }),
 		onSome: (scripts) => ({
@@ -119,12 +130,12 @@ const requestScripts = (model: Model, context: PageContext, mode: Keyed.RequestM
  * The run step, timed from now (the page clock), with the report on record so a newer run tells
  * itself apart. The script is read afresh.
  */
-const enterApply = (model: Model, context: PageContext, rerun: boolean): Return => {
-	const configure = model.gcpCard.configure
-	const saved = configure === null ? undefined : savedConnector(model, configure)
+const enterApply = (model: Card, env: Env, rerun: boolean): Return => {
+	const configure = model.configure
+	const saved = configure === null ? undefined : savedConnector(connectorsIn(env.status), configure)
 	if (saved === undefined) return { model }
-	const opened = { at: model.nowMs, rerun, seen: saved.setup_reported_at }
-	const shown = configure === null ? saved : (configureConnector(model, configure) ?? saved)
+	const opened = { at: env.nowMs, rerun, seen: saved.setup_reported_at }
+	const shown = configure === null ? saved : (shownConnector(env, configure) ?? saved)
 	return requestScripts(
 		withConfigure(model, () => ({
 			opened,
@@ -137,54 +148,54 @@ const enterApply = (model: Model, context: PageContext, rerun: boolean): Return 
 			promptCopied: null,
 			isConfirmingRemoval: false,
 		})),
-		context,
+		env,
 		"Load",
 	)
 }
 
 /** The Method step, with whether a run was asked for when the data step was left. */
-const toMethod = (model: Model, rerun: boolean): Return => ({
+const toMethod = (model: Card, rerun: boolean): Return => ({
 	model: withConfigure(model, () => ({ connectionStage: "method", rerun, opened: null })),
 })
 
 /** Continue on the Method step: the Set up step for the chosen method. */
-export const clickedMethodContinue = (model: Model, context: PageContext): Return => {
-	const configure = model.gcpCard.configure
+export const clickedMethodContinue = (model: Card, env: Env): Return => {
+	const configure = model.configure
 	if (configure === null || configure.opened !== null) return { model }
-	return enterApply(model, context, configure.rerun ?? true)
+	return enterApply(model, env, configure.rerun ?? true)
 }
 
-export const openConfigure = (model: Model, target: ConfigureTarget): Return => {
-	const pending = model.gcpCard.pendingWrite
+export const openConfigure = (model: Card, env: Env, target: ConfigureTarget): Return => {
+	const pending = model.pendingWrite
 	const configure = {
-		...initConfigure(target, gcpConnectors(model), metricsAvailable(model)),
+		...initConfigure(target, connectorsIn(env.status), metricsIn(env.status)),
 		isCreating: pending === "create",
 		isSaving: pending === "update",
 	}
-	const opened = updateGcpCard(model, { configure, configureOpens: model.gcpCard.configureOpens + 1 }).model
+	const opened = withCard(model, { configure, configureOpens: model.configureOpens + 1 })
 	const shown = dialogStep(opened, Dialog.open(configure.dialog))
-	const saved = savedConnector(shown.model, configure)
+	const saved = savedConnector(connectorsIn(env.status), configure)
 	if (target._tag === "New" || target.stage === "choose" || saved === undefined) return shown
 	// Found waiting on a first run, the status times it from the connection's creation.
-	return chain(shown.model, [
+	return steps(shown.model, [
 		() => shown,
-		(next) => toMethod(next, gcpScriptNeeded(saved, model.nowMs) !== "setup-pending"),
+		(next) => toMethod(next, gcpScriptNeeded(saved, env.nowMs) !== "setup-pending"),
 	])
 }
 
-export const closedConfigure = (model: Model): Return => updateGcpCard(model, { configure: null })
+export const closedConfigure = (model: Card): Return => ({ model: withCard(model, { configure: null }) })
 
 /** The X and Escape close the wizard outright. */
-export const gotConfigureDialog = (model: Model, message: Dialog.Message): Return => {
-	const configure = model.gcpCard.configure
+export const gotConfigureDialog = (model: Card, message: Dialog.Message): Return => {
+	const configure = model.configure
 	if (configure === null) return { model }
 	const step = Dialog.update(configure.dialog, message)
 	return step.model.isOpen ? dialogStep(model, step) : closedConfigure(model)
 }
 
 /** A new kind of scope: the two kinds of ID never carry over, so the field starts over. */
-export const gotScopeType = (model: Model, message: ToggleGroup.Message): Return => {
-	const configure = model.gcpCard.configure
+export const gotScopeType = (model: Card, message: ToggleGroup.Message): Return => {
+	const configure = model.configure
 	if (configure === null) return { model }
 	const step = ToggleGroup.update(configure.scopeGroup, message)
 	const found = Arr.findFirst(
@@ -192,7 +203,7 @@ export const gotScopeType = (model: Model, message: ToggleGroup.Message): Return
 		(scopeType) => scopeType !== configure.scopeType && step.model.values.includes(scopeType),
 	)
 	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-		Message.GotGcpScopeTypeMessage({ message: inner }),
+		GcpMessage.GotGcpScopeTypeMessage({ message: inner }),
 	)
 	const grouped = withConfigure(model, () => ({
 		scopeGroup: { ...step.model, values: [Option.getOrElse(found, () => configure.scopeType)] },
@@ -206,7 +217,7 @@ export const gotScopeType = (model: Model, message: ToggleGroup.Message): Return
 }
 
 export const gotScopeField = (
-	model: Model,
+	model: Card,
 	field: "scopeId" | "hostProjectId",
 	message: Field.Message,
 ): Return => ({
@@ -217,48 +228,43 @@ export const gotScopeField = (
 	})),
 })
 
-export const submittedCreate = (model: Model): Return => {
-	const configure = model.gcpCard.configure
+export const submittedCreate = (model: Card): Return => {
+	const configure = model.configure
 	if (configure === null || configure.isCreating) return { model }
 	return Option.match(createRequest(configure), {
 		onNone: () => ({ model }),
 		onSome: (request) => ({
-			model: withConfigure(updateGcpCard(model, { pendingWrite: "create" }).model, () => ({
+			model: withConfigure(withCard(model, { pendingWrite: "create" }), () => ({
 				isCreating: true,
 				createError: null,
 			})),
-			commands: [CreateConnector({ opens: model.gcpCard.configureOpens, request })],
+			commands: [CreateConnector({ opens: model.configureOpens, request })],
 		}),
 	})
 }
 
 /** The write settled; `true` when the wizard it was sent from is still the one open. */
-const settleWrite = (
-	model: Model,
-	opens: number,
-): { readonly model: Model; readonly isCurrent: boolean } => ({
-	model: updateGcpCard(model, { pendingWrite: null }).model,
-	isCurrent: model.gcpCard.configure !== null && model.gcpCard.configureOpens === opens,
+const settleWrite = (model: Card, opens: number): { readonly model: Card; readonly isCurrent: boolean } => ({
+	model: withCard(model, { pendingWrite: null }),
+	isCurrent: model.configure !== null && model.configureOpens === opens,
 })
 
 /** A write from a wizard closed or reopened since: the reopened one is free again, its reads refresh. */
-const staleWrite = (model: Model, context: PageContext, isSaved: boolean): Return => {
+const staleWrite = (model: Card, isSaved: boolean): Return => {
 	const freed = withConfigure(model, () => ({ isCreating: false, isSaving: false }))
-	return isSaved
-		? chain(freed, [(next) => requestStatus(next, context, "gcp", "Supersede"), refreshInventory])
-		: { model: freed }
+	return isSaved ? steps(freed, [readStatus("Supersede"), refreshInventory]) : { model: freed }
 }
 
 /** A refused scope keeps its message on screen; a created one reads its setup for Go live. */
 export const completedCreate = (
-	model: Model,
-	context: PageContext,
+	model: Card,
+	env: Env,
 	opens: number,
 	connector: V2GcpConnector | null,
 	failure: LoadFailure | null,
 ): Return => {
 	const write = settleWrite(model, opens)
-	if (!write.isCurrent) return staleWrite(write.model, context, connector !== null)
+	if (!write.isCurrent) return staleWrite(write.model, connector !== null)
 	const settled = withConfigure(write.model, () => ({ isCreating: false }))
 	if (connector === null)
 		return {
@@ -270,23 +276,19 @@ export const completedCreate = (
 			})),
 		}
 	const target: ConfigureTarget = { _tag: "Connection", id: connector.id, stage: "apply" }
-	return chain(
+	return steps(
 		withConfigure(settled, () => ({ created: connector, target })),
-		[
-			(next) => enterApply(next, context, false),
-			(next) => requestStatus(next, context, "gcp", "Supersede"),
-			refreshInventory,
-		],
+		[(next) => enterApply(next, env, false), readStatus("Supersede"), refreshInventory],
 	)
 }
 
 /** A switch: the new connection's flags on the data step, else the connection's draft. */
-export const toggledCollect = (model: Model, capability: Capability): Return => {
-	const configure = model.gcpCard.configure
+export const toggledCollect = (model: Card, env: Env, capability: Capability): Return => {
+	const configure = model.configure
 	if (configure === null) return { model }
 	const isNew = configure.target._tag === "New"
 	const flags = isNew ? configure.newFlags : configure.chooseFlags
-	if (gcpCollectLock(flags, capability, metricsAvailable(model)) !== null) return { model }
+	if (gcpCollectLock(flags, capability, metricsIn(env.status)) !== null) return { model }
 	const flag = CAPABILITIES[capability].flag
 	const next = { ...flags, [flag]: !flags[flag] }
 	return {
@@ -297,33 +299,33 @@ export const toggledCollect = (model: Model, capability: Capability): Return => 
 }
 
 /** A connection's switch: its data step opens with the flip drafted, so saving goes the usual way. */
-export const toggledFeature = (model: Model, id: string, capability: Capability): Return =>
-	chain(model, [
-		(next) => openConfigure(next, { _tag: "Connection", id, stage: "choose" }),
-		(next) => toggledCollect(next, capability),
+export const toggledFeature = (model: Card, env: Env, id: string, capability: Capability): Return =>
+	steps(model, [
+		(next) => openConfigure(next, env, { _tag: "Connection", id, stage: "choose" }),
+		(next) => toggledCollect(next, env, capability),
 	])
 
 /** A filter changed after the setup was read (the flow's Back): the script is asked for again. */
 const withFilter = (
-	model: Model,
-	context: PageContext,
+	model: Card,
+	env: Env,
 	patch: (filter: LogFilterDraft) => Partial<LogFilterDraft>,
 ): Return => {
 	const next = withConfigure(model, (configure) => ({
 		filter: { ...configure.filter, ...patch(configure.filter) },
 	}))
-	return next.gcpCard.configure?.opened == null ? { model: next } : requestScripts(next, context, "Load")
+	return next.configure?.opened == null ? { model: next } : requestScripts(next, env, "Load")
 }
 
-export const clickedLogFilter = (model: Model): Return => ({
+export const clickedLogFilter = (model: Card): Return => ({
 	model: withConfigure(model, (configure) => ({ isFilterOpen: !configure.isFilterOpen })),
 })
 
-export const clickedForwardOutput = (model: Model, context: PageContext): Return =>
-	withFilter(model, context, () => ({ runtimes: [] }))
+export const clickedForwardOutput = (model: Card, env: Env): Return =>
+	withFilter(model, env, () => ({ runtimes: [] }))
 
-export const clickedUseOpenTelemetry = (model: Model, context: PageContext): Return =>
-	withFilter(model, context, () => ({ runtimes: null }))
+export const clickedUseOpenTelemetry = (model: Card, env: Env): Return =>
+	withFilter(model, env, () => ({ runtimes: null }))
 
 /** A runtime's tick flipped in the draft (shared with `/lab/gcp`). */
 export const runtimeToggled = (filter: LogFilterDraft, runtime: GcpLogRuntime): Partial<LogFilterDraft> => {
@@ -335,41 +337,41 @@ export const runtimeToggled = (filter: LogFilterDraft, runtime: GcpLogRuntime): 
 	}
 }
 
-export const toggledRuntime = (model: Model, context: PageContext, runtime: GcpLogRuntime): Return =>
-	withFilter(model, context, (filter) => runtimeToggled(filter, runtime))
+export const toggledRuntime = (model: Card, env: Env, runtime: GcpLogRuntime): Return =>
+	withFilter(model, env, (filter) => runtimeToggled(filter, runtime))
 
 /** Keep or replace an existing sink's filter. */
-export const gotFilterMode = (model: Model, context: PageContext, message: Select.Message): Return => {
-	const configure = model.gcpCard.configure
+export const gotFilterMode = (model: Card, env: Env, message: Select.Message): Return => {
+	const configure = model.configure
 	if (configure === null) return { model }
 	const step = Select.update(configure.filterMode, message)
 	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-		Message.GotGcpFilterModeMessage({ message: inner }),
+		GcpMessage.GotGcpFilterModeMessage({ message: inner }),
 	)
 	const picked = step.outMessage?._tag === "ChangedValue" ? step.outMessage.value : null
 	const next = withConfigure(model, () => ({ filterMode: step.model }))
 	if (picked === null) return { model: next, commands }
-	const filtered = withFilter(next, context, () => ({ keep: picked === "keep" }))
+	const filtered = withFilter(next, env, () => ({ keep: picked === "keep" }))
 	return { ...filtered, commands: [...commands, ...(filtered.commands ?? [])] }
 }
 
-const confirmStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+const confirmStep = (model: Card, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: withConfigure(model, () => ({ confirm: step.model })),
 	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotGcpConfirmDialogMessage({ message }),
+		GcpMessage.GotGcpConfirmDialogMessage({ message }),
 	),
 })
 
-export const gotConfirmDialog = (model: Model, message: Dialog.Message): Return => {
-	const configure = model.gcpCard.configure
+export const gotConfirmDialog = (model: Card, message: Dialog.Message): Return => {
+	const configure = model.configure
 	if (configure === null || configure.isSaving) return { model }
 	return confirmStep(model, Dialog.update(configure.confirm, message))
 }
 
 /** Sends only what changed: the API leaves an omitted capability as it is. */
-const save = (model: Model): Return => {
-	const configure = model.gcpCard.configure
-	const connector = configure === null ? undefined : configureConnector(model, configure)
+export const confirmedSave = (model: Card, env: Env): Return => {
+	const configure = model.configure
+	const connector = configure === null ? undefined : shownConnector(env, configure)
 	if (configure === null || connector === undefined || configure.isSaving) return { model }
 	const draft = configure.chooseFlags
 	const { changed } = chooseChanges(connector, draft)
@@ -380,66 +382,51 @@ const save = (model: Model): Return => {
 				? { logs_enabled: draft.logs_enabled }
 				: { metrics_enabled: draft.metrics_enabled }
 	return {
-		model: withConfigure(updateGcpCard(model, { pendingWrite: "update" }).model, () => ({
-			isSaving: true,
-		})),
-		commands: [
-			UpdateConnector({ opens: model.gcpCard.configureOpens, id: connector.id, payload, flags: draft }),
-		],
+		model: withConfigure(withCard(model, { pendingWrite: "update" }), () => ({ isSaving: true })),
+		commands: [UpdateConnector({ opens: model.configureOpens, id: connector.id, payload, flags: draft })],
 	}
 }
 
 /** Unchanged leads on; a change that acts in Maple at once asks first; any other saves. */
-export const clickedChooseApply = (model: Model): Return => {
-	const configure = model.gcpCard.configure
-	const connector = configure === null ? undefined : configureConnector(model, configure)
+export const clickedChooseApply = (model: Card, env: Env): Return => {
+	const configure = model.configure
+	const connector = configure === null ? undefined : shownConnector(env, configure)
 	if (configure === null || connector === undefined || configure.isSaving) return { model }
 	const { changed, immediate } = chooseChanges(connector, configure.chooseFlags)
 	if (changed.length === 0) return toMethod(model, true)
 	if (immediate.length > 0) return confirmStep(model, Dialog.open(configure.confirm))
-	return save(model)
+	return confirmedSave(model, env)
 }
-
-export const confirmedSave = save
 
 /** A failed save keeps the confirmation open for a retry; a saved one leads into the run step. */
 export const completedUpdate = (
-	model: Model,
-	context: PageContext,
+	model: Card,
 	opens: number,
 	flags: GcpFlags,
 	failure: LoadFailure | null,
 ): Return => {
 	const write = settleWrite(model, opens)
-	if (failure === null && !write.isCurrent) return staleWrite(write.model, context, true)
+	if (failure === null && !write.isCurrent) return staleWrite(write.model, true)
 	const settled = write.isCurrent
 		? withConfigure(write.model, () => ({ isSaving: false }))
-		: staleWrite(write.model, context, false).model
+		: staleWrite(write.model, false).model
 	if (failure !== null)
 		return {
 			model: settled,
-			outMessage: PageOutMessage.RequestedToast({
-				type: "error",
-				title: "Couldn't save the change",
-				description: failure.message,
-			}),
+			requests: [HubRequest.toast("error", "Couldn't save the change", failure.message)],
 		}
 	// The data step unmounts with its confirmation, so that closes without a transition.
 	const applied = withConfigure(settled, () => ({ asked: flags, confirm: initConfirm() }))
-	return chain(applied, [
-		(next) => toMethod(next, false),
-		(next) => requestStatus(next, context, "gcp", "Supersede"),
-		refreshInventory,
-	])
+	return steps(applied, [(next) => toMethod(next, false), readStatus("Supersede"), refreshInventory])
 }
 
 /**
  * "Edit" or Back: from the Set up step the Method step again; from the Method step the data step,
  * its draft from the connection as shown.
  */
-export const clickedRunEdit = (model: Model): Return => {
-	const configure = model.gcpCard.configure
-	const connector = configure === null ? undefined : configureConnector(model, configure)
+export const clickedRunEdit = (model: Card, env: Env): Return => {
+	const configure = model.configure
+	const connector = configure === null ? undefined : shownConnector(env, configure)
 	if (configure === null || connector === undefined) return { model }
 	if (configure.opened !== null)
 		return {
@@ -460,7 +447,7 @@ export const clickedRunEdit = (model: Model): Return => {
 }
 
 /** A Method row, or the code flavour under it: the flavour toggle follows the method. */
-export const clickedMethod = (model: Model, method: SetupMethod): Return => ({
+export const clickedMethod = (model: Card, method: SetupMethod): Return => ({
 	model: withConfigure(model, (configure) => ({
 		method,
 		flavourGroup:
@@ -470,8 +457,8 @@ export const clickedMethod = (model: Model, method: SetupMethod): Return => ({
 	})),
 })
 
-export const gotFlavour = (model: Model, message: ToggleGroup.Message): Return => {
-	const configure = model.gcpCard.configure
+export const gotFlavour = (model: Card, message: ToggleGroup.Message): Return => {
+	const configure = model.configure
 	if (configure === null) return { model }
 	const step = ToggleGroup.update(configure.flavourGroup, message)
 	const flavour = configure.method === "alchemy" ? "alchemy" : "terraform"
@@ -482,7 +469,7 @@ export const gotFlavour = (model: Model, message: ToggleGroup.Message): Return =
 			method: Option.getOrElse(next, () => configure.method),
 		})),
 		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-			Message.GotGcpFlavourMessage({ message: inner }),
+			GcpMessage.GotGcpFlavourMessage({ message: inner }),
 		),
 	}
 }
@@ -490,39 +477,34 @@ export const gotFlavour = (model: Model, message: ToggleGroup.Message): Return =
 const FLAVOURS = ["terraform", "alchemy"] as const
 
 export const completedScripts = (
-	model: Model,
+	model: Card,
 	key: string,
 	result: Parameters<typeof Keyed.accept<V2GcpSetupScripts, LoadFailure>>[2],
 ): Return => ({
 	model: withConfigure(model, (configure) => ({ scripts: Keyed.accept(configure.scripts, key, result) })),
 })
 
-export const retriedScripts = (model: Model, context: PageContext): Return =>
-	requestScripts(model, context, "Refresh")
+export const retriedScripts = (model: Card, env: Env): Return => requestScripts(model, env, "Refresh")
 
-export const clickedScriptExpand = (model: Model): Return => ({
+export const clickedScriptExpand = (model: Card): Return => ({
 	model: withConfigure(model, (configure) => ({ isScriptExpanded: !configure.isScriptExpanded })),
 })
 
 /** A newer read that lists the connection replaces what was just saved (`asked.of === saved`). */
-export const statusArrived = (model: Model): Return => {
-	const configure = model.gcpCard.configure
+export const statusArrived = (model: Card, env: Env): Card => {
+	const configure = model.configure
 	const target = configure?.target
 	const listed =
-		target?._tag === "Connection" && Arr.some(gcpConnectors(model), (entry) => entry.id === target.id)
-	if (listed) return { model: withConfigure(model, () => ({ asked: null })) }
+		target?._tag === "Connection" && Arr.some(connectorsIn(env.status), (entry) => entry.id === target.id)
+	if (listed) return withConfigure(model, () => ({ asked: null }))
 	// The flow starts with metrics on; a deployment without them turns the switch back off.
-	return target?._tag === "New" && configure?.newFlags.metrics_enabled === true && !metricsAvailable(model)
-		? {
-				model: withConfigure(model, () => ({
-					newFlags: { logs_enabled: true, metrics_enabled: false },
-				})),
-			}
-		: { model }
+	return target?._tag === "New" && configure?.newFlags.metrics_enabled === true && !metricsIn(env.status)
+		? withConfigure(model, () => ({ newFlags: { logs_enabled: true, metrics_enabled: false } }))
+		: model
 }
 
 /** One console step open at a time; the open one closes on its own click. */
-export const clickedManualStep = (model: Model, title: string, firstTitle: string | null): Return => ({
+export const clickedManualStep = (model: Card, title: string, firstTitle: string | null): Return => ({
 	model: withConfigure(model, (configure) => {
 		const open = configure.isManualTouched ? configure.manualOpen : firstTitle
 		return { manualOpen: open === title ? null : title, isManualTouched: true }
@@ -530,23 +512,23 @@ export const clickedManualStep = (model: Model, title: string, firstTitle: strin
 })
 
 /** "Copy prompt for coding agent": the prompt takes the file's place, and the footer says if it copied. */
-export const clickedCopyPrompt = (model: Model, prompt: string): Return => ({
+export const clickedCopyPrompt = (model: Card, prompt: string): Return => ({
 	model: withConfigure(model, () => ({ isPromptShown: true, promptCopied: null })),
 	commands: [CopyPrompt({ text: prompt })],
 })
 
-export const completedPromptCopy = (model: Model, isCopied: boolean): Return => ({
+export const completedPromptCopy = (model: Card, isCopied: boolean): Return => ({
 	model: withConfigure(model, () => ({ promptCopied: isCopied })),
 })
 
-export const clickedPromptBack = (model: Model): Return => ({
+export const clickedPromptBack = (model: Card): Return => ({
 	model: withConfigure(model, () => ({ isPromptShown: false })),
 })
 
 /** "I've removed them": recorded on the admin's word, then the status read again. */
-export const clickedConfirmRemoval = (model: Model): Return => {
-	const configure = model.gcpCard.configure
-	const connector = configure === null ? undefined : configureConnector(model, configure)
+export const clickedConfirmRemoval = (model: Card, env: Env): Return => {
+	const configure = model.configure
+	const connector = configure === null ? undefined : shownConnector(env, configure)
 	if (configure === null || connector === undefined || configure.isConfirmingRemoval) return { model }
 	return {
 		model: withConfigure(model, () => ({ isConfirmingRemoval: true })),
@@ -554,20 +536,27 @@ export const clickedConfirmRemoval = (model: Model): Return => {
 	}
 }
 
-export const completedConfirmRemoval = (
-	model: Model,
-	context: PageContext,
-	failure: LoadFailure | null,
-): Return => {
+export const completedConfirmRemoval = (model: Card, failure: LoadFailure | null): Return => {
 	const settled = withConfigure(model, () => ({ isConfirmingRemoval: false }))
 	if (failure !== null)
 		return {
 			model: settled,
-			outMessage: PageOutMessage.RequestedToast({
-				type: "error",
-				title: "Couldn't record the removal",
-				description: failure.message,
-			}),
+			requests: [HubRequest.toast("error", "Couldn't record the removal", failure.message)],
 		}
-	return chain(settled, [(next) => requestStatus(next, context, "gcp", "Supersede"), refreshInventory])
+	return steps(settled, [readStatus("Supersede"), refreshInventory])
+}
+
+/** The Set up step is open and Maple has not confirmed the run, or the first data. */
+export const isAwaitingRun = (model: Card, slot: Env["status"], nowMs: number): boolean => {
+	const configure = model.configure
+	if (configure === null || configure.opened === null) return false
+	const connector = configureConnector(connectorsIn(slot), configure)
+	if (connector === undefined) return false
+	if (configure.method === "script") return !runConfirmed(connector, configure.opened, nowMs)
+	// Until each capability's first data, or its removal, is confirmed.
+	return Arr.some(CAPABILITY_IDS, (capability) => {
+		const applied =
+			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
+		return connector[CAPABILITIES[capability].flag] ? applied !== true : applied === true
+	})
 }

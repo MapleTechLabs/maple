@@ -11,14 +11,15 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { sectionHeading } from "../../../kit/section-heading"
 import { HEALTH_TONE } from "../../../integrations/derive"
 import { integrationNotice } from "../../../integrations/kit/notice"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { copyScriptButton, openCloudShellButton, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
 import { integrationStatusCard } from "../../../integrations/view-integration-card"
 import { gcpConnectors } from "./update-gcp"
 import { gcpConnection } from "./view-gcp-connection"
 import { gcpConfigure } from "./view-gcp-configure"
 import { gcpDialogs } from "./view-gcp-dialogs"
-import { copyScriptButton, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Order } from "effect"
@@ -55,7 +56,7 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 					{
 						size: "sm",
 						variant: "outline",
-						attributes: [h.OnClick(Message.ClickedDismissCleanup({ id: entry.id }))],
+						attributes: [h.OnClick(toHub(GcpMessage.ClickedDismissCleanup({ id: entry.id })))],
 					},
 					["Dismiss"],
 				),

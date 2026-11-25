@@ -5,8 +5,9 @@ import { icon } from "@maple/views/ui/icon"
 import { featureList } from "../../../kit/feature-list"
 import { CAPABILITIES, CAPABILITY_IDS, LOCK_NOTES } from "./gcp-configure-copy"
 import type { Capability, GcpFlags } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
-import { GCP_TITLE, SMALL } from "./view-gcp-parts"
+import type { Message } from "../../../integrations/message"
+import { GCP_TITLE, SMALL, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
@@ -41,7 +42,7 @@ export const collectFields = (
 						spec,
 						isChecked: flags[flag],
 						isDisabled: lock !== null,
-						onToggle: Message.ToggledGcpCollect({ capability }),
+						onToggle: toHub(GcpMessage.ToggledGcpCollect({ capability })),
 						children: [
 							...(lock === "metrics-unavailable"
 								? [noteLine(h, "info", LOCK_NOTES["metrics-unavailable"])]

@@ -8,7 +8,6 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { cardView } from "./view"
 import { providerModuleOf } from "./provider-modules"
-import { gcpFlowView } from "../infra-integrations/gcp/integration/view-flow-gcp"
 
 type H = HtmlBuilder<Message>
 
@@ -70,11 +69,7 @@ export const flowView = (
 	timeZone: string,
 ): Html => {
 	const providerView = providerModuleOf(integration)?.flowView ?? null
-	if (providerView !== null) return providerView(h, model, stage, timeZone, integration)
-	switch (integration) {
-		case "gcp":
-			return gcpFlowView(h, model, stage, timeZone)
-		default:
-			return genericFlowView(h, model, integration, stage, timeZone)
-	}
+	return providerView === null
+		? genericFlowView(h, model, integration, stage, timeZone)
+		: providerView(h, model, stage, timeZone, integration)
 }

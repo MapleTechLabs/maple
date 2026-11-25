@@ -2,7 +2,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as SelectView from "@maple/views/ui/select-view"
 import { FILTER_MODES } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { GcpMessage } from "./gcp"
+import { toHub } from "./view-gcp-parts"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack } from "@maple/views/ui/stack"
@@ -46,6 +48,6 @@ export const filterModeSelect = (
 			renderItem: (option) => filterMode(h, option.value),
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
-		toParentMessage: (message) => Message.GotGcpFilterModeMessage({ message }),
+		toParentMessage: (message) => toHub(GcpMessage.GotGcpFilterModeMessage({ message })),
 	}),
 ]

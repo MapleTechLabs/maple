@@ -1,4 +1,4 @@
-import type { V2GcpConnector } from "@maple/domain/http/v2"
+import type { V2GcpConnector, V2GcpIntegration } from "@maple/domain/http/v2"
 import type { GcpConnectorId } from "@maple/primitives"
 import { gcpNothingSeen, gcpScopeLabel } from "../connector-state"
 import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
@@ -13,10 +13,10 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import {
 	DeleteConnector,
 	type GcpCardModel,
+	GcpMessage,
 	LoadFleet,
 	LoadInventory,
 	LoadLogVolume,
@@ -27,56 +27,79 @@ import {
 } from "./gcp"
 import { initConfigure } from "./gcp-configure"
 import { disconnectSpec } from "../../../integrations/disconnect"
-import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
+import { HubRequest, type ProviderEnv, type ProviderReturn } from "../../../integrations/provider"
 import type { ConfigureTarget } from "./gcp-schema"
-import { TrackDisconnected } from "../../../integrations/command"
-import { chain, requestStatus } from "../../../integrations/update-status"
 
-type Return = PageReturn<Model, Message>
+// The Google Cloud card's state changes (its band, menus, removal and cleanup), as module steps.
 
-const withCard = (model: Model, card: Partial<GcpCardModel>): Model => ({
+type Status = V2GcpIntegration
+export type Env = ProviderEnv<Status>
+export type Return = ProviderReturn<GcpCardModel, GcpMessage>
+type Slot = Env["status"]
+
+export const withCard = (model: GcpCardModel, card: Partial<GcpCardModel>): GcpCardModel => ({
 	...model,
-	gcpCard: { ...model.gcpCard, ...card },
+	...card,
 })
 
-export const gcpConnectors = (model: Model): ReadonlyArray<V2GcpConnector> =>
-	Option.match(AsyncData.getData(model.statuses.gcp.data), {
+/** Runs steps in order: the last step's model, every request and Command in order. */
+export const steps = (model: GcpCardModel, next: ReadonlyArray<(model: GcpCardModel) => Return>): Return =>
+	Arr.reduce<(typeof next)[number], Return>(next, { model }, (acc, step) => {
+		const result = step(acc.model)
+		return {
+			model: result.model,
+			requests: [...(acc.requests ?? []), ...(result.requests ?? [])],
+			commands: [...(acc.commands ?? []), ...(result.commands ?? [])],
+		}
+	})
+
+/** The status re-read after a write. */
+export const readStatus =
+	(mode: Keyed.ReadMode) =>
+	(model: GcpCardModel): Return => ({ model, requests: [HubRequest.readStatus(mode)] })
+
+export const connectorsIn = (slot: Slot): ReadonlyArray<V2GcpConnector> =>
+	Option.match(AsyncData.getData(slot.data), {
 		onNone: () => [],
 		onSome: (status) => status.connectors,
 	})
+
+export const gcpConnectors = (model: Model): ReadonlyArray<V2GcpConnector> => connectorsIn(model.statuses.gcp)
 
 /**
  * The card's entry: the cleanup list from storage, and a new connection for the connect flow.
  * Metrics start on until the status says the deployment lacks them.
  */
-export const enterGcp = (model: Model, context: PageContext): Return => ({
+export const enterGcp = (model: GcpCardModel, env: Env): Return => ({
 	model:
-		model.gcpCard.configure === null
+		model.configure === null
 			? withCard(model, {
 					configure: initConfigure(
 						{ _tag: "New" },
-						gcpConnectors(model),
-						Option.match(AsyncData.getData(model.statuses.gcp.data), {
+						connectorsIn(env.status),
+						Option.match(AsyncData.getData(env.status.data), {
 							onNone: () => true,
 							onSome: (status) => status.metrics_available,
 						}),
 					),
 				})
 			: model,
-	commands: [ReadRemoved({ orgId: context.orgId })],
+	commands: [ReadRemoved({ orgId: env.context.orgId })],
 })
 
-/** The usage band reads once a connection has delivered: log volume, fleet and inventory over 24 hours. */
-export const requestBand = (model: Model, context: PageContext): Return => {
-	const connectors = gcpConnectors(model)
+/**
+ * The usage band reads once a connection has delivered, while the card shows: log volume, fleet
+ * and inventory over 24 hours.
+ */
+export const requestBand = (model: GcpCardModel, env: Env): Return => {
+	const connectors = connectorsIn(env.status)
 	const logs = Arr.some(connectors, (connector) => connector.last_log_received_at !== null)
 	const metrics = Arr.some(connectors, (connector) => connector.last_metrics_received_at !== null)
-	if ((!logs && !metrics) || model.nowMs === 0) return { model }
+	if (!env.isShown || (!logs && !metrics) || env.nowMs === 0) return { model }
+	const context = env.context
 	const window =
-		model.gcpCard.window ??
-		resolveWindow({ preset: "24h", snap: true, timeZone: context.timeZone }, model.nowMs)
-	const card = model.gcpCard
+		model.window ?? resolveWindow({ preset: "24h", snap: true, timeZone: context.timeZone }, env.nowMs)
 	const commands: Array<NonNullable<Return["commands"]>[number]> = []
 	const take = <A, E>(slot: Keyed.Keyed<A, E>, key: string, fetch: () => (typeof commands)[number]) =>
 		Option.match(Keyed.request(slot, key, "Load"), {
@@ -92,32 +115,34 @@ export const requestBand = (model: Model, context: PageContext): Return => {
 	const next = withCard(model, {
 		window,
 		logVolume: logs
-			? take(card.logVolume, volumeKey, () => LoadLogVolume({ key: volumeKey, window }))
-			: card.logVolume,
-		fleet: metrics ? take(card.fleet, fleetKey, () => LoadFleet({ key: fleetKey, window })) : card.fleet,
+			? take(model.logVolume, volumeKey, () => LoadLogVolume({ key: volumeKey, window }))
+			: model.logVolume,
+		fleet: metrics
+			? take(model.fleet, fleetKey, () => LoadFleet({ key: fleetKey, window }))
+			: model.fleet,
 		inventory: metrics
-			? take(card.inventory, inventoryKey, () => LoadInventory({ key: inventoryKey }))
-			: card.inventory,
+			? take(model.inventory, inventoryKey, () => LoadInventory({ key: inventoryKey }))
+			: model.inventory,
 	})
 	return { model: next, commands }
 }
 
-export const gotWorkloadFilter = (model: Model, message: ToggleGroup.Message): Return => {
-	const step = ToggleGroup.update(model.gcpCard.workloadFilter, message)
+export const gotWorkloadFilter = (model: GcpCardModel, message: ToggleGroup.Message): Return => {
+	const step = ToggleGroup.update(model.workloadFilter, message)
 	return {
 		model: withCard(model, {
 			workloadFilter: step.model.values.length === 0 ? { ...step.model, values: ["all"] } : step.model,
 		}),
 		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-			Message.GotWorkloadFilterMessage({ message: inner }),
+			GcpMessage.GotWorkloadFilterMessage({ message: inner }),
 		),
 	}
 }
 
-const disconnectStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+const disconnectStep = (model: GcpCardModel, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: withCard(model, { disconnectDialog: step.model }),
 	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotGcpDisconnectDialogMessage({ message }),
+		GcpMessage.GotGcpDisconnectDialogMessage({ message }),
 	),
 })
 
@@ -150,9 +175,9 @@ export const gcpInfraHref = (connector: V2GcpConnector): string =>
 	)
 
 /** A plain confirmation for a connection never reported, else the cleanup dialog reading its scripts. */
-const openDisconnect = (model: Model, context: PageContext, connector: V2GcpConnector): Return => {
+const openDisconnect = (model: GcpCardModel, env: Env, connector: V2GcpConnector): Return => {
 	const quiet = neverReported(connector)
-	const key = requestKey(context.orgId, "gcpIntegration.setupScripts", { id: connector.id })
+	const key = requestKey(env.context.orgId, "gcpIntegration.setupScripts", { id: connector.id })
 	const scripts: GcpCardModel["scripts"] = { key, data: AsyncData.Loading() }
 	const opened = disconnectStep(
 		withCard(model, {
@@ -168,74 +193,70 @@ const openDisconnect = (model: Model, context: PageContext, connector: V2GcpConn
 }
 
 export const gotMenu = (
-	model: Model,
-	context: PageContext,
+	model: GcpCardModel,
+	env: Env,
 	id: GcpConnectorId,
 	message: Menu.Message,
 	/** Passed in: `update-gcp-configure.ts` imports this module. */
-	openConfigure: (model: Model, target: ConfigureTarget) => Return,
+	openConfigure: (model: GcpCardModel, target: ConfigureTarget) => Return,
 ): Return => {
 	const menuId = `gcp-connection-menu-${id}`
-	const step = Menu.update(model.gcpCard.menus[menuId] ?? Menu.init(menuId), message)
-	const next = withCard(model, { menus: { ...model.gcpCard.menus, [menuId]: step.model } })
+	const step = Menu.update(model.menus[menuId] ?? Menu.init(menuId), message)
+	const next = withCard(model, { menus: { ...model.menus, [menuId]: step.model } })
 	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-		Message.GotGcpMenuMessage({ id, message: inner }),
+		GcpMessage.GotGcpMenuMessage({ id, message: inner }),
 	)
 	const picked = step.outMessage?._tag === "SelectedItem" ? step.outMessage.value : null
-	const found = Arr.findFirst(gcpConnectors(model), (entry) => entry.id === id)
+	const found = Arr.findFirst(connectorsIn(env.status), (entry) => entry.id === id)
 	if (picked === null || Option.isNone(found)) return { model: next, commands }
 	const connector = found.value
 	const merge = (other: Return): Return => ({
 		...other,
 		commands: [...commands, ...(other.commands ?? [])],
 	})
-	if (picked === "disconnect") return merge(openDisconnect(next, context, connector))
+	if (picked === "disconnect") return merge(openDisconnect(next, env, connector))
 	if (picked === "configure") return merge(openConfigure(next, { _tag: "Connection", id, stage: "choose" }))
 	if (picked === "logs" || picked === "infra")
 		return merge({
 			model: next,
-			outMessage: PageOutMessage.RequestedNavigation({
-				url: picked === "logs" ? gcpLogsHref(connector) : gcpInfraHref(connector),
-				isReplace: false,
-			}),
+			requests: [
+				HubRequest.navigate(picked === "logs" ? gcpLogsHref(connector) : gcpInfraHref(connector)),
+			],
 		})
 	return { model: next, commands }
 }
 
 /** The removal dialog for a connector by id, opened from outside its menu (a source's Delete). */
-export const clickedDisconnect = (model: Model, context: PageContext, id: string): Return => {
-	return Option.match(
-		Arr.findFirst(gcpConnectors(model), (entry) => entry.id === id),
-		{ onNone: () => ({ model }), onSome: (connector) => openDisconnect(model, context, connector) },
+export const clickedDisconnect = (model: GcpCardModel, env: Env, id: string): Return =>
+	Option.match(
+		Arr.findFirst(connectorsIn(env.status), (entry) => entry.id === id),
+		{ onNone: () => ({ model }), onSome: (connector) => openDisconnect(model, env, connector) },
 	)
-}
 
 /** "Try again" on the script read. */
-export const retriedScripts = (model: Model, context: PageContext): Return => {
-	const id = model.gcpCard.disconnectId
+export const retriedScripts = (model: GcpCardModel, env: Env): Return => {
+	const id = model.disconnectId
 	if (id === null) return { model }
-	const key = requestKey(context.orgId, "gcpIntegration.setupScripts", { id })
-	return Option.match(Keyed.request(model.gcpCard.scripts, key, "Refresh"), {
+	const key = requestKey(env.context.orgId, "gcpIntegration.setupScripts", { id })
+	return Option.match(Keyed.request(model.scripts, key, "Refresh"), {
 		onNone: () => ({ model }),
 		onSome: (scripts) => ({ model: withCard(model, { scripts }), commands: [LoadScripts({ key, id })] }),
 	})
 }
 
-export const gotDisconnectDialog = (model: Model, message: Dialog.Message): Return =>
-	model.gcpCard.isDisconnecting
-		? { model }
-		: disconnectStep(model, Dialog.update(model.gcpCard.disconnectDialog, message))
+export const gotDisconnectDialog = (model: GcpCardModel, message: Dialog.Message): Return =>
+	model.isDisconnecting ? { model } : disconnectStep(model, Dialog.update(model.disconnectDialog, message))
 
-export const confirmedDisconnect = (model: Model): Return => {
-	const id = model.gcpCard.disconnectId
-	if (id === null || model.gcpCard.isDisconnecting) return { model }
+export const confirmedDisconnect = (model: GcpCardModel): Return => {
+	const id = model.disconnectId
+	if (id === null || model.isDisconnecting) return { model }
 	return { model: withCard(model, { isDisconnecting: true }), commands: [DeleteConnector({ id })] }
 }
 
 /** Kept for its cleanup script unless that script was seen to run; the dialog closes on success. */
 export const completedDisconnect = (
-	model: Model,
-	context: PageContext,
+	model: GcpCardModel,
+	env: Env,
 	id: GcpConnectorId,
 	cleanupScript: string | null,
 	failure: LoadFailure | null,
@@ -244,21 +265,17 @@ export const completedDisconnect = (
 	if (failure !== null || cleanupScript === null)
 		return {
 			model: settled,
-			outMessage: PageOutMessage.RequestedToast({
-				type: "error",
-				title: disconnectSpec("gcp").error,
-				description: failure?.message ?? "",
-			}),
+			requests: [HubRequest.toast("error", disconnectSpec("gcp").error, failure?.message ?? "")],
 		}
 	const removed: ReadonlyArray<RemovedConnector> = Option.match(
-		Arr.findFirst(gcpConnectors(model), (entry) => entry.id === id),
+		Arr.findFirst(connectorsIn(env.status), (entry) => entry.id === id),
 		{
-			onNone: () => settled.gcpCard.removed,
+			onNone: () => settled.removed,
 			onSome: (connector) =>
 				connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
-					? settled.gcpCard.removed
+					? settled.removed
 					: [
-							...settled.gcpCard.removed,
+							...settled.removed,
 							{
 								id: connector.id,
 								label: gcpScopeLabel(connector),
@@ -269,20 +286,20 @@ export const completedDisconnect = (
 						],
 		},
 	)
-	return chain(withCard(settled, { removed, disconnectId: null }), [
-		(next) => disconnectStep(next, Dialog.close(next.gcpCard.disconnectDialog)),
-		(next) => ({ model: next, commands: [WriteRemoved({ orgId: context.orgId, removed })] }),
-		(next) => requestStatus(next, context, "gcp", "Supersede"),
+	return steps(withCard(settled, { removed, disconnectId: null }), [
+		(next) => disconnectStep(next, Dialog.close(next.disconnectDialog)),
+		(next) => ({ model: next, commands: [WriteRemoved({ orgId: env.context.orgId, removed })] }),
+		readStatus("Supersede"),
 		// The band's resource inventory is a read of its own.
-		(next) => refreshInventory(next),
-		(next) => ({ model: next, commands: [TrackDisconnected({ provider: "gcp" })] }),
+		refreshInventory,
+		(next) => ({ model: next, requests: [HubRequest.trackDisconnected("gcp")] }),
 	])
 }
 
-export const refreshInventory = (model: Model): Return => {
-	const key = model.gcpCard.inventory.key
+export const refreshInventory = (model: GcpCardModel): Return => {
+	const key = model.inventory.key
 	if (key === null) return { model }
-	return Option.match(Keyed.request(model.gcpCard.inventory, key, "Refresh"), {
+	return Option.match(Keyed.request(model.inventory, key, "Refresh"), {
 		onNone: () => ({ model }),
 		onSome: (inventory) => ({
 			model: withCard(model, { inventory }),
@@ -291,37 +308,33 @@ export const refreshInventory = (model: Model): Return => {
 	})
 }
 
-const dismissStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+const dismissStep = (model: GcpCardModel, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: withCard(model, { dismissDialog: step.model }),
 	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotGcpDismissDialogMessage({ message }),
+		GcpMessage.GotGcpDismissDialogMessage({ message }),
 	),
 })
 
-export const clickedDismiss = (model: Model, id: string): Return =>
-	dismissStep(withCard(model, { dismissingId: id }), Dialog.open(model.gcpCard.dismissDialog))
+export const clickedDismiss = (model: GcpCardModel, id: string): Return =>
+	dismissStep(withCard(model, { dismissingId: id }), Dialog.open(model.dismissDialog))
 
-export const gotDismissDialog = (model: Model, message: Dialog.Message): Return =>
-	dismissStep(model, Dialog.update(model.gcpCard.dismissDialog, message))
+export const gotDismissDialog = (model: GcpCardModel, message: Dialog.Message): Return =>
+	dismissStep(model, Dialog.update(model.dismissDialog, message))
 
-export const confirmedDismiss = (model: Model, context: PageContext): Return => {
-	const removed = Arr.filter(model.gcpCard.removed, (entry) => entry.id !== model.gcpCard.dismissingId)
-	return chain(withCard(model, { removed, dismissingId: null }), [
-		(next) => dismissStep(next, Dialog.close(next.gcpCard.dismissDialog)),
-		(next) => ({ model: next, commands: [WriteRemoved({ orgId: context.orgId, removed })] }),
+export const confirmedDismiss = (model: GcpCardModel, env: Env): Return => {
+	const removed = Arr.filter(model.removed, (entry) => entry.id !== model.dismissingId)
+	return steps(withCard(model, { removed, dismissingId: null }), [
+		(next) => dismissStep(next, Dialog.close(next.dismissDialog)),
+		(next) => ({ model: next, commands: [WriteRemoved({ orgId: env.context.orgId, removed })] }),
 	])
 }
 
-export const gotCopy = (model: Model, id: string, message: CopyButton.Message): Return => {
-	const step = CopyButton.update(model.gcpCard.copies[id] ?? CopyButton.init(), message)
+export const gotCopy = (model: GcpCardModel, id: string, message: CopyButton.Message): Return => {
+	const step = CopyButton.update(model.copies[id] ?? CopyButton.init(), message)
 	return {
-		model: withCard(model, { copies: { ...model.gcpCard.copies, [id]: step.model } }),
+		model: withCard(model, { copies: { ...model.copies, [id]: step.model } }),
 		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-			Message.GotGcpCopyMessage({ id, message: inner }),
+			GcpMessage.GotGcpCopyMessage({ id, message: inner }),
 		),
 	}
 }
-
-export const updateGcpCard = (model: Model, card: Partial<GcpCardModel>): Return => ({
-	model: withCard(model, card),
-})

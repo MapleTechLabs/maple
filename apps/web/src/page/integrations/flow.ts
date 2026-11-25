@@ -3,7 +3,6 @@ import type { DataIntegration } from "../../route/data-integrations"
 import { overviewOf } from "./derive"
 import type { Model } from "./model"
 import { providerModuleOf } from "./provider-modules"
-import { gcpFlow } from "../infra-integrations/gcp/integration/flow-gcp"
 
 // Where a source stands in `/sources/new`'s flow: Connect, Choose data, Go live.
 // Each source answers it from its own status; the page frames the steps and owns which one shows.
@@ -53,13 +52,7 @@ const genericFlow = (model: Model, integration: DataIntegration): FlowSpec => {
 
 export const flowOf = (model: Model, integration: DataIntegration, context: FlowContext): FlowSpec => {
 	const flow = providerModuleOf(integration)?.flow ?? null
-	if (flow !== null) return flow(model, integration, context)
-	switch (integration) {
-		case "gcp":
-			return gcpFlow(model)
-		default:
-			return genericFlow(model, integration)
-	}
+	return flow === null ? genericFlow(model, integration) : flow(model, integration, context)
 }
 
 /** The step after `stage` this source has, if any. */
