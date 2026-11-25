@@ -58,18 +58,18 @@ describeWithChdb("v66 -> v67 RetentionDays on the raw tables", () => {
 		)
 		db.close()
 		;({ migration, context } = migrationStep(STEP_ID, sourceDataDir, targetDataDir, nowMs))
-	})
+		// Both tests read the migrated store, so either can run alone.
+		const state = await migration.preflight(context)
+		await migration.prepareTarget(context, state)
+		const progress = await migration.apply(context, state, undefined)
+		await migration.verify(context, state, progress)
+	}, 30_000)
 
 	afterAll(async () => {
 		if (root) await rm(root, { recursive: true, force: true })
 	})
 
 	test("every existing row reads the period its table keeps today", async () => {
-		const state = await migration.preflight(context)
-		await migration.prepareTarget(context, state)
-		const progress = await migration.apply(context, state, undefined)
-		await migration.verify(context, state, progress)
-
 		const stored = await openStore(
 			targetDataDir,
 			(db) => ({
