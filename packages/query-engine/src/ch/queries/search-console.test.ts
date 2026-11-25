@@ -3,6 +3,7 @@ import { Effect, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
+	pageUrlVariants,
 	searchConsoleLandingPagesQuery,
 	searchConsoleOverviewQuery,
 	searchConsoleTimeseriesQuery,
@@ -75,6 +76,27 @@ describe("searchConsoleTimeseriesQuery", () => {
 		expect(flat).toContain("AS days LEFT JOIN")
 		expect(flat).toContain("ORDER BY date ASC")
 		expect(flat).toContain("ifNotFinite(daily.positionSum / daily.impressions, 0)")
+	})
+})
+
+describe("pageUrlVariants", () => {
+	it("pairs the URL with its path's other trailing-slash form", () => {
+		expect(pageUrlVariants("https://acme.dev/docs")).toEqual([
+			"https://acme.dev/docs",
+			"https://acme.dev/docs/",
+		])
+		expect(pageUrlVariants("https://acme.dev/")).toEqual(["https://acme.dev/", "https://acme.dev"])
+	})
+
+	it("keeps the exact URL and leaves the query string and fragment alone", () => {
+		expect(pageUrlVariants("https://acme.dev/a?next=/")).toEqual([
+			"https://acme.dev/a?next=/",
+			"https://acme.dev/a/?next=/",
+		])
+		expect(pageUrlVariants("https://acme.dev/docs//")).toEqual([
+			"https://acme.dev/docs//",
+			"https://acme.dev/docs/",
+		])
 	})
 })
 
