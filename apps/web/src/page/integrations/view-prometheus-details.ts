@@ -18,9 +18,10 @@ import { skeletonList } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../kit/relative-time"
-import { Message } from "./message"
+import type { Message } from "./message"
 import type { Model } from "./model"
-import { hostnameOf } from "./prometheus"
+import { hostnameOf, PrometheusMessage } from "./prometheus"
+import { toHub } from "./view-prometheus-form"
 import { AUTH_TYPE_LABELS, type ScheduledStatus, toneBadge } from "./view-prometheus"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
@@ -221,7 +222,9 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 								size: "sm",
 								isDisabled: isLocked,
 								isLoading: card.probing.includes(target.id),
-								attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }))],
+								attributes: [
+									h.OnClick(toHub(PrometheusMessage.ClickedProbe({ id: target.id }))),
+								],
 							},
 							[icon(h, "BoltIcon"), "Test"],
 						),
@@ -233,7 +236,9 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 								variant: "outline",
 								size: "sm",
 								isDisabled: isManaged || isLocked,
-								attributes: [h.OnClick(Message.ClickedEditTarget({ id: target.id }))],
+								attributes: [
+									h.OnClick(toHub(PrometheusMessage.ClickedEditTarget({ id: target.id }))),
+								],
 							},
 							[icon(h, "PencilIcon"), "Edit"],
 						),
@@ -245,7 +250,11 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 								variant: "ghost",
 								size: "sm",
 								isDisabled: card.toggling.includes(target.id) || isLocked,
-								attributes: [h.OnClick(Message.ClickedToggleTarget({ id: target.id }))],
+								attributes: [
+									h.OnClick(
+										toHub(PrometheusMessage.ClickedToggleTarget({ id: target.id })),
+									),
+								],
 							},
 							[target.enabled ? "Disable" : "Enable"],
 						),
@@ -258,7 +267,11 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 								size: "sm",
 								className: "text-destructive",
 								isDisabled: isManaged || isLocked,
-								attributes: [h.OnClick(Message.ClickedDeleteTarget({ id: target.id }))],
+								attributes: [
+									h.OnClick(
+										toHub(PrometheusMessage.ClickedDeleteTarget({ id: target.id })),
+									),
+								],
 							},
 							[icon(h, "TrashIcon"), "Delete scrape target"],
 						),

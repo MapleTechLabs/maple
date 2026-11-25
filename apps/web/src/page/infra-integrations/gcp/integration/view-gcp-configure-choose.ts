@@ -6,7 +6,9 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { CAPABILITIES } from "./gcp-configure-copy"
 import { chooseChanges } from "./gcp-configure-derive"
 import type { ConfigureModel } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { GcpMessage } from "./gcp"
+import { toHub } from "./view-gcp-parts"
 import { collectFields } from "./view-gcp-configure-collect"
 import { logFilter } from "./view-gcp-configure-filter"
 import { configureFooter, configureHeader, configurePanel, footerNote } from "./view-gcp-configure-parts"
@@ -61,7 +63,7 @@ export const chooseStage = (
 				h,
 				{
 					isLoading: saving && !confirming,
-					attributes: [h.OnClick(Message.ClickedGcpChooseApply())],
+					attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpChooseApply()))],
 				},
 				[changed.length === 0 ? "Continue" : scripted ? "Save and continue" : "Save"],
 			),
@@ -105,7 +107,7 @@ const confirmSave = (h: H, configure: ConfigureModel, connector: V2GcpConnector,
 	return confirmDialog(h, {
 		slotId: "gcp-configure-confirm",
 		model: configure.confirm,
-		toParentMessage: (message) => Message.GotGcpConfirmDialogMessage({ message }),
+		toParentMessage: (message) => toHub(GcpMessage.GotGcpConfirmDialogMessage({ message })),
 		isNested: true,
 		tone: stopping.length > 0 ? "destructive" : "default",
 		hasIcon: stopping.length > 0,
@@ -124,7 +126,7 @@ const confirmSave = (h: H, configure: ConfigureModel, connector: V2GcpConnector,
 				: resuming.length === 0
 					? "Turn off and continue"
 					: "Save and continue",
-		onConfirm: Message.ConfirmedGcpSave(),
+		onConfirm: toHub(GcpMessage.ConfirmedGcpSave()),
 		isPending: configure.isSaving,
 		children: [
 			h.dl(

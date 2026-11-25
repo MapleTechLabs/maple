@@ -1,5 +1,6 @@
 import { Command, type Update } from "foldkit"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
+import { GcpMessage } from "../../page/infra-integrations/gcp/integration/gcp"
 import { runtimeToggled } from "../../page/infra-integrations/gcp/integration/update-gcp-configure"
 import type { Resources } from "../../platform/resources"
 import * as Select from "@maple/views/ui/select"
@@ -24,7 +25,9 @@ export const init = (): Model => ({
 })
 
 /** `onFilter`: the field's controls edit the card's draft; anything else is not the field's. */
-const step = (state: ScenarioState, message: IntegrationsMessage): Step => {
+const step = (state: ScenarioState, wrapped: IntegrationsMessage): Step => {
+	if (wrapped._tag !== "GotGcpMessage") return { state, commands: [] }
+	const message = wrapped.message
 	const withFilter = (patch: Partial<ScenarioState["filter"]>): Step => ({
 		state: { ...state, filter: { ...state.filter, ...patch } },
 		commands: [],
@@ -39,7 +42,9 @@ const step = (state: ScenarioState, message: IntegrationsMessage): Step => {
 		case "GotGcpFilterModeMessage": {
 			const next = Select.update(state.filterMode, message.message)
 			const commands = Command.mapMessages(next.commands ?? [], (inner) =>
-				IntegrationsMessage.GotGcpFilterModeMessage({ message: inner }),
+				IntegrationsMessage.GotGcpMessage({
+					message: GcpMessage.GotGcpFilterModeMessage({ message: inner }),
+				}),
 			)
 			const picked = next.outMessage?._tag === "ChangedValue" ? next.outMessage.value : null
 			const filter = picked === null ? state.filter : { ...state.filter, keep: picked === "keep" }

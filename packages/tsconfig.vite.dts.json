@@ -1,0 +1,7 @@
+{
+	// Declaration emit for @maple-dev/vite's tsdown build only. It lives here so tsgo's rootDir
+	// covers @maple/sourcemaps, which the plugin bundles. Same as tsconfig.browser.dts.json.
+	"extends": "./vite/tsconfig.json",
+	"include": ["./vite/src/**/*.ts", "./sourcemaps/src/**/*.ts"],
+	"exclude": ["**/*.test.ts"]
+}

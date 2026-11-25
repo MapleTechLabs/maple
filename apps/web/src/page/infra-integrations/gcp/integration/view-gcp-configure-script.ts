@@ -7,9 +7,10 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import type { ConfigureModel } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { ScriptFailure, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
-import type { ScriptFailure } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
@@ -38,7 +39,7 @@ export const loadFailure = (h: H, failure: ScriptFailure): Html =>
 				size: "sm",
 				variant: "outline",
 				isLoading: failure.isRetrying,
-				attributes: [h.OnClick(Message.ClickedGcpConfigureScriptRetry())],
+				attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpConfigureScriptRetry()))],
 			},
 			["Try again"],
 		),
@@ -64,7 +65,8 @@ const promptButton = (h: H, configure: ConfigureModel, prompt: string | null): H
 			size: "sm",
 			variant: "outline",
 			isDisabled: prompt === null,
-			attributes: prompt === null ? [] : [h.OnClick(Message.ClickedGcpCopyPrompt({ prompt }))],
+			attributes:
+				prompt === null ? [] : [h.OnClick(toHub(GcpMessage.ClickedGcpCopyPrompt({ prompt })))],
 		},
 		[
 			...(isCopied ? [icon(h, "CheckIcon", { size: 12 })] : []),
@@ -105,7 +107,8 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 						...(prompt === undefined ? [] : [promptButton(h, configure, prompt)]),
 						CopyButton.view(h, {
 							model: model.gcpCard.copies[COPY_ID] ?? CopyButton.init(),
-							toParentMessage: (message) => Message.GotGcpCopyMessage({ id: COPY_ID, message }),
+							toParentMessage: (message) =>
+								toHub(GcpMessage.GotGcpCopyMessage({ id: COPY_ID, message })),
 							value: copyable ?? "",
 							label: promptShown ? "prompt" : name,
 							idleLabel: secret ? "Copy script" : "Copy",
@@ -214,7 +217,7 @@ const footer = (
 								variant: "link",
 								size: "xs",
 								className: LINK,
-								attributes: [h.OnClick(Message.ClickedGcpPromptBack())],
+								attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpPromptBack()))],
 							},
 							[`Back to ${options.name}`],
 						),
@@ -230,7 +233,7 @@ const footer = (
 								className: LINK,
 								attributes: [
 									h.AriaExpanded(configure.isScriptExpanded),
-									h.OnClick(Message.ClickedGcpScriptExpand()),
+									h.OnClick(toHub(GcpMessage.ClickedGcpScriptExpand())),
 								],
 							},
 							[configure.isScriptExpanded ? "Show less" : "Show all"],

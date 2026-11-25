@@ -14,6 +14,7 @@ on:
             - "packages/effect-sdk/package.json"
             - "packages/browser/package.json"
             - "packages/alchemy-maple/package.json"
+            - "packages/vite/package.json"
             - "apps/cli/package.json"
             - "scripts/publish-packages.ts"
             - ".github/workflows/release.yml"

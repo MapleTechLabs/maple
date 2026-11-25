@@ -41,11 +41,13 @@ export const SUPABASE: ProviderModule<SupabaseIntegrationStatus, SupabaseCardMod
 		requestMetricsRows(isCurrent ? settledStatus(model) : model, env, "Load"),
 	// The callback no longer discovers projects; a sync now lists them instead of the hourly cron.
 	onConnected: (model) => clickedSync(model),
-	subscription: {
-		everyMs: 60_000,
-		isActive: (_model, env) => env.isShown && isSupabaseConnected(env),
-		tick: SupabaseMessage.TickedClock(),
-	},
+	subscriptions: [
+		{
+			everyMs: 60_000,
+			isActive: (_model, env) => env.isShown && isSupabaseConnected(env),
+			tick: SupabaseMessage.TickedClock(),
+		},
+	],
 	card: (h, model, timeZone) => [supabaseCard(h, model, timeZone)],
 	flow: supabaseFlow,
 	flowView: supabaseFlowView,

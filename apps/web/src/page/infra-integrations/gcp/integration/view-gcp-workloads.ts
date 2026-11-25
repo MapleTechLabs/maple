@@ -27,7 +27,9 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { statRail } from "../../../kit/stat-rail"
 import { valueClass } from "../list/view-tables"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { GcpMessage } from "./gcp"
+import { toHub } from "./view-gcp-parts"
 import type { Model } from "../../../integrations/model"
 import { fleetOf, gcpTitles, inventoryOf, logTiles, metricsTiles } from "./view-gcp-band"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -78,7 +80,8 @@ const workloads = (h: H, model: Model, className: string): Html => {
 					? [
 							ToggleGroup.view(h, {
 								model: { ...model.gcpCard.workloadFilter, values: [service] },
-								toParentMessage: (message) => Message.GotWorkloadFilterMessage({ message }),
+								toParentMessage: (message) =>
+									toHub(GcpMessage.GotWorkloadFilterMessage({ message })),
 								isConnected: false,
 								size: "xs",
 								className: "gap-1.5",

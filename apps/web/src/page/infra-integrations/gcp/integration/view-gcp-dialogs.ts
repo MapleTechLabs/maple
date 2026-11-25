@@ -6,14 +6,16 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import type * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { icon } from "@maple/views/ui/icon"
 import { relativeTime } from "../../../kit/relative-time"
 import { IAC_DOCS } from "./gcp-configure-copy"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { openCloudShellButton, scriptBlock, type ScriptFailure, SMALL, step, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
 import { gcpConnectors, neverReported } from "./update-gcp"
-import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } from "./view-gcp-parts"
 import { disconnectConfirm } from "../../../integrations/view-disconnect"
 import { removalItem } from "./view-gcp-setup-methods"
 import { typographyClass } from "@maple/views/ui/typography"
@@ -22,8 +24,7 @@ import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
-const toDialog = (message: Parameters<typeof Message.GotGcpDisconnectDialogMessage>[0]["message"]) =>
-	Message.GotGcpDisconnectDialogMessage({ message })
+const toDialog = (message: Dialog.Message) => toHub(GcpMessage.GotGcpDisconnectDialogMessage({ message }))
 
 /** Nothing reported: the delete alone, with what it leaves behind. */
 const quietDisconnect = (h: H, model: Model, connector: V2GcpConnector): Html =>
@@ -33,7 +34,7 @@ const quietDisconnect = (h: H, model: Model, connector: V2GcpConnector): Html =>
 		model: model.gcpCard.disconnectDialog,
 		toParentMessage: toDialog,
 		subject: gcpScopeLabel(connector),
-		onConfirm: Message.ConfirmedGcpDisconnect(),
+		onConfirm: toHub(GcpMessage.ConfirmedGcpDisconnect()),
 		isPending: model.gcpCard.isDisconnecting,
 		children: [
 			h.dl(
@@ -276,7 +277,7 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 						{
 							variant: cleaned ? "destructive" : "destructive-outline",
 							isLoading: busy,
-							attributes: [h.OnClick(Message.ConfirmedGcpDisconnect())],
+							attributes: [h.OnClick(toHub(GcpMessage.ConfirmedGcpDisconnect()))],
 						},
 						[cleaned ? "Disconnect" : "Disconnect anyway"],
 					),
@@ -301,14 +302,14 @@ const dismissDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {
 		slotId: "gcp-dismiss-cleanup",
 		model: model.gcpCard.dismissDialog,
-		toParentMessage: (message) => Message.GotGcpDismissDialogMessage({ message }),
+		toParentMessage: (message) => toHub(GcpMessage.GotGcpDismissDialogMessage({ message })),
 		title: "Dismiss the cleanup script?",
 		description:
 			"Dismiss it once the cleanup has run. Maple keeps the script only here, so it can't be shown again.",
 		tone: "default",
 		hasIcon: false,
 		confirmLabel: "Dismiss",
-		onConfirm: Message.ConfirmedDismissCleanup(),
+		onConfirm: toHub(GcpMessage.ConfirmedDismissCleanup()),
 	})
 
 export const gcpDialogs = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => [

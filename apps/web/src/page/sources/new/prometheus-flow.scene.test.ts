@@ -10,7 +10,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
-import { Message as IntegrationMessage } from "../../integrations/embed"
+import { Message as IntegrationMessage, PrometheusMessage } from "../../integrations/embed"
+
+const scrape = (message: PrometheusMessage) => IntegrationMessage.GotPrometheusMessage({ message })
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -67,15 +69,17 @@ const entered = (integration: "prometheus" | "warpstream"): Model =>
 const saved = (integration: "prometheus" | "warpstream"): Model => {
 	const typed = inner(
 		entered(integration),
-		IntegrationMessage.GotFormFieldMessage({
-			field: "url",
-			message: Field.Message.ChangedValue({ value: URL_VALUE }),
-		}),
+		scrape(
+			PrometheusMessage.GotFormFieldMessage({
+				field: "url",
+				message: Field.Message.ChangedValue({ value: URL_VALUE }),
+			}),
+		),
 	).model
-	const saving = inner(typed, IntegrationMessage.SubmittedTargetForm()).model
+	const saving = inner(typed, scrape(PrometheusMessage.SubmittedTargetForm())).model
 	const done = inner(
 		saving,
-		IntegrationMessage.CompletedSave({ isEdit: false, id: target.id, failure: null }),
+		scrape(PrometheusMessage.CompletedSave({ isEdit: false, id: target.id, failure: null })),
 	)
 	return inner(
 		done.model,
@@ -89,37 +93,43 @@ const saved = (integration: "prometheus" | "warpstream"): Model => {
 const probed = (model: Model, success: boolean): Model =>
 	inner(
 		model,
-		IntegrationMessage.CompletedProbe({
-			id: target.id,
-			failure: null,
-			success,
-			error: success ? null : "dial tcp 52.14.88.203:9121: i/o timeout",
-		}),
+		scrape(
+			PrometheusMessage.CompletedProbe({
+				id: target.id,
+				failure: null,
+				success,
+				error: success ? null : "dial tcp 52.14.88.203:9121: i/o timeout",
+			}),
+		),
 	).model
 
 const withCheck = (model: Model, success: boolean): Model =>
 	inner(
 		model,
-		IntegrationMessage.CompletedFetchChecks({
-			key: model.integrations.prometheusCard.checks.key ?? "",
-			result: Result.succeed([check(success)]),
-		}),
+		scrape(
+			PrometheusMessage.CompletedFetchChecks({
+				key: model.integrations.prometheusCard.checks.key ?? "",
+				result: Result.succeed([check(success)]),
+			}),
+		),
 	).model
 
 describe("prometheus connect flow", () => {
 	test("saving the endpoint probes it, without a Test button", () => {
 		const typed = inner(
 			entered("prometheus"),
-			IntegrationMessage.GotFormFieldMessage({
-				field: "url",
-				message: Field.Message.ChangedValue({ value: URL_VALUE }),
-			}),
+			scrape(
+				PrometheusMessage.GotFormFieldMessage({
+					field: "url",
+					message: Field.Message.ChangedValue({ value: URL_VALUE }),
+				}),
+			),
 		).model
-		const saving = inner(typed, IntegrationMessage.SubmittedTargetForm())
+		const saving = inner(typed, scrape(PrometheusMessage.SubmittedTargetForm()))
 		expect(names(saving.commands)).toContain("SaveScrapeTarget")
 		const done = inner(
 			saving.model,
-			IntegrationMessage.CompletedSave({ isEdit: false, id: target.id, failure: null }),
+			scrape(PrometheusMessage.CompletedSave({ isEdit: false, id: target.id, failure: null })),
 		)
 		expect(names(done.commands)).toContain("ProbeScrapeTarget")
 		scene(
@@ -171,10 +181,12 @@ describe("prometheus connect flow", () => {
 		const choosing = pageUpdate(probed(saved("prometheus"), true), Message.ClickedContinue()).model
 		const renamed = inner(
 			choosing,
-			IntegrationMessage.GotFormFieldMessage({
-				field: "name",
-				message: Field.Message.ChangedValue({ value: "redis prod" }),
-			}),
+			scrape(
+				PrometheusMessage.GotFormFieldMessage({
+					field: "name",
+					message: Field.Message.ChangedValue({ value: "redis prod" }),
+				}),
+			),
 		).model
 		scene(
 			{ update: pageUpdate, view },

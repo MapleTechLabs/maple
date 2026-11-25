@@ -7,13 +7,16 @@ import * as Field from "@maple/views/ui/field"
 import * as SelectView from "@maple/views/ui/select-view"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { FormFieldName } from "./prometheus"
+import { type FormFieldName, PrometheusMessage } from "./prometheus"
 import { isFormValid, parsedInterval, prometheusTargets } from "./update-prometheus"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Option, Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
+
+/** A scrape-target module message, as the hub carries it. */
+export const toHub = (message: PrometheusMessage): Message => Message.GotPrometheusMessage({ message })
 
 const AUTH_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 	{ _tag: "Item", item: { value: "none", label: "None" } },
@@ -61,7 +64,7 @@ export const textField = (
 				h.Placeholder(options.placeholder),
 				...(options.extra ?? []),
 				...Field.controlAttributes(h, fieldModel, (message) =>
-					Message.GotFormFieldMessage({ field: options.field, message }),
+					toHub(PrometheusMessage.GotFormFieldMessage({ field: options.field, message })),
 				),
 			],
 		}),
@@ -99,7 +102,7 @@ export const authField = (h: H, model: Model): Html => {
 				className: "w-full",
 				toView: (parts) => h.div([h.Class("contents")], parts),
 			},
-			toParentMessage: (message) => Message.GotAuthSelectMessage({ message }),
+			toParentMessage: (message) => toHub(PrometheusMessage.GotAuthSelectMessage({ message })),
 		}),
 	])
 }
@@ -189,7 +192,7 @@ const formDialog = (h: H, model: Model): Html => {
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) => [
 				h.form(
-					[h.Class("contents"), h.OnSubmit(Message.SubmittedTargetForm())],
+					[h.Class("contents"), h.OnSubmit(toHub(PrometheusMessage.SubmittedTargetForm()))],
 					[
 						DialogView.dialogHeader(h, "dialog", [
 							DialogView.dialogTitle(
@@ -233,7 +236,7 @@ const formDialog = (h: H, model: Model): Html => {
 				),
 			],
 		},
-		toParentMessage: (message) => Message.GotFormDialogMessage({ message }),
+		toParentMessage: (message) => toHub(PrometheusMessage.GotFormDialogMessage({ message })),
 	})
 }
 
@@ -251,7 +254,7 @@ export const targetDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 		confirmDialog(h, {
 			slotId: "scrape-target-delete",
 			model: card.deleteDialog,
-			toParentMessage: (message) => Message.GotTargetDeleteDialogMessage({ message }),
+			toParentMessage: (message) => toHub(PrometheusMessage.GotTargetDeleteDialogMessage({ message })),
 			title: "Delete scrape target?",
 			description: [
 				"Maple stops scraping ",
@@ -260,7 +263,7 @@ export const targetDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			],
 			confirmLabel: "Delete scrape target",
 			isPending: card.isDeleting,
-			onConfirm: Message.ConfirmedTargetDelete(),
+			onConfirm: toHub(PrometheusMessage.ConfirmedTargetDelete()),
 		}),
 	]
 }

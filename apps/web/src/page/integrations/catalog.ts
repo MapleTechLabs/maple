@@ -2,7 +2,7 @@ import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-
 import { ChatConnectorId } from "@maple/primitives"
 import { Option, Schema, String as Str, Array as Arr } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
-import { type Provider, type ProviderId, PROVIDERS } from "../kit/providers"
+import { type IntegrationCategory, type Provider, type ProviderId, PROVIDERS } from "../kit/providers"
 
 export type ChatIntegrationId = `chat-${string}`
 export type IntegrationId = ProviderId | ChatIntegrationId
@@ -11,8 +11,6 @@ export type IntegrationId = ProviderId | ChatIntegrationId
 export type EntryIcon =
 	| Readonly<{ _tag: "Named"; name: IconName }>
 	| Readonly<{ _tag: "Manifest"; icon: ChatConnectorManifest["icon"] }>
-
-export type IntegrationCategory = "infrastructure" | "code" | "analytics" | "notifications" | "security"
 
 /** What a connection does for Maple: the hub's row chips and filters. */
 export const CAPABILITIES = ["telemetry", "query", "alerts", "analytics", "security"] as const
@@ -87,85 +85,16 @@ export const chatEntry = (manifest: ChatConnectorManifest): CatalogEntry => ({
 
 const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = Arr.map(chatConnectorManifests, chatEntry)
 
-type ProviderCopy = Readonly<{ description: string; category: IntegrationCategory; isNew?: boolean }>
-
-const PROVIDER_COPY = {
-	cloudflare: {
-		category: "infrastructure",
-		description: "Connect your Cloudflare account via OAuth to collect zone and Workers analytics.",
-	},
-	prometheus: {
-		category: "infrastructure",
-		description: "Scrape any Prometheus-compatible endpoint on a schedule. No collector required.",
-	},
-	planetscale: {
-		category: "infrastructure",
-		description:
-			"Authorize your organization with one click. Maple tracks every database branch automatically.",
-	},
-	gcp: {
-		category: "infrastructure",
-		isNew: true,
-		description: "Logs, metrics and resources from a project, folder or organization.",
-	},
-	aws: {
-		category: "infrastructure",
-		isNew: true,
-		description: "Connect an AWS account through a read-only role you deploy with CloudFormation.",
-	},
-	railway: {
-		category: "infrastructure",
-		isNew: true,
-		description:
-			"Paste a Railway token to collect CPU, memory, network and disk metrics for every service.",
-	},
-	supabase: {
-		category: "infrastructure",
-		isNew: true,
-		description:
-			"Authorize your Supabase organization to collect CPU, memory, disk and Postgres metrics for every project.",
-	},
-	vercel: {
-		category: "infrastructure",
-		isNew: true,
-		description: "Paste a Vercel token to drain request logs, traces and AI Gateway usage from a team.",
-	},
-	warpstream: {
-		category: "infrastructure",
-		description: "Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
-	},
-	linear: {
-		category: "notifications",
-		description:
-			"Open one Linear issue per alert rule, then comment as it fires again, changes severity or resolves.",
-	},
-	github: {
-		category: "code",
-		description: "Install the Maple GitHub App to sync repositories and commits from your org.",
-	},
-	"google-search-console": {
-		category: "analytics",
-		isNew: true,
-		description: "Import the search queries, pages and positions that bring people to your sites.",
-	},
-	fleet: {
-		category: "security",
-		isNew: true,
-		description:
-			"Connect a Fleet server with a read-only API token: its admin activity goes to the audit log, its failing policies and vulnerable software to Security, Devices.",
-	},
-} as const satisfies { readonly [K in ProviderId]: ProviderCopy }
-
-const providerEntry = (provider: Provider, copy: ProviderCopy): CatalogEntry => ({
+const providerEntry = (provider: Provider): CatalogEntry => ({
 	id: provider.id,
 	name: provider.name,
-	description: copy.description,
+	description: provider.description,
 	icon: named(provider.icon),
 	accent: provider.accent,
-	category: copy.category,
+	category: provider.category,
 	iconClassName: provider.iconClassName,
 	docsUrl: provider.docsUrl,
-	isNew: copy.isNew,
+	isNew: provider.isNew,
 })
 
 /** The hub's order. */
@@ -186,7 +115,7 @@ const PROVIDER_ORDER: ReadonlyArray<ProviderId> = [
 ]
 
 /** A provider's entry; every provider has one. */
-export const catalogEntry = (id: ProviderId): CatalogEntry => providerEntry(PROVIDERS[id], PROVIDER_COPY[id])
+export const catalogEntry = (id: ProviderId): CatalogEntry => providerEntry(PROVIDERS[id])
 
 /** Every entry, in the hub's order: the providers, then the chat connectors. */
 export const CATALOG: ReadonlyArray<CatalogEntry> = [

@@ -4,8 +4,9 @@ import { label } from "@maple/views/ui/label"
 import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { ConfigureModel, SetupMethod } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
-import { GCP_TITLE, SMALL } from "./view-gcp-parts"
+import type { Message } from "../../../integrations/message"
+import { GCP_TITLE, SMALL, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -52,7 +53,7 @@ const flavourToggle = (h: H, configure: ConfigureModel, flavour: "terraform" | "
 		hstack(h, { gap: "3", wrap: true }, [
 			ToggleGroup.view(h, {
 				model: { ...configure.flavourGroup, values: [flavour] },
-				toParentMessage: (message) => Message.GotGcpFlavourMessage({ message }),
+				toParentMessage: (message) => toHub(GcpMessage.GotGcpFlavourMessage({ message })),
 				items: [
 					{ value: "terraform", label: "Terraform" },
 					{ value: "alchemy", label: "Alchemy" },
@@ -73,8 +74,8 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 		model: RadioGroup.init(row),
 		toParentMessage: (message) =>
 			message._tag === "CompletedFocusRadio"
-				? Message.ClickedGcpMethod({ method })
-				: Message.ClickedGcpMethod({ method: methodOfRow(message.value, flavour) }),
+				? toHub(GcpMessage.ClickedGcpMethod({ method }))
+				: toHub(GcpMessage.ClickedGcpMethod({ method: methodOfRow(message.value, flavour) })),
 		items: ITEMS,
 	}
 	return h.fieldset(

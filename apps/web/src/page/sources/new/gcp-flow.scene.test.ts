@@ -10,7 +10,9 @@ import { Message as PageMessage } from "./message"
 import type { Model as PageModel } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
-import { Message } from "../../integrations/embed"
+import { GcpMessage, Message } from "../../integrations/embed"
+
+const gcpMsg = (message: GcpMessage) => Message.GotGcpMessage({ message })
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -64,8 +66,13 @@ const statusOf = (model: PageModel, connectors: ReadonlyArray<V2GcpConnector>): 
 	})
 
 const typed = (value: string): ReadonlyArray<Message> => [
-	Message.GotGcpScopeFieldMessage({ field: "scopeId", message: Field.Message.ChangedValue({ value }) }),
-	Message.GotGcpScopeFieldMessage({ field: "scopeId", message: Field.Message.BlurredControl() }),
+	gcpMsg(
+		GcpMessage.GotGcpScopeFieldMessage({
+			field: "scopeId",
+			message: Field.Message.ChangedValue({ value }),
+		}),
+	),
+	gcpMsg(GcpMessage.GotGcpScopeFieldMessage({ field: "scopeId", message: Field.Message.BlurredControl() })),
 ]
 
 const entered = (): PageModel => {
@@ -77,8 +84,8 @@ const entered = (): PageModel => {
 const created = (fields: Readonly<Record<string, unknown>> = {}): PageModel => {
 	const choose = pageUpdate(send(entered(), typed("acme-prod")), PageMessage.ClickedContinue()).model
 	const made = send(choose, [
-		Message.SubmittedGcpCreate(),
-		Message.CompletedGcpCreate({ opens: 0, connector: connector(), failure: null }),
+		gcpMsg(GcpMessage.SubmittedGcpCreate()),
+		gcpMsg(GcpMessage.CompletedGcpCreate({ opens: 0, connector: connector(), failure: null })),
 	])
 	const listed = send(made, [statusOf(made, [connector(fields)])])
 	return pageUpdate(listed, PageMessage.ClickedContinue()).model

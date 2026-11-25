@@ -32,10 +32,10 @@ import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { ScrapeIntegration } from "./flow-prometheus"
-import { hostnameOf } from "./prometheus"
+import { hostnameOf, PrometheusMessage } from "./prometheus"
 import { prometheusTargets } from "./update-prometheus"
 import { targetDetails } from "./view-prometheus-details"
-import { targetDialogs } from "./view-prometheus-form"
+import { targetDialogs, toHub } from "./view-prometheus-form"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
@@ -171,7 +171,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 			pressable(
 				h,
 				{
-					onClick: Message.ClickedTarget({ id: target.id }),
+					onClick: toHub(PrometheusMessage.ClickedTarget({ id: target.id })),
 					isSelected,
 					className: "flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left",
 				},
@@ -287,7 +287,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 						inputId: `scrape-target-switch-input-${target.id}`,
 						isChecked: target.enabled,
 						isDisabled: card.toggling.includes(target.id) || !canManageTargets,
-						onToggle: Message.ClickedToggleTarget({ id: target.id }),
+						onToggle: toHub(PrometheusMessage.ClickedToggleTarget({ id: target.id })),
 					}),
 				),
 			),
@@ -300,7 +300,9 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 						isDisabled: isLocked,
 						isLoading: card.probing.includes(target.id),
 						attributes: [
-							h.OnClick(Message.ClickedProbe({ id: target.id }), { propagation: "Stop" }),
+							h.OnClick(toHub(PrometheusMessage.ClickedProbe({ id: target.id })), {
+								propagation: "Stop",
+							}),
 						],
 					},
 					[icon(h, "ArrowRotateClockwiseIcon"), "Sync now"],
@@ -337,7 +339,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 							},
 						]),
 						toParentMessage: (message) =>
-							Message.GotTargetMenuMessage({ id: target.id, message }),
+							toHub(PrometheusMessage.GotTargetMenuMessage({ id: target.id, message })),
 					}),
 				],
 			),

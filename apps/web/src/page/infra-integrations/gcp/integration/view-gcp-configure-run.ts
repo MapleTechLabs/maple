@@ -9,7 +9,9 @@ import { relativeTime } from "../../../kit/relative-time"
 import { DOCS } from "./gcp-configure-copy"
 import { runConfirmed } from "./gcp-configure-derive"
 import type { ApplyOpened, ConfigureModel } from "./gcp-configure-schema"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
+import { openCloudShellButton, type ScriptFailure, SMALL, toHub } from "./view-gcp-parts"
+import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
 import { filterShort } from "./view-gcp-configure-filter"
 import {
@@ -23,7 +25,6 @@ import {
 } from "./view-gcp-configure-parts"
 import { fileCard } from "./view-gcp-configure-script"
 import { applied, runStatus } from "./view-gcp-configure-status"
-import { openCloudShellButton, type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
@@ -69,7 +70,7 @@ export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, b
 				variant: "link",
 				size: "xs",
 				className: "ml-auto h-auto p-0",
-				attributes: [h.OnClick(Message.ClickedGcpRunEdit())],
+				attributes: [h.OnClick(toHub(GcpMessage.ClickedGcpRunEdit()))],
 			},
 			["Edit"],
 		),
@@ -154,7 +155,7 @@ export const applyStage = (
 	const nowMs = model.nowMs
 	const sinkExists = connector.applied_logs_enabled === true
 	const reportedAt = connector.setup_reported_at
-	const close = Message.ClosedGcpConfigure()
+	const close = toHub(GcpMessage.ClosedGcpConfigure())
 	if (runConfirmed(connector, opened, nowMs))
 		return [
 			configureHeader(h, options.title, null),
