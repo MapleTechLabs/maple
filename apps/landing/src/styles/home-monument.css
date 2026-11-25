@@ -215,6 +215,11 @@
 	margin-top: 26px;
 	flex-wrap: wrap;
 }
+.monument-hero__note {
+	margin-top: 12px;
+	font-size: 14px;
+	color: color-mix(in oklab, var(--home-ink) 62%, var(--home-paper));
+}
 .monument-hero__colophon {
 	position: absolute;
 	bottom: 21px;
