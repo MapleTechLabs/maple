@@ -1,0 +1,113 @@
+---
+/**
+ * The five theme presets on the same page. One image is swapped rather than five toggled, because
+ * the lightbox makes every image in the article a slide and closes onto it, hidden or not.
+ */
+const theme = (id: string, label: string, mode: "light" | "dark") => ({
+    id,
+    label,
+    src: `/screenshots/docs/status-pages-theme-${id}.webp`,
+    alt: `The same status page in the ${label} preset, ${mode} mode.`,
+    caption: `${label}, shown in ${mode} mode. Every preset has both modes.`,
+});
+
+const first = theme("maple", "Maple", "dark");
+const THEMES = [
+    first,
+    theme("default", "Default", "light"),
+    theme("paper", "Vintage Paper", "light"),
+    theme("midnight", "Cosmic Night", "dark"),
+    theme("mono", "Mono", "dark"),
+];
+---
+
+<div class="themes" data-status-page-themes>
+    <div class="themes__tabs" role="radiogroup" aria-label="Theme preset" hidden>
+        {
+            THEMES.map((preset) => (
+                <label>
+                    <input
+                        type="radio"
+                        name="status-page-theme"
+                        value={preset.id}
+                        checked={preset.id === first.id}
+                        data-src={preset.src}
+                        data-alt={preset.alt}
+                        data-caption={preset.caption}
+                    />
+                    <span>{preset.label}</span>
+                </label>
+            ))
+        }
+    </div>
+    <figure class="shot">
+        <img src={first.src} alt={first.alt} width="1520" height="1120" loading="lazy" decoding="async" data-zoomable />
+        <figcaption>{first.caption}</figcaption>
+    </figure>
+</div>
+
+<script>
+    for (const root of document.querySelectorAll<HTMLElement>("[data-status-page-themes]")) {
+        const tabs = root.querySelector<HTMLElement>(".themes__tabs");
+        const image = root.querySelector("img");
+        const caption = root.querySelector("figcaption");
+        if (tabs === null || image === null || caption === null) continue;
+        tabs.hidden = false;
+        tabs.addEventListener("change", (event) => {
+            if (!(event.target instanceof HTMLInputElement)) return;
+            const { src, alt, caption: text } = event.target.dataset;
+            if (src === undefined || alt === undefined || text === undefined) return;
+            image.src = src;
+            image.alt = alt;
+            // The lightbox names the image once, from its first alt; without it there is no label.
+            if (image.hasAttribute("aria-label")) image.setAttribute("aria-label", `Enlarge screenshot: ${alt}`);
+            caption.textContent = text;
+        });
+    }
+</script>
+
+<style>
+    .themes {
+        margin-block: 24px;
+    }
+    .themes__tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+    .themes__tabs[hidden] {
+        display: none;
+    }
+    .themes__tabs label {
+        position: relative;
+        cursor: pointer;
+    }
+    .themes__tabs input {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .themes__tabs span {
+        display: block;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 11px;
+        color: var(--muted-foreground);
+        font-size: 13px;
+        font-weight: 500;
+    }
+    .themes__tabs input:checked + span {
+        border-color: var(--primary);
+        color: var(--foreground);
+    }
+    .themes__tabs input:focus-visible + span {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+    .themes .shot {
+        margin-block: 0;
+    }
+</style>

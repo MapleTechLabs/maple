@@ -1,0 +1,42 @@
+---
+/** A screenshot from `public/screenshots/docs/status-pages-*.webp`, at its real size. */
+const SIZES = {
+    access: [1536, 366],
+    builder: [2320, 1570],
+    choose: [2090, 1050],
+    component: [1010, 724],
+    domain: [1536, 910],
+    hero: [1840, 1720],
+    incident: [1280, 1516],
+    manage: [1344, 1792],
+    monitors: [1470, 1024],
+    review: [1280, 902],
+    sheet: [1340, 630],
+    subscribe: [1248, 582],
+    uptime: [1344, 914],
+} as const;
+
+interface Props {
+    name: keyof typeof SIZES;
+    alt: string;
+    caption: string;
+    /** CSS max width, for portrait dialogs that would otherwise fill the column. */
+    maxWidth?: number;
+}
+
+const { name, alt, caption, maxWidth } = Astro.props;
+const [width, height] = SIZES[name];
+---
+
+<figure class="shot" style={maxWidth === undefined ? undefined : `max-width: ${maxWidth}px`}>
+    <img
+        src={`/screenshots/docs/status-pages-${name}.webp`}
+        alt={alt}
+        width={width}
+        height={height}
+        loading="lazy"
+        decoding="async"
+        data-zoomable
+    />
+    <figcaption>{caption}</figcaption>
+</figure>

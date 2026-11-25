@@ -1,0 +1,356 @@
+---
+title: "Status pages"
+description: "Publish a hosted page that shows customers what works, what is broken and what you are doing about it."
+group: "Alerting"
+order: 5.7
+---
+
+import StatusPageDiagram from "../../../components/docs/StatusPageDiagram.astro"
+import StatusPageShot from "../../../components/docs/StatusPageShot.astro"
+import StatusPageThemes from "../../../components/docs/StatusPageThemes.astro"
+
+A **status page** is a page your customers can check to see whether your product works. It lists your components, such as API and Dashboard, with their current status and 90 days of uptime, plus open incidents and planned maintenance.
+
+This guide covers creating a page, how components get their status, posting incidents, branding and access, and posting when Maple itself is down.
+
+<StatusPageShot
+    name="hero"
+    alt="A published status page for Acme with a red major outage banner, an active incident about failed payments at checkout, upcoming database maintenance, and daily uptime bars for each component."
+    caption="A published page during an incident."
+/>
+
+> **Key takeaways**
+>
+> - Nothing is public until you publish. After that, saved changes go out within a minute.
+> - A component shows the worst of its monitor, your override and any active incident.
+> - Incidents here are public posts, separate from the internal [incidents](/docs/alerting/incidents) that alert rules open.
+> - The page stays up when Maple is down, and a break-glass token still lets you post to it.
+
+## Create a page
+
+You need the engineer or admin role. Open **Status pages** in the sidebar (under **Triage**), click **New status page**, and choose who does the setup.
+
+<StatusPageShot
+    name="choose"
+    alt="Two setup options: let your coding agent set it up, marked Recommended, or set it up in the dashboard."
+    caption="Both paths create the same page, and neither publishes without your approval."
+/>
+
+### With your coding agent
+
+1. Click **Get the prompt**.
+2. Connect the Maple MCP if your agent does not have it yet. The page shows the command for Claude Code and install buttons for Cursor and VS Code.
+3. Run the prompt in the repository of the product the page is for, so the agent can read its endpoints and brand.
+4. Answer the agent's questions. It proposes monitors and components, matches your colors, font and logo, and asks whether to manage the page through the MCP, Terraform or Alchemy.
+5. Approve publishing. The agent does not publish before you do.
+
+### In the dashboard
+
+1. Click **Open the builder**.
+2. Under **Page**, enter a **Name**, such as `Acme Status`. **Address** follows the name until you type your own.
+3. Optional: under **Custom domain**, enter a subdomain such as `status.acme.com`. You can add one later.
+4. Under **Components**, remove any monitors visitors should not see. **Add components** can monitor a new URL or add a component you update by hand.
+5. Under **Look**, pick a theme and a mode. The preview shows the page as visitors get it.
+6. Click **Publish page**, or **Save as draft** to keep it private.
+
+<StatusPageShot
+    name="builder"
+    alt="The new status page builder with name, address, custom domain and components on the left, and a live preview of the page on the right."
+    caption="The builder, with a live preview beside the form."
+/>
+
+### Find your way around
+
+Each page opens on four tabs:
+
+| Tab             | What it is for                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| **Live page**   | The page as visitors see it. Click anything on it to edit it.                                        |
+| **Incidents**   | Declare incidents and post updates.                                                                  |
+| **Maintenance** | Schedule planned work.                                                                               |
+| **Settings**    | **Basic settings** (name, domain, access), **Monitors**, **Appearance** and **Advanced** (break-glass, JSON). |
+
+## Components and status
+
+A **component** is one row on the page, such as API or Webhooks. Manage them under **Settings → Monitors**, and drag a row to reorder it.
+
+<StatusPageShot
+    name="monitors"
+    alt="The Monitors settings list with components grouped under Core and Edge, each showing its linked monitor and current status."
+    caption="Components in groups, each with its monitor and current status."
+/>
+
+Click a component to edit it:
+
+<StatusPageShot
+    name="component"
+    alt="An open component form with Shown as, Group, Description, Driven by, Override status, a Show uptime bars switch and Remove from page."
+    caption="Driven by links a monitor. Override status pins a status by hand."
+    maxWidth={520}
+/>
+
+**Remove from page** takes the component off the page. Its monitor keeps running.
+
+### How a status is decided
+
+Each component takes the most severe status among its monitor, its override and any active incident or maintenance on it. The banner at the top of the page shows the most severe component.
+
+<StatusPageDiagram kind="resolution" />
+
+This table shows the status each input sets:
+
+| Input                   | Status it sets                                                     |
+| ----------------------- | ------------------------------------------------------------------ |
+| Monitor is down         | Major outage                                                       |
+| **Override status**     | The status you picked                                              |
+| Incident impact         | None: Operational. Minor: Degraded. Major: Partial outage. Critical: Major outage. |
+| Maintenance in progress | Maintenance                                                        |
+
+### Uptime bars
+
+Each bar is one UTC day. The percentage is the share of checks taken while the monitor was up, and hovering a bar gives that day's failed checks and any incident.
+
+<StatusPageShot
+    name="uptime"
+    alt="The System status card with 90 daily bars per component, mostly green with a few orange and red days, and a color legend."
+    caption="90 days per component. Uptime bars need a monitor."
+/>
+
+<StatusPageDiagram kind="bars" />
+
+Maintenance replaces what the checks say that day, because the downtime was announced.
+
+If no publish reaches the page for 5 minutes, or a page with monitors gets no new check result for 5 minutes, it shows **Live checks are delayed** with the time of the last known state instead of looking green.
+
+## Incidents and maintenance notices
+
+Any org member can post to a status page. Analysts cannot.
+
+### Post an incident
+
+1. On the **Incidents** tab, click **Declare incident**.
+2. Enter a **Title**, then set the **Status**, **Impact** and **Affected components**.
+3. Write the **Message**. It supports **bold**, _italic_, `code`, lists and links.
+
+<StatusPageShot
+    name="incident"
+    alt="The Post incident dialog with title, status, impact, started time, affected components and message."
+    caption="Leave Started empty if the incident started now."
+    maxWidth={480}
+/>
+
+4. Click **Review** to see the post and exactly what changes on the page.
+5. Click **Publish**, or **Save as draft** to keep it off the public page.
+
+<StatusPageShot
+    name="review"
+    alt="The review step showing the incident as it will appear, and the page banner and API changing from Operational to Degraded."
+    caption="The review step shows which statuses will change."
+    maxWidth={520}
+/>
+
+### Follow up and resolve
+
+Open the incident to post the next update. **Post update** adds a status and a message, **Resolve** closes it, and **Edit details** changes the title, impact, times or components without posting anything.
+
+<StatusPageShot
+    name="sheet"
+    alt="An open incident showing its status, impact, Post update, Resolve and Edit details buttons, and its update history."
+    caption="An open incident and its updates."
+/>
+
+<StatusPageDiagram kind="lifecycle" />
+
+A resolved incident or completed maintenance stays listed for 14 days. The page's incident history covers the last 365 days.
+
+### Schedule maintenance
+
+1. On the **Maintenance** tab, click **Schedule maintenance**.
+2. Enter a **Title**, **Starts**, **Ends**, the **Affected components** and a **Message**.
+3. Under **When the window ends**, choose **Complete automatically**, or **Keep it in progress until someone completes it** for work that may run long.
+4. Click **Review**, then **Schedule**.
+
+The maintenance starts by itself at **Starts**, and posts "The scheduled maintenance has started."
+
+### Open incidents automatically
+
+Under **Settings → Basic settings → Behaviour**, **When a linked monitor goes down** sets what Maple posts:
+
+| Option                             | What happens                                     |
+| ---------------------------------- | ------------------------------------------------ |
+| **Off** (default)                  | Nothing is posted. The component still shows Major outage. |
+| **Open a draft for me to publish** | A draft waits under **Incidents**.               |
+| **Open and publish an incident**   | The incident shows on the page at once.          |
+
+The incident is named after the component, such as "API is down", with Major impact. Maple resolves it when the monitor's alert incident resolves.
+
+## Branding and access
+
+### Appearance
+
+Pick a starting point under **Settings → Appearance → Theme**, then adjust it.
+
+<StatusPageThemes />
+
+- **Branding**: upload or link a logo, a dark mode logo and a favicon (PNG, JPG, WebP, GIF, SVG or ICO, up to 128 KB).
+- **Mode**: **Auto** follows each visitor's setting. Pick **Light** or **Dark** to set your own background, text, card and border colors.
+- **Corners and font**: four corner sizes, plus sans serif, serif or monospace.
+- **Links**: your website, support, privacy policy and terms of service, all `https`.
+
+Maple refuses colors that make text hard to read: text and status colors need a WCAG contrast ratio of at least 4.5:1.
+
+### Who can view
+
+Choose under **Settings → Basic settings → Who can view**. You need the engineer or admin role.
+
+<StatusPageShot
+    name="access"
+    alt="Three options: Public, Password-protected and Internal, each with a short description."
+    caption="Three levels of access."
+/>
+
+This table compares what each level allows:
+
+|                    | Public | Password       | Internal    |
+| ------------------ | ------ | -------------- | ----------- |
+| Who reads it       | Anyone | With password  | Org members |
+| Feeds, JSON, badge | Open   | After password | None        |
+| Subscribe link     | Yes    | No             | No          |
+| Search engines     | Yes    | No             | No          |
+| Custom domain      | Yes    | Yes            | No          |
+| Break-glass        | Yes    | Yes            | No          |
+
+Org members read an internal page inside Maple, signed in. Its public address answers not found.
+
+A page password is 8 to 256 characters. Visitors enter it once per browser and stay signed in for 30 days. Saving a new password signs everyone out.
+
+### Custom domain
+
+A page can answer on a subdomain you control, such as `status.acme.com`, with a certificate Maple issues and renews. You need the engineer or admin role.
+
+<StatusPageDiagram kind="domain" />
+
+1. Open **Settings → Basic settings → Custom domain**, enter the **Hostname** and click **Add domain**.
+2. Add the `CNAME` and `TXT` records Maple lists at your DNS provider.
+3. Wait for the badge to reach **Active**. Maple checks every minute for the first hour, then every ten minutes. **Check now** checks at once.
+
+<StatusPageShot
+    name="domain"
+    alt="The Custom domain section for status.acme.com with a Waiting for DNS badge, a Last check notice, and a table of the CNAME and TXT records to add."
+    caption="The records to add, with a copy button on each."
+/>
+
+While the certificate is issued, the table may list more `TXT` records. Add them only when they appear. You can remove the ownership `TXT` record once the domain is active.
+
+- **Allowed names:** subdomains only. Apex domains such as `acme.com`, IP addresses and names under `maple.dev` are refused.
+- **One to one:** a page has one custom domain, and a hostname belongs to one page.
+- **Time limit:** a domain that is not active within 7 days is removed.
+- **Already claimed:** if another page holds the hostname without proof of ownership, Maple gives you a `TXT` record. Publish it and add the domain again to take it over.
+- **Needs attention:** the domain stopped working, and the panel says why. **Remove** stops serving the page there within a minute, and the Maple address keeps working.
+
+## Post while Maple is down (break-glass)
+
+Maple serves the page separately from the dashboard, so it keeps showing its last published state when the rest of Maple is unreachable. A **break-glass token** lets you still post updates to it.
+
+<StatusPageDiagram kind="delivery" />
+
+Set this up before you need it. It requires the admin role:
+
+1. Open **Settings → Advanced → Break-glass token** and click **Issue token**.
+2. Copy the token, which starts with `mstat_`, into your password manager. It is not shown again.
+
+During an outage:
+
+1. Open `/_manage` on the page's address, such as `https://status.acme.com/_manage`. On a password-protected page, enter the page password first.
+2. Enter the token, pick an open incident or **New incident**, and write your message.
+3. Click **Post update**. The page shows it at once.
+
+<StatusPageShot
+    name="manage"
+    alt="The break-glass form with token, incident, title, status, impact, affected components and message fields, and a Post update button."
+    caption="The break-glass form, served by the status page itself."
+    maxWidth={440}
+/>
+
+**Replace token** stops the old token at once. **Revoke** refuses every later post until you issue a new one.
+
+## Feeds, API and limits
+
+### Subscribers and feeds
+
+A public page has a **Subscribe to updates** link with its feeds and a Slack command, `/feed subscribe <feed URL>`, that posts each update to a channel. Maple does not email or text subscribers.
+
+<StatusPageShot
+    name="subscribe"
+    alt="The Subscribe to updates dialog with RSS and Slack tabs and copyable RSS and Atom feed URLs."
+    caption="What visitors get from Subscribe to updates."
+    maxWidth={560}
+/>
+
+Every public page also serves these paths:
+
+| Path                  | What it returns                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `/feed.rss`           | RSS 2.0, one item per incident update, newest first                                |
+| `/feed.atom`          | Atom, the same items                                                               |
+| `/api/v1/status.json` | Status, components, open incidents and maintenance, in the statuspage.io summary format |
+| `/api/v1/uptime.json` | Daily uptime per component. `?days=` takes 1 to 365 (default 90), `?component=` picks one |
+| `/badge.svg`          | A badge with the current status                                                    |
+
+### From an AI assistant
+
+The [MCP server](/docs/reference/mcp) reads pages with `get_status_page` and changes them with `manage_status_page`:
+
+| Action         | What it does                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `create`       | Creates a draft page from a `name`, with an optional `slug` and `description`                 |
+| `post_update`  | Opens an incident or maintenance, or posts the next update. New posts are drafts unless `publish=true` |
+| `apply_config` | Replaces settings, theme and components with an edited config. `if_version` guards the write  |
+| `set_domain`   | Sets a custom domain and returns its DNS records. Call it again to re-check, `remove=true` removes it |
+| `publish`      | Makes a draft page public within a minute                                                     |
+
+### From the REST API or code
+
+To declare a page in code, use [`Maple.StatusPage`](/docs/iac/alchemy-resources#maplestatuspage) in Alchemy or [`maple_status_page`](/docs/iac/terraform-resources#maple_status_page) in Terraform. There is no Pulumi resource.
+
+The [REST API](/docs/reference/api) uses the scopes `status_pages:read`, `status_pages:write`, `status_page_incidents:read` and `status_page_incidents:write`. Page writes need the engineer role, and break-glass endpoints need an admin.
+
+<details>
+<summary>All REST endpoints</summary>
+
+| Endpoint                                                   | What it does                                                                     |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `GET`, `POST /v2/status_pages`                             | List pages, or create one with its components (`publish: false` creates a draft) |
+| `POST /v2/status_pages/preview`                            | Build the page a draft config would publish, without saving                      |
+| `GET`, `PATCH`, `DELETE /v2/status_pages/{id}`             | Read, update or delete a page                                                    |
+| `GET /v2/status_pages/{id}/view`                           | The page as visitors see it, whatever its visibility                             |
+| `POST /v2/status_pages/{id}/publish`                       | Publish now instead of within the minute                                         |
+| `GET`, `PUT /v2/status_pages/{id}/config`                  | The whole page as one document; `PUT` replaces it, with optional `?if_version=`. The custom domain is not part of it |
+| `/v2/status_pages/{id}/components`                         | `GET` and `POST`, `PATCH` and `DELETE` on `/{component_id}`, `POST .../reorder`  |
+| `PUT`, `DELETE /v2/status_pages/{id}/password`             | Set or remove the page password                                                  |
+| `POST /v2/status_pages/{id}/rotate_break_glass`            | Issue a break-glass token; `DELETE .../break_glass` revokes it                   |
+| `GET`, `PUT`, `DELETE /v2/status_pages/{id}/custom_domain` | Read, set or remove the custom domain; `POST .../check` checks it now            |
+| `GET`, `POST /v2/status_page_incidents`                    | List incidents and maintenance, or open one with its first update                |
+| `GET`, `PATCH`, `DELETE /v2/status_page_incidents/{id}`    | Read, edit or delete one                                                         |
+| `POST /v2/status_page_incidents/{id}/updates`              | Post an update; `resolved` or `completed` closes it                              |
+
+</details>
+
+### Limits
+
+| What                       | Limit                                                  |
+| -------------------------- | ------------------------------------------------------ |
+| Address (slug)             | 3 to 48 lowercase letters, digits or inner hyphens, unique in your organization |
+| Components                 | 200 per page                                           |
+| Incident update message    | 20,000 characters                                      |
+| Break-glass post           | 5,000 character message, 200 character title           |
+| Page links                 | 2,048 characters, `https` only                         |
+| Logo, dark logo, favicon   | 128 KB each                                            |
+| Uptime history             | 90 days on the page, 365 days in `/api/v1/uptime.json` |
+| Waiting break-glass posts  | 50 updates until Maple imports them                    |
+
+## Next steps
+
+- [Uptime checks](/docs/alerting/uptime-checks): the monitors that drive components.
+- [Heartbeat monitors](/docs/alerting/heartbeat-monitors): monitors for cron jobs and scheduled workers.
+- [Incidents](/docs/alerting/incidents): the internal incidents a down monitor opens.
