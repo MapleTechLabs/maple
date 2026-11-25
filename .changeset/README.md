@@ -1,6 +1,6 @@
 # Changesets
 
-Releases of the public npm packages (`@maple-dev/effect-sdk`, `@maple-dev/browser`,
+Releases of the public npm packages (`@maple-dev/effect-sdk`, `@maple-dev/browser`, `@maple-dev/vite`,
 `@maple-dev/alchemy`) are driven by changesets. Run `bunx changeset` in a PR that changes one
 of them, pick the bump, and describe the change for the CHANGELOG.
 

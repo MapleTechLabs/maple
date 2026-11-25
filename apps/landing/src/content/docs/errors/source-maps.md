@@ -30,10 +30,67 @@ Maps are read when an issue is shown, never served to your users, and never appl
 
 Maple matches each frame to an uploaded map in one of two ways:
 
-- **By debug id** (recommended). `maple sourcemaps inject` writes a unique id into each built JS file and its map. When the file runs, it registers that id, and [`@maple-dev/browser`](/docs/frontend) 0.17.0 or later sends the ids of the scripts in an error's stack as `maple.exception.debug_ids` on the exception event. Maple then picks the map by id, whatever URL the file was served from. Ids written by Sentry's debug id tooling work too.
+- **By debug id** (recommended). The Vite plugin or `maple sourcemaps inject` writes a unique id into each built JS file and its map. When the file runs, it registers that id, and [`@maple-dev/browser`](/docs/frontend) 0.17.0 or later sends the ids of the scripts in an error's stack as `maple.exception.debug_ids` on the exception event. Maple then picks the map by id, whatever URL the file was served from. Ids written by Sentry's debug id tooling work too.
 - **By release and path**. A map uploaded with a service and release is matched to frames from that `service.name` and `service.version` whose URL path ends with the map's file path. `assets/app.js` matches `https://cdn.example.com/static/assets/app.js`, but `app.js` does not match `assets/myapp.js`. Use this when your telemetry reports no debug ids.
 
 Release matching needs `service.version` on your telemetry to equal the release you upload under. The CLI defaults the release to the build's git commit, so either set `service.version` to that commit or pass the same value to both.
+
+## Upload with the Vite plugin
+
+For a Vite app, `@maple-dev/vite` 0.1.0 or later does every step inside `vite build`. It needs Vite 6 or later.
+
+```bash
+npm install -D @maple-dev/vite
+```
+
+```ts
+// vite.config.ts
+import { mapleSourceMaps } from "@maple-dev/vite"
+import { defineConfig } from "vite"
+
+export default defineConfig({
+	plugins: [
+		mapleSourceMaps({
+			service: "web",
+			release: process.env.GITHUB_SHA,
+		}),
+	],
+})
+```
+
+When the build finishes, the plugin:
+
+1. Turns on hidden source maps (`build.sourcemap: "hidden"`) when the setting is unset or off, so no public `sourceMappingURL` comment is written.
+2. Injects a debug id into every built JS file.
+3. Moves the maps out of the deployed output into `.maple/sourcemaps/<name of the build's output folder>` beside your Vite config, so they are never served.
+4. Uploads them to Maple.
+
+In CI, set `MAPLE_API_KEY` for the build step. It is an API key with the **Source maps** write scope (`source_maps:write`), created by an engineer or admin under **Settings → Keys**. The plugin reads `MAPLE_API_KEY`, not the `MAPLE_API_TOKEN` the CLI reads.
+
+```yaml
+- run: npm run build
+  env:
+      MAPLE_API_KEY: ${{ secrets.MAPLE_API_KEY }}
+```
+
+Without a key, or without `service`, the plugin logs a warning and keeps the maps in `.maple/sourcemaps`, so a local build works with no setup. Add `.maple` to your `.gitignore`.
+
+| Option         | What it does                                                                                                                      |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `service`      | The `service.name` your app reports. Required to upload.                                                                          |
+| `release`      | The `service.version` your app reports, such as a commit SHA. Required with `matchBy: "release"`. There is no default.            |
+| `apiKey`       | The API key. Defaults to `MAPLE_API_KEY`.                                                                                         |
+| `apiUrl`       | The Maple API base URL. Defaults to `MAPLE_API_URL`, then `https://api.maple.dev`.                                                |
+| `urlPrefix`    | The path the files are served under, prepended to each file path. Set `static/` when `dist/app.js` is served as `/static/app.js`. |
+| `matchBy`      | `"debugId"` (default) for `@maple-dev/browser`. `"release"` uploads without debug ids, for telemetry that reports none.           |
+| `upload`       | Set `false` to only inject debug ids and move the maps, and upload them another way.                                              |
+| `failOnError`  | Set `true` to fail the build when an upload fails. By default a failed upload logs a warning and the build finishes.              |
+| `mapsDir`      | Where the maps go, relative to the Vite root.                                                                                     |
+| `environments` | The Vite environments whose output is processed. Defaults to `["client"]`, the browser bundle.                                    |
+
+Maps upload four at a time. A request that gets a 429, a 5xx or no response is retried up to 4 times. The plugin skips a map with a warning when it is over 10 MiB, when it is an index map (one with `sections`), when it maps no sources, when `matchBy: "release"` is set without a `release`, or when its file has no debug id and no `release` is set. `failOnError` covers failed uploads and maps that cannot be read. A missing key or `service`, and skipped maps, only warn.
+
+On the first build with the plugin, a chunk whose hashed name did not change gets new contents, because the debug id goes in after the file is named. A browser or CDN that cached that chunk may serve the old copy for that one release. Later builds are deterministic.
 
 ## Upload with the CLI
 
@@ -68,7 +125,7 @@ The command uploads one map per JS file, four at a time, and prints each one. It
 
 ## Upload with Alchemy
 
-If you deploy with [Alchemy](/docs/iac/alchemy), `@maple-dev/alchemy` 0.8.0 or later does both steps for a Vite app. The Vite plugin turns on hidden source maps, injects debug ids, and moves the maps out of the deployed output into `.maple/sourcemaps/<name of the build's output folder>` beside your Vite config, so they are never served:
+If you deploy with [Alchemy](/docs/iac/alchemy), `@maple-dev/alchemy` 0.8.0 or later does both steps for a Vite app. The Vite plugin turns on hidden source maps, injects debug ids, and moves the maps out of the deployed output into `.maple/sourcemaps/<name of the build's output folder>` beside your Vite config, so they are never served. An app that does not deploy with Alchemy uses [`@maple-dev/vite`](#upload-with-the-vite-plugin) instead.
 
 ```ts
 // vite.config.ts
@@ -162,6 +219,9 @@ The API returns when each map last resolved a stack, to the day, as `last_used_a
 
 - **Stacks still show minified code.** Check that the maps uploaded (`GET /v2/source_maps`). With debug ids, check that `inject` ran on the same files you deployed, after any step that rewrites them, and that your app uses `@maple-dev/browser` 0.17.0 or later. Without debug ids, check that `service.version` on the errors equals the uploaded release, and that the uploaded path is the end of the URL path (set `--url-prefix`).
 - **Frames map but show no code.** The map has no `sourcesContent`. Turn on embedding the sources in your bundler.
+- **The build log says `MAPLE_API_KEY is not set`.** The Vite plugin found no key, so it kept the maps on disk and uploaded nothing. Set `MAPLE_API_KEY` in the environment of the build step, or pass `apiKey`. `MAPLE_API_TOKEN` is the CLI's variable and the plugin does not read it.
+- **The build log says `no service is set`.** Pass `service` to `mapleSourceMaps()`.
+- **The build log says `build.sourcemap: "inline"` embeds the maps.** Inline maps ship inside the served files, so the plugin cannot upload them. Remove the setting or set it to `"hidden"`.
 - **`upload` skips every file with "no debug id".** Run `maple sourcemaps inject` first, or pass `--service` and `--release`.
 - **An error opened a new issue after a deploy.** Its map arrived more than an hour after the first occurrence. Upload before or with the deploy.
 

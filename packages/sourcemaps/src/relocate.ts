@@ -1,9 +1,9 @@
 // Moves a build's source maps out of its deployed output, so they are never served, and records
-// which JS file each belongs to. The Alchemy `Maple.SourceMaps` resource uploads from there.
+// which JS file each belongs to. `Maple.SourceMaps` and `@maple-dev/vite` upload from there.
 import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { Path } from "effect/Path"
-import { fileError, type InjectResult, listFiles } from "./inject.ts"
+import { fileError, injectDirectory, type InjectResult, listFiles } from "./inject.ts"
 
 /** The manifest written next to relocated maps. */
 export const MANIFEST_FILE = "maple-sourcemaps.json"
@@ -83,7 +83,9 @@ export const relocateMaps = (mapsDir: string, outputs: ReadonlyArray<BuildOutput
 			{ discard: true },
 		)
 		yield* fs.makeDirectory(maps, { recursive: true }).pipe(Effect.mapError(fileError(maps, "create")))
-		const moved = yield* Effect.forEach(outputs, ({ outDir }) =>
+		// Two outputs can each write `app.js.map`: each gets its own folder so neither map replaces the other.
+		const folderOf = (index: number) => (outputs.length > 1 ? String(index) : "")
+		const moved = yield* Effect.forEach(outputs, ({ outDir }, index) =>
 			Effect.gen(function* () {
 				const files = yield* listFiles(outDir, Str.endsWith(".map"))
 				// Copy then delete: `mapsDir` may be on another device than the build output.
@@ -92,7 +94,7 @@ export const relocateMaps = (mapsDir: string, outputs: ReadonlyArray<BuildOutput
 					(file) =>
 						Effect.gen(function* () {
 							const from = path.join(outDir, file)
-							const to = path.join(maps, file)
+							const to = path.join(maps, folderOf(index), file)
 							yield* fs.makeDirectory(path.dirname(to), { recursive: true })
 							yield* fs.copyFile(from, to)
 							yield* fs.remove(from)
@@ -102,14 +104,17 @@ export const relocateMaps = (mapsDir: string, outputs: ReadonlyArray<BuildOutput
 				return files.length
 			}),
 		)
-		const files = Arr.flatMap(outputs, ({ outDir, results }) =>
+		const files = Arr.flatMap(outputs, ({ outDir, results }, index) =>
 			Arr.flatMap(results, (result) =>
 				result.status === "injected" || result.status === "already_injected"
 					? Option.toArray(
 							Option.map(result.mapPath, (mapPath) => ({
 								file: result.file,
 								debugId: Option.getOrNull(result.debugId),
-								map: Str.replaceAll("\\", "/")(path.relative(outDir, mapPath)),
+								map: Str.replaceAll(
+									"\\",
+									"/",
+								)(path.join(folderOf(index), path.relative(outDir, mapPath))),
 							})),
 						)
 					: [],
@@ -122,4 +127,27 @@ export const relocateMaps = (mapsDir: string, outputs: ReadonlyArray<BuildOutput
 			.writeFileString(manifestPath, manifest)
 			.pipe(Effect.mapError(fileError(manifestPath, "write")))
 		return { moved: Arr.reduce(moved, 0, (sum, n) => sum + n), files }
+	})
+
+/** What one build did: the outputs processed, where their maps went, and how many. */
+export interface PreparedBuild {
+	readonly outDirs: ReadonlyArray<string>
+	readonly mapsDir: string
+	readonly moved: number
+	readonly files: number
+}
+
+/** Injects debug ids into every output, then moves their maps to `mapsDir` under one manifest. */
+export const prepareBuildOutputs = (outDirs: ReadonlyArray<string>, mapsDir: string) =>
+	Effect.gen(function* () {
+		const outputs = yield* Effect.forEach(Arr.dedupe(outDirs), (outDir) =>
+			Effect.map(injectDirectory(outDir, { dryRun: false }), (results) => ({ outDir, results })),
+		)
+		const relocated = yield* relocateMaps(mapsDir, outputs)
+		return {
+			outDirs: Arr.map(outputs, (output) => output.outDir),
+			mapsDir,
+			moved: relocated.moved,
+			files: relocated.files.length,
+		} satisfies PreparedBuild
 	})
