@@ -47,7 +47,10 @@ const announceHref = m.hero_announce_href();
                 <HeroCta class={buttonVariants({ size: "xl" })} />
                 <AgentPromptButton />
             </div>
-            <p class="monument-hero__note">{m.hero_cta_note()}</p>
+            <p class="monument-hero__note">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 4.8" /></svg>
+                <span>{m.hero_cta_note()}</span>
+            </p>
         </div>
     <div class="monument-proof">
         <div class="monument-proof__inner">

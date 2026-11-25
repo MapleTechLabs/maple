@@ -215,10 +215,23 @@
 	margin-top: 26px;
 	flex-wrap: wrap;
 }
+/* Sits on the buttons' left edge; the check is the only amber in the line. */
 .monument-hero__note {
-	margin-top: 12px;
-	font-size: 14px;
-	color: color-mix(in oklab, var(--home-ink) 62%, var(--home-paper));
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin-top: 16px;
+	font-size: 13px;
+	line-height: 1.5;
+	letter-spacing: 0.005em;
+	color: color-mix(in oklab, var(--home-ink) 68%, var(--home-paper));
+	text-wrap: balance;
+}
+.monument-hero__note svg {
+	flex: none;
+	/* Centres the 14px glyph on the first text line. */
+	margin-top: calc((1lh - 14px) / 2);
+	color: var(--home-orange);
 }
 .monument-hero__colophon {
 	position: absolute;
@@ -729,6 +742,9 @@ html[lang="ja"] .monument-hero h1 span {
 	}
 	.monument-actions {
 		margin-top: 20px;
+	}
+	.monument-hero__note {
+		margin-top: 12px;
 	}
 	.monument-hero__colophon {
 		display: none;
