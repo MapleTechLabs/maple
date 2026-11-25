@@ -16,7 +16,7 @@ import {
 	onboardingRewardWindowOpen,
 	OnboardingRewardNotClaimableError,
 } from "@maple/domain/onboarding-checklist"
-import { EdgeCacheService } from "@maple/cache"
+import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -84,7 +84,8 @@ export interface OnboardingChecklistServiceApi {
 }
 
 const make = Effect.gen(function* () {
-	const edgeCache = yield* EdgeCacheService
+	// Shared by every caller of the org, so never filed under a caller's cache partition.
+	const edgeCache = yield* Effect.map(EdgeCacheService, sharedAcrossPartitions)
 	const organizations = yield* OrganizationService
 	const onboarding = yield* OnboardingService
 	const signals = yield* SignalPresenceService

@@ -17,7 +17,7 @@ import {
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { EdgeCacheService } from "@maple/cache"
+import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import { Clock, Context, type Duration, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkApiFor } from "@maple/auth"
@@ -95,7 +95,8 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 >()("@maple/backend/services/org/OrganizationFeatureFlagsService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
-		const edgeCache = yield* EdgeCacheService
+		// Shared by every caller of the org, so never filed under a caller's cache partition.
+		const edgeCache = yield* Effect.map(EdgeCacheService, sharedAcrossPartitions)
 		const clerkMode = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
 		const clerk = clerkApiFor(env)
 

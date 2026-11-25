@@ -343,6 +343,29 @@ export function listTrustedReadDatasourceNames(): ReadonlyArray<string> {
 	)
 }
 
+// A whole identifier, so `traces` is not found inside `traces_aggregates_hourly`. Built on first
+// use: the regexes are only needed where a read token is minted.
+const datasourceMentions = (() => {
+	const built = new Map<string, RegExp>()
+	return (name: string): RegExp => {
+		const known = built.get(name)
+		if (known !== undefined) return known
+		const pattern = new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`)
+		built.set(name, pattern)
+		return pattern
+	}
+})()
+
+/** Which of `names` a statement mentions. A name inside a string literal counts too: it over-reports, never under. */
+export const datasourcesMentionedIn = (
+	statement: string,
+	names: ReadonlyArray<string>,
+): ReadonlyArray<string> => Arr.filter(names, (name) => datasourceMentions(name).test(statement))
+
+/** A statement with its string literals emptied, so a value that reads like a datasource name is not taken for one. */
+export const withoutStringLiterals = (statement: string): string =>
+	Str.replace(/'(?:[^'\\]|\\.|'')*'/g, "''")(statement)
+
 export function describeWarehouseTable(name: string): TableInfo | null {
 	const found = Arr.findFirst(collectDatasources(), (d) => d._name === name)
 	if (Option.isNone(found)) return null

@@ -1,5 +1,5 @@
 import { Effect, Option, Schema, Array as Arr } from "effect"
-import type { EdgeCacheServiceApi } from "@maple/cache"
+import { type EdgeCacheServiceApi, unpartitioned } from "@maple/cache"
 import {
 	BillingAddress,
 	BillingProfile,
@@ -88,7 +88,7 @@ export const ensureStripeCustomerId = (
 		const response = yield* ensureOk(created)
 		// The cached snapshot predates the link; drop it so the next customer read
 		// (and the next call here) sees the Stripe id.
-		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: customerId })
+		yield* unpartitioned(edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: customerId }))
 		const linked = stripeCustomerIdOf(response)
 		yield* Effect.annotateCurrentSpan({ "maple.billing.stripe_customer_created": Option.isSome(linked) })
 		if (Option.isSome(linked)) return linked.value

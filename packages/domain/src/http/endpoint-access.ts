@@ -1,5 +1,5 @@
 import { Array as Arr, Context, Option } from "effect"
-import type { Permission } from "../policy"
+import { type Permission, SCOPED_READ } from "../policy"
 
 /**
  * What an endpoint asks of the caller's permissions, checked in the auth layers before the handler
@@ -32,6 +32,15 @@ export class EndpointAccess extends Context.Reference<EndpointAccessRule | undef
 export const requires = (...permissions: Arr.NonEmptyReadonlyArray<Permission>): EndpointAccessRule => ({
 	requires: permissions,
 })
+
+/**
+ * Marks an endpoint a role limited to namespaces may call: where it asks for `telemetry:read`,
+ * `telemetry:read_scoped` answers too. Set on the endpoint, never a group, and only when all the
+ * telemetry it returns comes from the warehouse, which filters it (`docs/custom-roles.md`).
+ */
+export class ScopedTelemetry extends Context.Reference<boolean>("@maple/http/ScopedTelemetry", {
+	defaultValue: () => false,
+}) {}
 
 interface Annotated {
 	readonly annotations: Context.Context<never>
@@ -72,9 +81,13 @@ export const decideEndpointAccess = (
 	const required = Arr.flatMap(rules, (rule) => (typeof rule === "object" ? rule.requires : []))
 	const readDefault: ReadonlyArray<Permission> =
 		isRead && required.length === 0 && !Arr.contains(rules, "personal") ? [READ_DEFAULT] : []
+	const scopedAnswers =
+		Context.get(called.endpoint.annotations, ScopedTelemetry) && Arr.contains(permissions, SCOPED_READ)
+	const holds = (permission: Permission): boolean =>
+		Arr.contains(permissions, permission) || (permission === READ_DEFAULT && scopedAnswers)
 	return Option.match(
 		Arr.findFirst([...required, ...readDefault], (permission) =>
-			Arr.contains(permissions, permission) ? Option.none() : Option.some(permission),
+			holds(permission) ? Option.none() : Option.some(permission),
 		),
 		{
 			onNone: (): EndpointAccessDecision => ({ _tag: "Allowed" }),

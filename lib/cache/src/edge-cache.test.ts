@@ -2,10 +2,12 @@ import { assert, describe, it } from "@effect/vitest"
 import { Deferred, Effect, Fiber, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
+	CachePartition,
 	EdgeCacheBackendError,
 	EdgeCacheIOError,
 	EdgeCacheService,
 	makeEdgeCacheService,
+	sharedAcrossPartitions,
 	type EdgeCacheBackend,
 } from "./edge-cache"
 import { makeOutboundSlotsCell, trackOutboundSlot, type OutboundSlotsCell } from "./outbound-slots"
@@ -766,4 +768,121 @@ describe("EdgeCacheService read breaker states", () => {
 			assert.strictEqual(calls(), 4)
 		}),
 	)
+})
+
+describe("EdgeCacheService under a cache partition", () => {
+	const inPartition =
+		(name: string) =>
+		<A, E, R>(effect: Effect.Effect<A, E, R>) =>
+			Effect.provideService(effect, CachePartition, name)
+
+	it.effect("never serves one partition's answer to another, or to an unpartitioned read", () => {
+		const backend = makeJsonRoundtripBackend()
+		return Effect.gen(function* () {
+			const cache = yield* EdgeCacheService
+			const read = (answer: string) =>
+				cache
+					.getOrCompute(
+						{ bucket: "qe", key: "org_a:traces", ttlSeconds: 30 },
+						Effect.succeed(answer),
+					)
+					.pipe(Effect.map((result) => [result.value, result.hit] as const))
+
+			assert.deepStrictEqual(yield* read("everything"), ["everything", false])
+			assert.deepStrictEqual(yield* read("checkout only").pipe(inPartition("ns:checkout")), [
+				"checkout only",
+				false,
+			])
+			assert.deepStrictEqual(yield* read("search only").pipe(inPartition("ns:search")), [
+				"search only",
+				false,
+			])
+			// Each reads back its own entry.
+			assert.deepStrictEqual(yield* read("x"), ["everything", true])
+			assert.deepStrictEqual(yield* read("x").pipe(inPartition("ns:checkout")), ["checkout only", true])
+			assert.deepStrictEqual(yield* read("x").pipe(inPartition("ns:search")), ["search only", true])
+			assert.strictEqual(backend.store.size, 3)
+		}).pipe(Effect.provide(makeLayer(backend)))
+	})
+
+	it.effect("files raw entries per partition too", () => {
+		const backend = makeJsonRoundtripBackend()
+		return Effect.gen(function* () {
+			const cache = yield* EdgeCacheService
+			yield* cache.rawPut("buckets", "abc123", "everything", 30)
+			yield* cache.rawPut("buckets", "abc123", "checkout only", 30).pipe(inPartition("ns:checkout"))
+
+			assert.deepStrictEqual(
+				yield* cache.rawGet<string>("buckets", "abc123"),
+				Option.some("everything"),
+			)
+			assert.deepStrictEqual(
+				yield* cache.rawGet<string>("buckets", "abc123").pipe(inPartition("ns:checkout")),
+				Option.some("checkout only"),
+			)
+			assert.deepStrictEqual(
+				yield* cache.rawGet<string>("buckets", "abc123").pipe(inPartition("ns:search")),
+				Option.none(),
+			)
+		}).pipe(Effect.provide(makeLayer(backend)))
+	})
+
+	it.effect("evicts only inside the partition the eviction was made in", () => {
+		const backend = makeJsonRoundtripBackend()
+		return Effect.gen(function* () {
+			const cache = yield* EdgeCacheService
+			const options = { bucket: "qe", key: "org_a:traces", ttlSeconds: 30 }
+			yield* cache.getOrCompute(options, Effect.succeed("everything"))
+			yield* cache
+				.getOrCompute(options, Effect.succeed("checkout only"))
+				.pipe(inPartition("ns:checkout"))
+
+			yield* cache.invalidate(options).pipe(inPartition("ns:checkout"))
+
+			assert.isTrue((yield* cache.getOrCompute(options, Effect.succeed("x"))).hit)
+			assert.isFalse(
+				(yield* cache.getOrCompute(options, Effect.succeed("x")).pipe(inPartition("ns:checkout")))
+					.hit,
+			)
+		}).pipe(Effect.provide(makeLayer(backend)))
+	})
+
+	// Org config, billing, flags: one entry for every caller, so an eviction by anyone reaches it.
+	it.effect("reads and evicts shared state alike inside and outside a partition", () => {
+		const backend = makeJsonRoundtripBackend()
+		return Effect.gen(function* () {
+			const cache = sharedAcrossPartitions(yield* EdgeCacheService)
+			const options = { bucket: "org-config", key: "org_a", ttlSeconds: 30 }
+			yield* cache.getOrCompute(options, Effect.succeed("v1"))
+			assert.deepStrictEqual(
+				yield* cache.getOrCompute(options, Effect.succeed("x")).pipe(inPartition("ns:checkout")),
+				{ value: "v1", hit: true },
+			)
+			yield* cache.invalidate(options).pipe(inPartition("ns:checkout"))
+			assert.isFalse((yield* cache.getOrCompute(options, Effect.succeed("v2"))).hit)
+
+			yield* cache.rawPut("regions", "org_a", "eu", 30).pipe(inPartition("ns:checkout"))
+			assert.deepStrictEqual(yield* cache.rawGet<string>("regions", "org_a"), Option.some("eu"))
+			yield* cache.rawDelete("regions", "org_a")
+			assert.deepStrictEqual(
+				yield* cache.rawGet<string>("regions", "org_a").pipe(inPartition("ns:checkout")),
+				Option.none(),
+			)
+		}).pipe(Effect.provide(makeLayer(backend)))
+	})
+
+	it.effect("keeps a raw key safe for a backend that writes it into a path", () => {
+		const keys: Array<string> = []
+		const backend: EdgeCacheBackend = {
+			name: "memory",
+			get: () => Effect.undefined,
+			put: (_bucket, key) => Effect.sync(() => void keys.push(key)),
+			delete: () => Effect.void,
+		}
+		return Effect.gen(function* () {
+			const cache = yield* EdgeCacheService
+			yield* cache.rawPut("buckets", "abc123", 1, 30).pipe(inPartition("ns:a/b ?#'%"))
+			assert.match(keys[0] ?? "", /^p-[0-9a-f]{32}-abc123$/)
+		}).pipe(Effect.provide(makeLayer(backend)))
+	})
 })

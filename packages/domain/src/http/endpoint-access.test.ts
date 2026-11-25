@@ -1,10 +1,17 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Context, Option } from "effect"
 import * as Policy from "../policy"
 import { MapleAiApi } from "./ai-api"
 import { MapleApi } from "./api"
 import { Authorization, RegionlessSessionAuthorization, SessionAuthorization } from "./current-tenant"
-import { type CalledEndpoint, decideEndpointAccess, endpointAccessRules } from "./endpoint-access"
+import {
+	type CalledEndpoint,
+	decideEndpointAccess,
+	EndpointAccess,
+	endpointAccessRules,
+	requires,
+	ScopedTelemetry,
+} from "./endpoint-access"
 import { MapleInternalApi } from "./internal-api"
 import { AuthorizationV2 } from "./v2/auth"
 import { MapleApiV2 } from "./v2/api"
@@ -43,6 +50,18 @@ const find = (group: Group, name: string): CalledEndpoint => ({
 
 const internal = MapleInternalApi.groups
 const v2 = MapleApiV2.groups
+
+/** What a member on a role limited to namespaces holds: the scoped read, and nothing that needs telemetry. */
+const LIMITED: Policy.Grants = Policy.grantsOf(
+	[Policy.CUSTOM_ROLE_CLERK_KEY],
+	Policy.decodeCustomPermissions(Policy.encodePermissions([Policy.SCOPED_READ, "devices:connect"])),
+)
+
+const isScopeAware = ({ endpoint }: { readonly endpoint: Endpoint }): boolean =>
+	Context.get(endpoint.annotations, ScopedTelemetry)
+
+const nameOf = ({ group, endpoint }: { readonly group: Group; readonly endpoint: Endpoint }): string =>
+	`${group.identifier}.${endpoint.identifier}`
 
 const ANALYST = Policy.grantsOf(["org:analyst"])
 const MEMBER = Policy.grantsOf(["org:member"])
@@ -257,5 +276,122 @@ describe("EndpointAccess", () => {
 	it("leaves a billing write to its handler, which checks billing:manage", () => {
 		const controls = find(internal.billing, "updateBillingControls")
 		expect(decideEndpointAccess(ANALYST, controls)._tag).toBe("Allowed")
+	})
+})
+
+describe("a role limited to namespaces", () => {
+	const gatedEndpoints = Arr.filter(allEndpoints, ({ endpoint }) =>
+		Arr.some(gated, (middleware) => endpoint.middlewares.has(middleware)),
+	)
+	const scopeAware = Arr.filter(gatedEndpoints, isScopeAware)
+
+	it("is refused every endpoint that asks for telemetry:read and is not marked for it", () => {
+		const withoutScopedRead: Policy.Grants = ["devices:connect"]
+		// What the scoped read opens: endpoints it may call that the same role without it may not.
+		const opened = Arr.filter(
+			gatedEndpoints,
+			(called) =>
+				decideEndpointAccess(LIMITED, called)._tag === "Allowed" &&
+				decideEndpointAccess(withoutScopedRead, called)._tag !== "Allowed",
+		)
+		expect(Arr.map(opened, nameOf).sort()).toEqual(Arr.map(scopeAware, nameOf).sort())
+	})
+
+	// Each one answers only from warehouse datasources that carry a namespace on every row.
+	// Opening another is a decision to make here, not a mark to add in passing.
+	it("reaches exactly the dashboard reads that can be kept to its namespaces", () => {
+		const reached = Arr.filter(
+			gatedEndpoints,
+			(called) => decideEndpointAccess(LIMITED, called)._tag === "Allowed" && isScopeAware(called),
+		)
+		expect(Arr.map(reached, ({ endpoint }) => endpoint.identifier).sort()).toEqual([
+			"errorRateByService",
+			"executeBatch",
+			"getLog",
+			"listLogs",
+			"metricDistribution",
+			"metricExemplars",
+			"releasesList",
+			"serviceApdex",
+			"serviceDeploys",
+			"serviceDetailOverview",
+			"serviceHealthBaseline",
+			"serviceOverview",
+			"serviceRuntimes",
+			"spanDetail",
+			"spanHierarchy",
+			"traceSpanEvents",
+		])
+	})
+
+	it("stays out of everything that reads more than the warehouse", () => {
+		for (const called of [
+			find(internal.queryEngine, "executeRawSql"),
+			find(internal.queryEngine, "serviceMapBundle"),
+			// Rollups that only name a service: a service name is not a namespace.
+			find(internal.queryEngine, "errorsByType"),
+			find(internal.queryEngine, "listMetrics"),
+			find(internal.queryEngine, "serviceUsage"),
+			find(internal.queryEngine, "costTotals"),
+			find(internal.queryEngine, "productEventsFunnel"),
+			find(v2.traces, "retrieve"),
+			find(v2.alertRules, "list"),
+			find(v2.dashboards, "create"),
+			find(v2.investigations, "create"),
+			find(internal.errors, "upsertEscalationPolicy"),
+		]) {
+			expect(decideEndpointAccess(LIMITED, called)._tag).toBe("Denied")
+		}
+	})
+
+	it("is only ever let in by an endpoint's own mark, in a group that is session only", () => {
+		expect(scopeAware.length).toBeGreaterThan(0)
+		const elsewhere = Arr.filter(
+			scopeAware,
+			({ group, endpoint }) =>
+				group.identifier !== "queryEngine" || !endpoint.middlewares.has(SessionAuthorization),
+		)
+		expect(Arr.map(elsewhere, nameOf)).toEqual([])
+	})
+
+	it("still needs every other permission a marked endpoint asks for", () => {
+		const batch = find(internal.queryEngine, "executeBatch")
+		const marked: CalledEndpoint = {
+			group: batch.group,
+			endpoint: {
+				method: "POST",
+				annotations: Context.make(ScopedTelemetry, true).pipe(
+					Context.add(EndpointAccess, requires("telemetry:read", "query:sql")),
+				),
+			},
+		}
+		expect(decideEndpointAccess(LIMITED, marked)).toEqual({ _tag: "Denied", permission: "query:sql" })
+		expect(decideEndpointAccess([Policy.SCOPED_READ, "billing:manage"], marked)).toEqual({
+			_tag: "Denied",
+			permission: "query:sql",
+		})
+	})
+
+	it("is not let in by the mark alone: the caller has to hold the scoped read", () => {
+		const batch = find(internal.queryEngine, "executeBatch")
+		expect(decideEndpointAccess(["devices:connect"], batch)).toEqual({
+			_tag: "Denied",
+			permission: "telemetry:read",
+		})
+	})
+
+	it("answers the read default of a marked GET too", () => {
+		const batch = find(internal.queryEngine, "executeBatch")
+		const markedGet: CalledEndpoint = {
+			group: { annotations: Context.empty() },
+			endpoint: { method: "GET", annotations: Context.make(ScopedTelemetry, true) },
+		}
+		expect(decideEndpointAccess(LIMITED, markedGet)._tag).toBe("Allowed")
+		expect(
+			decideEndpointAccess(LIMITED, {
+				group: batch.group,
+				endpoint: { method: "GET", annotations: Context.empty() },
+			}),
+		).toEqual({ _tag: "Denied", permission: "telemetry:read" })
 	})
 })

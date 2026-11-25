@@ -22,7 +22,7 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import type { ActualTable, DesiredTable, TableDiffEntry } from "@maple/domain/clickhouse"
-import { EdgeCacheService } from "@maple/cache"
+import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	OrgClickHouseSchemaApplyRuns,
@@ -925,7 +925,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		// The background schema-apply Workflow, bound only by the api Worker that hosts it.
 		// Read optionally so other hosts and tests still construct the service.
 		const schemaApplyWorkflow = yield* Effect.serviceOption(SchemaApplyWorkflow)
-		const edgeCache = yield* EdgeCacheService
+		// Shared by every caller of the org, so never filed under a caller's cache partition.
+		const edgeCache = yield* Effect.map(EdgeCacheService, sharedAcrossPartitions)
 
 		// Memoize the parsed desired-schema snapshot per service instance. The
 		// snapshot is static, so we parse it at most once and reuse it.

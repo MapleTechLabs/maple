@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
-import { EdgeCacheService } from "@maple/cache"
+import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import {
 	AttachResult,
 	BillingAccountOrgUsage,
@@ -139,7 +139,8 @@ const orgUsageTotals = (orgId: OrgId, spend: DailySpendResponse) =>
 
 export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing", (handlers) =>
 	Effect.gen(function* () {
-		const edgeCache = yield* EdgeCacheService
+		// Shared by every caller of the org, so never filed under a caller's cache partition.
+		const edgeCache = yield* Effect.map(EdgeCacheService, sharedAcrossPartitions)
 		const dailySpend = yield* DailySpendService
 		const autumn = yield* AutumnClient
 		const codeReviews = yield* PrReviewAnalyticsService

@@ -180,6 +180,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/VcsRepositoryBlockedError",
 	"@maple/http/errors/VcsWebhookParseError",
 	"@maple/http/errors/VcsWebhookSignatureError",
+	"@maple/http/errors/WarehouseDataScopeError",
 	"@maple/http/errors/WarehouseInvalidSqlError",
 	"@maple/http/errors/WarehouseQuotaExceededError",
 	"@maple/http/errors/WarehouseValidationError",
