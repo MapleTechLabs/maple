@@ -17,6 +17,7 @@ pub mod outbound;
 pub mod profiles;
 pub mod prometheus_remote_write;
 pub mod r2;
+pub mod retention;
 pub mod row_budget;
 pub mod session_analytics;
 pub mod telemetry;

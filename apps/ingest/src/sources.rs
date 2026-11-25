@@ -223,7 +223,7 @@ pub(crate) fn is_protected_attribute(key: &str) -> bool {
 }
 
 /// The resource attribute naming the source a batch came from.
-pub(crate) const SOURCE_ID_ATTRIBUTE: &str = "maple_source_id";
+pub(crate) use maple_ingest::telemetry::SOURCE_ID_ATTRIBUTE;
 
 /// A source stamped on data without a token policy: an org's default source or
 /// an integration's source.

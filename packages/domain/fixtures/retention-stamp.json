@@ -1,0 +1,260 @@
+{
+	"cases": [
+		{
+			"name": "nothing set keeps every signal at its default",
+			"organization": {},
+			"source": {},
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "an organization override applies to a source that sets nothing",
+			"organization": { "traces": 45, "metrics": 400 },
+			"source": {},
+			"expected": {
+				"traces": 60,
+				"logs": 30,
+				"metrics": 550,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "a source keeps less than its organization",
+			"organization": { "logs": 90, "events": 365 },
+			"source": { "logs": 7, "events": 30 },
+			"expected": {
+				"traces": 30,
+				"logs": 7,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 30,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "a source keeps more than its organization",
+			"organization": { "traces": 7, "profiles": 3 },
+			"source": { "traces": 180, "profiles": 90 },
+			"expected": {
+				"traces": 180,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 90
+			}
+		},
+		{
+			"name": "a source overrides one signal and inherits the rest from its organization",
+			"organization": { "traces": 60, "logs": 14, "sessions": 180 },
+			"source": { "logs": 3 },
+			"expected": {
+				"traces": 60,
+				"logs": 3,
+				"metrics": 90,
+				"sessions": 180,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "a source override applies when its organization sets nothing",
+			"organization": {},
+			"source": { "metrics": 14, "sessions": 365 },
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 14,
+				"sessions": 365,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "ladder boundaries at 3, 7 and 14 days",
+			"organization": {
+				"traces": 1,
+				"logs": 3,
+				"metrics": 4,
+				"sessions": 7,
+				"events": 8,
+				"profiles": 14
+			},
+			"source": {},
+			"expected": { "traces": 3, "logs": 3, "metrics": 7, "sessions": 7, "events": 14, "profiles": 14 }
+		},
+		{
+			"name": "ladder boundaries at 30, 60 and 90 days",
+			"organization": {},
+			"source": {
+				"traces": 15,
+				"logs": 30,
+				"metrics": 31,
+				"sessions": 60,
+				"events": 61,
+				"profiles": 90
+			},
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 60,
+				"sessions": 60,
+				"events": 90,
+				"profiles": 90
+			}
+		},
+		{
+			"name": "ladder boundaries at 180, 365 and 550 days",
+			"organization": { "traces": 91, "logs": 180, "metrics": 181 },
+			"source": { "sessions": 365, "events": 366, "profiles": 550 },
+			"expected": {
+				"traces": 180,
+				"logs": 180,
+				"metrics": 365,
+				"sessions": 365,
+				"events": 550,
+				"profiles": 550
+			}
+		},
+		{
+			"name": "ladder boundaries at 800 days and just under each period",
+			"organization": { "traces": 551, "logs": 800, "metrics": 799 },
+			"source": { "sessions": 2, "events": 549, "profiles": 364 },
+			"expected": {
+				"traces": 800,
+				"logs": 800,
+				"metrics": 800,
+				"sessions": 3,
+				"events": 550,
+				"profiles": 365
+			}
+		}
+	],
+	"invalidStored": [
+		{
+			"name": "zero days",
+			"organization": { "traces": 0 },
+			"source": {},
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "more days than the longest period",
+			"organization": { "logs": 801 },
+			"source": { "metrics": 100000 },
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "a negative source value inherits the organization's",
+			"organization": { "metrics": 30 },
+			"source": { "metrics": -5 },
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 30,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "a fraction of a day inherits the organization's",
+			"organization": { "traces": 45 },
+			"source": { "traces": 45.5 },
+			"expected": {
+				"traces": 60,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "days stored as text",
+			"organization": { "events": "90" },
+			"source": { "profiles": "30" },
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "null, a boolean and an object in place of days",
+			"organization": { "sessions": null, "profiles": { "days": 30 } },
+			"source": { "logs": true },
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "a valid signal beside an invalid one still applies",
+			"organization": { "traces": 45, "logs": 0 },
+			"source": { "metrics": 7, "sessions": 9000 },
+			"expected": {
+				"traces": 60,
+				"logs": 30,
+				"metrics": 7,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "a column that is not an object sets nothing",
+			"organization": "all",
+			"source": 45,
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
+			"name": "a null column sets nothing",
+			"organization": null,
+			"source": { "events": 30 },
+			"expected": {
+				"traces": 30,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 30,
+				"profiles": 14
+			}
+		}
+	]
+}

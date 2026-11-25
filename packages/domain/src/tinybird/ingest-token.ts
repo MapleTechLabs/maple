@@ -22,10 +22,10 @@ export const INGEST_INSERT_DATASOURCES = [
 ] as const
 
 /**
- * Columns with a JSON path the gateway does not write yet, so the table's default fills them. Its
- * insert mappings leave them out: a self-managed cluster below migration 75 has no `RetentionDays`.
+ * Columns the gateway writes to Tinybird but leaves out of its self-managed ClickHouse insert,
+ * so the table default fills them there: a cluster below migration 75 has no `RetentionDays`.
  */
-export const INGEST_UNWRITTEN_COLUMNS: ReadonlySet<string> = new Set(["RetentionDays"])
+export const SELF_MANAGED_INSERT_OMITTED_COLUMNS: ReadonlySet<string> = new Set(["RetentionDays"])
 
 /**
  * Every datasource the append token covers: the insert list plus the audit trail, which the

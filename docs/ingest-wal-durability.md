@@ -57,6 +57,15 @@ binary that reads it to every task first, then ship whatever writes it. Tag 8 is
 since 2026-11-16 and written from the deploy after that; never roll a gateway back past the build
 that reads a tag while frames carrying it may still be queued.
 
+Every raw row carries `retention_days`, the period the gateway resolved for the row's source
+(`apps/ingest/src/retention.rs`, held to `packages/domain/src/retention.ts` by a shared fixture).
+A frame holds rows of one period, and a Tinybird export batch holds frames of one period: the
+Events API refuses an insert that touches more than 30 partitions, so a batch must not multiply its
+days by its periods. The frame head carries no period, since a new field there would need the same
+two-step rollout as a tag. The period stays in memory beside the queued frame, and a frame replayed
+from the WAL or recovered from S3 reads it back from its first row. Rows written before the stamp
+existed have none and take their signal's default period, which is what their table keeps them for.
+
 Syncs are **group commits**. An append writes its frame under the lane's append lock, then waits
 for a sync that started after the write. If no sync is running it leads one: it takes every frame
 written since the last sync, releases the lock, calls `sync_data`, and on success hands those frames
@@ -247,9 +256,12 @@ reservation while the pieces are built and appended one after another: build a p
 sized from its estimate, append its frames to the WAL, then build the next. What a request holds
 at once is one piece, whatever it expands to, and requests no longer wait on each other's whole
 rows. Every piece goes to the shard the whole request always went to, so its frames stay in order
-on one lane. A row that would take its buffer past the estimate is refused before any of it is
-written, through a writer bounded by the buffer's reserved size, so the buffer never reallocates
-and a wrong estimate is an error, never memory nothing reserved. Under attribute mappings the
+on one lane. A piece also ends where the next resource is stored for another period, so each of
+its frames holds one period; the gateway first orders a request that names sources of several
+periods by period, which bounds that at one more piece per period. A row that would take its
+buffer past the estimate is refused before any of it is written, through a writer bounded by the
+buffer's reserved size, so the buffer never reallocates and a wrong estimate is an error, never
+memory nothing reserved. Under attribute mappings the
 estimate assumes every rule copies the longest value either side holds, since a copied value can
 be copied again by a later rule, and the gateway applies at most 64 rules with 16 KiB of keys per
 org, in a stable order.

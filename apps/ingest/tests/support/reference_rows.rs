@@ -1,6 +1,7 @@
 //! Rows as the gateway built them before the borrowed-struct encoders: each one a
 //! `serde_json::Value` serialized whole, one frame per datasource for the request.
-//! A frozen copy, kept so the encoders can be held to it byte for byte.
+//! A frozen copy, kept so the encoders can be held to it byte for byte. The one
+//! addition since is `retention_days`, at each signal's default period.
 
 #![expect(
     clippy::too_many_arguments,
@@ -8,6 +9,7 @@
     reason = "a frozen copy, kept as it was written"
 )]
 
+use maple_ingest::retention::RetentionSignal;
 use maple_ingest::telemetry::{
     AttributeMappingRule, DatasourceNames, MappingOperation, MappingSourceContext, SamplingPolicy,
 };
@@ -150,6 +152,7 @@ pub(crate) fn encode_traces(
                     "span_kind": span_kind(span.kind),
                     "service_name": service_name,
                     "resource_schema_url": resource_spans.schema_url,
+                    "retention_days": RetentionSignal::Traces.default_stamp(),
                     "resource_attributes": resource_attrs,
                     "scope_schema_url": scope_spans.schema_url,
                     "scope_name": scope_name,
@@ -245,6 +248,7 @@ fn encode_log_row(
         "service_name": service_name,
         "body": log.body.as_ref().map(any_value_string).unwrap_or_default(),
         "resource_schema_url": resource_schema_url,
+        "retention_days": RetentionSignal::Logs.default_stamp(),
         "resource_attributes": resource_attrs,
         "scope_schema_url": scope_schema_url,
         "scope_name": scope_name,
@@ -480,6 +484,7 @@ fn metric_common_row(
     json!({
         "resource_attributes": resource_attrs,
         "resource_schema_url": resource_schema_url,
+        "retention_days": RetentionSignal::Metrics.default_stamp(),
         "scope_name": scope_name,
         "scope_version": scope_version,
         "scope_attributes": scope_attrs,
