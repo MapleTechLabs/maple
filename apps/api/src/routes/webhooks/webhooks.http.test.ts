@@ -36,6 +36,7 @@ import {
 } from "@maple/backend/services/org/OrganizationRegionService"
 import type { MapleRegion } from "@maple/domain/organization-regions"
 import { AutumnWebhookRouter } from "./autumn.http"
+import { RolesService } from "@maple/backend/services/roles/RolesService"
 import { ClerkWebhookRoute } from "./clerk.http"
 import { SVIX_WEBHOOK_MAX_BYTES } from "./svix-receiver"
 
@@ -165,6 +166,12 @@ const recordingSso = (owns = true) => {
 	return { applied, layer }
 }
 
+/** Every custom role a membership names still matches its definition. */
+const matchingRoles = Layer.mock(RolesService)({
+	settleMembership: (_orgId, _userId, held) =>
+		Effect.succeed(Policy.decodeCustomPermissions(held.permissions)),
+})
+
 const makeRouterLayer = (
 	router: typeof ClerkWebhookRoute | typeof AutumnWebhookRouter,
 	config: Record<string, string>,
@@ -177,6 +184,7 @@ const makeRouterLayer = (
 	sso: Layer.Layer<EnterpriseSsoService> = recordingSso().layer,
 ) =>
 	router.pipe(
+		Layer.provide(matchingRoles),
 		Layer.provide(sso),
 		Layer.provide(productEvents),
 		Layer.provide(regions),

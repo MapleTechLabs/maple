@@ -250,13 +250,20 @@ describe("shape route: permissions", () => {
 		}),
 	)
 
-	it.effect("serves a configuration shape to the same role", () =>
+	it.effect("refuses a configuration shape to that role too, and serves it with telemetry:read", () =>
 		Effect.gen(function* () {
-			const { status } = yield* syncRequest(
-				routes({ permissions: ["billing:manage"] }),
+			for (const shape of ["alert_rules", "api_keys", "alert_destinations_v2"]) {
+				const refused = yield* syncRequest(
+					routes({ permissions: ["billing:manage"] }),
+					`/api/sync/shape?shape=${shape}&offset=-1`,
+				)
+				assert.strictEqual(refused.status, 403)
+			}
+			const served = yield* syncRequest(
+				routes({ permissions: ["telemetry:read"] }),
 				"/api/sync/shape?shape=alert_rules&offset=-1",
 			)
-			assert.strictEqual(status, 200)
+			assert.strictEqual(served.status, 200)
 		}),
 	)
 })

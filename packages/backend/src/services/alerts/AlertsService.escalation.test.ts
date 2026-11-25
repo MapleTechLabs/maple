@@ -467,7 +467,7 @@ describe("escalation chains", () => {
 			const chain = yield* chains.create(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new EscalationChainCreateRequest({
 					name: "API escalation",
 					steps: [
@@ -479,7 +479,7 @@ describe("escalation chains", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				ruleRequest([tier("warning", 5, [team.id], chain.id), tier("critical", 20, [team.id], null)]),
 			)
 			return { alerts, orgId }

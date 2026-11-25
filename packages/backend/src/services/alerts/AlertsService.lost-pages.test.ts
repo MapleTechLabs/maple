@@ -23,7 +23,7 @@ import { type AlertsServiceApi } from "./AlertsService"
 import { DELETED_RULE_IN_FLIGHT_DELAY_MS } from "./delivery/deleted-rule-resolve"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	alertServices,
 	asOrgId,
 	asUserId,
@@ -78,7 +78,7 @@ const webhook = (alerts: AlertsServiceApi, orgId: OrgId, userId: UserId, name: s
 	alerts.createDestination(
 		orgId,
 		userId,
-		adminRoles,
+		adminGrants,
 		new WebhookAlertDestinationConfig({
 			type: "webhook",
 			name,
@@ -131,7 +131,7 @@ describe("AlertsService flap suppression", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				tieredRule([tier("warning", 5, [team.id]), tier("critical", 20, [pager.id])], 60),
 			)
 
@@ -173,7 +173,7 @@ describe("AlertsService flap suppression after a page that never arrived", () =>
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				tieredRule([tier("critical", 5, [team.id])], 60),
 			)
 
@@ -206,11 +206,11 @@ describe("AlertsService flap suppression after an incident that paged nobody", (
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				tieredRule([tier("critical", 5, [team.id])], 60),
 			)
 			const setEnabled = (enabled: boolean) =>
-				alerts.updateDestination(orgId, userId, adminRoles, team.id, { type: "webhook", enabled })
+				alerts.updateDestination(orgId, userId, adminGrants, team.id, { type: "webhook", enabled })
 
 			// Opens and resolves while its only destination is off: no page is even queued.
 			yield* setEnabled(false)
@@ -244,13 +244,13 @@ describe("AlertsService rule deletion", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				tieredRule([tier("critical", 5, [team.id])], 60),
 			)
 			yield* ticks(alerts, 2)
 			assert.deepStrictEqual(requests, ["trigger team"])
 
-			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* alerts.deleteRule(orgId, adminGrants, rule.id)
 			yield* tick(alerts)
 
 			assert.deepStrictEqual(requests, ["trigger team", "resolve team"])
@@ -273,14 +273,14 @@ describe("AlertsService rule deletion", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				tieredRule([tier("critical", 5, [team.id])], 60),
 			)
 			yield* ticks(alerts, 2)
 			state.tracesAggregateRows = errorRateRows(0.5)
 			yield* ticks(alerts, 2)
 
-			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* alerts.deleteRule(orgId, adminGrants, rule.id)
 			yield* tick(alerts)
 
 			assert.deepStrictEqual(requests, ["trigger team", "resolve team"])
@@ -321,7 +321,7 @@ describe("AlertsService rule deletion with pages in other states", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				tieredRule([tier("critical", 5, [first.id])], 60),
 			)
 			yield* ticks(alerts, 2)
@@ -384,7 +384,7 @@ describe("AlertsService rule deletion with pages in other states", () => {
 				),
 			)
 
-			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* alerts.deleteRule(orgId, adminGrants, rule.id)
 			yield* tick(alerts)
 
 			assert.sameMembers(
@@ -442,7 +442,7 @@ describe("AlertsService rule deletion with pages in other states", () => {
 			yield* page(2, destinations[2]?.id ?? "", "trigger", false)
 			yield* page(3, destinations[2]?.id ?? "", "renotify", true)
 
-			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* alerts.deleteRule(orgId, adminGrants, rule.id)
 			yield* tick(alerts)
 
 			assert.sameMembers(
@@ -491,7 +491,7 @@ describe("AlertsService rule deletion with pages in other states", () => {
 			yield* page(2, "queued")
 			const deletedAt = yield* Clock.currentTimeMillis
 
-			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* alerts.deleteRule(orgId, adminGrants, rule.id)
 
 			const queued = yield* resolveRows(testDb, rule.id)
 			const dueIn = (destinationId: string | undefined) =>
@@ -526,7 +526,7 @@ describe("AlertsService rule deletion with pages in other states", () => {
 				["trigger"],
 			)
 
-			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* alerts.deleteRule(orgId, adminGrants, rule.id)
 			failing.resolves = false
 			yield* ticks(alerts, 30)
 
@@ -574,7 +574,7 @@ describe("AlertsService rule deletion with pages in other states", () => {
 					),
 				)
 
-				yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+				yield* alerts.deleteRule(orgId, adminGrants, rule.id)
 				failing.resolves = false
 				yield* ticks(alerts, 30)
 
@@ -611,7 +611,7 @@ describe("AlertsService rule deletion with pages in other states", () => {
 		return Effect.gen(function* () {
 			const { alerts, orgId, rule } = yield* openIncidentWith(testDb, ["team"])
 			const run = Effect.runPromiseWith(yield* Effect.context())
-			duringResolve.push(() => run(Effect.asVoid(alerts.deleteRule(orgId, adminRoles, rule.id))))
+			duringResolve.push(() => run(Effect.asVoid(alerts.deleteRule(orgId, adminGrants, rule.id))))
 			state.tracesAggregateRows = errorRateRows(0.5)
 			yield* ticks(alerts, 40)
 
@@ -627,7 +627,7 @@ describe("AlertsService rule deletion with pages in other states", () => {
 		const sent: Array<Sent> = []
 		return Effect.gen(function* () {
 			const { alerts, orgId, rule } = yield* openIncidentWith(testDb, ["team"])
-			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* alerts.deleteRule(orgId, adminGrants, rule.id)
 			yield* tick(alerts)
 
 			const resolve = Arr.findFirst(sent, (request) => request.event === "resolve")
@@ -677,7 +677,7 @@ describe("AlertsService pages that outlive their incident", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new PagerDutyAlertDestinationConfig({
 					type: "pagerduty",
 					name: "On-call",
@@ -868,7 +868,7 @@ describe("AlertsService reminders and acknowledgements", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				tieredRule([tier("critical", 5, [team.id])], 30),
 			)
 			// The tick each request count was first seen at, so the reminder's tick can be read back.

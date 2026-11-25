@@ -19,7 +19,7 @@ import type { AlertIncidentActor } from "./AlertIncidentAckService"
 import { type AlertsServiceApi, QUIET_AFTER_RESOLVE_CEILING_MS } from "./AlertsService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	alertServices,
 	asOrgId,
 	asUserId,
@@ -90,7 +90,7 @@ const firing = (alerts: Effect.Success<typeof alertServices>, orgId: OrgId, user
 		const team = yield* alerts.createDestination(
 			orgId,
 			userId,
-			adminRoles,
+			adminGrants,
 			new WebhookAlertDestinationConfig({
 				type: "webhook",
 				name: "team",
@@ -113,12 +113,12 @@ const firing = (alerts: Effect.Success<typeof alertServices>, orgId: OrgId, user
 				consecutiveHealthyRequired: 2,
 				renotifyIntervalMinutes: 60,
 			})
-		const rule = yield* alerts.createRule(orgId, userId, adminRoles, request(true))
+		const rule = yield* alerts.createRule(orgId, userId, adminGrants, request(true))
 		yield* ticks(alerts, 2)
 		const [incident] = (yield* alerts.listIncidents(orgId)).incidents
 		if (incident === undefined) return yield* Effect.die("expected an open incident")
 		const setEnabled = (enabled: boolean) =>
-			alerts.updateRule(orgId, userId, adminRoles, rule.id, request(enabled))
+			alerts.updateRule(orgId, userId, adminGrants, rule.id, request(enabled))
 		return { ...incident, ruleId: rule.id, setEnabled }
 	})
 
@@ -261,7 +261,7 @@ describe("AlertsService manual resolve", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Grouped error rate",
 					severity: "critical",
