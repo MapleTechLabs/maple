@@ -107,6 +107,8 @@ describe("trailing slash", () => {
 		const res = await get("/pricing", { Accept: BROWSER_ACCEPT })
 		expect(res.status).toBe(308)
 		expect(res.headers.get("Location")).toBe("/pricing/")
+		// The same URL answers markdown clients with the twin, so caches key it on Accept.
+		expect(res.headers.get("Vary")).toBe("Accept")
 	})
 
 	it("serves the slash form directly", async () => {
