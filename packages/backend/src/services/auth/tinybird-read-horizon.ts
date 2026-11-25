@@ -4,6 +4,7 @@ import {
 	RETENTION_TIME_COLUMNS,
 	type RetentionSignal,
 } from "@maple/domain/retention"
+import { TRACE_BUCKET_MINUTES } from "@maple/domain/tinybird/datasources"
 import { Array as Arr, Option, Record as Rec } from "effect"
 import type { RetentionReadHorizon } from "@maple/backend/services/retention/RetentionService"
 import type { ReadBound } from "./tinybird-jwt"
@@ -31,9 +32,6 @@ export const TRACE_PROJECTION_TIME_COLUMNS = {
 	scanner_requests: "Timestamp",
 } as const satisfies Readonly<Record<string, string>>
 
-/** `trace_index.Bucket` is the start of a `TRACE_BUCKET_EXPR` bucket: five minutes of spans. */
-const TRACE_INDEX_BUCKET_MINUTES = 5
-
 interface ReadHorizonTable {
 	readonly datasource: string
 	/** The signal whose read horizon bounds this datasource. */
@@ -58,7 +56,7 @@ export const READ_HORIZON_TABLES: ReadonlyArray<ReadHorizonTable> = [
 		column,
 		// Trace detail seeks spans through the index: without the slack, spans still inside
 		// the horizon would be unreachable for the last minutes of their bucket.
-		...(datasource === "trace_index" ? { bucketMinutes: TRACE_INDEX_BUCKET_MINUTES } : undefined),
+		...(datasource === "trace_index" ? { bucketMinutes: TRACE_BUCKET_MINUTES } : undefined),
 	})),
 ]
 
