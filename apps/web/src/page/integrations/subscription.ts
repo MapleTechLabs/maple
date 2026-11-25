@@ -148,7 +148,7 @@ const every = (millis: number, message: () => Message) =>
 	Stream.map(pollTicks(Duration.millis(millis)), message)
 
 /** A provider module's ticks while it is active: steady, or fast first then steady. */
-export const tickerStream = (ticker: NonNullable<MountedProvider["ticker"]>): Stream.Stream<Message> =>
+export const tickerStream = (ticker: MountedProvider["tickers"][number]): Stream.Stream<Message> =>
 	ticker.fast === null
 		? every(ticker.everyMs, () => ticker.tick)
 		: backoffPollTicks(
@@ -227,12 +227,6 @@ const isAwaitingRun = (model: Model): boolean => {
 	})
 }
 
-/** Prometheus and WarpStream share the scrape-target section. */
-const isScrapePage = (model: Model): boolean => {
-	const integration = integrationOfSearch(model.search.integration)
-	return integration === "prometheus" || integration === "warpstream"
-}
-
 /** The provider whose callback messages this page listens for. */
 const listeningProvider = (model: Model): ConnectProvider | null => {
 	const integration = integrationOfSearch(model.search.integration)
@@ -264,25 +258,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: phase === "popup"
 							? popupFlow(attempt)
 							: grace(attempt),
-			},
-		),
-		/** The scrape target list every 30 s; the selected target's checks every 10 s. */
-		scrapeTargetsRefresh: entry(
-			{ isShown: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isShown: isScrapePage(model) }),
-				dependenciesToStream: ({ isShown }) =>
-					isShown ? every(30_000, () => Message.TickedTargetsRefresh()) : Stream.empty,
-			},
-		),
-		scrapeChecksRefresh: entry(
-			{ selectedId: Schema.NullOr(Schema.String) },
-			{
-				modelToDependencies: ({ model }) => ({
-					selectedId: isScrapePage(model) ? model.prometheusCard.selectedId : null,
-				}),
-				dependenciesToStream: ({ selectedId }) =>
-					selectedId === null ? Stream.empty : every(10_000, () => Message.TickedChecksRefresh()),
 			},
 		),
 		awsPending: entry(
@@ -356,26 +331,23 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		),
 		/** Each provider module's tick (Railway's first-sync poll, Supabase's card clock). */
 		...Rec.fromEntries(
-			Arr.flatMap(PROVIDER_MODULES, (provider) => {
-				const ticker = provider.ticker
-				return ticker === null
-					? []
-					: [
-							keyed(
-								`${provider.id}Tick`,
-								entry(
-									{ isActive: Schema.Boolean },
-									{
-										modelToDependencies: ({ model }) => ({
-											isActive: ticker.isActive(model),
-										}),
-										dependenciesToStream: ({ isActive }) =>
-											isActive ? tickerStream(ticker) : Stream.empty,
-									},
-								),
-							),
-						]
-			}),
+			Arr.flatMap(PROVIDER_MODULES, (provider) =>
+				Arr.map(provider.tickers, (ticker, index) =>
+					keyed(
+						`${provider.id}Tick${index}`,
+						entry(
+							{ dependency: Schema.NullOr(Schema.String) },
+							{
+								modelToDependencies: ({ model }) => ({
+									dependency: ticker.dependency(model),
+								}),
+								dependenciesToStream: ({ dependency }) =>
+									dependency === null ? Stream.empty : tickerStream(ticker),
+							},
+						),
+					),
+				),
+			),
 		),
 		connectCallback: entry(
 			{ provider: Schema.NullOr(ConnectProvider) },

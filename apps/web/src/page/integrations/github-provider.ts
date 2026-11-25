@@ -35,11 +35,13 @@ export const GITHUB: ProviderModule<GithubIntegrationStatus, GithubCardModel, Gi
 	blocksConnect: (model) => model.selectingInstallation !== null,
 	onConnectOpened: openedPopup,
 	onConnectPayload: receivedSelection,
-	subscription: {
-		everyMs: 3_000,
-		isActive: isPolling,
-		tick: GithubMessage.TickedGithubPoll(),
-	},
+	subscriptions: [
+		{
+			everyMs: 3_000,
+			isActive: isPolling,
+			tick: GithubMessage.TickedGithubPoll(),
+		},
+	],
 	// The window ends on its own, with one last read once the tab is back.
 	delayed: {
 		afterMs: FORCE_POLL_WINDOW_MS,

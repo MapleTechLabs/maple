@@ -1,5 +1,4 @@
 import { readClock } from "@maple/views/data/timing"
-import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Effect, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../../data/integration-statuses"
@@ -20,6 +19,7 @@ import { LINEAR_STATUS_READ } from "./linear-provider"
 import { FLEET_STATUS_READ } from "./fleet/fleet"
 import { CHAT_STATUS_READ } from "./chat"
 import { GITHUB_STATUS_READ } from "./github"
+import { SCRAPE_TARGETS_STATUS_READ } from "./prometheus"
 import { VERCEL_STATUS_READ } from "../infra-integrations/vercel/integration/vercel"
 import { PLANETSCALE_STATUS_READ } from "../infra-integrations/planetscale/integration/planetscale"
 import { CLOUDFLARE_STATUS_READ } from "../infra-integrations/cloudflare/integration/cloudflare"
@@ -91,15 +91,10 @@ export const STATUS_READS = {
 	),
 	github: statusRead(GITHUB_STATUS_READ.name, Message.CompletedLoadGithub, GITHUB_STATUS_READ.read),
 	chat: statusRead(CHAT_STATUS_READ.name, Message.CompletedLoadChat, CHAT_STATUS_READ.read),
-	/** Every page of 100. */
-	scrapeTargets: statusRead("LoadIntegrationsScrapeTargets", Message.CompletedLoadScrapeTargets, () =>
-		Effect.flatMap(MapleApiV2Client, (client) =>
-			collectV2Pages((cursor) =>
-				client.scrapeTargets.list({
-					query: { limit: 100, ...(cursor !== undefined ? { cursor } : undefined) },
-				}),
-			),
-		),
+	scrapeTargets: statusRead(
+		SCRAPE_TARGETS_STATUS_READ.name,
+		Message.CompletedLoadScrapeTargets,
+		SCRAPE_TARGETS_STATUS_READ.read,
 	),
 	/** The org's data sources (`dataSources` flag), every page, for the hub's rows. */
 	dataSources: statusRead("LoadIntegrationsDataSources", Message.CompletedLoadDataSources, () =>

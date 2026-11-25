@@ -8,12 +8,14 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
+import { PrometheusMessage } from "./prometheus"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+const scrape = (message: PrometheusMessage) => Message.GotPrometheusMessage({ message })
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -56,34 +58,42 @@ const loaded = (): Model => {
 
 describe("prometheus scrape targets", () => {
 	test("selecting a target reads its checks; a stale answer is dropped", () => {
-		const selected = pageUpdate(loaded(), Message.ClickedTarget({ id: target.id }))
+		const selected = pageUpdate(loaded(), scrape(PrometheusMessage.ClickedTarget({ id: target.id })))
 		expect(names(selected.commands)).toEqual(["FetchScrapeTargetChecks"])
 		const late = pageUpdate(
 			selected.model,
-			Message.CompletedFetchChecks({ key: "old", result: Result.succeed([]) }),
+			scrape(PrometheusMessage.CompletedFetchChecks({ key: "old", result: Result.succeed([]) })),
 		)
 		expect(late.model.prometheusCard.checks).toEqual(selected.model.prometheusCard.checks)
 	})
 
 	test("the form validates and saves once, then selects and probes the new target", () => {
 		const opened = loaded()
-		expect(names(pageUpdate(opened, Message.SubmittedTargetForm()).commands)).toEqual([])
+		expect(names(pageUpdate(opened, scrape(PrometheusMessage.SubmittedTargetForm())).commands)).toEqual(
+			[],
+		)
 		const filled = steps(opened, [
-			Message.GotFormFieldMessage({
-				field: "name",
-				message: Field.Message.ChangedValue({ value: "node" }),
-			}),
-			Message.GotFormFieldMessage({
-				field: "url",
-				message: Field.Message.ChangedValue({ value: "https://n/metrics" }),
-			}),
+			scrape(
+				PrometheusMessage.GotFormFieldMessage({
+					field: "name",
+					message: Field.Message.ChangedValue({ value: "node" }),
+				}),
+			),
+			scrape(
+				PrometheusMessage.GotFormFieldMessage({
+					field: "url",
+					message: Field.Message.ChangedValue({ value: "https://n/metrics" }),
+				}),
+			),
 		])
-		const saving = pageUpdate(filled, Message.SubmittedTargetForm())
+		const saving = pageUpdate(filled, scrape(PrometheusMessage.SubmittedTargetForm()))
 		expect(names(saving.commands)).toEqual(["SaveScrapeTarget"])
-		expect(names(pageUpdate(saving.model, Message.SubmittedTargetForm()).commands)).toEqual([])
+		expect(
+			names(pageUpdate(saving.model, scrape(PrometheusMessage.SubmittedTargetForm())).commands),
+		).toEqual([])
 		const saved = pageUpdate(
 			saving.model,
-			Message.CompletedSave({ isEdit: false, id: target.id, failure: null }),
+			scrape(PrometheusMessage.CompletedSave({ isEdit: false, id: target.id, failure: null })),
 		)
 		expect(saved.model.prometheusCard.selectedId).toBe(target.id)
 		expect(names(saved.commands)).toContain("ProbeScrapeTarget")
@@ -99,33 +109,43 @@ describe("prometheus scrape targets", () => {
 	test("an out-of-range interval keeps the form invalid", () => {
 		const opened = loaded()
 		const invalid = steps(opened, [
-			Message.GotFormFieldMessage({
-				field: "name",
-				message: Field.Message.ChangedValue({ value: "x" }),
-			}),
-			Message.GotFormFieldMessage({
-				field: "url",
-				message: Field.Message.ChangedValue({ value: "https://x" }),
-			}),
-			Message.GotFormFieldMessage({
-				field: "interval",
-				message: Field.Message.ChangedValue({ value: "2" }),
-			}),
+			scrape(
+				PrometheusMessage.GotFormFieldMessage({
+					field: "name",
+					message: Field.Message.ChangedValue({ value: "x" }),
+				}),
+			),
+			scrape(
+				PrometheusMessage.GotFormFieldMessage({
+					field: "url",
+					message: Field.Message.ChangedValue({ value: "https://x" }),
+				}),
+			),
+			scrape(
+				PrometheusMessage.GotFormFieldMessage({
+					field: "interval",
+					message: Field.Message.ChangedValue({ value: "2" }),
+				}),
+			),
 		])
-		expect(names(pageUpdate(invalid, Message.SubmittedTargetForm()).commands)).toEqual([])
+		expect(names(pageUpdate(invalid, scrape(PrometheusMessage.SubmittedTargetForm())).commands)).toEqual(
+			[],
+		)
 	})
 
 	test("a failed probe toasts and stops spinning", () => {
-		const probing = pageUpdate(loaded(), Message.ClickedProbe({ id: target.id }))
+		const probing = pageUpdate(loaded(), scrape(PrometheusMessage.ClickedProbe({ id: target.id })))
 		expect(names(probing.commands)).toEqual(["ProbeScrapeTarget"])
 		const failed = pageUpdate(
 			probing.model,
-			Message.CompletedProbe({
-				id: target.id,
-				failure: toLoadFailure("x"),
-				success: false,
-				error: null,
-			}),
+			scrape(
+				PrometheusMessage.CompletedProbe({
+					id: target.id,
+					failure: toLoadFailure("x"),
+					success: false,
+					error: null,
+				}),
+			),
 		)
 		expect(failed.model.prometheusCard.probing).toEqual([])
 		scene(

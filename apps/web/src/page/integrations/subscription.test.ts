@@ -58,7 +58,7 @@ const view = withViewInputs(pageView, { context })()
 const THIRTY_MINUTES_MS = 30 * 60 * 1000
 
 // The PlanetScale module's ticker, streamed as the page's subscriptions stream it.
-const planetscaleWatch = PLANETSCALE_PROVIDER.ticker
+const planetscaleWatch = PLANETSCALE_PROVIDER.tickers[0]
 const isWatching = (model: Model) => planetscaleWatch?.isActive(model) === true
 
 /**
@@ -69,7 +69,9 @@ const leftOpen = (model: Model, hours: number) =>
 	Effect.gen(function* () {
 		const state = yield* Ref.make({ model, reads: 0 })
 		const ticks = (
-			planetscaleWatch !== null && isWatching(model) ? tickerStream(planetscaleWatch) : Stream.empty
+			planetscaleWatch !== undefined && isWatching(model)
+				? tickerStream(planetscaleWatch)
+				: Stream.empty
 		).pipe(
 			Stream.mapEffect((message) =>
 				Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
@@ -231,11 +233,11 @@ describe("GitHub repository discovery", () => {
 				result: Result.succeed(pending),
 			}),
 		)
-		const ticker = GITHUB_PROVIDER.ticker
+		const ticker = GITHUB_PROVIDER.tickers[0]
 		expect(ticker?.isActive(model)).toBe(true)
 		const polls = await Effect.gen(function* () {
 			const fiber = yield* Effect.forkChild(
-				(ticker === null ? Stream.empty : tickerStream(ticker)).pipe(
+				(ticker === undefined ? Stream.empty : tickerStream(ticker)).pipe(
 					Stream.take(8),
 					Stream.mapEffect((message) =>
 						Effect.map(Clock.currentTimeMillis, (at) => ({ message, at })),

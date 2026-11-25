@@ -33,20 +33,22 @@ export const RAILWAY: ProviderModule<RailwayIntegrationStatus, RailwayCardModel,
 	statusRead: RAILWAY_STATUS_READ,
 	init: initRailwayCard,
 	update,
-	subscription: {
-		everyMs: 15_000,
-		isActive: (_model, env) => {
-			const status = Option.getOrNull(AsyncData.getData(env.status.data))
-			return (
-				env.isShown &&
-				status !== null &&
-				status.connected &&
-				!status.authFailed &&
-				unsyncedEnvironments(status) > 0
-			)
+	subscriptions: [
+		{
+			everyMs: 15_000,
+			isActive: (_model, env) => {
+				const status = Option.getOrNull(AsyncData.getData(env.status.data))
+				return (
+					env.isShown &&
+					status !== null &&
+					status.connected &&
+					!status.authFailed &&
+					unsyncedEnvironments(status) > 0
+				)
+			},
+			tick: RailwayMessage.TickedSettle(),
 		},
-		tick: RailwayMessage.TickedSettle(),
-	},
+	],
 	card: (h, model, timeZone) => [railwayCard(h, model, timeZone)],
 	flow: railwayFlow,
 	flowView: railwayFlowView,

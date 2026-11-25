@@ -9,7 +9,6 @@ import type { Model } from "./model"
 import { cardView } from "./view"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlowView } from "../infra-integrations/gcp/integration/view-flow-gcp"
-import { prometheusFlowView } from "./view-flow-prometheus"
 import { awsFlowView } from "../infra-integrations/aws/integration/view-flow-aws"
 
 type H = HtmlBuilder<Message>
@@ -72,11 +71,8 @@ export const flowView = (
 	timeZone: string,
 ): Html => {
 	const providerView = providerModuleOf(integration)?.flowView ?? null
-	if (providerView !== null) return providerView(h, model, stage, timeZone)
+	if (providerView !== null) return providerView(h, model, stage, timeZone, integration)
 	switch (integration) {
-		case "prometheus":
-		case "warpstream":
-			return prometheusFlowView(h, model, integration, stage, timeZone)
 		case "aws":
 			return awsFlowView(h, model, stage, timeZone)
 		case "gcp":
