@@ -67,6 +67,7 @@ use maple_ingest::otlp_json;
 use maple_ingest::profiles;
 use maple_ingest::prometheus_remote_write;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
+use maple_ingest::retention::{self, RetentionOverrides, RetentionSignal, RetentionStamps};
 use maple_ingest::row_budget::{self, ForwardBody, RowEstimate, ROW_PIECE_BYTES};
 use maple_ingest::session_analytics::{
     derive_referrer_host, is_billable_session_start, row_session_id, sanitize_product_event,
@@ -78,7 +79,7 @@ use maple_ingest::telemetry::{
     AcceptStats, AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget,
     ClickHouseTargetProvider, DatasourceNames, ExportDestination, HttpClient, MappingOperation,
     MappingSourceContext, PipelineError, PlannedFailure, RowBatchesError, RowSource,
-    SamplingPolicy, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
+    SamplingPolicy, SourceStamps, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
 use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetrics};
 use maple_ingest::vercel_ai_gateway_drain;
@@ -985,16 +986,24 @@ impl moka::Expiry<String, Duration> for SourceUseExpiry {
 
 /// A cached answer for one `maple_source_id` claim. The pause window is kept
 /// rather than a verdict, so a timed pause ends at its deadline while cached.
+/// The source's own retention overrides ride along, to stamp the rows it is named on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SourceClaim {
     Unclaimable,
-    Claimable(PauseWindow),
+    Claimable(PauseWindow, RetentionOverrides),
 }
+
+/// A source a default-key request named and the org owns: its `maple_source_id` as
+/// stamped on the resource, and its own retention overrides.
+type NamedSource = (String, RetentionOverrides);
 
 /// Verified claims split by whether their source is paused right now.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct VerifiedClaims {
     active: Vec<String>,
+    /// Each `active` claim with its source's own retention overrides, set or not: a
+    /// source that sets none inherits from the org, never from the default source.
+    retention: Vec<NamedSource>,
     paused: Vec<String>,
     /// The store could not be asked: a claim in neither list may still be the org's.
     unresolved: bool,
@@ -1322,22 +1331,49 @@ struct KeyRow {
     clickhouse_ready: bool,
 }
 
+/// The retention overrides read with a key or a connector: its org's
+/// (`org_retention_policies`) and its source's own (`sources.retention_days`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct RetentionRow {
+    org: RetentionOverrides,
+    source: RetentionOverrides,
+}
+
+impl RetentionRow {
+    /// What the source's rows are stamped with, per signal.
+    fn stamps(&self) -> RetentionStamps {
+        RetentionStamps::resolve(&self.org, &self.source)
+    }
+}
+
 #[derive(Clone, Debug)]
 struct OrgKeyRow {
     key: KeyRow,
     /// `sources.id` of the org's default source; `None` if it has none.
     default_source_id: Option<String>,
+    /// The org's overrides and its default source's.
+    retention: RetentionRow,
 }
 
-/// An integration ("pull") source and its pause window.
+/// An integration ("pull") source, its pause window and its retention overrides.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PullSourceRow {
     /// The `sources.id` uuid.
     id: String,
     pause: PauseWindow,
+    retention: RetentionOverrides,
 }
 
 impl PullSourceRow {
+    /// What a connector's rows are stamped with: its source's overrides, else the
+    /// org's. A connector with no source keeps what the org keeps.
+    fn retention(row: Option<&Self>, org: RetentionOverrides) -> RetentionRow {
+        RetentionRow {
+            org,
+            source: row.map(|row| row.retention).unwrap_or_default(),
+        }
+    }
+
     /// A connector's source to stamp and its pause window; none is never paused.
     fn stamped(row: Option<Self>) -> (Option<SourceRef>, PauseWindow) {
         row.and_then(|row| Some((SourceRef::from_id(row.id)?, row.pause)))
@@ -1352,6 +1388,8 @@ struct SourceRow {
     key: KeyRow,
     /// `None` when the store has no sources table (static backend).
     config: Option<SourceConfigRow>,
+    /// The org's overrides and the token source's own.
+    retention: RetentionRow,
 }
 
 #[derive(Clone, Debug)]
@@ -1364,6 +1402,7 @@ struct ConnectorRow {
     clickhouse_ready: bool,
     /// The connector's `sources` row, joined through `source_id`.
     source: Option<PullSourceRow>,
+    org_retention: RetentionOverrides,
 }
 
 #[derive(Clone, Debug)]
@@ -1378,6 +1417,7 @@ struct GcpConnectorRow {
     clickhouse_ready: bool,
     /// The connector's `sources` row, joined through `source_id`.
     source: Option<PullSourceRow>,
+    org_retention: RetentionOverrides,
 }
 
 #[derive(Clone, Debug)]
@@ -1387,6 +1427,7 @@ struct AwsConnectionRow {
     clickhouse_ready: bool,
     /// The connection's `sources` row, joined through `source_id`.
     source: Option<PullSourceRow>,
+    org_retention: RetentionOverrides,
 }
 
 #[derive(Clone, Debug)]
@@ -1411,6 +1452,8 @@ struct IngestKeyIdentity {
     key_id: String,
     source: Option<Arc<SourcePolicy>>,
     default_source: Option<SourceRef>,
+    /// Read with the key and cached with it, like the source.
+    retention: RetentionRow,
 }
 
 impl IngestKeyIdentity {
@@ -1423,6 +1466,8 @@ impl IngestKeyIdentity {
             clickhouse_ready: routing.clickhouse_ready,
             source: self.source,
             default_source: self.default_source,
+            org_retention: self.retention.org,
+            retention: self.retention.stamps(),
         }
     }
 }
@@ -1439,6 +1484,7 @@ struct CloudflareConnectorIdentity {
     source: Option<SourceRef>,
     /// That source's pause window, judged per push so a timed pause ends on time.
     source_pause: PauseWindow,
+    retention: RetentionRow,
 }
 
 impl CloudflareConnectorIdentity {
@@ -1454,6 +1500,7 @@ impl CloudflareConnectorIdentity {
             clickhouse_ready: routing.clickhouse_ready,
             source: self.source,
             source_pause: self.source_pause,
+            retention: self.retention,
         }
     }
 }
@@ -1468,6 +1515,7 @@ struct GcpConnectorIdentity {
     source: Option<SourceRef>,
     /// That source's pause window, judged per push so a timed pause ends on time.
     source_pause: PauseWindow,
+    retention: RetentionRow,
 }
 
 impl GcpConnectorIdentity {
@@ -1484,6 +1532,8 @@ impl GcpConnectorIdentity {
                 clickhouse_ready: routing.clickhouse_ready,
                 source: None,
                 default_source: self.source,
+                org_retention: self.retention.org,
+                retention: self.retention.stamps(),
             },
         }
     }
@@ -1497,6 +1547,7 @@ struct AwsConnectionIdentity {
     source: Option<SourceRef>,
     /// That source's pause window, judged per delivery so a timed pause ends on time.
     source_pause: PauseWindow,
+    retention: RetentionRow,
 }
 
 impl AwsConnectionIdentity {
@@ -1511,6 +1562,8 @@ impl AwsConnectionIdentity {
                 clickhouse_ready: routing.clickhouse_ready,
                 source: None,
                 default_source: self.source,
+                org_retention: self.retention.org,
+                retention: self.retention.stamps(),
             },
         }
     }
@@ -1740,6 +1793,10 @@ struct ResolvedIngestKey {
     /// Stamped when no token source applies: the org's default source for its
     /// public/private keys, or a connector's integration source.
     default_source: Option<SourceRef>,
+    /// The org's retention overrides, for a source a request names on a resource.
+    org_retention: RetentionOverrides,
+    /// What rows of this key's own source are stamped with, per signal.
+    retention: RetentionStamps,
 }
 
 impl ResolvedIngestKey {
@@ -1792,6 +1849,7 @@ struct ResolvedCloudflareConnector {
     source: Option<SourceRef>,
     /// A paused source's batches are acked and dropped.
     source_pause: PauseWindow,
+    retention: RetentionRow,
 }
 
 struct ResolvedGcpConnector {
@@ -1972,6 +2030,31 @@ impl DecodedPayload {
             Self::Traces(request) => request.resource_spans.len(),
             Self::Logs(request) => request.resource_logs.len(),
             Self::Metrics(request) => request.resource_metrics.len(),
+        }
+    }
+
+    /// The retention policy the payload's rows are kept under.
+    const fn retention_signal(&self) -> RetentionSignal {
+        match self {
+            Self::Traces(_) => RetentionSignal::Traces,
+            Self::Logs(_) => RetentionSignal::Logs,
+            Self::Metrics(_) => RetentionSignal::Metrics,
+        }
+    }
+
+    /// Orders the resources by the period their rows are stored for, each period's
+    /// in the order they came, so one period's rows are planned as one run.
+    fn group_by_stamp(&mut self, stamps: SourceStamps<'_>) {
+        match self {
+            Self::Traces(request) => request
+                .resource_spans
+                .sort_by_key(|resource| stamps.of(resource.resource.as_ref())),
+            Self::Logs(request) => request
+                .resource_logs
+                .sort_by_key(|resource| stamps.of(resource.resource.as_ref())),
+            Self::Metrics(request) => request
+                .resource_metrics
+                .sort_by_key(|resource| stamps.of(resource.resource.as_ref())),
         }
     }
 
@@ -4101,6 +4184,7 @@ async fn accept_grpc_decoded(
         None,
         &mut decoded,
         resolved,
+        &claims.named_sources,
         &mut retained,
         received,
     )
@@ -4171,6 +4255,8 @@ async fn resolve_grpc_ingest_key(
             clickhouse_ready: false,
             source: None,
             default_source: None,
+            org_retention: RetentionOverrides::default(),
+            retention: RetentionStamps::default(),
         });
     }
 
@@ -4600,6 +4686,8 @@ async fn store_audit_trail_rows(
             rows,
             TelemetrySignal::AuditTrail,
             ExportDestination::Tinybird,
+            // Not a table a retention policy reaches: its rows carry no stamp.
+            None,
         )
         .await
         .map_err(|e| {
@@ -5165,6 +5253,12 @@ async fn authorize_source(
     Ok(KeyAdmission::Ingest)
 }
 
+/// Sets a client-built row's `retention_days` to the period resolved for its source,
+/// over whatever the sender put under that name: like `org_id`, it is the gateway's.
+fn stamp_retention(row: &mut JsonMap<String, JsonValue>, retention_days: u16) {
+    row.insert("retention_days".to_owned(), JsonValue::from(retention_days));
+}
+
 /// Auth shared by the replay and session endpoints. `Ok(None)` is the sentinel
 /// token or a paused key: silently dropped like the OTLP path.
 async fn resolve_replay_key(
@@ -5294,6 +5388,7 @@ async fn handle_replay_meta_inner(
     // the claiming session's rows `billable_start: 1`. See
     // `BillableSessionStarts` for the rule and its per-request bound.
     let country = derive_country(headers, state.config.trust_proxy_geo);
+    let retention_days = resolved_key.retention.get(RetentionSignal::Sessions);
     let mut rows: Vec<Vec<u8>> = Vec::new();
     let mut session_starts = BillableSessionStarts::default();
     let mut cookieless = CookielessRequest::new(state, headers, &org_id);
@@ -5360,6 +5455,7 @@ async fn handle_replay_meta_inner(
                 cookieless_active.get_or_insert(id);
             }
         }
+        stamp_retention(obj, retention_days);
         rows.push(
             serde_json::to_vec(&value).map_err(|e| {
                 ApiError::bad_request(format!("failed to re-serialize metadata: {e}"))
@@ -5403,6 +5499,7 @@ async fn handle_replay_meta_inner(
                     rows,
                     TelemetrySignal::SessionReplays,
                     destination,
+                    Some(retention_days),
                 )
                 .await
                 .map_err(|e| {
@@ -5497,6 +5594,8 @@ async fn handle_session_events_inner(
     };
     let (allow_sessions, allow_events) =
         (allows(SourceSignal::Sessions), allows(SourceSignal::Events));
+    // Every row of this table is kept as a session row, `custom` ones included.
+    let retention_days = resolved_key.retention.get(RetentionSignal::Sessions);
     let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
     Span::current().record(
@@ -5576,6 +5675,7 @@ async fn handle_session_events_inner(
             "org_id".to_owned(),
             serde_json::Value::String(org_id.clone()),
         );
+        stamp_retention(obj, retention_days);
         rows.push(
             serde_json::to_vec(&value)
                 .map_err(|e| ApiError::bad_request(format!("failed to re-serialize event: {e}")))?,
@@ -5616,6 +5716,7 @@ async fn handle_session_events_inner(
                     rows,
                     TelemetrySignal::SessionEvents,
                     destination,
+                    Some(retention_days),
                 )
                 .await
                 .map_err(|e| {
@@ -5696,6 +5797,7 @@ async fn handle_product_events_inner(
         Some(resolved_key) => resolved_key,
         None => return Ok(0),
     };
+    let retention_days = resolved_key.retention.get(RetentionSignal::Events);
     let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
     Span::current().record(
@@ -5763,6 +5865,7 @@ async fn handle_product_events_inner(
             "org_id".to_string(),
             serde_json::Value::String(org_id.clone()),
         );
+        stamp_retention(obj, retention_days);
         rows.push(
             serde_json::to_vec(&value)
                 .map_err(|e| ApiError::bad_request(format!("failed to re-serialize event: {e}")))?,
@@ -5803,6 +5906,7 @@ async fn handle_product_events_inner(
                     rows,
                     TelemetrySignal::ProductEvents,
                     destination,
+                    Some(retention_days),
                 )
                 .await
                 .map_err(|e| {
@@ -5975,6 +6079,7 @@ fn profile_resource_stamps(
     if let Some(source_id) = resolved_key.source_public_id() {
         stamp(SOURCE_ID_ATTRIBUTE, source_id);
     }
+    stamps.retention_days = Some(resolved_key.retention.get(RetentionSignal::Profiles));
     (overrides, stamps)
 }
 
@@ -6093,7 +6198,8 @@ async fn handle_profiles_inner(
         return Ok(accepted);
     }
 
-    commit_profile_rows(state, pipeline, &org_id, rows, destination).await?;
+    let retention_days = resolved_key.retention.get(RetentionSignal::Profiles);
+    commit_profile_rows(state, pipeline, &org_id, rows, (destination, retention_days)).await?;
     // Recorded once the rows are durable, as the byte signals are. An export refused part way
     // (only a WAL write failing, since the whole export is reserved first) bills nothing: its
     // resend bills the whole export, so billing the stored part too would count it twice.
@@ -6118,14 +6224,21 @@ async fn commit_profile_rows(
     pipeline: &TelemetryPipeline,
     org_id: &str,
     rows: Vec<Vec<u8>>,
-    destination: ExportDestination,
+    (destination, retention_days): (ExportDestination, u16),
 ) -> Result<(), ApiError> {
     let signal = TelemetrySignal::Profiles;
     let count = rows.len();
     let batches = chunk_rows(rows, state.config.tinybird.batch_max_bytes);
     let datasource = &state.config.tinybird.datasource_profiles;
     let committed = pipeline
-        .accept_row_batches_to(org_id, datasource, batches, signal, destination)
+        .accept_row_batches_to(
+            org_id,
+            datasource,
+            batches,
+            signal,
+            destination,
+            Some(retention_days),
+        )
         .await;
     let stored = committed
         .as_ref()
@@ -6626,6 +6739,7 @@ async fn handle_replay_blob_inner(
     else {
         return Ok(());
     };
+    let retention_days = resolved_key.retention.get(RetentionSignal::Sessions);
     let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
     Span::current().record(
@@ -6873,6 +6987,7 @@ async fn handle_replay_blob_inner(
         "byte_size": byte_size,
         "events": events_json,
         "is_checkpoint": is_checkpoint,
+        "retention_days": retention_days,
     });
     let serialized = serde_json::to_vec(&row).map_err(|e| {
         ApiError::service_unavailable(format!("failed to serialize replay events: {e}"))
@@ -6888,6 +7003,7 @@ async fn handle_replay_blob_inner(
             vec![serialized],
             TelemetrySignal::SessionReplays,
             destination,
+            Some(retention_days),
         )
         .await
         .map_err(|e| {
@@ -7401,6 +7517,7 @@ async fn handle_signal_inner(
         forward_encoding,
         &mut decoded,
         &resolved_key,
+        &claims.named_sources,
         &mut claims.retained,
         Received {
             bytes: decoded_bytes,
@@ -7628,6 +7745,8 @@ async fn handle_cloudflare_logpush_inner(
                 clickhouse_ready: resolved.clickhouse_ready,
                 source: None,
                 default_source: resolved.source.clone(),
+                org_retention: resolved.retention.org,
+                retention: resolved.retention.stamps(),
             };
             let mut decoded = DecodedPayload::Logs(request);
             let mut retained = Retained::default();
@@ -7638,6 +7757,7 @@ async fn handle_cloudflare_logpush_inner(
                 None,
                 &mut decoded,
                 &resolved_key,
+                &[],
                 &mut retained,
                 Received::unbudgeted(decoded_payload.len()),
             )
@@ -8054,6 +8174,7 @@ async fn handle_gcp_logpush_inner(
         None,
         &mut DecodedPayload::Logs(request),
         &resolved.key,
+        &[],
         &mut retained,
         Received::unbudgeted(body.len()),
     )
@@ -8418,6 +8539,7 @@ async fn store_delivery(
             None,
             &mut decoded,
             key,
+            &[],
             &mut retained,
             Received::unbudgeted(received_bytes),
         )
@@ -9298,6 +9420,9 @@ struct ClaimOutcome {
     all_paused: bool,
     /// What paused-source drops (and later the ingest rules) left of the payload.
     retained: Retained,
+    /// Each verified, unpaused claim with its source's own retention overrides: its
+    /// rows are stamped with that source's periods, not the default source's.
+    named_sources: Vec<NamedSource>,
 }
 
 /// The share of a payload still stored after paused-source drops and ingest rules,
@@ -9396,6 +9521,7 @@ async fn verify_claims_and_enrich(
         kept_claim: !verified.active.is_empty() || dropped,
         all_paused,
         retained,
+        named_sources: verified.retention,
     }
 }
 
@@ -10079,8 +10205,9 @@ fn process_error_kind(error: &ApiError) -> &'static str {
 #[hotpath::measure]
 #[expect(
     clippy::too_many_arguments,
-    reason = "one request's signal, wire format, payload, key and what it is metered on; a \
-              struct would only be built and taken apart again at each of five call sites"
+    reason = "one request's signal, wire format, payload, key, named sources and what it is \
+              metered on; a struct would only be built and taken apart again at each of five \
+              call sites"
 )]
 async fn process_decoded_payload(
     state: &AppState,
@@ -10089,6 +10216,7 @@ async fn process_decoded_payload(
     content_encoding: Option<&str>,
     decoded: &mut DecodedPayload,
     resolved_key: &ResolvedIngestKey,
+    named_sources: &[NamedSource],
     retained: &mut Retained,
     received: Received,
 ) -> Result<Response, ApiError> {
@@ -10129,12 +10257,25 @@ async fn process_decoded_payload(
     let mut memory = state.decode_memory.reservation();
 
     if native {
+        let named = named_source_stamps(resolved_key, named_sources, decoded.retention_signal());
+        let stamps = SourceStamps::new(
+            resolved_key.retention.get(decoded.retention_signal()),
+            &named,
+        );
+        // A frame holds one period, so resources of one period are stored together:
+        // a request naming several sources is then at most a frame per period more.
+        if !stamps.is_uniform() {
+            decoded.group_by_stamp(stamps);
+        }
         accept_native_decoded_payload(
             state,
             signal,
             decoded,
-            resolved_key,
-            destination,
+            NativeTarget {
+                org_id: &resolved_key.org_id,
+                destination,
+                stamps,
+            },
             stage,
             &mut memory,
         )
@@ -10183,18 +10324,41 @@ async fn process_decoded_payload(
     Ok(StatusCode::OK.into_response())
 }
 
+/// What each resource a request names is stamped with for `signal`: that source's
+/// own override, else the org's, as for any source.
+fn named_source_stamps(
+    resolved_key: &ResolvedIngestKey,
+    named_sources: &[NamedSource],
+    signal: RetentionSignal,
+) -> Vec<(String, u16)> {
+    named_sources
+        .iter()
+        .map(|(source_id, overrides)| {
+            let stamp = retention::stamp_days(&resolved_key.org_retention, overrides, signal);
+            (source_id.clone(), stamp)
+        })
+        .collect()
+}
+
+/// Where a request's rows are written and what they are stamped with.
+#[derive(Clone, Copy)]
+struct NativeTarget<'a> {
+    org_id: &'a str,
+    destination: ExportDestination,
+    stamps: SourceStamps<'a>,
+}
+
 #[hotpath::measure]
 async fn accept_native_decoded_payload(
     state: &AppState,
     signal: Signal,
     decoded: &DecodedPayload,
-    resolved_key: &ResolvedIngestKey,
-    destination: ExportDestination,
+    target: NativeTarget<'_>,
     stage: RowStage,
     memory: &mut DecodeReservation,
 ) -> Result<(), ApiError> {
     let native_start = Instant::now();
-    let org_id = resolved_key.org_id.as_str();
+    let org_id = target.org_id;
     let stats = match decoded {
         DecodedPayload::Traces(request) => {
             // Both lookups are 30s-TTL cached; the span exists so a TTL miss that
@@ -10222,15 +10386,15 @@ async fn accept_native_decoded_payload(
                 policy: &policy,
                 mappings: attribute_mappings.as_slice(),
             };
-            accept_row_source(state, signal, org_id, source, destination, stage, memory).await?
+            accept_row_source(state, signal, source, target, stage, memory).await?
         }
         DecodedPayload::Logs(request) => {
             let source = RowSource::Logs(request);
-            accept_row_source(state, signal, org_id, source, destination, stage, memory).await?
+            accept_row_source(state, signal, source, target, stage, memory).await?
         }
         DecodedPayload::Metrics(request) => {
             let source = RowSource::Metrics(request);
-            accept_row_source(state, signal, org_id, source, destination, stage, memory).await?
+            accept_row_source(state, signal, source, target, stage, memory).await?
         }
     };
     metrics::native_accept_duration(signal.path(), native_start.elapsed().as_secs_f64());
@@ -10249,17 +10413,21 @@ async fn accept_native_decoded_payload(
 async fn accept_row_source(
     state: &AppState,
     signal: Signal,
-    org_id: &str,
     source: RowSource<'_>,
-    destination: ExportDestination,
+    target: NativeTarget<'_>,
     stage: RowStage,
     memory: &mut DecodeReservation,
 ) -> Result<AcceptStats, ApiError> {
+    let NativeTarget {
+        org_id,
+        destination,
+        stamps,
+    } = target;
     let pipeline = state
         .telemetry_pipeline
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Telemetry pipeline is not configured"))?;
-    let plan = source.plan(org_id, state.config.row_piece_bytes);
+    let plan = source.plan_stamped(org_id, state.config.row_piece_bytes, stamps);
     Span::current().record("maple.ingest.row_pieces", plan.pieces.len());
     admit_rows(
         state,
@@ -10372,10 +10540,11 @@ impl IngestKeyResolver {
     async fn verify_source_claims(&self, org_id: &str, claims: Vec<String>) -> VerifiedClaims {
         let now_ms = current_time_millis();
         let mut verified = VerifiedClaims::default();
-        let mut keep = |claim: String, pause: PauseWindow| {
+        let mut keep = |claim: String, pause: PauseWindow, retention: RetentionOverrides| {
             if pause.is_paused(now_ms) {
                 verified.paused.push(claim);
             } else {
+                verified.retention.push((claim.clone(), retention));
                 verified.active.push(claim);
             }
         };
@@ -10392,7 +10561,9 @@ impl IngestKeyResolver {
             seen.push(claim.clone());
             let cache_key = (org_id.to_owned(), claim);
             match self.source_claims.get(&cache_key).await {
-                Some(SourceClaim::Claimable(pause)) => keep(cache_key.1, pause),
+                Some(SourceClaim::Claimable(pause, retention)) => {
+                    keep(cache_key.1, pause, retention);
+                }
                 Some(SourceClaim::Unclaimable) => {}
                 None => match sources::source_uuid_from_public_id(&cache_key.1) {
                     Some(uuid) => unknown.push((cache_key.1, uuid)),
@@ -10424,10 +10595,10 @@ impl IngestKeyResolver {
                 .iter()
                 .find(|row| row.id == uuid)
                 .map_or(SourceClaim::Unclaimable, |row| {
-                    SourceClaim::Claimable(row.pause)
+                    SourceClaim::Claimable(row.pause, row.retention)
                 });
-            if let SourceClaim::Claimable(pause) = answer {
-                keep(claim.clone(), pause);
+            if let SourceClaim::Claimable(pause, retention) = answer {
+                keep(claim.clone(), pause, retention);
             }
             self.source_claims
                 .insert((org_id.to_owned(), claim), answer)
@@ -10443,7 +10614,9 @@ impl IngestKeyResolver {
         let mut paused = Vec::new();
         for claim in claims {
             let cache_key = (org_id.to_owned(), claim);
-            if let Some(SourceClaim::Claimable(pause)) = self.source_claims.get(&cache_key).await {
+            if let Some(SourceClaim::Claimable(pause, _)) =
+                self.source_claims.get(&cache_key).await
+            {
                 if pause.is_paused(now_ms) {
                     paused.push(cache_key.1);
                 }
@@ -10581,16 +10754,16 @@ impl IngestKeyResolver {
                 self.store
                     .fetch_ingest_key(&key_hash, hash_column)
                     .await?
-                    .map(|row| (row.key, None, row.default_source_id))
+                    .map(|row| (row.key, None, row.default_source_id, row.retention))
             }
             IngestKeyType::Source => self
                 .store
                 .fetch_source_by_token_hash(&key_hash)
                 .await?
-                .map(|row| (row.key, row.config, None)),
+                .map(|row| (row.key, row.config, None, row.retention)),
             IngestKeyType::Connector => return Ok(None),
         };
-        let Some((row, source_config_row, default_source_id)) = found else {
+        let Some((row, source_config_row, default_source_id, retention)) = found else {
             // Only a genuine "no row" is cached — store errors surface above and
             // must stay retryable.
             self.negative_cache.insert(raw_key.to_owned(), ()).await;
@@ -10608,6 +10781,7 @@ impl IngestKeyResolver {
                 .as_ref()
                 .map(|config| Arc::new(SourcePolicy::from_row(config))),
             default_source,
+            retention,
         };
 
         self.cache
@@ -10643,6 +10817,7 @@ impl CloudflareConnectorResolver {
         };
 
         let routing = OrgRouting::from_connector_row(&row);
+        let retention = PullSourceRow::retention(row.source.as_ref(), row.org_retention);
         let (source, source_pause) = PullSourceRow::stamped(row.source);
         let identity = CloudflareConnectorIdentity {
             connector_id: connector_id.to_owned(),
@@ -10653,6 +10828,7 @@ impl CloudflareConnectorResolver {
             secret_key_id: secret_hash.chars().take(16).collect(),
             source,
             source_pause,
+            retention,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -10766,6 +10942,7 @@ impl GcpConnectorResolver {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
         };
+        let retention = PullSourceRow::retention(row.source.as_ref(), row.org_retention);
         let (source, source_pause) = PullSourceRow::stamped(row.source);
         let identity = GcpConnectorIdentity {
             org_id: row.org_id,
@@ -10774,6 +10951,7 @@ impl GcpConnectorResolver {
             confirms_log_forwarding: false,
             source,
             source_pause,
+            retention,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -10829,6 +11007,7 @@ impl GcpConnectorResolver {
             return Ok(None);
         };
 
+        let retention = PullSourceRow::retention(row.source.as_ref(), row.org_retention);
         let (source, source_pause) = PullSourceRow::stamped(row.source);
         let routing = OrgRouting {
             self_managed: row.self_managed,
@@ -10842,6 +11021,7 @@ impl GcpConnectorResolver {
             confirms_log_forwarding: row.applied_logs_enabled.is_none(),
             source,
             source_pause,
+            retention,
         };
         self.cache.insert(cache_key, identity.clone()).await;
         self.routing
@@ -10973,12 +11153,14 @@ impl AwsConnectionResolver {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
         };
+        let retention = PullSourceRow::retention(row.source.as_ref(), row.org_retention);
         let (source, source_pause) = PullSourceRow::stamped(row.source);
         let identity = AwsConnectionIdentity {
             org_id: row.org_id,
             secret_key_id: cache_key.1.chars().take(16).collect(),
             source,
             source_pause,
+            retention,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -11216,11 +11398,15 @@ fn gcp_connector_columns() -> String {
 }
 
 /// A connector `c`'s own source, read in the connector's query: all null without one.
+/// The org's retention policy rides the same query; an org that set none has no row.
 const CONNECTOR_SOURCE_JOIN: &str =
-    "LEFT JOIN sources src ON src.id = c.source_id AND src.org_id = c.org_id";
+    "LEFT JOIN sources src ON src.id = c.source_id AND src.org_id = c.org_id \
+     LEFT JOIN org_retention_policies rp ON rp.org_id = c.org_id";
 const CONNECTOR_SOURCE_COLUMNS: &str = "src.id AS source_id, \
     (EXTRACT(EPOCH FROM src.paused_at) * 1000)::bigint AS source_paused_at_ms, \
-    (EXTRACT(EPOCH FROM src.paused_until) * 1000)::bigint AS source_paused_until_ms";
+    (EXTRACT(EPOCH FROM src.paused_until) * 1000)::bigint AS source_paused_until_ms, \
+    src.retention_days::text AS source_retention_days, \
+    rp.retention_days::text AS org_retention_days";
 
 fn connector_source(row: &tokio_postgres::Row) -> Option<PullSourceRow> {
     let id: Option<String> = row.get("source_id");
@@ -11230,13 +11416,33 @@ fn connector_source(row: &tokio_postgres::Row) -> Option<PullSourceRow> {
             paused_at_ms: row.get("source_paused_at_ms"),
             paused_until_ms: row.get("source_paused_until_ms"),
         },
+        retention: retention_column(row, "source_retention_days"),
     })
+}
+
+/// A `retention_days` jsonb column selected as text. A null (no joined row) or a
+/// value that does not read sets nothing: a bad policy never fails a lookup.
+fn retention_column(row: &tokio_postgres::Row, column: &str) -> RetentionOverrides {
+    let stored: Option<String> = row.try_get(column).unwrap_or_else(|error| {
+        warn!(column, %error, "Unreadable retention policy column; using no overrides");
+        None
+    });
+    RetentionOverrides::parse(stored.as_deref())
+}
+
+/// The org's (`rp`) and the source's own overrides, read with a key.
+fn retention_row(row: &tokio_postgres::Row) -> RetentionRow {
+    RetentionRow {
+        org: retention_column(row, "org_retention_days"),
+        source: retention_column(row, "source_retention_days"),
+    }
 }
 
 /// A `PullSourceRow`'s columns over `sources`.
 const PULL_SOURCE_COLUMNS: &str = "id, \
     (EXTRACT(EPOCH FROM paused_at) * 1000)::bigint AS paused_at_ms, \
-    (EXTRACT(EPOCH FROM paused_until) * 1000)::bigint AS paused_until_ms";
+    (EXTRACT(EPOCH FROM paused_until) * 1000)::bigint AS paused_until_ms, \
+    retention_days::text AS source_retention_days";
 
 fn pull_source_row(row: &tokio_postgres::Row) -> Result<PullSourceRow, String> {
     let decode_error =
@@ -11247,6 +11453,7 @@ fn pull_source_row(row: &tokio_postgres::Row) -> Result<PullSourceRow, String> {
             paused_at_ms: row.try_get("paused_at_ms").map_err(decode_error)?,
             paused_until_ms: row.try_get("paused_until_ms").map_err(decode_error)?,
         },
+        retention: retention_column(row, "source_retention_days"),
     })
 }
 
@@ -11259,6 +11466,7 @@ fn gcp_connector_row(row: &tokio_postgres::Row) -> GcpConnectorRow {
         self_managed: row.get("self_managed"),
         clickhouse_ready: row.get("clickhouse_ready"),
         source: connector_source(row),
+        org_retention: retention_column(row, "org_retention_days"),
     }
 }
 
@@ -11495,11 +11703,16 @@ impl PostgresKeyStore {
         let client = self.client().await?;
         client
             .query(
-                // Exercises the routing join used by production lookups.
+                // Exercises the routing and retention joins used by production lookups,
+                // so a gateway ahead of their migration or grant never goes ready.
                 "SELECT k.org_id, \
-                        COALESCE(s.sync_status = 'connected', false) AS self_managed \
+                        COALESCE(s.sync_status = 'connected', false) AS self_managed, \
+                        ds.retention_days::text AS source_retention_days, \
+                        rp.retention_days::text AS org_retention_days \
                  FROM org_ingest_keys k \
                  LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
+                 LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.kind = 'default' \
+                 LEFT JOIN org_retention_policies rp ON rp.org_id = k.org_id \
                  WHERE k.private_key_hash = $1 LIMIT 1",
                 &[&"__ingest_probe_no_match__"],
             )
@@ -11529,10 +11742,13 @@ impl KeyStore for PostgresKeyStore {
             "SELECT k.org_id, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
                     COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
-                    ds.id AS default_source_id \
+                    ds.id AS default_source_id, \
+                    ds.retention_days::text AS source_retention_days, \
+                    rp.retention_days::text AS org_retention_days \
              FROM org_ingest_keys k \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
              LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.kind = 'default' \
+             LEFT JOIN org_retention_policies rp ON rp.org_id = k.org_id \
              WHERE k.{hash_column} = $2 LIMIT 1"
         );
         let client = self.client().await?;
@@ -11558,6 +11774,7 @@ impl KeyStore for PostgresKeyStore {
                 clickhouse_ready: row.get("clickhouse_ready"),
             },
             default_source_id: row.get("default_source_id"),
+            retention: retention_row(&row),
         }))
     }
 
@@ -11576,9 +11793,12 @@ impl KeyStore for PostgresKeyStore {
                     (EXTRACT(EPOCH FROM k.paused_at) * 1000)::bigint AS paused_at_ms, \
                     (EXTRACT(EPOCH FROM k.paused_until) * 1000)::bigint AS paused_until_ms, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
+                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
+                    k.retention_days::text AS source_retention_days, \
+                    rp.retention_days::text AS org_retention_days \
              FROM sources k \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
+             LEFT JOIN org_retention_policies rp ON rp.org_id = k.org_id \
              WHERE k.key_hash = $2 AND k.key_hash IS NOT NULL LIMIT 1"
         );
         let client = self.client().await?;
@@ -11621,6 +11841,7 @@ impl KeyStore for PostgresKeyStore {
                 clickhouse_ready: row.try_get("clickhouse_ready").map_err(decode_error)?,
             },
             config: Some(config),
+            retention: retention_row(&row),
         }))
     }
 
@@ -11662,6 +11883,7 @@ impl KeyStore for PostgresKeyStore {
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
             source: connector_source(&row),
+            org_retention: retention_column(&row, "org_retention_days"),
         }))
     }
 
@@ -12285,6 +12507,7 @@ impl KeyStore for PostgresKeyStore {
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
             source: connector_source(row),
+            org_retention: retention_column(row, "org_retention_days"),
         }))
     }
 
@@ -12371,6 +12594,7 @@ impl KeyStore for StaticKeyStore {
                 clickhouse_ready: false,
             },
             default_source_id: None,
+            retention: RetentionRow::default(),
         }))
     }
 
@@ -12385,6 +12609,7 @@ impl KeyStore for StaticKeyStore {
                 clickhouse_ready: false,
             },
             config: None,
+            retention: RetentionRow::default(),
         }))
     }
 
@@ -13478,6 +13703,8 @@ mod tests {
             clickhouse_ready: false,
             source: None,
             default_source: None,
+            org_retention: RetentionOverrides::default(),
+            retention: RetentionStamps::default(),
         };
 
         enrich_resource_attributes(&mut attributes, &resolved, &[]);
@@ -13513,6 +13740,8 @@ mod tests {
             clickhouse_ready: false,
             source: None,
             default_source: None,
+            org_retention: RetentionOverrides::default(),
+            retention: RetentionStamps::default(),
         }
     }
 
@@ -13898,6 +14127,7 @@ mod tests {
             clickhouse_ready: false,
             source: None,
             source_pause: PauseWindow::default(),
+            retention: RetentionRow::default(),
         };
         let record = serde_json::from_str::<JsonMap<String, JsonValue>>(
             r#"{
@@ -14065,6 +14295,10 @@ mod tests {
         source_row_fetches: AtomicU64,
         /// Pause windows of `source_rows`, by source id; absent means not paused.
         source_pauses: std::sync::Mutex<std::collections::HashMap<String, PauseWindow>>,
+        /// `org_retention_policies.retention_days` by org id, as the jsonb reads as text.
+        org_retention: std::sync::Mutex<HashMap<String, String>>,
+        /// `sources.retention_days` by source id, as the jsonb reads as text.
+        source_retention: std::sync::Mutex<HashMap<String, String>>,
         /// The source ids each `claimable_source_ids` call asked about.
         claim_lookups: std::sync::Mutex<Vec<Vec<String>>>,
         /// Fails the source claim lookups.
@@ -14219,6 +14453,7 @@ mod tests {
                     .find(|row| row.0 == key.org_id && row.2 == "default")
                     .map(|row| row.1.clone());
                 OrgKeyRow {
+                    retention: self.retention_row(&key.org_id, default_source_id.as_deref()),
                     key,
                     default_source_id,
                 }
@@ -14229,7 +14464,14 @@ mod tests {
             key_hash: &str,
         ) -> Result<Option<SourceRow>, String> {
             self.ingest_key_fetches.fetch_add(1, Ordering::Relaxed);
-            Ok(self.sources.lock().unwrap().get(key_hash).cloned())
+            let row = self.sources.lock().unwrap().get(key_hash).cloned();
+            Ok(row.map(|row| {
+                let source_id = row.config.as_ref().map(|config| config.id.as_str());
+                SourceRow {
+                    retention: self.retention_row(&row.key.org_id, source_id),
+                    ..row
+                }
+            }))
         }
         async fn record_source_used(&self, key_id: &str, _now_ms: i64) -> Result<(), String> {
             self.source_uses.lock().unwrap().push(key_id.to_owned());
@@ -14282,6 +14524,7 @@ mod tests {
                 .cloned();
             Ok(row.map(|row| ConnectorRow {
                 source: self.joined_source(connector_id, &row.org_id),
+                org_retention: self.org_retention(&row.org_id),
                 ..row
             }))
         }
@@ -14408,6 +14651,7 @@ mod tests {
                 .cloned();
             Ok(row.map(|row| AwsConnectionRow {
                 source: self.joined_source(connection_id, &row.org_id),
+                org_retention: self.org_retention(&row.org_id),
                 ..row
             }))
         }
@@ -15484,7 +15728,9 @@ mod tests {
         let rows = imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await;
         assert_eq!(rows.len(), PROFILES_SDK_ROWS);
 
-        // The keys are the ones the insert mapping selects, on every row.
+        // The keys are the ones the insert mapping selects, on every row, plus the
+        // gateway's `retention_days`: only the managed table has that column, and an
+        // org's own ClickHouse skips the key (`input_format_skip_unknown_fields`).
         let mapping = maple_ingest::clickhouse_insert_mappings::mapping_for("profiles")
             .expect("the profiles mapping");
         let mut selects: Vec<&str> = mapping
@@ -15492,6 +15738,7 @@ mod tests {
             .iter()
             .copied()
             .filter(|select| *select != maple_ingest::clickhouse_insert_mappings::ORG_PLACEHOLDER)
+            .chain(["retention_days"])
             .collect();
         selects.sort_unstable();
         for row in &rows {
@@ -18512,6 +18759,7 @@ mod tests {
                 self_managed: false,
                 clickhouse_ready: false,
                 source: None,
+                org_retention: RetentionOverrides::default(),
             },
         );
         let routing = make_routing_resolver(Arc::clone(&store), Duration::from_millis(5));
@@ -18619,6 +18867,7 @@ mod tests {
                     self_managed: true,
                     clickhouse_ready: true,
                     source: None,
+                    org_retention: RetentionOverrides::default(),
                 },
             );
         }
@@ -18822,6 +19071,7 @@ mod tests {
                 self_managed: true,
                 clickhouse_ready: true,
                 source: None,
+                org_retention: RetentionOverrides::default(),
             },
         );
         store.insert_clickhouse_target(
@@ -19931,6 +20181,7 @@ mod tests {
                     self_managed: false,
                     clickhouse_ready: false,
                     source: None,
+                    org_retention: RetentionOverrides::default(),
                 },
             );
         }
@@ -21226,6 +21477,7 @@ mod tests {
                 clickhouse_ready: false,
             },
             config: Some(config),
+            retention: RetentionRow::default(),
         }
     }
 
@@ -21296,6 +21548,8 @@ mod tests {
             clickhouse_ready: false,
             source: Some(Arc::new(policy)),
             default_source: None,
+            org_retention: RetentionOverrides::default(),
+            retention: RetentionStamps::default(),
         };
         let mut attributes = vec![
             string_attribute("service.name", "from-sdk"),
@@ -21459,6 +21713,7 @@ mod tests {
                 clickhouse_ready: true,
             },
             config: Some(source_config(Some(allowed), None, "[]")),
+            retention: RetentionRow::default(),
         };
         let sessions_only = "maple_src_session_events_sessions_only_000000";
         let events_only = "maple_src_session_events_events_only_0000000";
@@ -21925,7 +22180,45 @@ mod tests {
         fn with_joined_source(&self, connector_id: &str, row: GcpConnectorRow) -> GcpConnectorRow {
             GcpConnectorRow {
                 source: self.joined_source(connector_id, &row.org_id),
+                org_retention: self.org_retention(&row.org_id),
                 ..row
+            }
+        }
+
+        /// Stores an org's `org_retention_policies.retention_days`.
+        fn set_org_retention(&self, org_id: &str, retention_days: &str) {
+            self.org_retention
+                .lock()
+                .unwrap()
+                .insert(org_id.to_owned(), retention_days.to_owned());
+        }
+
+        /// Stores a source's `sources.retention_days`.
+        fn set_source_retention(&self, source_id: &str, retention_days: &str) {
+            self.source_retention
+                .lock()
+                .unwrap()
+                .insert(source_id.to_owned(), retention_days.to_owned());
+        }
+
+        /// The org's policy as the `LEFT JOIN org_retention_policies` reads it.
+        fn org_retention(&self, org_id: &str) -> RetentionOverrides {
+            let stored = self.org_retention.lock().unwrap().get(org_id).cloned();
+            RetentionOverrides::parse(stored.as_deref())
+        }
+
+        /// A source's own overrides, as its `retention_days` column reads.
+        fn source_retention(&self, source_id: &str) -> RetentionOverrides {
+            let stored = self.source_retention.lock().unwrap().get(source_id).cloned();
+            RetentionOverrides::parse(stored.as_deref())
+        }
+
+        fn retention_row(&self, org_id: &str, source_id: Option<&str>) -> RetentionRow {
+            RetentionRow {
+                org: self.org_retention(org_id),
+                source: source_id
+                    .map(|id| self.source_retention(id))
+                    .unwrap_or_default(),
             }
         }
 
@@ -21944,6 +22237,7 @@ mod tests {
             PullSourceRow {
                 id: id.to_owned(),
                 pause: pauses.get(id).copied().unwrap_or_default(),
+                retention: self.source_retention(id),
             }
         }
     }
@@ -22764,6 +23058,7 @@ mod tests {
                     self_managed: false,
                     clickhouse_ready: false,
                     source: None,
+                    org_retention: RetentionOverrides::default(),
                 },
             );
         }
@@ -24203,6 +24498,417 @@ mod tests {
             assert!(forwarded.try_recv().is_err(), "nothing is forwarded");
             let calls = drain_autumn_calls(&mut autumn).await;
             assert!(tracked(&calls).is_empty(), "nothing is metered: {calls:?}");
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+    }
+    /// The retention policy read with a key, and the stamp it puts on every row.
+    mod retention_stamps {
+        use super::*;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        const ORG: &str = "org_retention";
+        const KEY: &str = "maple_sk_test_retention";
+        /// An integration source of the org that sets no period of its own.
+        const INHERITING_SOURCE_UUID: &str = "9d4f6a1b-2c3e-4d5f-8a7b-6c5d4e3f2a1b";
+
+        /// An org with a private key, a default source and an integration source.
+        fn org_store() -> Arc<FakeKeyStore> {
+            let store = private_key_store(KEY, ORG, false);
+            store.insert_source_row(ORG, DEFAULT_SOURCE_UUID, "default");
+            store.insert_source_row(ORG, INTEGRATION_SOURCE_UUID, "integration");
+            store
+        }
+
+        /// A gateway on `store` that writes every table to a fake Tinybird.
+        async fn storing_state(
+            store: &Arc<FakeKeyStore>,
+            name: &str,
+        ) -> (AppState, TinybirdImports, PathBuf) {
+            let queue_dir = unique_main_test_dir(name);
+            let (state, imports) = profiles_test_state(Arc::clone(store), queue_dir.clone()).await;
+            (state, imports, queue_dir)
+        }
+
+        /// One `/v0/events` body: its datasource and rows.
+        type Body = (String, Vec<serde_json::Value>);
+
+        /// The bodies the fake Tinybird is sent until they hold `row_count` rows.
+        async fn exported(imports: &mut TinybirdImports, row_count: usize) -> Vec<Body> {
+            let mut bodies: Vec<Body> = Vec::new();
+            while bodies.iter().map(|body| body.1.len()).sum::<usize>() < row_count {
+                let (datasource, ndjson) =
+                    tokio::time::timeout(Duration::from_secs(5), imports.recv())
+                        .await
+                        .expect("the rows should reach Tinybird")
+                        .expect("the Tinybird channel should stay open");
+                let rows = ndjson
+                    .lines()
+                    .filter(|line| !line.is_empty())
+                    .map(|line| serde_json::from_str(line).expect("each line is a row"))
+                    .collect();
+                bodies.push((datasource, rows));
+            }
+            bodies
+        }
+
+        /// The distinct `retention_days` of each datasource's rows.
+        fn stamps_by_datasource(bodies: &[Body]) -> BTreeMap<String, Vec<Option<u64>>> {
+            let mut stamps: BTreeMap<String, BTreeSet<Option<u64>>> = BTreeMap::new();
+            for (datasource, rows) in bodies {
+                let seen = stamps.entry(datasource.clone()).or_default();
+                seen.extend(rows.iter().map(|row| row["retention_days"].as_u64()));
+            }
+            stamps
+                .into_iter()
+                .map(|(datasource, seen)| (datasource, seen.into_iter().collect()))
+                .collect()
+        }
+
+        fn periods(stamps: &RetentionStamps) -> [u16; 6] {
+            RetentionSignal::ALL.map(|signal| stamps.get(signal))
+        }
+
+        async fn resolved(store: &Arc<FakeKeyStore>, raw_key: &str) -> ResolvedIngestKey {
+            make_resolver(Arc::clone(store))
+                .resolve_ingest_key(raw_key)
+                .await
+                .expect("the lookup succeeds")
+                .expect("the key resolves")
+        }
+
+        #[tokio::test]
+        async fn a_default_key_keeps_its_default_sources_period_else_its_orgs() {
+            let store = org_store();
+            store.set_org_retention(ORG, r#"{"traces": 45, "logs": 60, "events": 400}"#);
+            store.set_source_retention(DEFAULT_SOURCE_UUID, r#"{"logs": 7}"#);
+            // Another source's override is not this key's.
+            store.set_source_retention(INTEGRATION_SOURCE_UUID, r#"{"traces": 3}"#);
+
+            let key = resolved(&store, KEY).await;
+            // traces, logs, metrics, sessions, events, profiles
+            assert_eq!(periods(&key.retention), [60, 7, 90, 30, 550, 14]);
+
+            // Read with the key and cached with it: a second request asks nothing more.
+            let resolver = make_resolver(Arc::clone(&store));
+            let first = resolver.resolve_ingest_key(KEY).await.unwrap().unwrap();
+            let fetches = store.ingest_key_fetches.load(Ordering::Relaxed);
+            let second = resolver.resolve_ingest_key(KEY).await.unwrap().unwrap();
+            assert_eq!(periods(&second.retention), periods(&first.retention));
+            assert_eq!(store.ingest_key_fetches.load(Ordering::Relaxed), fetches);
+        }
+
+        #[tokio::test]
+        async fn an_org_that_set_nothing_keeps_every_signal_at_its_default() {
+            let key = resolved(&org_store(), KEY).await;
+            assert_eq!(periods(&key.retention), [30, 30, 90, 30, 365, 14]);
+        }
+
+        #[tokio::test]
+        async fn a_source_token_keeps_its_own_period_over_its_orgs() {
+            let store = org_store();
+            let token = "maple_src_test_retention";
+            store.insert_source(
+                token,
+                source_row(ORG, source_config(None, None, "[]")),
+            );
+            store.set_org_retention(ORG, r#"{"traces": 180, "metrics": 30}"#);
+            store.set_source_retention(SOURCE_UUID, r#"{"traces": 14, "profiles": 60}"#);
+
+            let key = resolved(&store, token).await;
+            assert_eq!(periods(&key.retention), [14, 30, 30, 30, 365, 60]);
+        }
+
+        #[tokio::test]
+        async fn a_stored_policy_that_does_not_read_never_fails_the_key() {
+            let store = org_store();
+            store.set_org_retention(ORG, r#"{"traces": 0, "logs": 9000, "metrics": "30"}"#);
+            store.set_source_retention(DEFAULT_SOURCE_UUID, "not json");
+
+            let key = resolved(&store, KEY).await;
+            assert_eq!(periods(&key.retention), [30, 30, 90, 30, 365, 14]);
+        }
+
+        #[tokio::test]
+        async fn the_static_key_store_keeps_every_signal_at_its_default() {
+            let store = StaticKeyStore {
+                org_id: "org_local".to_owned(),
+            };
+            let key = store
+                .fetch_ingest_key("any", "private_key_hash")
+                .await
+                .unwrap()
+                .expect("every key resolves");
+            assert_eq!(periods(&key.retention.stamps()), [30, 30, 90, 30, 365, 14]);
+            let token = store
+                .fetch_source_by_token_hash("any")
+                .await
+                .unwrap()
+                .expect("every token resolves");
+            assert_eq!(periods(&token.retention.stamps()), [30, 30, 90, 30, 365, 14]);
+        }
+
+        #[tokio::test]
+        async fn a_verified_claim_carries_its_sources_own_period_while_cached() {
+            let store = org_store();
+            store.insert_source_row(ORG, SOURCE_UUID, "integration");
+            store.set_source_retention(INTEGRATION_SOURCE_UUID, r#"{"logs": 7}"#);
+            let resolver = make_resolver(Arc::clone(&store));
+            let short = public_id(INTEGRATION_SOURCE_UUID);
+            let claims = vec![short.clone(), public_id(SOURCE_UUID)];
+            let overrides = RetentionOverrides::default().with(RetentionSignal::Logs, 7);
+
+            for _ in 0..2 {
+                let verified = resolver.verify_source_claims(ORG, claims.clone()).await;
+                assert_eq!(verified.active, claims);
+                // A source that sets nothing is still named: it inherits from the org.
+                assert_eq!(
+                    verified.retention,
+                    vec![
+                        (short.clone(), overrides),
+                        (public_id(SOURCE_UUID), RetentionOverrides::default()),
+                    ]
+                );
+            }
+            assert_eq!(store.claim_lookups.lock().unwrap().len(), 1);
+        }
+
+        #[test]
+        fn a_named_source_inherits_from_the_org_signal_by_signal() {
+            let key = ResolvedIngestKey {
+                org_retention: RetentionOverrides::default()
+                    .with(RetentionSignal::Traces, 45)
+                    .with(RetentionSignal::Metrics, 14),
+                ..test_key()
+            };
+            let named = [(
+                "src_named".to_owned(),
+                RetentionOverrides::default().with(RetentionSignal::Traces, 3),
+            )];
+            let stamp = |signal| named_source_stamps(&key, &named, signal);
+            assert_eq!(stamp(RetentionSignal::Traces), vec![("src_named".to_owned(), 3)]);
+            assert_eq!(stamp(RetentionSignal::Metrics), vec![("src_named".to_owned(), 14)]);
+            assert_eq!(stamp(RetentionSignal::Logs), vec![("src_named".to_owned(), 30)]);
+        }
+
+        #[tokio::test]
+        async fn a_connector_keeps_its_sources_period_else_its_orgs() {
+            let store = Arc::new(FakeKeyStore::default());
+            let connector = |org_id: &str| ConnectorRow {
+                org_id: org_id.to_owned(),
+                service_name: "cloudflare/example.com".to_owned(),
+                zone_name: "example.com".to_owned(),
+                dataset: "http_requests".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+                source: None,
+                org_retention: RetentionOverrides::default(),
+            };
+            store.insert_connector("cf_with_source", "cf-secret", connector(ORG));
+            store.insert_connector("cf_without_source", "cf-secret", connector(ORG));
+            store.insert_source_row(ORG, INTEGRATION_SOURCE_UUID, "integration");
+            store.link_connector_source("cf_with_source", INTEGRATION_SOURCE_UUID);
+            store.insert_gcp_connector(
+                "gcp_conn",
+                "gcp-secret",
+                GcpConnectorRow {
+                    org_id: ORG.to_owned(),
+                    project_id: "maple-test".to_owned(),
+                    logs_enabled: true,
+                    applied_logs_enabled: Some(true),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                    source: None,
+                    org_retention: RetentionOverrides::default(),
+                },
+            );
+            store.link_connector_source("gcp_conn", INTEGRATION_SOURCE_UUID);
+            store.insert_aws_connection(
+                AWS_CONNECTION,
+                AWS_STREAM_SECRET,
+                AwsConnectionRow {
+                    org_id: ORG.to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                    source: None,
+                    org_retention: RetentionOverrides::default(),
+                },
+            );
+            store.link_connector_source(AWS_CONNECTION, INTEGRATION_SOURCE_UUID);
+            store.set_org_retention(ORG, r#"{"logs": 60, "metrics": 30}"#);
+            store.set_source_retention(INTEGRATION_SOURCE_UUID, r#"{"logs": 14, "metrics": 400}"#);
+            let queue_dir = unique_main_test_dir("connector-retention");
+            let state = test_app_state(
+                Arc::clone(&store),
+                queue_dir.clone(),
+                "http://127.0.0.1:1".to_owned(),
+                Duration::from_secs(30),
+            )
+            .await;
+
+            let logpush = |connector_id: &'static str| async {
+                let resolved = state
+                    .cloudflare_resolver
+                    .resolve_connector(connector_id, "cf-secret")
+                    .await
+                    .unwrap()
+                    .expect("the connector resolves");
+                resolved.retention.stamps().get(RetentionSignal::Logs)
+            };
+            assert_eq!(logpush("cf_with_source").await, 14);
+            assert_eq!(logpush("cf_without_source").await, 60);
+
+            let gcp = state
+                .gcp_resolver
+                .resolve_connector("gcp_conn", "gcp-secret")
+                .await
+                .unwrap()
+                .expect("the connector resolves");
+            assert_eq!(gcp.key.retention.get(RetentionSignal::Logs), 14);
+            let aws = state
+                .aws_resolver
+                .resolve_connection(AWS_CONNECTION, AWS_STREAM_SECRET)
+                .await
+                .unwrap()
+                .expect("the connection resolves");
+            assert_eq!(aws.key.retention.get(RetentionSignal::Metrics), 550);
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn every_gateway_written_table_is_stamped_whatever_the_sender_sent() {
+            let store = org_store();
+            store.set_org_retention(ORG, r#"{"sessions": 45, "events": 100, "profiles": 3}"#);
+            store.set_source_retention(DEFAULT_SOURCE_UUID, r#"{"sessions": 7}"#);
+            let (state, mut imports, queue_dir) = storing_state(&store, "stamped-tables").await;
+            let headers = bearer_headers(KEY);
+
+            // Each body tries to set the period itself.
+            let meta = r#"{"session_id":"sess_1","version":1,"retention_days":800}"#;
+            handle_replay_meta_inner(&state, &headers, Bytes::from_static(meta.as_bytes()))
+                .await
+                .expect("session metadata is accepted");
+            let events = concat!(
+                r#"{"type":"click","message":"a","retention_days":800}"#,
+                "\n",
+                r#"{"type":"custom","message":"signup","retention_days":"800"}"#,
+            );
+            handle_session_events_inner(&state, &headers, Bytes::from_static(events.as_bytes()))
+                .await
+                .expect("session events are accepted");
+            let product = r#"{"name":"plan_started","retention_days":800}"#;
+            handle_product_events_inner(&state, &headers, Bytes::from_static(product.as_bytes()))
+                .await
+                .expect("product events are accepted");
+            handle_replay_blob_inner(
+                &state,
+                &replay_blob_headers(KEY, "sess_1", 0),
+                gzip_bytes(r#"[{"type":2,"timestamp":1,"retention_days":800}]"#),
+            )
+            .await
+            .expect("a replay chunk is accepted");
+            let profiles = send_sdk_profiles(&state, KEY).await.expect("profiles are accepted");
+            assert_eq!(profiles, PROFILES_SDK_ROWS);
+
+            let bodies = exported(&mut imports, 5 + PROFILES_SDK_ROWS).await;
+            let stamped = |datasource: &str, stamp: u64| (datasource.to_owned(), vec![Some(stamp)]);
+            assert_eq!(
+                stamps_by_datasource(&bodies),
+                BTreeMap::from([
+                    stamped("product_events", 180),
+                    stamped("profiles", 3),
+                    stamped("session_events", 7),
+                    stamped("session_replay_events", 7),
+                    stamped("session_replays", 7),
+                ])
+            );
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn a_request_naming_an_integration_source_is_stored_under_that_sources_period() {
+            let store = org_store();
+            store.insert_source_row(ORG, INHERITING_SOURCE_UUID, "integration");
+            store.insert_source_row("org_other", SOURCE_UUID, "integration");
+            store.set_org_retention(ORG, r#"{"logs": 90}"#);
+            store.set_source_retention(DEFAULT_SOURCE_UUID, r#"{"logs": 14}"#);
+            store.set_source_retention(INTEGRATION_SOURCE_UUID, r#"{"logs": 7}"#);
+            // Another org's source, and its policy, are not this org's to name.
+            store.set_source_retention(SOURCE_UUID, r#"{"logs": 3}"#);
+            let (state, mut imports, queue_dir) = storing_state(&store, "named-source").await;
+
+            let integration = public_id(INTEGRATION_SOURCE_UUID);
+            let inheriting = public_id(INHERITING_SOURCE_UUID);
+            let default_source = public_id(DEFAULT_SOURCE_UUID);
+            let resources = [
+                ("a", Some(integration.clone())),
+                ("b", None),
+                ("c", Some(integration.clone())),
+                ("d", Some(public_id(SOURCE_UUID))),
+                ("e", Some(inheriting.clone())),
+            ];
+            let request = ExportLogsServiceRequest {
+                resource_logs: resources
+                    .iter()
+                    .map(|(message, claim)| {
+                        let mut resource_logs = test_log_request(message).resource_logs.remove(0);
+                        // A sender's own attribute of that name decides nothing.
+                        let mut attributes = vec![string_attribute("retention_days", "800")];
+                        if let Some(claim) = claim {
+                            attributes.push(string_attribute("maple_source_id", claim));
+                        }
+                        let resource = resource_logs.resource.as_mut().expect("a resource");
+                        resource.attributes.extend(attributes);
+                        resource_logs
+                    })
+                    .collect(),
+            };
+            let (response, ..) = handle_signal_inner(
+                &state,
+                &test_headers(KEY),
+                Bytes::from(request.encode_to_vec()),
+                Ingress::Otlp(Signal::Logs),
+            )
+            .await
+            .expect("default key traffic is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // One body per period, each holding the rows of the sources that keep it.
+            let mut bodies: Vec<Vec<(u64, String, String)>> = exported(&mut imports, 5)
+                .await
+                .into_iter()
+                .map(|(datasource, rows)| {
+                    assert_eq!(datasource, "logs");
+                    let mut rows: Vec<_> = rows
+                        .iter()
+                        .map(|row| {
+                            let text = |value: &serde_json::Value| {
+                                value.as_str().unwrap_or_default().to_owned()
+                            };
+                            (
+                                row["retention_days"].as_u64().expect("a stamp"),
+                                text(&row["resource_attributes"]["maple_source_id"]),
+                                text(&row["body"]),
+                            )
+                        })
+                        .collect();
+                    rows.sort();
+                    rows
+                })
+                .collect();
+            bodies.sort();
+            let row = |stamp: u64, source: &String, body: &str| {
+                (stamp, source.clone(), body.to_owned())
+            };
+            assert_eq!(
+                bodies,
+                vec![
+                    vec![row(7, &integration, "a"), row(7, &integration, "c")],
+                    // The key's own source, which also takes the claim that was not the org's.
+                    vec![row(14, &default_source, "b"), row(14, &default_source, "d")],
+                    // A source that sets nothing keeps the org's period, not the default source's.
+                    vec![row(90, &inheriting, "e")],
+                ]
+            );
             drop(std::fs::remove_dir_all(&queue_dir));
         }
     }

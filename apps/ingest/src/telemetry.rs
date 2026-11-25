@@ -14,6 +14,7 @@ use crate::otel::{
     encode_rows_internal_span, export_client_span, record_stage_error, wal_commit_internal_span,
 };
 use crate::outbound;
+use crate::retention::{RetentionSignal, MAX_RETENTION_DAYS};
 use crate::row_budget::{self, json_len, RowEstimate, RowPiece, RowPlan};
 use crate::wal_store::{ClaimRelease, OrphanedSegment, OwnerClaim, WalSegmentStore};
 use bytes::Bytes;
@@ -570,6 +571,20 @@ impl TelemetrySignal {
             Self::Profiles => "profiles",
         }
     }
+
+    /// The retention policy its rows are kept under. The audit trail has none:
+    /// its table is not one a policy reaches, and its rows carry no stamp.
+    pub const fn retention_signal(self) -> Option<RetentionSignal> {
+        match self {
+            Self::Traces => Some(RetentionSignal::Traces),
+            Self::Logs => Some(RetentionSignal::Logs),
+            Self::Metrics => Some(RetentionSignal::Metrics),
+            Self::SessionReplays | Self::SessionEvents => Some(RetentionSignal::Sessions),
+            Self::ProductEvents => Some(RetentionSignal::Events),
+            Self::Profiles => Some(RetentionSignal::Profiles),
+            Self::AuditTrail => None,
+        }
+    }
 }
 
 /// Datasource (ClickHouse/Tinybird table) names the OTLP→NDJSON encoders write
@@ -918,6 +933,58 @@ impl AcceptStats {
     }
 }
 
+/// The resource attribute naming the source a batch came from, set by the gateway.
+pub const SOURCE_ID_ATTRIBUTE: &str = "maple_source_id";
+
+/// What each resource's rows are stamped with: the period of the source the gateway
+/// attributed the resource to, by the `maple_source_id` it set there.
+#[derive(Clone, Copy, Debug)]
+pub struct SourceStamps<'a> {
+    /// The period of the request's own source: its key's, or its org's default.
+    own: u16,
+    /// The `maple_source_id` and period of each source a resource may name instead.
+    named: &'a [(String, u16)],
+}
+
+impl<'a> SourceStamps<'a> {
+    pub const fn new(own: u16, named: &'a [(String, u16)]) -> Self {
+        Self { own, named }
+    }
+
+    /// Every resource stored for `own`.
+    pub const fn uniform(own: u16) -> Self {
+        Self { own, named: &[] }
+    }
+
+    /// The period `resource`'s rows are stored for.
+    pub fn of(&self, resource: Option<&Resource>) -> u16 {
+        // Only a request naming several sources reads the attribute.
+        if self.is_uniform() {
+            return self.own;
+        }
+        let named = resource
+            .and_then(|resource| {
+                resource
+                    .attributes
+                    .iter()
+                    .find(|attribute| attribute.key == SOURCE_ID_ATTRIBUTE)
+            })
+            .and_then(|attribute| attribute.value.as_ref())
+            .and_then(|value| match value.value.as_ref() {
+                Some(any_value::Value::StringValue(id)) => Some(id.as_str()),
+                _ => None,
+            });
+        named
+            .and_then(|id| self.named.iter().find(|(source, _)| source == id))
+            .map_or(self.own, |(_, stamp)| *stamp)
+    }
+
+    /// Whether every resource is stored for the same period.
+    pub fn is_uniform(&self) -> bool {
+        self.named.iter().all(|(_, stamp)| *stamp == self.own)
+    }
+}
+
 /// A decoded request, with what its rows are built with.
 #[derive(Clone, Copy, Debug)]
 pub enum RowSource<'a> {
@@ -931,16 +998,35 @@ pub enum RowSource<'a> {
 }
 
 impl RowSource<'_> {
-    /// The request's rows, in pieces of about `piece_bytes` each.
+    /// The request's rows, in pieces of about `piece_bytes` each, every row stored
+    /// for the signal's default period.
     pub fn plan(&self, org_id: &str, piece_bytes: u64) -> RowPlan {
+        let stamps = SourceStamps::uniform(self.retention_signal().default_stamp());
+        self.plan_stamped(org_id, piece_bytes, stamps)
+    }
+
+    /// `plan`, each resource's rows stored for the period `stamps` gives its source.
+    /// A piece holds rows of one period, so its frames do.
+    pub fn plan_stamped(&self, org_id: &str, piece_bytes: u64, stamps: SourceStamps<'_>) -> RowPlan {
         match *self {
             Self::Traces {
                 request,
                 policy,
                 mappings,
-            } => row_budget::trace_plan(org_id, request, policy, mappings, piece_bytes),
-            Self::Logs(request) => row_budget::log_plan(org_id, request, piece_bytes),
-            Self::Metrics(request) => row_budget::metric_plan(org_id, request, piece_bytes),
+            } => row_budget::trace_plan(org_id, request, policy, mappings, piece_bytes, stamps),
+            Self::Logs(request) => row_budget::log_plan(org_id, request, piece_bytes, stamps),
+            Self::Metrics(request) => {
+                row_budget::metric_plan(org_id, request, piece_bytes, stamps)
+            }
+        }
+    }
+
+    /// The retention policy the request's rows are kept under.
+    pub const fn retention_signal(&self) -> RetentionSignal {
+        match self {
+            Self::Traces { .. } => RetentionSignal::Traces,
+            Self::Logs(_) => RetentionSignal::Logs,
+            Self::Metrics(_) => RetentionSignal::Metrics,
         }
     }
 
@@ -1027,6 +1113,9 @@ struct QueuedFrame {
     signal: TelemetrySignal,
     destination: ExportDestination,
     datasource: String,
+    /// The `retention_days` every row in the frame carries, so an export batch holds
+    /// one. In-memory only: replay reads it back from the frame's first row.
+    retention_days: Option<u16>,
     row_count: usize,
     /// Shared with the WAL append that wrote it, so the rows are held once.
     payload: Bytes,
@@ -1050,6 +1139,8 @@ struct EncodedFrame {
     signal: TelemetrySignal,
     destination: ExportDestination,
     datasource: String,
+    /// What every row in `payload` is stamped with; `None` for unstamped rows.
+    retention_days: Option<u16>,
     row_count: usize,
     payload: Bytes,
 }
@@ -1491,7 +1582,8 @@ impl TelemetryPipeline {
     /// Accept pre-serialized NDJSON rows for an arbitrary datasource. Used by
     /// the session-replay ingest path, whose rows are built directly by the
     /// gateway (not derived from OTLP). Routes by org so a session's metadata
-    /// and chunk-index rows land on the same shard in order.
+    /// and chunk-index rows land on the same shard in order. `retention_days` is
+    /// what the caller stamped on every row, `None` for rows that carry no stamp.
     #[hotpath::measure]
     pub async fn accept_rows_to(
         &self,
@@ -1500,12 +1592,17 @@ impl TelemetryPipeline {
         rows: Vec<Vec<u8>>,
         signal: TelemetrySignal,
         destination: ExportDestination,
+        retention_days: Option<u16>,
     ) -> Result<AcceptStats, PipelineError> {
         let stats = AcceptStats {
             rows: rows.len(),
             dropped: 0,
         };
-        let frames = rows_to_frames(org_id, hash64(org_id), signal, datasource, &rows);
+        let stamp = FrameStamp {
+            signal,
+            retention_days,
+        };
+        let frames = rows_to_frames(org_id, hash64(org_id), stamp, datasource, &rows);
         // The rows are copied into the frame payload above; free them before the
         // WAL append rather than holding both across the await.
         drop(rows);
@@ -1516,6 +1613,7 @@ impl TelemetryPipeline {
     /// Accept pre-serialized NDJSON rows too many for one export batch: each of
     /// `batches` is a frame, and they commit through one `commit_frames` call like
     /// the frames of an OTLP request, with the same outcome when one is refused.
+    /// `retention_days` is what the caller stamped on every row.
     #[hotpath::measure]
     pub async fn accept_row_batches_to(
         &self,
@@ -1524,15 +1622,20 @@ impl TelemetryPipeline {
         batches: Vec<Vec<Vec<u8>>>,
         signal: TelemetrySignal,
         destination: ExportDestination,
+        retention_days: Option<u16>,
     ) -> Result<AcceptStats, RowBatchesError> {
         let routing_key = hash64(org_id);
+        let stamp = FrameStamp {
+            signal,
+            retention_days,
+        };
         let mut frames = Vec::with_capacity(batches.len());
         // Each batch is freed once its frame holds a copy, not held across the commit.
         for rows in batches {
             frames.extend(rows_to_frames(
                 org_id,
                 routing_key,
-                signal,
+                stamp,
                 datasource.to_owned(),
                 &rows,
             ));
@@ -2075,6 +2178,7 @@ fn queued_delivery(
             signal: frame.signal,
             destination: frame.destination,
             datasource: frame.datasource,
+            retention_days: frame.retention_days,
             row_count: frame.row_count,
             payload: frame.payload,
             source_span,
@@ -2796,6 +2900,7 @@ impl ShardedWal {
                     signal: frame.signal,
                     destination: frame.destination,
                     datasource: frame.datasource,
+                    retention_days: replayed_stamp(frame.signal, &frame.payload),
                     row_count: frame.row_count,
                     payload: Bytes::from(frame.payload),
                 };
@@ -3034,6 +3139,7 @@ impl ShardedWal {
                 signal: frame.signal,
                 destination: frame.destination,
                 datasource: frame.datasource,
+                retention_days: replayed_stamp(frame.signal, &frame.payload),
                 row_count: frame.row_count,
                 payload: Bytes::from(frame.payload),
             };
@@ -3232,6 +3338,7 @@ impl WalLaneBench {
             signal: TelemetrySignal::Logs,
             destination: ExportDestination::Tinybird,
             datasource: "logs".to_owned(),
+            retention_days: None,
             row_count: 1,
             payload: Bytes::from(payload),
         })?;
@@ -3409,6 +3516,7 @@ fn replay_lane(lane: usize, lane_ref: &WalLane) -> Result<Vec<QueuedFrame>, Stri
                 signal: frame.signal,
                 destination: frame.destination,
                 datasource: frame.datasource,
+                retention_days: replayed_stamp(frame.signal, &frame.payload),
                 row_count: frame.row_count,
                 payload: Bytes::from(frame.payload),
                 // Replayed from disk after a restart: the originating trace is gone.
@@ -3908,7 +4016,7 @@ impl ExportWorker {
         let mut shed_frames = 0usize;
         let mut shed_rows = 0usize;
 
-        let mut by_tinybird: BTreeMap<String, Vec<&QueuedFrame>> = BTreeMap::new();
+        let mut by_tinybird: BTreeMap<(String, Option<u16>), Vec<&QueuedFrame>> = BTreeMap::new();
         let mut by_clickhouse: BTreeMap<(String, String), Vec<&QueuedFrame>> = BTreeMap::new();
         for frame in &frames {
             if is_stale(frame) {
@@ -3923,11 +4031,12 @@ impl ExportWorker {
                 continue;
             }
             match frame.destination {
-                // Tinybird groups by datasource alone; the workspace is the
-                // lane's property, not the frame's.
+                // Tinybird groups by datasource and stamp; the workspace is the lane's
+                // property, not the frame's. One stamp per batch keeps an insert to one
+                // partition per day: the Events API refuses a batch touching over 30.
                 ExportDestination::Tinybird => {
                     by_tinybird
-                        .entry(frame.datasource.clone())
+                        .entry((frame.datasource.clone(), frame.retention_days))
                         .or_default()
                         .push(frame);
                 }
@@ -3957,9 +4066,10 @@ impl ExportWorker {
 
         let start = Instant::now();
         let first_signal = frames[0].signal;
-        for (datasource, frames) in by_tinybird {
+        for ((datasource, retention_days), frames) in by_tinybird {
             let (body, rows) = combine_frames(frames);
-            self.post_tinybird(&datasource, body, rows).await?;
+            self.post_tinybird(&datasource, retention_days, body, rows)
+                .await?;
         }
         for ((org_id, datasource), frames) in by_clickhouse {
             let (body, rows) = combine_frames(frames);
@@ -4022,6 +4132,7 @@ impl ExportWorker {
     async fn post_tinybird(
         &self,
         datasource: &str,
+        retention_days: Option<u16>,
         body: Vec<u8>,
         rows: usize,
     ) -> Result<(), String> {
@@ -4080,6 +4191,9 @@ impl ExportWorker {
             span.record("db.system.name", "tinybird");
             span.record("db.operation.name", "INSERT");
             span.record("db.collection.name", datasource);
+            if let Some(retention_days) = retention_days {
+                span.record("maple.ingest.retention_days", retention_days);
+            }
             let span_handle = span.clone();
             let request = self
                 .http
@@ -4099,6 +4213,7 @@ impl ExportWorker {
                     metrics::tinybird_export_succeeded(
                         destination,
                         datasource,
+                        retention_days,
                         started.elapsed().as_secs_f64(),
                         rows as u64,
                     );
@@ -4120,6 +4235,7 @@ impl ExportWorker {
                     metrics::tinybird_export_dropped(
                         destination,
                         datasource,
+                        retention_days,
                         &status.to_string(),
                         rows as u64,
                     );
@@ -4169,6 +4285,7 @@ impl ExportWorker {
                 metrics::tinybird_export_dropped(
                     destination,
                     datasource,
+                    retention_days,
                     "retries_exhausted",
                     rows as u64,
                 );
@@ -4709,7 +4826,8 @@ impl RowKind {
 pub(crate) fn empty_row_len(kind: RowKind) -> u64 {
     static LENGTHS: LazyLock<[u64; 6]> = LazyLock::new(|| {
         let attrs = Map::new();
-        let context = RowContext::new(&attrs, "", None, &attrs, "");
+        // The longest stamp there is, so the estimate covers every period.
+        let context = RowContext::new(&attrs, "", None, &attrs, "", MAX_RETENTION_DAYS);
         let metric = opentelemetry_proto::tonic::metrics::v1::Metric::default();
         let point = || metric_row(&metric, &context, &PointParts::default());
         // A counter takes every byte, so measuring a row cannot fail.
@@ -4809,6 +4927,7 @@ impl RowBuffer {
         routing_key: u64,
         signal: TelemetrySignal,
         datasource: &str,
+        retention_days: u16,
     ) -> Option<EncodedFrame> {
         if self.rows == 0 {
             return None;
@@ -4825,6 +4944,7 @@ impl RowBuffer {
             signal,
             destination: ExportDestination::Tinybird,
             datasource: datasource.to_owned(),
+            retention_days: Some(retention_days),
             row_count: self.rows,
             payload: Bytes::from(payload),
         })
@@ -4865,6 +4985,8 @@ struct RowContext<'a> {
     scope_name: &'a str,
     scope_version: &'a str,
     scope_attrs: &'a Map<String, Value>,
+    /// The period the gateway resolved for the rows' source. Never the sender's.
+    retention_days: u16,
 }
 
 impl<'a> RowContext<'a> {
@@ -4874,6 +4996,7 @@ impl<'a> RowContext<'a> {
         scope: Option<&'a InstrumentationScope>,
         scope_attrs: &'a Map<String, Value>,
         scope_schema_url: &'a str,
+        retention_days: u16,
     ) -> Self {
         Self {
             service_name: resource_attrs
@@ -4886,6 +5009,7 @@ impl<'a> RowContext<'a> {
             scope_name: scope.map_or("", |scope| scope.name.as_str()),
             scope_version: scope.map_or("", |scope| scope.version.as_str()),
             scope_attrs,
+            retention_days,
         }
     }
 }
@@ -5034,6 +5158,7 @@ struct TraceRow<'a> {
     parent_span_id: String,
     resource_attributes: &'a Map<String, Value>,
     resource_schema_url: &'a str,
+    retention_days: u16,
     scope_attributes: &'a Map<String, Value>,
     scope_name: &'a str,
     scope_schema_url: &'a str,
@@ -5099,6 +5224,7 @@ fn trace_row<'a>(
         parent_span_id: bytes_hex(&span.parent_span_id),
         resource_attributes: context.resource_attrs,
         resource_schema_url: context.resource_schema_url,
+        retention_days: context.retention_days,
         scope_attributes: context.scope_attrs,
         scope_name: context.scope_name,
         scope_schema_url: context.scope_schema_url,
@@ -5157,6 +5283,7 @@ fn encode_traces(
                 scope,
                 &scope_attrs,
                 &scope_spans.schema_url,
+                piece.retention_days,
             );
 
             for span in spans {
@@ -5194,6 +5321,7 @@ fn encode_traces(
             routing_key,
             TelemetrySignal::Traces,
             &datasources.traces,
+            piece.retention_days,
         )
         .into_iter()
         .collect();
@@ -5208,6 +5336,7 @@ struct LogRow<'a> {
     log_attributes: Map<String, Value>,
     resource_attributes: &'a Map<String, Value>,
     resource_schema_url: &'a str,
+    retention_days: u16,
     scope_attributes: &'a Map<String, Value>,
     scope_name: &'a str,
     scope_schema_url: &'a str,
@@ -5265,6 +5394,7 @@ fn log_row<'a>(log: &'a LogRecord, context: &RowContext<'a>, trace_id: String) -
         log_attributes: log_attributes(log),
         resource_attributes: context.resource_attrs,
         resource_schema_url: context.resource_schema_url,
+        retention_days: context.retention_days,
         scope_attributes: context.scope_attrs,
         scope_name: context.scope_name,
         scope_schema_url: context.scope_schema_url,
@@ -5321,6 +5451,7 @@ fn encode_logs(
                 scope,
                 &scope_attrs,
                 &scope_logs.schema_url,
+                piece.retention_days,
             );
 
             for log in logs {
@@ -5339,6 +5470,7 @@ fn encode_logs(
             routing_key,
             TelemetrySignal::Logs,
             &datasources.logs,
+            piece.retention_days,
         )
         .into_iter()
         .collect();
@@ -5388,6 +5520,7 @@ struct MetricRow<'a> {
     positive_offset: Option<i32>,
     resource_attributes: &'a Map<String, Value>,
     resource_schema_url: &'a str,
+    retention_days: u16,
     #[serde(skip_serializing_if = "Option::is_none")]
     scale: Option<i32>,
     scope_attributes: &'a Map<String, Value>,
@@ -5446,6 +5579,7 @@ fn metric_row<'a>(
         positive_offset: None,
         resource_attributes: context.resource_attrs,
         resource_schema_url: context.resource_schema_url,
+        retention_days: context.retention_days,
         scale: None,
         scope_attributes: context.scope_attrs,
         scope_name: context.scope_name,
@@ -5578,6 +5712,7 @@ fn encode_metrics(
                 scope,
                 &scope_attrs,
                 &scope_metrics.schema_url,
+                piece.retention_days,
             );
 
             for metric in &scope_metrics.metrics {
@@ -5655,7 +5790,13 @@ fn encode_metrics(
     ]
     .into_iter()
     .filter_map(|(buffer, datasource)| {
-        buffer.into_frame(org_id, routing_key, TelemetrySignal::Metrics, datasource)
+        buffer.into_frame(
+            org_id,
+            routing_key,
+            TelemetrySignal::Metrics,
+            datasource,
+            piece.retention_days,
+        )
     })
     .collect();
     // Committed in datasource order, as the frames always were.
@@ -5713,17 +5854,32 @@ fn encode_exemplars(exemplars: &[Exemplar]) -> EncodedExemplars {
     }
 }
 
+/// The signal of a frame of pre-serialized rows and what its rows are stamped with.
+#[derive(Clone, Copy)]
+struct FrameStamp {
+    signal: TelemetrySignal,
+    retention_days: Option<u16>,
+}
+
 /// Pre-serialized rows as one frame, each row followed by a newline.
 fn rows_to_frames(
     org_id: &str,
     routing_key: u64,
-    signal: TelemetrySignal,
+    stamp: FrameStamp,
     datasource: String,
     rows: &[Vec<u8>],
 ) -> Vec<EncodedFrame> {
     if rows.is_empty() {
         return Vec::new();
     }
+    let FrameStamp {
+        signal,
+        retention_days,
+    } = stamp;
+    debug_assert!(
+        rows.iter().all(|row| row_stamp(row) == retention_days),
+        "a {datasource} row is not stamped with its frame's retention_days"
+    );
     let mut payload = Vec::with_capacity(rows.iter().map(Vec::len).sum::<usize>() + rows.len());
     for row in rows {
         payload.extend_from_slice(row);
@@ -5735,9 +5891,30 @@ fn rows_to_frames(
         signal,
         destination: ExportDestination::Tinybird,
         datasource,
+        retention_days,
         row_count: rows.len(),
         payload: Bytes::from(payload),
     }]
+}
+
+/// The top-level `retention_days` of one NDJSON row, the only part of it read.
+#[derive(serde::Deserialize)]
+struct StampedRow {
+    retention_days: Option<u16>,
+}
+
+fn row_stamp(row: &[u8]) -> Option<u16> {
+    serde_json::from_slice::<StampedRow>(row)
+        .ok()
+        .and_then(|row| row.retention_days)
+}
+
+/// The stamp of a frame read back from the WAL, whose head carries none: its first
+/// row's. Rows without one (written by an older build) take the signal's default.
+fn replayed_stamp(signal: TelemetrySignal, payload: &[u8]) -> Option<u16> {
+    let default = signal.retention_signal()?.default_stamp();
+    let first = payload.split(|byte| *byte == b'\n').next();
+    Some(first.and_then(row_stamp).unwrap_or(default))
 }
 
 /// Whether the encoder stores `span` under `policy`, for the row estimate.
@@ -6165,6 +6342,7 @@ mod tests {
             payload: Bytes::new(),
             source_span,
             enqueued_at: Instant::now(),
+            retention_days: None,
         }
     }
 
@@ -6559,6 +6737,7 @@ mod tests {
             datasource: "traces".to_owned(),
             row_count: 1,
             payload: Bytes::from_static(br#"{"a":1}"#),
+            retention_days: None,
         };
         let encoded = encode_wal_frame(&frame).unwrap();
         let path = std::env::temp_dir().join(format!("maple-wal-test-{}.wal", std::process::id()));
@@ -7053,6 +7232,7 @@ mod tests {
                 vec![row],
                 TelemetrySignal::AuditTrail,
                 ExportDestination::Tinybird,
+                None,
             )
             .await
             .unwrap();
@@ -8397,6 +8577,7 @@ mod tests {
                 vec![row],
                 TelemetrySignal::AuditTrail,
                 ExportDestination::Tinybird,
+                None,
             )
             .await
             .unwrap();
@@ -8686,6 +8867,7 @@ mod tests {
             datasource: "traces".to_owned(),
             row_count: 1,
             payload: Bytes::from_static(br#"{"a":1}"#),
+            retention_days: None,
         };
         let ch_frame = EncodedFrame {
             routing_key: 0,
@@ -8695,6 +8877,7 @@ mod tests {
             datasource: "logs".to_owned(),
             row_count: 1,
             payload: Bytes::from_static(br#"{"b":2}"#),
+            retention_days: None,
         };
         let mut legacy = Vec::new();
         legacy.extend(encode_wal_frame(&tb_frame).unwrap());
@@ -8711,6 +8894,7 @@ mod tests {
                 datasource: "traces".to_owned(),
                 row_count: 1,
                 payload: Bytes::from_static(br#"{"c":3}"#),
+                retention_days: None,
             })
             .unwrap(),
         )
@@ -8923,8 +9107,12 @@ mod tests {
     //   "$.foo.bar"        -> "foo"     (only the top level)
     // ResourceAttributes uses `$.resource_attributes.maple_org_id` for OrgId,
     // which is already covered by the `resource_attributes` map.
+    //
+    // `retention_days` is the gateway's stamp (`$.retention_days` -> RetentionDays),
+    // on every raw table a retention policy reaches.
     mod schema_contract {
         pub(super) const LOGS: &[&str] = &[
+            "retention_days",
             "timestamp",
             "trace_id",
             "span_id",
@@ -8943,6 +9131,7 @@ mod tests {
         ];
 
         pub(super) const TRACES: &[&str] = &[
+            "retention_days",
             "start_time",
             "trace_id",
             "span_id",
@@ -8971,6 +9160,7 @@ mod tests {
         ];
 
         const METRIC_COMMON: &[&str] = &[
+            "retention_days",
             "resource_attributes",
             "resource_schema_url",
             "scope_name",
@@ -9686,6 +9876,7 @@ mod tests {
             datasource: "traces".to_owned(),
             row_count: 1,
             payload: vec![0u8; payload_bytes].into(),
+            retention_days: None,
         }
     }
 
@@ -11173,6 +11364,525 @@ mod tests {
             assert_eq!(histogram["sum"], 42.5);
             assert_eq!(histogram["bucket_counts"], serde_json::json!([1, 9]));
             assert_eq!(histogram["explicit_bounds"], serde_json::json!([0.1]));
+        }
+    }
+    /// Rows carry `retention_days`, a frame holds one period and an export batch one.
+    mod retention_stamps {
+        use super::*;
+        use opentelemetry_proto::tonic::logs::v1::{ResourceLogs, ScopeLogs};
+        use std::collections::BTreeSet;
+
+        const OWN_SOURCE: &str = "src_own";
+        const SHORT_SOURCE: &str = "src_short";
+        const LONG_SOURCE: &str = "src_long";
+
+        /// A default-key request's periods: its own source keeps 30 days, and the
+        /// two integration sources it may name keep 7 and 90.
+        fn named() -> Vec<(String, u16)> {
+            vec![(SHORT_SOURCE.to_owned(), 7), (LONG_SOURCE.to_owned(), 90)]
+        }
+
+        fn log(body: &str) -> LogRecord {
+            LogRecord {
+                time_unix_nano: 1_700_000_001_000_000_000,
+                body: Some(AnyValue {
+                    value: Some(any_value::Value::StringValue(body.to_owned())),
+                }),
+                ..Default::default()
+            }
+        }
+
+        fn resource_logs(source_id: &str, bodies: &[&str]) -> ResourceLogs {
+            ResourceLogs {
+                resource: Some(Resource {
+                    attributes: vec![
+                        string_kv("service.name", "api"),
+                        string_kv(SOURCE_ID_ATTRIBUTE, source_id),
+                    ],
+                    dropped_attributes_count: 0,
+                    entity_refs: Vec::new(),
+                }),
+                scope_logs: vec![ScopeLogs {
+                    scope: None,
+                    log_records: bodies.iter().map(|body| log(body)).collect(),
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }
+        }
+
+        fn rows(payload: &[u8]) -> Vec<Value> {
+            payload
+                .split(|byte| *byte == b'\n')
+                .filter(|line| !line.is_empty())
+                .map(|line| serde_json::from_slice(line).expect("each line is a row"))
+                .collect()
+        }
+
+        /// Every piece of `plan`, encoded as a request's are: (stamp, body) per row,
+        /// each frame checked against the stamp it is queued under.
+        fn encoded_logs(request: &ExportLogsServiceRequest, plan: &RowPlan) -> Vec<Vec<(u64, String)>> {
+            let source = RowSource::Logs(request);
+            plan.pieces
+                .iter()
+                .map(|piece| {
+                    let encoded = source.encode(&DatasourceNames::defaults(), "org", plan, piece);
+                    let (frames, _) = within_estimate(&piece.estimate, encoded).expect("encode");
+                    frames
+                        .iter()
+                        .flat_map(|frame| {
+                            assert_eq!(frame.retention_days, Some(piece.retention_days));
+                            rows(&frame.payload)
+                        })
+                        .map(|row| {
+                            let stamp = row["retention_days"].as_u64().expect("a stamp");
+                            (stamp, row["body"].as_str().unwrap_or_default().to_owned())
+                        })
+                        .collect()
+                })
+                .collect()
+        }
+
+        fn stamps_of(frames: &[EncodedFrame]) -> BTreeSet<(String, Option<u16>, Option<u64>)> {
+            frames
+                .iter()
+                .flat_map(|frame| {
+                    rows(&frame.payload).into_iter().map(|row| {
+                        (
+                            frame.datasource.clone(),
+                            frame.retention_days,
+                            row["retention_days"].as_u64(),
+                        )
+                    })
+                })
+                .collect()
+        }
+
+        fn every_datasource(stamp: u16) -> BTreeSet<(String, Option<u16>, Option<u64>)> {
+            [
+                "traces",
+                "logs",
+                "metrics_gauge",
+                "metrics_sum",
+                "metrics_histogram",
+                "metrics_exponential_histogram",
+            ]
+            .into_iter()
+            .map(|datasource| (datasource.to_owned(), Some(stamp), Some(u64::from(stamp))))
+            .collect()
+        }
+
+        fn encode_all(source: RowSource<'_>, plan: &RowPlan) -> Vec<EncodedFrame> {
+            plan.pieces
+                .iter()
+                .flat_map(|piece| {
+                    let encoded = source.encode(&DatasourceNames::defaults(), "org", plan, piece);
+                    within_estimate(&piece.estimate, encoded).expect("encode").0
+                })
+                .collect()
+        }
+
+        #[test]
+        fn every_otlp_row_is_stamped_with_the_period_resolved_for_its_source() {
+            let traces = populated_trace_request();
+            let logs = populated_log_request();
+            let metrics = one_of_each_metric_request();
+            let policy = SamplingPolicy::default();
+            let sources = [
+                RowSource::Traces {
+                    request: &traces,
+                    policy: &policy,
+                    mappings: &[],
+                },
+                RowSource::Logs(&logs),
+                RowSource::Metrics(&metrics),
+            ];
+            // The longest and the shortest stamp: the row estimate covers both.
+            for stamp in [800_u16, 3] {
+                let mut written = BTreeSet::new();
+                for source in sources {
+                    let plan = source.plan_stamped("org", u64::MAX, SourceStamps::uniform(stamp));
+                    written.extend(stamps_of(&encode_all(source, &plan)));
+                }
+                assert_eq!(written, every_datasource(stamp));
+            }
+        }
+
+        #[test]
+        fn a_request_with_no_policy_resolved_is_stamped_with_its_signals_default() {
+            let traces = populated_trace_request();
+            let logs = populated_log_request();
+            let metrics = one_of_each_metric_request();
+            let policy = SamplingPolicy::default();
+            let stamps = |source: RowSource<'_>| -> BTreeSet<Option<u64>> {
+                let frames = encode_all(source, &source.plan("org", u64::MAX));
+                stamps_of(&frames).into_iter().map(|row| row.2).collect()
+            };
+            let traces = RowSource::Traces {
+                request: &traces,
+                policy: &policy,
+                mappings: &[],
+            };
+            assert_eq!(stamps(traces), BTreeSet::from([Some(30)]));
+            assert_eq!(stamps(RowSource::Logs(&logs)), BTreeSet::from([Some(30)]));
+            assert_eq!(stamps(RowSource::Metrics(&metrics)), BTreeSet::from([Some(90)]));
+        }
+
+        #[test]
+        fn a_request_naming_several_sources_is_planned_as_a_piece_per_period() {
+            let request = ExportLogsServiceRequest {
+                resource_logs: vec![
+                    resource_logs(SHORT_SOURCE, &["a", "b"]),
+                    resource_logs(OWN_SOURCE, &["c"]),
+                    // Stores nothing, so it starts no piece of its own.
+                    resource_logs(LONG_SOURCE, &[]),
+                    resource_logs(SHORT_SOURCE, &["d"]),
+                    resource_logs("src_unverified", &["e"]),
+                    resource_logs(LONG_SOURCE, &["f"]),
+                ],
+            };
+            let named = named();
+            let plan = RowSource::Logs(&request).plan_stamped(
+                "org",
+                u64::MAX,
+                SourceStamps::new(30, &named),
+            );
+            let row = |stamp: u64, body: &str| (stamp, body.to_owned());
+            assert_eq!(
+                encoded_logs(&request, &plan),
+                vec![
+                    vec![row(7, "a"), row(7, "b")],
+                    vec![row(30, "c")],
+                    vec![row(7, "d")],
+                    // A source the request names but the org does not own keeps its key's period.
+                    vec![row(30, "e")],
+                    vec![row(90, "f")],
+                ]
+            );
+        }
+
+        #[test]
+        fn pieces_split_by_size_keep_the_period_of_their_resource() {
+            let request = ExportLogsServiceRequest {
+                resource_logs: vec![
+                    resource_logs(SHORT_SOURCE, &["a", "b", "c"]),
+                    resource_logs(LONG_SOURCE, &["d", "e"]),
+                ],
+            };
+            let named = named();
+            // A piece of one byte: every row is a piece of its own.
+            let plan = RowSource::Logs(&request).plan_stamped("org", 1, SourceStamps::new(30, &named));
+            let stamps: Vec<Vec<u64>> = encoded_logs(&request, &plan)
+                .into_iter()
+                .map(|piece| piece.into_iter().map(|(stamp, _)| stamp).collect())
+                .collect();
+            assert_eq!(stamps, vec![vec![7], vec![7], vec![7], vec![90], vec![90]]);
+        }
+
+        #[test]
+        fn a_sender_cannot_set_the_period_its_rows_are_stored_for() {
+            let mut logs = populated_log_request();
+            let resource = &mut logs.resource_logs[0];
+            resource
+                .resource
+                .get_or_insert_with(Resource::default)
+                .attributes
+                .push(string_kv("retention_days", "800"));
+            let record = &mut resource.scope_logs[0].log_records[0];
+            record.attributes.push(string_kv("retention_days", "800"));
+            let source = RowSource::Logs(&logs);
+            let frames = encode_all(source, &source.plan_stamped("org", u64::MAX, SourceStamps::uniform(7)));
+            let row = &rows(&frames[0].payload)[0];
+            assert_eq!(row["retention_days"], 7);
+            // What the sender sent under that name stays an attribute, nothing more.
+            assert_eq!(row["resource_attributes"]["retention_days"], "800");
+            assert_eq!(row["log_attributes"]["retention_days"], "800");
+
+            let mut traces = populated_trace_request();
+            let span = &mut traces.resource_spans[0].scope_spans[0].spans[0];
+            span.attributes.push(string_kv("retention_days", "800"));
+            let policy = SamplingPolicy::default();
+            let source = RowSource::Traces {
+                request: &traces,
+                policy: &policy,
+                mappings: &[],
+            };
+            let frames = encode_all(source, &source.plan_stamped("org", u64::MAX, SourceStamps::uniform(7)));
+            let row = &rows(&frames[0].payload)[0];
+            assert_eq!(row["retention_days"], 7);
+            assert_eq!(row["span_attributes"]["retention_days"], "800");
+        }
+
+        fn frame(signal: TelemetrySignal, datasource: &str, lines: &[&str]) -> EncodedFrame {
+            let mut payload = lines.join("\n").into_bytes();
+            payload.push(b'\n');
+            EncodedFrame {
+                routing_key: 0,
+                org_id: "org_replay".to_owned(),
+                signal,
+                destination: ExportDestination::Tinybird,
+                datasource: datasource.to_owned(),
+                // Not written to the WAL: replay has only the rows to go by.
+                retention_days: None,
+                row_count: lines.len(),
+                payload: payload.into(),
+            }
+        }
+
+        #[tokio::test]
+        async fn a_replayed_frame_reads_its_period_back_from_its_first_row() {
+            let queue_dir = unique_test_dir("wal-replay-stamps");
+            std::fs::create_dir_all(&queue_dir).unwrap();
+            let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 4 * 1024);
+            let unstamped = r#"{"body":"an older build's row"}"#;
+            let frames = [
+                frame(TelemetrySignal::Logs, "logs", &[r#"{"body":"a","retention_days":7}"#]),
+                frame(TelemetrySignal::Traces, "traces", &[r#"{"retention_days":550,"span_name":"a"}"#]),
+                // A nested key of that name is not the row's stamp.
+                frame(
+                    TelemetrySignal::Logs,
+                    "logs",
+                    &[r#"{"body":"b","resource_attributes":{"retention_days":"800"}}"#],
+                ),
+                frame(TelemetrySignal::Traces, "traces", &[unstamped]),
+                frame(TelemetrySignal::Metrics, "metrics_sum", &[unstamped]),
+                frame(TelemetrySignal::SessionReplays, "session_replays", &[unstamped]),
+                frame(TelemetrySignal::SessionEvents, "session_events", &[unstamped]),
+                frame(TelemetrySignal::ProductEvents, "product_events", &[unstamped]),
+                frame(TelemetrySignal::Profiles, "profiles", &[unstamped]),
+                frame(TelemetrySignal::AuditTrail, "audit_trail_events", &[unstamped]),
+            ];
+            {
+                let wal = ShardedWal::open(&cfg).expect("open WAL");
+                for frame in &frames {
+                    wal.append(0, frame).await.expect("append");
+                }
+            }
+
+            let wal = ShardedWal::open(&cfg).expect("reopen WAL");
+            let replayed: Vec<(String, Option<u16>)> = wal
+                .replay(0)
+                .await
+                .expect("replay")
+                .into_iter()
+                .map(|frame| (frame.datasource, frame.retention_days))
+                .collect();
+            let expected = [
+                ("logs", Some(7)),
+                ("traces", Some(550)),
+                ("logs", Some(30)),
+                ("traces", Some(30)),
+                ("metrics_sum", Some(90)),
+                ("session_replays", Some(30)),
+                ("session_events", Some(30)),
+                ("product_events", Some(365)),
+                ("profiles", Some(14)),
+                ("audit_trail_events", None),
+            ]
+            .map(|(datasource, stamp)| (datasource.to_owned(), stamp));
+            assert_eq!(replayed, expected);
+            drop(std::fs::remove_dir_all(queue_dir));
+        }
+
+        /// A fake Tinybird, and a pipeline on `queue_dir` that exports to it. The
+        /// worker waits long enough for a request's frames to share a batch.
+        async fn exporting_pipeline(
+            queue_dir: PathBuf,
+        ) -> (TelemetryPipeline, mpsc::UnboundedReceiver<FakeTinybirdImport>) {
+            let (tx, rx) = mpsc::unbounded_channel();
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .unwrap();
+            let addr = listener.local_addr().unwrap();
+            let app = Router::new()
+                .route("/v0/events", post(fake_tinybird_import))
+                .with_state(tx);
+            tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            let mut cfg = test_cfg();
+            cfg.endpoint = format!("http://{addr}");
+            cfg.queue_dir = queue_dir;
+            cfg.wal_shards = 1;
+            cfg.batch_max_wait = Duration::from_millis(250);
+            let client = Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap();
+            (TelemetryPipeline::new(cfg, client).await.unwrap(), rx)
+        }
+
+        /// The next `/v0/events` bodies holding `row_count` rows between them: each as
+        /// (datasource, the distinct stamps of its rows, its row count).
+        async fn exported(
+            rx: &mut mpsc::UnboundedReceiver<FakeTinybirdImport>,
+            row_count: usize,
+        ) -> Vec<(String, Vec<Option<u64>>, usize)> {
+            let mut bodies = Vec::new();
+            let mut seen = 0;
+            while seen < row_count {
+                let import = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                    .await
+                    .expect("the fake Tinybird should receive the batch")
+                    .expect("the fake Tinybird channel should stay open");
+                let rows = rows(import.body.as_bytes());
+                seen += rows.len();
+                let stamps: BTreeSet<Option<u64>> =
+                    rows.iter().map(|row| row["retention_days"].as_u64()).collect();
+                bodies.push((import.datasource, stamps.into_iter().collect(), rows.len()));
+            }
+            bodies.sort();
+            bodies
+        }
+
+        #[tokio::test]
+        async fn an_export_batch_holds_the_rows_of_one_period() {
+            let queue_dir = unique_test_dir("export-one-stamp");
+            let (pipeline, mut rx) = exporting_pipeline(queue_dir.clone()).await;
+            let request = ExportLogsServiceRequest {
+                resource_logs: vec![
+                    resource_logs(SHORT_SOURCE, &["a", "b"]),
+                    resource_logs(OWN_SOURCE, &["c"]),
+                    resource_logs(SHORT_SOURCE, &["d"]),
+                    resource_logs(LONG_SOURCE, &["e", "f"]),
+                ],
+            };
+            let named = named();
+            let source = RowSource::Logs(&request);
+            let plan = source.plan_stamped("org", u64::MAX, SourceStamps::new(30, &named));
+            let frames: usize = plan.pieces.len();
+            assert_eq!(frames, 4, "one frame per run of one period");
+            let stats = pipeline
+                .accept_planned("org_stamps", source, ExportDestination::Tinybird, &plan)
+                .await
+                .expect("the request is accepted");
+            assert_eq!(stats.rows, 6);
+
+            // Four frames of one datasource reach Tinybird as one body per period.
+            let logs = |stamp: u64, rows: usize| ("logs".to_owned(), vec![Some(stamp)], rows);
+            assert_eq!(
+                exported(&mut rx, 6).await,
+                vec![logs(7, 3), logs(30, 1), logs(90, 2)]
+            );
+            drop(std::fs::remove_dir_all(queue_dir));
+        }
+
+        #[tokio::test]
+        async fn a_recovered_backlog_exports_in_batches_of_one_period() {
+            let queue_dir = unique_test_dir("replay-one-stamp");
+            std::fs::create_dir_all(&queue_dir).unwrap();
+            let mut cfg = test_cfg();
+            cfg.queue_dir.clone_from(&queue_dir);
+            cfg.wal_shards = 1;
+            let old = r#"{"body":"an older build's row"}"#;
+            {
+                let wal = ShardedWal::open(&cfg).expect("open WAL");
+                for frame in [
+                    frame(TelemetrySignal::Logs, "logs", &[r#"{"body":"a","retention_days":7}"#]),
+                    frame(TelemetrySignal::Logs, "logs", &[old, old]),
+                    frame(TelemetrySignal::Logs, "logs", &[r#"{"body":"b","retention_days":30}"#]),
+                    frame(TelemetrySignal::Logs, "logs", &[r#"{"body":"c","retention_days":7}"#]),
+                    frame(TelemetrySignal::Traces, "traces", &[r#"{"retention_days":7}"#]),
+                ] {
+                    wal.append(0, &frame).await.expect("append");
+                }
+            }
+
+            // A restart: the pipeline replays the lane and exports what it holds.
+            let (_pipeline, mut rx) = exporting_pipeline(queue_dir.clone()).await;
+            assert_eq!(
+                exported(&mut rx, 6).await,
+                vec![
+                    // Rows without the field are stored for the table's own period,
+                    // the logs default, so they travel with the 30-day rows.
+                    ("logs".to_owned(), vec![None, Some(30)], 3),
+                    ("logs".to_owned(), vec![Some(7)], 2),
+                    ("traces".to_owned(), vec![Some(7)], 1),
+                ]
+            );
+            drop(std::fs::remove_dir_all(queue_dir));
+        }
+
+        /// An org's own ClickHouse, recording each insert's settings and rows.
+        async fn fake_clickhouse(
+            State(tx): State<mpsc::UnboundedSender<(HashMap<String, String>, String)>>,
+            Query(query): Query<HashMap<String, String>>,
+            body: Bytes,
+        ) -> StatusCode {
+            drop(tx.send((query, gunzip_text(&body))));
+            StatusCode::OK
+        }
+
+        #[tokio::test]
+        async fn an_orgs_own_clickhouse_is_told_to_skip_the_stamp_it_has_no_column_for() {
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .unwrap();
+            let addr = listener.local_addr().unwrap();
+            let app = Router::new().route("/", post(fake_clickhouse)).with_state(tx);
+            tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            let queue_dir = unique_test_dir("clickhouse-skips-stamp");
+            let mut cfg = test_cfg();
+            cfg.queue_dir.clone_from(&queue_dir);
+            cfg.wal_shards = 1;
+            cfg.batch_max_wait = Duration::from_millis(1);
+            cfg.export_max_attempts = 1;
+            let provider = Arc::new(StaticClickHouseTargetProvider {
+                target: ClickHouseTarget {
+                    endpoint: format!("http://{addr}"),
+                    user: "ingest".to_owned(),
+                    password: String::new(),
+                    database: "maple".to_owned(),
+                },
+            });
+            let client = Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap();
+            let pipeline = TelemetryPipeline::new_with_clickhouse(cfg, client, Some(provider))
+                .await
+                .unwrap();
+            pipeline
+                .accept_logs_to("org_own", &populated_log_request(), ExportDestination::ClickHouse)
+                .await
+                .unwrap();
+
+            let (query, body) = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .expect("the fake ClickHouse should receive the insert")
+                .expect("the fake ClickHouse channel should stay open");
+            // The rows carry the stamp, the insert names no column for it, and the
+            // setting is what lets ClickHouse read past the key.
+            assert_eq!(rows(body.as_bytes())[0]["retention_days"], 30);
+            let insert = query["query"].to_lowercase();
+            assert!(insert.starts_with("insert into logs "), "{insert}");
+            assert!(!insert.contains("retention"), "{insert}");
+            assert_eq!(query["input_format_skip_unknown_fields"], "1");
+            drop(std::fs::remove_dir_all(queue_dir));
+        }
+
+        #[test]
+        fn a_resource_is_stamped_by_the_source_the_gateway_set_on_it() {
+            let named = named();
+            let stamps = SourceStamps::new(30, &named);
+            let resource = |attributes: Vec<KeyValue>| Resource {
+                attributes,
+                dropped_attributes_count: 0,
+                entity_refs: Vec::new(),
+            };
+            let of = |attributes: Vec<KeyValue>| stamps.of(Some(&resource(attributes)));
+            assert_eq!(of(vec![string_kv(SOURCE_ID_ATTRIBUTE, LONG_SOURCE)]), 90);
+            assert_eq!(of(vec![string_kv(SOURCE_ID_ATTRIBUTE, OWN_SOURCE)]), 30);
+            assert_eq!(of(vec![bool_kv(SOURCE_ID_ATTRIBUTE, true)]), 30);
+            assert_eq!(of(vec![string_kv("service.name", SHORT_SOURCE)]), 30);
+            assert_eq!(stamps.of(None), 30);
+            assert!(!stamps.is_uniform());
+            // Sources that all keep what the key's own source keeps need no lookup.
+            let same = [(SHORT_SOURCE.to_owned(), 30)];
+            assert!(SourceStamps::new(30, &same).is_uniform());
         }
     }
 }
