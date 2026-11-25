@@ -625,8 +625,8 @@
 	"feat_catalog_artifact_title": "Live traffic",
 	"feat_catalog_artifact_lede": "Each service shows its request rate, error rate and latency. Lines show traffic between them.",
 
-	"feat_errors_seo_title": "Error Tracking | Maple",
-	"feat_errors_seo_desc": "Exceptions grouped into issues by type and normalized message, each one linked to the span that threw it, with when it was first and last seen.",
+	"feat_errors_seo_title": "Error and Exception Tracking for OpenTelemetry | Maple",
+	"feat_errors_seo_desc": "Maple groups OpenTelemetry exceptions into issues by type, normalized message and stack, and opens each one on the trace and span that threw it.",
 	"feat_errors_hero_title": "142 errors, one issue",
 	"feat_errors_hero_lede": "Maple groups the same error into one issue and links every occurrence to the span that threw it.",
 	"feat_errors_panel_title": "Errors grouped into issues",
