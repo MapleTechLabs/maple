@@ -48,7 +48,7 @@ import {
 	PathsInclude,
 } from "@maple/query-model"
 import { WireRow } from "../wire"
-import { EndpointAccess, requires } from "./endpoint-access"
+import { EndpointAccess, requires, ScopedTelemetry } from "./endpoint-access"
 
 /**
  * A timeseries bucket width.
@@ -4330,28 +4330,28 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: QueryEngineExecuteBatchRequest,
 			success: QueryEngineExecuteBatchResponse,
 			error: validatedQueryEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("spanHierarchy", "/span-hierarchy", {
 			payload: SpanHierarchyRequest,
 			success: SpanHierarchyResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("spanDetail", "/span-detail", {
 			payload: SpanDetailRequest,
 			success: SpanDetailResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("traceSpanEvents", "/trace-span-events", {
 			payload: TraceSpanEventsRequest,
 			success: TraceSpanEventsResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("errorsByType", "/errors-by-type", {
@@ -4386,14 +4386,14 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: ErrorRateByServiceRequest,
 			success: ErrorRateByServiceResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("serviceOverview", "/service-overview", {
 			payload: ServiceOverviewRequest,
 			success: ServiceOverviewResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("serviceHealthSnapshot", "/service-health-snapshot", {
@@ -4407,14 +4407,14 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: ServiceHealthBaselineRequest,
 			success: ServiceHealthBaselineResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("serviceApdex", "/service-apdex", {
 			payload: ServiceApdexRequest,
 			success: ServiceApdexResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("serviceCloudflareStats", "/service-cloudflare-stats", {
@@ -4723,21 +4723,21 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			success: ServiceDetailOverviewResponse,
 			// Embeds an `execute` sub-query, so it can also surface QueryEngineValidationError.
 			error: validatedQueryEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("serviceDeploys", "/service-deploys", {
 			payload: ServiceDeploysRequest,
 			success: ServiceDeploysResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("releasesList", "/releases", {
 			payload: ReleasesListRequest,
 			success: ReleasesListResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("uptimePhaseTimings", "/uptime-phase-timings", {
@@ -4786,7 +4786,7 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: ServiceRuntimesRequest,
 			success: ServiceRuntimesResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("profileSampleTypes", "/profile-sample-types", {
@@ -4856,14 +4856,14 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: ListLogsRequest,
 			success: ListLogsResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("getLog", "/get-log", {
 			payload: GetLogRequest,
 			success: GetLogResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("listMetrics", "/list-metrics", {
@@ -4884,14 +4884,14 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: MetricDistributionRequest,
 			success: MetricDistributionResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("metricExemplars", "/metric-exemplars", {
 			payload: MetricExemplarsRequest,
 			success: MetricExemplarsResponse,
 			error: queryEngineEndpointErrors,
-		}),
+		}).annotate(ScopedTelemetry, true),
 	)
 	.add(
 		HttpApiEndpoint.post("infraPresence", "/infra-presence", {
@@ -5279,7 +5279,8 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 	)
 	.prefix("/internal/query-engine")
 	.middleware(SessionAuthorization)
-	// Every endpoint here only reads, so an analyst may call it.
+	// Every endpoint here only reads, so an analyst may call it. The ones marked `ScopedTelemetry`
+	// answer only from datasources that carry a namespace, so a role limited to namespaces may too.
 	.annotate(EndpointAccess, requires("telemetry:read"))
 	// Every endpoint here reads telemetry for the dashboard.
 	.annotate(AuditedRead, "telemetry.read") {}

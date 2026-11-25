@@ -13,7 +13,13 @@ import {
 	Record as Rec,
 	String as Str,
 } from "effect"
-import { WarehouseConfigError, WarehouseUpstreamError, type TenantContext } from "@maple/domain/http"
+import {
+	WarehouseConfigError,
+	WarehouseDataScopeError,
+	WarehouseUpstreamError,
+	type TenantContext,
+} from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import {
 	BackendDialect,
 	makeWarehouseExecutor,
@@ -40,6 +46,12 @@ import { Env, orgScopedReadsApply } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { RetentionService } from "@maple/backend/services/retention/RetentionService"
+import { CurrentDataScope, rowFilterFor, SCOPED_DATASOURCES, type ScopedRead } from "./data-scope"
+import {
+	datasourcesMentionedIn,
+	listTrustedReadDatasourceNames,
+	withoutStringLiterals,
+} from "./warehouse-catalog"
 
 // WarehouseQueryService — the API's managed-warehouse executor.
 //
@@ -491,6 +503,159 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 				},
 			)
 
+			// Namespace-limited reads (`data-scope.ts`): through an org token whose row filters keep
+			// each datasource to the namespaces, or refused.
+
+			const everyDatasource = listTrustedReadDatasourceNames()
+
+			// The request's data scope and the tenant's own, whichever is narrower: the first covers a
+			// read made as another tenant on a limited caller's behalf, the second a limited tenant
+			// read outside any request that set one.
+			const dataScopeOfRead = Effect.fnUntraced(function* (tenant: ExecutionTenant) {
+				const requested = yield* CurrentDataScope
+				return Policy.narrowDataScope(
+					requested,
+					tenant.permissions === undefined
+						? Policy.ALL_DATA
+						: Policy.dataScopeOf({
+								permissions: tenant.permissions,
+								namespaces: tenant.namespaces,
+							}),
+				)
+			})
+
+			const outsideScope = (label: string, message: string) =>
+				new WarehouseDataScopeError({ pipeName: label, message })
+
+			/**
+			 * The row filter of every datasource a read limited to `namespaces` may touch. A compiled
+			 * statement that names one it cannot keep to them fails here, with a reason, rather than
+			 * at the database; caller SQL gets a token that leaves those out.
+			 */
+			const limitedRowFilters = (
+				namespaces: ReadonlyArray<string>,
+				label: string,
+				statement: string | undefined,
+			): Effect.Effect<ReadonlyMap<string, string>, WarehouseDataScopeError> => {
+				const read: ScopedRead = statement === undefined ? "caller-sql" : "compiled"
+				const named =
+					statement === undefined
+						? []
+						: datasourcesMentionedIn(withoutStringLiterals(statement), everyDatasource)
+				const filterOf = (name: string) =>
+					Option.map(rowFilterFor(name, namespaces, read), (filter) => [name, filter] as const)
+				const unreadable = Arr.filter(named, (name) => Option.isNone(filterOf(name)))
+				if (unreadable.length > 0) {
+					return Effect.fail(
+						outsideScope(
+							label,
+							`Your role is limited to some namespaces, and ${Arr.join(unreadable, ", ")} cannot be limited to them.`,
+						),
+					)
+				}
+				const wanted = named.length === 0 ? Arr.fromIterable(SCOPED_DATASOURCES.keys()) : named
+				return Effect.succeed(new Map(Arr.getSomes(Arr.map(wanted, filterOf))))
+			}
+
+			/**
+			 * The route of a read limited to `namespaces`. Only managed Tinybird's token carries row
+			 * filters, so an org's own ClickHouse, a vanilla ClickHouse, a deployment without the
+			 * signing key and a read declared to span organizations are all refused.
+			 */
+			const limitedRoute = Effect.fnUntraced(function* (
+				tenant: ExecutionTenant,
+				purpose: RoutePurpose,
+				label: string,
+				scope: RouteScope | undefined,
+				namespaces: ReadonlyArray<string>,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"maple.data_scope.limited": true,
+					"maple.data_scope.namespaces": namespaces.length,
+				})
+				if (scope?.kind === "cross-org") {
+					return yield* outsideScope(
+						label,
+						"Your role is limited to some namespaces and cannot read across organizations.",
+					)
+				}
+				if (!orgScopedReadsApply(env)) {
+					return yield* outsideScope(
+						label,
+						"Your role is limited to some namespaces, which this deployment's warehouse cannot enforce.",
+					)
+				}
+				// An org's own ClickHouse overrides reads and caller SQL, and has no token to carry a row filter.
+				if (purpose !== "ingest") {
+					const override = yield* orgClickHouseSettings.resolveRuntimeConfig(tenant.orgId).pipe(
+						Effect.catchTag("@maple/http/errors/OrgClickHouseSettingsPersistenceError", (error) =>
+							Effect.fail(
+								new WarehouseUpstreamError({
+									message: `Could not load the org's data connection settings: ${error.message}`,
+									pipeName: label,
+									cause: error,
+								}),
+							),
+						),
+					)
+					if (Option.isSome(override)) {
+						return yield* outsideScope(
+							label,
+							"Your role is limited to some namespaces, which this organization's own ClickHouse cannot enforce.",
+						)
+					}
+				}
+				const statement = scope?.kind === "tenant" ? scope.sql : undefined
+				const rowFilters = yield* limitedRowFilters(namespaces, label, statement)
+				const jwt = yield* orgTokens
+					.getOrgReadToken(
+						tenant.orgId,
+						statement === undefined ? "raw-sql" : "trusted-read",
+						statement,
+						rowFilters,
+					)
+					.pipe(
+						Effect.mapError(
+							(error) =>
+								new WarehouseConfigError({
+									pipeName: label,
+									message: `Org-scoped read token is unavailable: ${error.message}`,
+								}),
+						),
+					)
+				yield* Effect.annotateCurrentSpan("clientSource", "managed")
+				yield* Effect.annotateCurrentSpan("maple.tinybird.token.scope", "org_jwt_limited")
+				// A partition of its own, so a limited read never shares a client with an unlimited one.
+				const clientCacheKey = `limited:${purpose}:${tenant.orgId}:${Policy.dataScopeKey({ _tag: "Namespaces", namespaces })}`
+				if (purpose === "ingest") {
+					yield* Effect.annotateCurrentSpan("db.client", "tinybird-sdk")
+					return {
+						source: "org-jwt" as const,
+						config: { kind: "tinybird" as const, host: env.TINYBIRD_HOST, token: jwt },
+						clientCacheKey,
+					}
+				}
+				const managed = yield* resolveManagedConfig()
+				if (managed.config.kind === "tinybird") {
+					return {
+						source: "org-jwt" as const,
+						config: { ...managed.config, token: jwt },
+						clientCacheKey,
+					}
+				}
+				if (managed.config.kind === "tinybird-gateway") {
+					return {
+						source: "org-jwt" as const,
+						config: { ...managed.config, password: jwt },
+						clientCacheKey,
+					}
+				}
+				return yield* outsideScope(
+					label,
+					"Your role is limited to some namespaces, which this deployment's warehouse cannot enforce.",
+				)
+			})
+
 			/** The org-scoped token a compiled read of `tenant` runs on where org-scoped reads are on. */
 			const orgReadToken = (tenant: ExecutionTenant, label: string, sql: string) =>
 				orgTokens.getOrgReadToken(tenant.orgId, "trusted-read", sql).pipe(
@@ -556,6 +721,12 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 				yield* Effect.annotateCurrentSpan("warehouse.route", purpose)
+				// A caller limited to namespaces takes none of the routes below: its filtered token, or
+				// nothing. Writes and capability probes read no rows.
+				const dataScope = yield* dataScopeOfRead(tenant)
+				if (dataScope._tag === "Namespaces" && (scope !== undefined || purpose === "raw")) {
+					return yield* limitedRoute(tenant, purpose, label, scope, dataScope.namespaces)
+				}
 				// A read the executor verified is one tenant's always runs on the org-scoped token where
 				// managed reads are Tinybird, so Tinybird keeps it to its org even if Maple compiled it for
 				// another. Writes and cross-org reads carry no scope and keep the shared token; vanilla

@@ -24,6 +24,19 @@ const toIOError =
 	(error: EdgeCacheBackendError): EdgeCacheIOError =>
 		new EdgeCacheIOError({ op: error.op, bucket, key, cause: error.message })
 
+/**
+ * A partition every cache key of the fiber in progress is filed under. A request that sees only
+ * part of what the keys name sets one, so its answers are never served to, or taken from, anyone
+ * else. Shared state opts out with {@link sharedAcrossPartitions}.
+ */
+export class CachePartition extends Context.Reference<string | undefined>("@maple/cache/CachePartition", {
+	defaultValue: () => undefined,
+}) {}
+
+/** Runs a cache call outside the fiber's partition. */
+export const unpartitioned = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+	Effect.provideService(effect, CachePartition, undefined)
+
 export interface EdgeCacheGetOrComputeOptions<A = unknown, I = unknown> {
 	readonly bucket: string
 	readonly key: string
@@ -326,6 +339,15 @@ export const makeEdgeCacheService = (
 			)
 		})
 
+	// `key` as the fiber's partition files it. The partition is hashed, so the result is as safe in a
+	// backend's storage key as `key` was.
+	const partitioned = Effect.fnUntraced(function* (key: string) {
+		const partition = yield* CachePartition
+		if (partition === undefined) return key
+		const prefix = yield* Effect.promise(() => sha256Hex(partition))
+		return `p-${Str.slice(0, 32)(prefix)}-${key}`
+	})
+
 	const resolveReadTimeoutMs = (override: number | undefined): number =>
 		override !== undefined && Number.isFinite(override)
 			? Math.max(1, Math.floor(override))
@@ -334,7 +356,8 @@ export const makeEdgeCacheService = (
 		options: EdgeCacheGetOrComputeOptions<A, I>,
 		compute: Effect.Effect<A, E, R>,
 	) {
-		const hash = yield* Effect.promise(() => sha256Hex(options.key))
+		const filedKey = yield* partitioned(options.key)
+		const hash = yield* Effect.promise(() => sha256Hex(filedKey))
 		yield* Effect.annotateCurrentSpan({
 			"cache.bucket": options.bucket,
 			"cache.backend": backend.name,
@@ -469,7 +492,8 @@ export const makeEdgeCacheService = (
 	const invalidate = Effect.fn("EdgeCacheService.invalidate")(function* (
 		options: EdgeCacheInvalidateOptions,
 	) {
-		const hash = yield* Effect.promise(() => sha256Hex(options.key))
+		const filedKey = yield* partitioned(options.key)
+		const hash = yield* Effect.promise(() => sha256Hex(filedKey))
 		yield* backend.delete(options.bucket, hash).pipe(
 			Effect.mapError(toIOError(options.bucket, options.key)),
 			Effect.tapError((error) =>
@@ -488,9 +512,10 @@ export const makeEdgeCacheService = (
 
 	const rawGetDetailed = Effect.fn("EdgeCache.rawGetDetailed")(function* <A>(
 		bucket: string,
-		key: string,
+		givenKey: string,
 		options?: { readonly readTimeoutMs?: number },
 	) {
+		const key = yield* partitioned(givenKey)
 		yield* Effect.annotateCurrentSpan({
 			"cache.bucket": bucket,
 			"cache.hit": false,
@@ -532,10 +557,11 @@ export const makeEdgeCacheService = (
 
 	const rawPut = Effect.fn("EdgeCache.rawPut")(function* (
 		bucket: string,
-		key: string,
+		givenKey: string,
 		value: unknown,
 		ttlSeconds: number,
 	) {
+		const key = yield* partitioned(givenKey)
 		const nowMs = yield* Clock.currentTimeMillis
 		return yield* trackOutboundSlot(
 			backend.put(bucket, key, value, ttlSeconds, nowMs).pipe(Effect.mapError(toIOError(bucket, key))),
@@ -543,7 +569,8 @@ export const makeEdgeCacheService = (
 		)
 	})
 
-	const rawDelete = Effect.fn("EdgeCache.rawDelete")(function* (bucket: string, key: string) {
+	const rawDelete = Effect.fn("EdgeCache.rawDelete")(function* (bucket: string, givenKey: string) {
+		const key = yield* partitioned(givenKey)
 		return yield* backend.delete(bucket, key).pipe(Effect.mapError(toIOError(bucket, key)))
 	})
 
@@ -556,6 +583,19 @@ export const makeEdgeCacheService = (
 		rawDelete,
 	} satisfies EdgeCacheServiceApi
 }
+
+/**
+ * `cache` with every call {@link unpartitioned}: for entries that hold nothing a caller's data
+ * scope narrows (org config, billing, flags), which every caller must read and evict alike.
+ */
+export const sharedAcrossPartitions = (cache: EdgeCacheServiceApi): EdgeCacheServiceApi => ({
+	getOrCompute: (options, compute) => unpartitioned(cache.getOrCompute(options, compute)),
+	invalidate: (options) => unpartitioned(cache.invalidate(options)),
+	rawGetDetailed: (bucket, key, options) => unpartitioned(cache.rawGetDetailed(bucket, key, options)),
+	rawGet: (bucket, key) => unpartitioned(cache.rawGet(bucket, key)),
+	rawPut: (bucket, key, value, ttlSeconds) => unpartitioned(cache.rawPut(bucket, key, value, ttlSeconds)),
+	rawDelete: (bucket, key) => unpartitioned(cache.rawDelete(bucket, key)),
+})
 
 export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCacheServiceApi>()(
 	"@maple/cache/EdgeCacheService",

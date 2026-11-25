@@ -193,7 +193,8 @@ describe("makeWarehouseExecutor route scope", () => {
 			assert.deepStrictEqual(scopes, [
 				["scoped", "tenant"],
 				["scopedIngestRead", "tenant"],
-				["crossOrg", undefined],
+				// Named, so a host can refuse it to a caller limited to part of one org.
+				["crossOrg", "cross-org"],
 				["rawSqlQuery", undefined],
 				["ingest:traces", undefined],
 			])

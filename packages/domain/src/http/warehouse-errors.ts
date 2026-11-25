@@ -191,6 +191,25 @@ export class WarehouseScopeError extends HttpTaggedError<WarehouseScopeError>()(
 ) {}
 
 /**
+ * The caller's role is limited to namespaces and this read cannot be kept to them: the data it
+ * names carries no namespace, or the organization's warehouse cannot filter by one. 403: nothing
+ * is wrong with the query, the role does not reach it.
+ */
+export class WarehouseDataScopeError extends HttpTaggedError<WarehouseDataScopeError>()(
+	"@maple/http/errors/WarehouseDataScopeError",
+	warehouseErrorBaseFields,
+	{
+		status: 403,
+		code: "telemetry_scope_denied",
+		title: "Outside your role's namespaces",
+		message: "Your role is limited to some namespaces, and this data cannot be limited to them.",
+		retry: "never",
+		recovery: "request_access",
+		exposure: "public_message",
+	},
+) {}
+
+/**
  * ClickHouse's analyzer rejected the SQL Maple generated — a type mismatch
  * between `if()` arms or `UNION` branches, an illegal argument type, an
  * ambiguous column. This is a **Maple bug**, not a customer problem: the same
@@ -310,12 +329,14 @@ export const managedWarehouseHttpErrors = [
 ] as const
 
 /**
- * Errors added while resolving the saved per-org read override. A failed settings
- * read surfaces as the retryable `WarehouseUpstreamError`, already in the managed list.
+ * Errors added while resolving where a read runs: the saved per-org read override, and the
+ * namespaces a limited role is kept to. A failed settings read surfaces as the retryable
+ * `WarehouseUpstreamError`, already in the managed list.
  */
 export const warehouseSettingsRouteHttpErrors = [
 	OrgClickHouseSettingsEncryptionError,
 	OrgClickHouseSettingsStoredConfigInvalidError,
+	WarehouseDataScopeError,
 ] as const
 
 /** Errors unique to minting an org-scoped token for user-authored raw SQL. */

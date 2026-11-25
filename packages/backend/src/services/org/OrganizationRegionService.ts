@@ -9,7 +9,7 @@ import * as Clerk from "@distilled.cloud/clerk"
  * Ingest keys and API keys are minted per instance, so this steers people to the right app; it is
  * not what keeps data in a region. That is why a Clerk read that fails lets the request through.
  */
-import { EdgeCacheService } from "@maple/cache"
+import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import { OrganizationWrongRegionError, type OrgId } from "@maple/domain/http"
 import {
 	type MapleRegion,
@@ -156,7 +156,8 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	region: MapleRegion,
 	readOrganization: Option.Option<ReadDirectoryOrganization>,
 ) {
-	const edgeCache = yield* EdgeCacheService
+	// Shared by every caller of the org, so never filed under a caller's cache partition.
+	const edgeCache = yield* Effect.map(EdgeCacheService, sharedAcrossPartitions)
 	const remembered = yield* Ref.make(HashMap.empty<OrgId, Held>())
 	// A counter, not the clock, names a read: Workers' clock stands still between I/O.
 	const readIds = yield* Ref.make(0)

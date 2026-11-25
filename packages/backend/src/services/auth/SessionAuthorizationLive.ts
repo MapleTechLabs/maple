@@ -12,6 +12,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { getBearerToken } from "./bearer-token"
 import { checkEndpointAccess } from "./endpoint-gate"
+import { provideRequestTenant } from "./request-tenant"
 import { OrgMembershipService } from "./OrgMembershipService"
 
 /**
@@ -64,7 +65,7 @@ export const SessionAuthorizationLive = Layer.effect(
 					yield* checkEndpointAccess(tenant.permissions, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
-						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
+						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, actor),
 						// Telemetry and replay reads are recorded (see `AuditedRead`).
 						withAuditedRead(audit, request, options, {
@@ -103,7 +104,7 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 					yield* checkEndpointAccess(tenant.permissions, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
-						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
+						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, actor),
 						withAuditedRead(audit, request, options, {
 							orgId: tenant.orgId,

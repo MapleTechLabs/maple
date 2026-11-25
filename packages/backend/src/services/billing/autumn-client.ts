@@ -1,5 +1,5 @@
 import { Effect, Schema, Array as Arr } from "effect"
-import type { EdgeCacheServiceApi } from "@maple/cache"
+import { type EdgeCacheServiceApi, unpartitioned } from "@maple/cache"
 import {
 	isActivePlanSubscription,
 	isPlanSubscription,
@@ -164,6 +164,8 @@ export const readCustomerCached = (
 			Effect.catchTag("@maple/backend/billing/UncacheableAutumnResult", (error) =>
 				Effect.succeed({ result: error.result, hit: false }),
 			),
+			// The org's customer, whoever asks: never filed under a caller's cache partition.
+			unpartitioned,
 		)
 
 // Surface a readable message for a non-2xx Autumn response (it carries a

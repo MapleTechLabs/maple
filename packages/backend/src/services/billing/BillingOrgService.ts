@@ -15,7 +15,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { EdgeCacheService } from "@maple/cache"
+import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import { OrgBillingLinks, type OrgBillingLinkRow, UptimeMonitors } from "@maple/db/tables"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -102,7 +102,8 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const edgeCache = yield* EdgeCacheService
+			// Shared by every caller of the org, so never filed under a caller's cache partition.
+			const edgeCache = yield* Effect.map(EdgeCacheService, sharedAcrossPartitions)
 			const autumn = yield* AutumnClient
 			const memberships = yield* OrgMembershipService
 			const regions = yield* OrganizationRegionService

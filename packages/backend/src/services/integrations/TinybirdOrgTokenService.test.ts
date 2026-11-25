@@ -186,6 +186,48 @@ describe("TinybirdOrgTokenService", () => {
 			Effect.exit,
 		)
 
+	it.effect("never answers a limited caller with another caller's cached token", () =>
+		Effect.gen(function* () {
+			const svc = yield* TinybirdOrgTokenService
+			const org = asOrgId("org_a")
+			const sql = "SELECT 1 FROM traces"
+			const checkout = new Map([["traces", "ResourceAttributes['service.namespace'] IN ('checkout')"]])
+			const search = new Map([["traces", "ResourceAttributes['service.namespace'] IN ('search')"]])
+			const filterOf = (token: string) => decodePayload(token).scopes[0]?.filter
+
+			const unlimited = yield* svc.getOrgReadToken(org, "trusted-read", sql)
+			const forCheckout = yield* svc.getOrgReadToken(org, "trusted-read", sql, checkout)
+			const forSearch = yield* svc.getOrgReadToken(org, "trusted-read", sql, search)
+			const unlimitedAgain = yield* svc.getOrgReadToken(org, "trusted-read", sql)
+
+			assert.strictEqual(filterOf(unlimited), "OrgId = 'org_a'")
+			assert.include(filterOf(forCheckout) ?? "", "IN ('checkout')")
+			assert.include(filterOf(forSearch) ?? "", "IN ('search')")
+			assert.strictEqual(unlimitedAgain, unlimited)
+			// The same limit is the same token; a new map with the same conditions is the same limit.
+			assert.strictEqual(
+				yield* svc.getOrgReadToken(org, "trusted-read", sql, new Map(checkout)),
+				forCheckout,
+			)
+		}).pipe(Effect.provide(tokenLayer())),
+	)
+
+	it.effect("leaves a datasource the caller's limit has no condition for out of the token", () =>
+		Effect.gen(function* () {
+			const svc = yield* TinybirdOrgTokenService
+			const token = yield* svc.getOrgReadToken(
+				asOrgId("org_a"),
+				"raw-sql",
+				undefined,
+				new Map([["logs", "ResourceAttributes['service.namespace'] IN ('checkout')"]]),
+			)
+			assert.deepStrictEqual(
+				Arr.map(decodePayload(token).scopes, (scope) => scope.resource),
+				["logs"],
+			)
+		}).pipe(Effect.provide(tokenLayer())),
+	)
+
 	it.effect("refuses to start a multi-org deployment on Tinybird without a signing key", () =>
 		Effect.map(startsUnsigned({ MAPLE_AUTH_MODE: "clerk", CLERK_SECRET_KEY: "sk_test_x" }), (exit) => {
 			assert.isTrue(Exit.isFailure(exit))

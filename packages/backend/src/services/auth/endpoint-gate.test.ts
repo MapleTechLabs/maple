@@ -41,6 +41,29 @@ describe("checkEndpointAccess", () => {
 	)
 })
 
+describe("a role limited to namespaces at the gate", () => {
+	const limited: Policy.Grants = [Policy.SCOPED_READ, "devices:connect"]
+
+	// "You need Read telemetry" would send it to ask for the one thing its role replaces.
+	it.effect("is told its role is limited, not to get Read telemetry", () =>
+		Effect.gen(function* () {
+			const internal = yield* Effect.flip(checkEndpointAccess(limited, unmarked("GET")))
+			expect(internal.message).toBe(Policy.scopedAccessMessage)
+			const v2 = yield* Effect.flip(
+				checkEndpointAccessV2(limited, unmarked("POST"), "/v2/traces/search"),
+			)
+			expect(v2.message).toBe(Policy.scopedAccessMessage)
+		}),
+	)
+
+	it.effect("is still told which other permission it lacks", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(checkEndpointAccess([...limited, "telemetry:read"], transition))
+			expect(error.message).toBe(Policy.denialFor("error_issues:triage").message)
+		}),
+	)
+})
+
 describe("checkEndpointAccessV2", () => {
 	it.effect("reads an unmarked POST the scope registry calls a read as needing telemetry:read", () =>
 		Effect.gen(function* () {

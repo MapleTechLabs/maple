@@ -1,4 +1,4 @@
-import type { EdgeCacheServiceApi } from "@maple/cache"
+import { type EdgeCacheServiceApi, unpartitioned } from "@maple/cache"
 import { WarehouseAuthError, WarehouseConfigError } from "@maple/domain/http"
 import { Cause, Effect, Option, Predicate, Schema, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -46,14 +46,14 @@ export const causeHasWarehouseConfigClassError = <E>(cause: Cause.Cause<E>): boo
 
 /** Best-effort check — a cache failure never blocks the tick, it just disables the skip. */
 export const isOrgWarehouseQuarantined = (edgeCache: EdgeCache, orgId: string) =>
-	edgeCache.rawGet<number>(QUARANTINE_BUCKET, orgId).pipe(
+	unpartitioned(edgeCache.rawGet<number>(QUARANTINE_BUCKET, orgId)).pipe(
 		Effect.map(Option.isSome),
 		Effect.orElseSucceed(() => false),
 	)
 
 /** Park the org for `QUARANTINE_TTL_S`. Best-effort; failures are ignored. */
 export const quarantineOrgWarehouse = (edgeCache: EdgeCache, orgId: string, nowMs: number) =>
-	edgeCache.rawPut(QUARANTINE_BUCKET, orgId, nowMs, QUARANTINE_TTL_S).pipe(Effect.ignore)
+	unpartitioned(edgeCache.rawPut(QUARANTINE_BUCKET, orgId, nowMs, QUARANTINE_TTL_S)).pipe(Effect.ignore)
 
 /** Parks the org when the failure is config-class. Returns whether the org was quarantined. */
 export const quarantineOnConfigClassCause = <E>(

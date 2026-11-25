@@ -535,7 +535,11 @@ WHERE name = 'enable_full_text_index'`,
 			tenant,
 			purpose,
 			pipe,
-			execution === "trusted" ? { kind: "tenant", sql } : undefined,
+			execution === "trusted"
+				? { kind: "tenant", sql }
+				: execution === "cross-org"
+					? { kind: "cross-org" }
+					: undefined,
 		)
 		// Safety net for the silent-empty-table failure: an ingest-pinned table
 		// read against an org's own BYO ClickHouse returns no rows, not an error.

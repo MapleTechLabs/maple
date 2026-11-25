@@ -16,7 +16,7 @@ import {
 	sourceRetentionDays,
 } from "@maple/domain/retention"
 import type { OrgId, SourceId, UserId } from "@maple/primitives"
-import { EdgeCacheService } from "@maple/cache"
+import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import type { MapleDb } from "@maple/db/client"
 import { Array as Arr, Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -176,7 +176,8 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const edgeCache = yield* EdgeCacheService
+			// Shared by every caller of the org, so never filed under a caller's cache partition.
+			const edgeCache = yield* Effect.map(EdgeCacheService, sharedAcrossPartitions)
 			const dbExecute = makeDbExecute(database, "RetentionService", toPersistenceError)
 
 			// The org's periods and its sources' are read from one snapshot, so the horizon

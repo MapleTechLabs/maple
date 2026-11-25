@@ -42,6 +42,54 @@ describe("mintOrgReadJwt", () => {
 		assert.strictEqual(signature, expected)
 	})
 
+	it("narrows each datasource with its row filter, and leaves out one it has none for", () => {
+		const jwt = mintOrgReadJwt({
+			signingKey: SIGNING_KEY,
+			workspaceId: "ws-uuid-123",
+			orgId: "org_abc",
+			datasourceNames: ["traces", "session_replay_events", "trace_list_mv"],
+			rowFilters: new Map([
+				["traces", "ResourceAttributes['service.namespace'] IN ('checkout')"],
+				// A condition with its own OR still cannot reach past the org filter.
+				["trace_list_mv", "ServiceNamespace = 'a' OR ServiceNamespace = 'b'"],
+			]),
+			nowSeconds: 1_000,
+			ttlSeconds: 600,
+		})
+		const { scopes, name } = decodePart(Str.split(".")(jwt)[1]) as {
+			name: string
+			scopes: ReadonlyArray<{ resource: string; filter: string }>
+		}
+		// Named apart from the org's unlimited tokens, which share `maple-raw-sql-<org>`.
+		assert.match(name, /^maple-raw-sql-[0-9a-f]{16}-limited-[0-9a-f]{12}$/)
+		assert.deepStrictEqual(scopes, [
+			{
+				type: "DATASOURCES:READ",
+				resource: "traces",
+				filter: "OrgId = 'org_abc' AND (ResourceAttributes['service.namespace'] IN ('checkout'))",
+			},
+			{
+				type: "DATASOURCES:READ",
+				resource: "trace_list_mv",
+				filter: "OrgId = 'org_abc' AND (ServiceNamespace = 'a' OR ServiceNamespace = 'b')",
+			},
+		])
+	})
+
+	it("lists nothing when no datasource has a row filter", () => {
+		const jwt = mintOrgReadJwt({
+			signingKey: SIGNING_KEY,
+			workspaceId: "ws-uuid-123",
+			orgId: "org_abc",
+			datasourceNames: ["traces", "logs"],
+			rowFilters: new Map(),
+			nowSeconds: 1_000,
+			ttlSeconds: 600,
+		})
+		const { scopes } = decodePart(Str.split(".")(jwt)[1]) as { scopes: ReadonlyArray<unknown> }
+		assert.deepStrictEqual(scopes, [])
+	})
+
 	it("adds an org-isolated Tinybird rate-limit bucket when configured", () => {
 		const tokenFor = (orgId: string) =>
 			mintOrgReadJwt({

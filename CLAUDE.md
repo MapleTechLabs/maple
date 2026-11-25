@@ -49,6 +49,10 @@ with `packageManager`.
   state, `"handler"` when the handler checks. Endpoint and group rules both apply; an unmarked non-GET is
   refused, and a GET no `requires` or `"personal"` covers needs `telemetry:read`. Every MCP tool declares
   its `permission`.
+- A role limited to namespaces holds `telemetry:read_scoped`, not `telemetry:read` (`docs/custom-roles.md`).
+  Mark an endpoint `ScopedTelemetry` only when all its telemetry comes from `SCOPED_DATASOURCES`
+  (`packages/backend/src/services/warehouse/data-scope.ts`); auth layers hand over the tenant with
+  `provideRequestTenant`, which sets the request's data scope.
 
 ### Service conventions
 

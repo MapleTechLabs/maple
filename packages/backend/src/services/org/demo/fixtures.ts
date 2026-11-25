@@ -11,6 +11,14 @@ import {
 const SERVICES = ["demo-api", "demo-frontend", "demo-worker", "demo-db"] as const
 type DemoServiceName = (typeof SERVICES)[number]
 
+/** The namespace each demo service reports under, so the namespace switcher and limited roles have something to show. */
+const NAMESPACE_OF = {
+	"demo-api": "storefront",
+	"demo-frontend": "storefront",
+	"demo-worker": "platform",
+	"demo-db": "platform",
+} as const satisfies Record<DemoServiceName, string>
+
 const HTTP_ROUTES: Arr.NonEmptyArray<{ method: string; route: string; service: DemoServiceName }> = [
 	{ method: "GET", route: "/api/users", service: "demo-api" },
 	{ method: "GET", route: "/api/users/:id", service: "demo-api" },
@@ -146,6 +154,7 @@ const fmtTs = fmtMetricTs
 const resourceAttrs = (service: DemoServiceName, orgId: string): Attrs => ({
 	maple_org_id: orgId,
 	"service.name": service,
+	"service.namespace": NAMESPACE_OF[service],
 	"service.version": "1.0.0",
 	"deployment.environment": "production",
 	"telemetry.sdk.name": "maple-demo",

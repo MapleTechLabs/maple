@@ -4,7 +4,7 @@ import {
 	BillingManagedByBillingOrgError,
 	OrgId,
 } from "@maple/domain/http"
-import { EdgeCacheService } from "@maple/cache"
+import { EdgeCacheService, sharedAcrossPartitions } from "@maple/cache"
 import { OrgBillingLinks } from "@maple/db/tables"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -55,7 +55,8 @@ export class BillingCustomerResolver extends Context.Service<
 >()("@maple/backend/services/billing/BillingCustomerResolver", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
-		const edgeCache = yield* EdgeCacheService
+		// Shared by every caller of the org, so never filed under a caller's cache partition.
+		const edgeCache = yield* Effect.map(EdgeCacheService, sharedAcrossPartitions)
 		const dbExecute = makeDbExecute(database, "BillingCustomerResolver", toBillingAccountPersistenceError)
 
 		const linkQuery = (orgId: OrgId) =>

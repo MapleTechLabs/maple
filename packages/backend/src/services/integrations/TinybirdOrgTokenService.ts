@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto"
 import { TinybirdOrgTokenConfigError, TinybirdOrgTokenMintError, type OrgId } from "@maple/domain"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, String as Str } from "effect"
 import {
+	datasourcesMentionedIn,
 	listOrgScopedDatasourceNames,
 	listTrustedReadDatasourceNames,
 } from "@maple/backend/services/warehouse/warehouse-catalog"
@@ -38,6 +40,11 @@ export interface TinybirdOrgTokenServiceApi {
 		orgId: OrgId,
 		use?: OrgReadJwtUse,
 		statement?: string,
+		/**
+		 * For a caller limited to part of the org's rows: the condition each datasource is kept to.
+		 * A datasource with no condition is left out of the token.
+		 */
+		rowFilters?: ReadonlyMap<string, string>,
 	) => Effect.Effect<string, TinybirdOrgTokenConfigError | TinybirdOrgTokenMintError>
 }
 
@@ -58,18 +65,23 @@ export class TinybirdOrgTokenService extends Context.Service<
 		// on the query API and the gateway, 54 scopes add about 100 ms to each request and one adds
 		// nothing. So a token for a known statement lists only the datasources named in it. A name
 		// that only appears inside a string literal adds a scope, still filtered to the org.
-		// A whole identifier, so `traces` is not found inside `traces_aggregates_hourly`.
-		const mentions = new Map(
-			Arr.map(
-				datasourceNamesFor["trusted-read"],
-				(name) => [name, new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`)] as const,
-			),
-		)
 		const namedIn = (statement: string, names: ReadonlyArray<string>): ReadonlyArray<string> => {
-			const named = Arr.filter(names, (name) => mentions.get(name)?.test(statement) === true)
+			const named = datasourcesMentionedIn(statement, names)
 			// A statement that reads no datasource Maple knows gets the whole list, as before.
 			return named.length === 0 ? names : named
 		}
+
+		// What a limited token is kept to, as a cache key: the exact condition of each datasource it
+		// lists, hashed. Two callers share a token only when every one of those conditions is the same.
+		const limitKey = (names: ReadonlyArray<string>, rowFilters: ReadonlyMap<string, string>): string =>
+			createHash("sha256")
+				.update(
+					Arr.join(
+						Arr.map(names, (name) => `${name}\u0000${rowFilters.get(name) ?? "\u0001"}`),
+						"\u0002",
+					),
+				)
+				.digest("hex")
 
 		// Per-instance (per-isolate) cache. `expiresAt` is the re-mint deadline in ms.
 		const cache = new Map<string, { token: string; expiresAt: number }>()
@@ -88,6 +100,7 @@ export class TinybirdOrgTokenService extends Context.Service<
 			orgId: OrgId,
 			use: OrgReadJwtUse = "raw-sql",
 			statement?: string,
+			rowFilters?: ReadonlyMap<string, string>,
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			yield* Effect.annotateCurrentSpan("maple.tinybird.jwt.use", use)
@@ -100,11 +113,15 @@ export class TinybirdOrgTokenService extends Context.Service<
 			// Served from its own cache, and it never fails: a policy that cannot be read
 			// falls back there, so the read itself goes on.
 			const horizon = yield* retention.readHorizon(orgId)
-			// Tokens differ by use (their name), by the datasources they list, and by the read
-			// horizon: a changed policy mints a new token instead of waiting out the old one.
+			// Tokens differ by use (their name), by the datasources they list, by the read horizon
+			// (a changed policy mints a new token instead of waiting out the old one) and by the rows
+			// a limited caller is kept to: an unlimited token is never the answer for a limited one.
 			const cacheKey = `${use}:${orgId}:${
 				statement === undefined ? "*" : Arr.join(datasourceNames, ",")
-			}:${readHorizonKey(horizon)}`
+			}:${readHorizonKey(horizon)}${
+				rowFilters === undefined ? "" : `:limited:${limitKey(datasourceNames, rowFilters)}`
+			}`
+			yield* Effect.annotateCurrentSpan("maple.tinybird.jwt.limited", rowFilters !== undefined)
 			const cached = cache.get(cacheKey)
 			if (cached !== undefined && cached.expiresAt > nowMs) {
 				// Map iteration order is insertion order; refresh it on access so the
@@ -158,6 +175,7 @@ export class TinybirdOrgTokenService extends Context.Service<
 						orgId,
 						datasourceNames,
 						readBounds: readBounds.value,
+						rowFilters,
 						nowSeconds: Math.floor(nowMs / 1000),
 						ttlSeconds: JWT_TTL_SECONDS,
 						use,
