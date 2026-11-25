@@ -54,7 +54,7 @@ export const clickedConnect = (model: Model, context: PageContext, githubMode?: 
 	if ((integration === "linear" || integration === "google-search-console") && !canManage(model))
 		return { model }
 	const attempt = model.connect.attempts + 1
-	const base = providerModuleOf(integration)?.onConnectStart(model, context).model ?? model
+	const base = providerModuleOf(integration).onConnectStart(model, context).model
 	const active = { provider: integration, attempt }
 	return {
 		model: withConnect(base, {
@@ -72,8 +72,7 @@ export const succeededStart = (model: Model, context: PageContext, attempt: numb
 	return active !== null && active.attempt === attempt
 		? chain(withConnect(model, { isStarting: false }), [
 				// The popup is out, not at the click: a blocked popup or a failed start keeps state.
-				(next) =>
-					providerModuleOf(active.provider)?.onConnectOpened(next, context) ?? { model: next },
+				(next) => providerModuleOf(active.provider).onConnectOpened(next, context),
 				(next) => refreshProvider(next, context, active.provider),
 				// PlanetScale's start invalidates every `planetscaleIntegration` read, the inventory too.
 				(next) =>
@@ -114,7 +113,7 @@ export const closedPopup = (model: Model, context: PageContext, attempt: number)
 	if (active === null || active.attempt !== attempt) return { model }
 	const hasGrace = PROVIDERS[active.provider].closeGraceMs > 0
 	const next = hasGrace ? withConnect(model, { isClosed: true }) : withConnect(model, { active: null })
-	const onClosed = providerModuleOf(active.provider)?.onPopupClosed ?? null
+	const onClosed = providerModuleOf(active.provider).onPopupClosed
 	return onClosed !== null ? onClosed(next, context) : refreshProvider(next, context, active.provider)
 }
 
@@ -140,7 +139,7 @@ export const receivedCallback = (
 	github?: GithubInstallationSelection,
 ): Return => {
 	const label = PROVIDERS[provider].label
-	const onPayload = providerModuleOf(provider)?.onConnectPayload ?? null
+	const onPayload = providerModuleOf(provider).onConnectPayload
 	if (status === "success" && github !== undefined && onPayload !== null)
 		return onPayload(
 			withConnect(model, { active: null, isStarting: false, isClosed: false }),
@@ -153,10 +152,10 @@ export const receivedCallback = (
 			(next) => ({ model: next, commands: [TrackConnected({ provider })] }),
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
-				providerModuleOf(provider)?.replacesConnectedRead === true
+				providerModuleOf(provider).replacesConnectedRead
 					? { model: next }
 					: refreshProvider(next, context, provider),
-			(next) => providerModuleOf(provider)?.onConnected(next, context) ?? { model: next },
+			(next) => providerModuleOf(provider).onConnected(next, context),
 		])
 	}
 	if (status !== "error") return { model }
@@ -185,7 +184,7 @@ export const receivedRelay = (
 	github?: GithubInstallationSelection,
 ): Return => {
 	// An authorization that found accounts (GitHub's): the picker, same as a direct callback.
-	const takesPayload = (providerModuleOf(provider)?.onConnectPayload ?? null) !== null
+	const takesPayload = providerModuleOf(provider).onConnectPayload !== null
 	if (status === "success" && github !== undefined && takesPayload)
 		return receivedCallback(model, context, provider, status, message, github)
 	const ended =
@@ -197,10 +196,10 @@ export const receivedRelay = (
 		return chain(ended, [
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
-				providerModuleOf(provider)?.replacesConnectedRead === true
+				providerModuleOf(provider).replacesConnectedRead
 					? { model: next }
 					: refreshProvider(next, context, provider),
-			(next) => providerModuleOf(provider)?.onRelayedConnect(next, context) ?? { model: next },
+			(next) => providerModuleOf(provider).onRelayedConnect(next, context),
 		])
 	}
 	if (status !== "error") return { model: ended }

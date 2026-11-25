@@ -86,11 +86,11 @@ export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
 
 /** The header badge per integration; `null` while loading. */
 export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null =>
-	providerModuleOf(id)?.cardStatus(statuses, { id, nowMs }) ?? null
+	providerModuleOf(id).cardStatus(statuses, { id, nowMs })
 
 /** One integration's overview; `null` while its status loads. */
 export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview =>
-	providerModuleOf(id)?.overview(statuses, { id, nowMs }) ?? null
+	providerModuleOf(id).overview(statuses, { id, nowMs })
 
 /** `useVisibleSettingsSections()` on `/integrations`: the session's admin flag and the BYOC add-on. */
 export const settingsNavVisibility = (

@@ -43,6 +43,7 @@ import {
 	type ProviderReturn,
 	type ProviderUpdate,
 	type StatusAnswer,
+	steps,
 } from "../../../integrations/provider"
 
 // The AWS card's state changes, as the AWS module's update.
@@ -53,17 +54,6 @@ type Return = ProviderReturn<AwsCardModel, AwsMessage>
 type Slot = Env["status"]
 
 const withCard = (model: AwsCardModel, card: Partial<AwsCardModel>): AwsCardModel => ({ ...model, ...card })
-
-/** Runs steps in order: the last step's model, every request and Command in order. */
-const steps = (model: AwsCardModel, next: ReadonlyArray<(model: AwsCardModel) => Return>): Return =>
-	Arr.reduce<(typeof next)[number], Return>(next, { model }, (acc, step) => {
-		const result = step(acc.model)
-		return {
-			model: result.model,
-			requests: [...(acc.requests ?? []), ...(result.requests ?? [])],
-			commands: [...(acc.commands ?? []), ...(result.commands ?? [])],
-		}
-	})
 
 const toast = (model: AwsCardModel, type: "success" | "error", title: string, description = ""): Return => ({
 	model,

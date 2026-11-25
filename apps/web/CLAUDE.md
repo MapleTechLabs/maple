@@ -23,7 +23,15 @@ live in `packages/views` too. The design rules are in `docs/design-rules.md`; th
 
 Each provider with `/infra` pages lives in `src/page/infra-integrations/<provider>/`: its data and models at the root,
 one folder per `/infra` page, and `integration/` for its part of `/integrations` and `/sources/new`. Names, marks,
-accents and routes come from `src/page/kit/providers.ts`.
+accents, catalog copy and routes come from `src/page/kit/providers.ts`.
+
+To add a provider:
+
+1. Add its id to `ProviderId` and its entry to `PROVIDERS` (name, icon, accent, description, category).
+2. Write a `<provider>-provider.ts` module (`ProviderModule`, `src/page/integrations/provider.ts`).
+3. Give it a card field on the integrations `Model`, a slot in `Statuses` and a `Got<X>Message` wrapper,
+   then mount it in `provider-modules.ts` and point its id at the mount in `MODULE_OF`.
+4. Run `bunx tsrs --noEmit`: it names whatever is still missing.
 
 ## Text and layout
 

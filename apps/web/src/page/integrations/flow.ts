@@ -51,7 +51,7 @@ const genericFlow = (model: Model, integration: DataIntegration): FlowSpec => {
 }
 
 export const flowOf = (model: Model, integration: DataIntegration, context: FlowContext): FlowSpec => {
-	const flow = providerModuleOf(integration)?.flow ?? null
+	const flow = providerModuleOf(integration).flow
 	return flow === null ? genericFlow(model, integration) : flow(model, integration, context)
 }
 

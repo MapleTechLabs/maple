@@ -51,8 +51,7 @@ export const cardView = (
 	timeZone: string,
 	focusId: string | null = null,
 ): ReadonlyArray<Html> => {
-	const provider = providerModuleOf(integration)
-	return provider === undefined ? [] : provider.card(h, model, timeZone, focusId, integration)
+	return providerModuleOf(integration).card(h, model, timeZone, focusId, integration)
 }
 
 const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): Html => {
@@ -69,8 +68,8 @@ const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): 
 				entry,
 				{
 					connect: connectButton(h, model, integration),
-					actions: provider?.headerActions?.(h, model) ?? undefined,
-					statusLine: provider?.headerStatus?.(h, model, timeZone) ?? undefined,
+					actions: provider.headerActions?.(h, model) ?? undefined,
+					statusLine: provider.headerStatus?.(h, model, timeZone) ?? undefined,
 				},
 				timeZone,
 			),
