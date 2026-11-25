@@ -39,7 +39,7 @@ Running the script again is always safe: it updates the stack in place, and repl
 1. Choose **Console** in the setup and save the template.
 2. In CloudFormation, in the `us-east-1` region, choose **Create stack → With new resources** and upload the template.
 3. Give the stack the name Maple shows.
-4. If the account already has Maple's identity provider (another Maple connection registered it), set the `CreateOidcProvider` parameter to `false`.
+4. If the account already has the identity provider this connection uses (another connection to the same Maple region registered it), set the `CreateOidcProvider` parameter to `false`. The US and EU regions use different providers.
 5. Acknowledge that the stack creates IAM resources.
 
 The cleanup script looks for the stack in `us-east-1`.
@@ -101,7 +101,7 @@ To cut Maple off at once, delete the role, or remove its trust in Maple's identi
 
 Select **Disconnect** on the connection. Maple stops assuming the role and removes the source; data already collected stays. Maple has no write access to your account, so the role exists until you delete its stack.
 
-Maple shows a cleanup script for CloudShell. The script deletes the stack, and removes Maple's identity provider once no Maple role is left in the account. Or delete the stack in the CloudFormation console, and the identity provider under IAM → Identity providers.
+Maple shows a cleanup script for CloudShell. The script deletes the stack, and removes Maple's identity provider once no Maple role is left in the account. Or delete the stack in the CloudFormation console. If the connection streamed CloudWatch metrics, also delete the `maple-metrics-<id>` stack in each region. Delete the identity provider under IAM → Identity providers only when no other Maple role in the account uses it.
 
 ## Next steps
 
