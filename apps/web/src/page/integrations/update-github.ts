@@ -43,7 +43,6 @@ const withCard = (model: GithubCardModel, card: Partial<GithubCardModel>): Githu
 	...card,
 })
 
-/** Both answers concatenated: the second step's model, every request and Command in order. */
 const statusOf = (slot: Keyed.Keyed<GithubIntegrationStatus, LoadFailure>): Status =>
 	Option.getOrNull(AsyncData.getData(slot.data))
 

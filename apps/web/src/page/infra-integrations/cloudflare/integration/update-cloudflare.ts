@@ -40,7 +40,6 @@ const withCard = (model: CloudflareCardModel, card: Partial<CloudflareCardModel>
 	...card,
 })
 
-/** Both answers concatenated: the second step's model, every request and Command in order. */
 export const requestUsage = (model: CloudflareCardModel, env: Env, mode: Keyed.RequestMode): Return => {
 	const key = requestKey(env.context.orgId, "integrations.cloudflareUsage", {})
 	return Option.match(Keyed.request(model.usage, key, mode), {
