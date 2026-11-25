@@ -142,3 +142,26 @@ describe("profiling rollout", () => {
 		expect(profilingOf(true)).toEqual(Option.some(true))
 	})
 })
+
+describe("Maple AI on the no-card trial", () => {
+	const withPlans = (subscriptions: ReadonlyArray<Record<string, unknown>>) => {
+		const loaded = update(base({ [orgId]: true }), Message.CompletedLoadClerk({ snapshot }))
+		const customer = Schema.decodeUnknownSync(BillingCustomer)({ id: orgId, subscriptions })
+		return update(loaded.model, Message.SucceededLoadCustomer({ orgId, customer, readAtMs: 0 })).model
+	}
+	const gateOf = (model: Model) => Option.map(pageContextOf(model), (context) => context.aiCardGate)
+
+	test("pages are told AI waits for a card on the trial, and not once Startup holds a card", () => {
+		const onTrial = withPlans([{ planId: "trial", status: "active", trialEndsAt: Date.UTC(2026, 11, 9) }])
+		const subscribed = withPlans([
+			{ planId: "trial", status: "expired" },
+			{ planId: "startup", status: "active" },
+		])
+		expect([gateOf(onTrial), gateOf(subscribed)]).toEqual([Option.some("trial"), Option.some(undefined)])
+	})
+
+	test("the hourly trial tick re-reads the customer, so the countdown and caps stay current", () => {
+		const onTrial = withPlans([{ planId: "trial", status: "active", trialEndsAt: Date.UTC(2026, 11, 9) }])
+		expect(namesOf(update(onTrial, Message.ElapsedTrialRefresh()))).toEqual(["LoadCustomer"])
+	})
+})

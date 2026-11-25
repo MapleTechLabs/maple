@@ -26,6 +26,7 @@ export const Message = defineMessageUnion({
 	SucceededCheckSession: { orgId: OrgId },
 	FailedCheckSession: { failure: SessionCheckFailure },
 	ChangedSelfHostedSession: {},
+	ElapsedTrialRefresh: {},
 	CompletedSaveSessionToken: {},
 	CompletedLoadClerk: { snapshot: ClerkSnapshot },
 	FailedLoadClerk: { message: Schema.String },

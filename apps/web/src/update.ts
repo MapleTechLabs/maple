@@ -1135,6 +1135,10 @@ const foldMessage = (model: Model, message: Message) =>
 		SucceededCheckSession: ({ orgId }) => signedIn(Option.some(orgId))(model),
 		FailedCheckSession: () => signedOut(model),
 		ChangedSelfHostedSession: () => ({ model, commands: [CheckSession()] }),
+		ElapsedTrialRefresh: () =>
+			model.customer.orgId === null
+				? { model }
+				: { model, commands: [LoadCustomer({ orgId: model.customer.orgId, refresh: true })] },
 		CompletedSaveSessionToken: () => ({ model, commands: [CheckSession()] }),
 		CompletedLoadClerk: ({ snapshot }) =>
 			appliedClerkSnapshot(snapshot, true)(modifyFields(model, { clerk: () => ClerkPhase.Loaded() })),

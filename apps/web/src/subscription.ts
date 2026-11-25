@@ -1,3 +1,5 @@
+import { getNoCardTrial } from "./page/kit/billing/plan-gating"
+import { customerOf } from "./page/onboarding/plan-gate"
 import { isClerkAuthEnabled } from "./platform/auth-mode"
 import {
 	Array as Arr,
@@ -129,6 +131,23 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 						),
 					),
 					Effect.sync(() => isCounting),
+				),
+		},
+	),
+	/**
+	 * Hourly, while the org is on the no-card trial: its days left, ending notice and caps count from
+	 * the last customer read, so a tab left open re-reads it rather than show a stale countdown.
+	 */
+	trialRefresh: entry(
+		{ isOnTrial: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({
+				isOnTrial: getNoCardTrial(customerOf(model.customer), model.customer.readAtMs ?? 0) !== null,
+			}),
+			dependenciesToStream: ({ isOnTrial }) =>
+				Stream.when(
+					Stream.map(pollTicks(Duration.hours(1)), () => Message.ElapsedTrialRefresh()),
+					Effect.sync(() => isOnTrial),
 				),
 		},
 	),

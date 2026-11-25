@@ -113,7 +113,8 @@ const headerActions = (
 			value: "restart",
 			label: "Run again",
 			icon: "ArrowPathIcon",
-			isDisabled: isBusy || !canRestart,
+			// A new AI run: while it waits on a card, the header's billing link is the way on.
+			isDisabled: isBusy || !canRestart || aiCardGate !== undefined,
 		},
 		...(status === "resolved"
 			? []

@@ -313,7 +313,8 @@ export const conversationView = <M>(
 							options.suggestions !== undefined
 								? [suggestionPills(h, options.suggestions)]
 								: []),
-							...notices(h, model, options),
+							// Their retry and continue would send a turn; the gate notice says why not.
+							...(options.aiCardGate === undefined ? notices(h, model, options) : []),
 							options.aiCardGate !== undefined
 								? aiCardNotice(h, options.aiCardGate, { size: "sm" })
 								: composer(h, {
