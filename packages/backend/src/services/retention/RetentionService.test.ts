@@ -2,6 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect, Fiber, Layer, Result, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, SourceId, UserId } from "@maple/domain/http"
+import { EdgeCacheService } from "@maple/cache"
 import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
 import {
 	cleanupTestDbs,
@@ -15,6 +16,8 @@ import {
 } from "@maple/backend/testing/test-pglite"
 import {
 	DEFAULT_READ_HORIZON,
+	READ_HORIZON_CACHE_BUCKET,
+	READ_HORIZON_CACHE_KEY,
 	READ_HORIZON_LOAD_TIMEOUT_MS,
 	READ_HORIZON_RETRY_MS,
 	READ_HORIZON_TTL_MS,
@@ -386,6 +389,41 @@ describe("RetentionService.readHorizon", () => {
 			assert.strictEqual(after.days.traces, 7)
 		})
 	})
+
+	it.effect("keeps a period it wrote when the policies cannot be read afterwards", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				// No read came before the write, so the isolate holds nothing else yet.
+				yield* retention.setOrganization(ORG, ANA, { traces: 7 })
+				database.down = true
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, ["traces"])
+				assert.deepStrictEqual(yield* retention.readHorizon(OTHER_ORG), DEFAULT_READ_HORIZON)
+			}),
+		),
+	)
+
+	it.effect("keeps a period it wrote when a load returns an older snapshot", () =>
+		withDb((db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				yield* retention.setOrganization(ORG, ANA, { traces: 7 })
+				// Another isolate's load, begun before the write, lands in the shared cache after it.
+				yield* EdgeCacheService.use((edgeCache) =>
+					edgeCache.getOrCompute(
+						{
+							bucket: READ_HORIZON_CACHE_BUCKET,
+							key: READ_HORIZON_CACHE_KEY,
+							ttlSeconds: 60,
+							schema: Schema.Struct({ orgs: Schema.Array(Schema.Unknown) }),
+						},
+						Effect.succeed({ orgs: [] }),
+					),
+				).pipe(Effect.provide(testEdgeCache(db)))
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, ["traces"])
+			}),
+		),
+	)
 
 	it.effect("a new service instance in the same isolate answers from what the isolate holds", () =>
 		withDb((db) =>
