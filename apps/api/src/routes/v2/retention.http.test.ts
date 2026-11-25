@@ -26,12 +26,16 @@ import { HttpV2RetentionLive } from "./retention.http"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const testConfig = (clickhouseUrl?: string) =>
+/** The deployment's own ClickHouse, when it has one. */
+const SELF_MANAGED_CLICKHOUSE = {
+	CLICKHOUSE_URL: "https://clickhouse.internal:8443",
+	CLICKHOUSE_PROVIDER: "clickhouse",
+}
+
+const testConfig = (selfManaged: boolean) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
-			...(clickhouseUrl === undefined
-				? {}
-				: { CLICKHOUSE_URL: clickhouseUrl, CLICKHOUSE_PROVIDER: "clickhouse" }),
+			...(selfManaged ? SELF_MANAGED_CLICKHOUSE : undefined),
 			PORT: "3482",
 			MCP_PORT: "3483",
 			TINYBIRD_HOST: "https://api.tinybird.co",
@@ -65,7 +69,7 @@ const warehouseOf = (ownWarehouse: boolean) =>
 			),
 	})
 
-const makeHarness = (ownWarehouse = false, clickhouseUrl?: string) => {
+const makeHarness = (ownWarehouse = false, selfManaged = false) => {
 	const testDb = createTestDb(createdDbs)
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -75,7 +79,7 @@ const makeHarness = (ownWarehouse = false, clickhouseUrl?: string) => {
 		),
 	).pipe(
 		Layer.provideMerge(
-			Layer.mergeAll(Env.layer.pipe(Layer.provide(testConfig(clickhouseUrl))), testDb.layer),
+			Layer.mergeAll(Env.layer.pipe(Layer.provide(testConfig(selfManaged))), testDb.layer),
 		),
 	)
 
@@ -226,7 +230,7 @@ describe("v2 retention", () => {
 	})
 
 	it("a deployment on its own ClickHouse cannot set Maple's periods either", async () => {
-		const harness = makeHarness(false, "https://clickhouse.internal:8443")
+		const harness = makeHarness(false, true)
 		const token = await harness.key()
 		const read = await harness.request("GET", "/v2/retention", token)
 		expect(read.body.storage).toBe("own_warehouse")
