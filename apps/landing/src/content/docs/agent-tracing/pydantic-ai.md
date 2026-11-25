@@ -71,7 +71,7 @@ Agent.instrument_all(
 
 Import `tracing` at the top of your entry point (`main.py`, the FastAPI app module, the worker), before the first `agent.run()`.
 
-If your app already has a `TracerProvider` (from `opentelemetry-instrument`, Sentry or your own setup), add the `BatchSpanProcessor` to it instead of creating a second one, and call `Agent.instrument_all(InstrumentationSettings(include_content=True, include_binary_content=False))` without `tracer_provider`.
+If your app already has a `TracerProvider` (from `opentelemetry-instrument`, Sentry or your own setup), add the `BatchSpanProcessor` to it instead of creating a second one. Then call `Agent.instrument_all(InstrumentationSettings(include_content=True, include_binary_content=False))` without `tracer_provider`.
 
 ### If you already use Logfire
 
@@ -155,9 +155,9 @@ In a script or CLI, call `provider.shutdown()` at the end. With Logfire, use `lo
 
 ## Verify
 
-If Pydantic AI prints an `observability: off` banner on the first run, `tracing.py` didn't run before your first `agent.run()`.
-
 Run a conversation with two messages and a tool call, then open **Agent sessions**. You should see one session with your conversation id and framework **Pydantic AI**, one turn per `run()`, a transcript with prompts, replies and tool calls, and token counts and cost on every model call.
+
+If Pydantic AI prints an `observability: off` banner on the first run, `tracing.py` didn't run before your first `agent.run()`.
 
 ## Troubleshooting
 

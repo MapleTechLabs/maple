@@ -23,7 +23,7 @@ Open **Settings → MCP** in Maple. It shows the endpoint for your organization'
 | US     | `https://api.maple.dev/mcp`    |
 | EU     | `https://api.eu.maple.dev/mcp` |
 
-**With OAuth (recommended).** Add the endpoint URL to your client. On first use it opens Maple in your browser, you pick a workspace and approve access. No key to copy or rotate.
+**With OAuth (recommended).** Add the endpoint URL to your client. On first use, the client opens Maple in your browser, where you pick a workspace and approve access. There is no key to copy or rotate.
 
 For Claude Code:
 
@@ -99,11 +99,11 @@ Agents can own issues the same way people do, using the lease described in [Erro
 
 ### Investigate a slowdown
 
-`compare_periods` compares error rate, throughput and p95 between two windows and flags regressions per service. `find_slow_traces` and `get_service_top_operations` narrow it to the endpoint, and `inspect_trace` shows which span grew.
+`compare_periods` compares error rate, throughput and p95 between two windows and flags regressions per service. `find_slow_traces` and `get_service_top_operations` narrow the slowdown to the endpoint, and `inspect_trace` shows which span grew.
 
 ### Build dashboards and alerts
 
-The agent can create dashboards (`create_dashboard`, `add_dashboard_widget`) and alert rules (`create_alert_rule`). A widget that saves is not always a widget that shows the right thing, so ask the agent to check its work with `inspect_chart_data`, which runs the query and reports whether the chart has data.
+The agent can create dashboards (`create_dashboard`, `add_dashboard_widget`) and alert rules (`create_alert_rule`). A widget that saves does not always show the right thing. Ask the agent to check its work with `inspect_chart_data`, which runs the query and reports whether the chart has data.
 
 For heavier dashboard work, give your agent the [maple-dashboard-widgets](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-dashboard-widgets) skill. It documents every panel type, data source and unit.
 
@@ -160,7 +160,7 @@ Then ask your agent:
 Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk_…
 ```
 
-Or ask it to audit an existing setup: `Audit my Maple instrumentation.` EU organizations give `https://ingest.eu.maple.dev`.
+Or ask it to audit an existing setup: `Audit my Maple instrumentation.` EU organizations give `https://ingest.eu.maple.dev` as the endpoint.
 
 Give the public key (`maple_pk_…`). The skill writes the key into your source code, and the public key is safe to commit: it can only send telemetry. Your servers can switch to the private key later; see [Ingest keys](/docs/reference/authentication#ingest-keys).
 
@@ -171,7 +171,7 @@ With the MCP server connected, the agent can confirm the first traces arrived an
 - **Read and write tools are separate.** Most tools only read. Tools that change data (triage, dashboards, alert rules) are marked in the [tool list](/docs/reference/mcp#tools). Most clients ask before each tool call; keep approval on for write tools.
 - **Deletes need confirmation.** `delete_alert_rule` refuses to run without `confirm=true`.
 - **Access is scoped to one organization**, the one the key belongs to or the one you picked at sign-in.
-- **Rate limit:** 120 requests per 10 seconds per key or user. Over it, the server answers `429` and the agent should wait 10 seconds.
+- **Rate limit:** 120 requests per 10 seconds per key or user. Over the limit, the server answers `429` and the agent should wait 10 seconds.
 
 ## Prefer a terminal?
 

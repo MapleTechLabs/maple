@@ -7,7 +7,7 @@ order: 1
 
 import LiveTraceFrame from "../../../components/live/LiveTraceFrame.astro"
 
-The **Traces** page lists the traces Maple received in the selected time range. Filter the list with sidebar facets or a query, then open a trace to see every span on a waterfall, timeline, or flow view. From a trace you can jump to its logs and to the session replay that produced it.
+The **Traces** page lists the traces Maple received in the selected time range. Filter the list with sidebar facets or a query, then open a trace to see every span on a waterfall, timeline or flow view. From a trace you can jump to its logs and to the session replay that produced it.
 
 ## What data it needs
 
@@ -22,7 +22,7 @@ See [OpenTelemetry conventions](/docs/concepts/otel-conventions) for the full li
 
 ## The trace list
 
-The table has these columns: **Trace ID**, **Root span** (with start time), **Services**, **Spans**, **Duration**, and **Status**. **Status** shows the HTTP status code when the root span has one, otherwise the span status. Sort by clicking **Duration**. The default order is newest first. More rows load as you scroll.
+The table has these columns: **Trace ID**, **Root span** (with start time), **Services**, **Spans**, **Duration** and **Status**. **Status** shows the HTTP status code when the root span has one, otherwise the span status. The default order is newest first. Click **Duration** to sort by duration. More rows load as you scroll.
 
 <figure class="shot">
   <img src="/screenshots/docs/traces-01-list.webp" alt="The Traces list with Trace ID, Root Span, Services, Spans, Duration and Status columns, and a filter sidebar with Has Error, Root Traces Only, environment, namespace, service and root span facets." loading="lazy" />
@@ -73,7 +73,7 @@ You can use up to 5 filters per attribute map (span or resource). The dialog sho
 
 ## Inspect a trace
 
-The trace page header shows the environment, the commit SHA (from `vcs.ref.head.revision`), the error state, and the HTTP status. If the trace produced [product events](/docs/product-events/overview), they appear in a **Product events** panel.
+The trace page header shows the environment, the commit SHA (from `vcs.ref.head.revision`), the error state and the HTTP status. If the trace produced [product events](/docs/product-events/overview), they appear in a **Product events** panel.
 
 Three views show the spans:
 
@@ -88,11 +88,11 @@ Three views show the spans:
 
 Click a span to open the span panel. Press Esc to close it. The selected span is kept in the URL, so you can share a link to it.
 
-The span panel shows the duration, the self time (time not spent in child spans), the span's share of the trace, and its status. When the status is `Error`, an error section shows the message, and its sparkle button copies the error as a prompt for an AI assistant. It has these tabs:
+The span panel shows the duration, the self time (time not spent in child spans), the span's share of the trace and its status. When the status is `Error`, an error section shows the message, and its sparkle button copies the error as a prompt for an AI assistant. The span panel has these tabs:
 
-- **Details**: **Start time**, **Span ID**, **Parent span ID**, then **Events**, the span's events in time order with a **Stack trace** for each exception, then **Span attributes** and **Resource attributes**. Each attribute row has **Filter** and **Exclude** actions that open the trace list with that attribute filter applied.
+- **Details**: **Start time**, **Span ID** and **Parent span ID**. Then **Events**: the span's events in time order, with a **Stack trace** for each exception. Then **Span attributes** and **Resource attributes**. Each attribute row has **Filter** and **Exclude** actions that open the trace list with that attribute filter applied.
 - **Logs**: logs emitted inside this span. Click one to open its detail.
-- **Infrastructure**: host, container, or Kubernetes details, shown when the span carries those resource attributes.
+- **Infrastructure**: host, container or Kubernetes details, shown when the span carries those resource attributes.
 
 ## Jump to logs and replays
 
@@ -103,7 +103,7 @@ The span panel shows the duration, the self time (time not spent in child spans)
 
 The [MCP server](/docs/reference/mcp) exposes the same data:
 
-- `search_traces`: filter by service, error, duration, HTTP method, span name, or one attribute key and value.
+- `search_traces`: traces filtered by service, error, duration, HTTP method, span name, or one attribute key and value.
 - `inspect_trace`: the span tree and logs for one trace ID.
 - `inspect_span`: every attribute of one span.
 - `find_slow_traces`: the slowest traces with p50 and p95 context.
@@ -111,7 +111,7 @@ The [MCP server](/docs/reference/mcp) exposes the same data:
 ## Troubleshooting
 
 - **"No traces yet".** Maple has never received a span for this organization. Configure an OpenTelemetry SDK with your ingest key and the [ingest endpoint](/docs/reference/ingest). See [Instrumentation](/docs/instrumentation).
-- **"No traces in this time range".** Maple has data, just not in this window. Click **Widen time range**.
+- **"No traces in this time range".** Maple has traces, but none in this window. Click **Widen time range**.
 - **"No traces match these filters".** Your exclusions removed everything. Click **Clear filters**.
 - **A trace you expect is missing.** **Root traces only** and **Hide single-span noise** are on by default. Turn off **Hide single-span noise** to see single-span traces, or **Root traces only** to search individual spans.
 - **"Trace not found".** The trace has expired past your [retention](/docs/reference/retention) or has not been ingested yet.
@@ -119,5 +119,5 @@ The [MCP server](/docs/reference/mcp) exposes the same data:
 ## Next steps
 
 - [Logs](/docs/explore/logs): search log lines and jump back to their traces.
-- [Services](/docs/explore/services): latency, throughput, and errors per service.
+- [Services](/docs/explore/services): latency, throughput and errors per service.
 - [OpenTelemetry conventions](/docs/concepts/otel-conventions): attributes that power filters and badges.

@@ -57,7 +57,7 @@ export CREWAI_TRACING_ENABLED=false
 
 EU organizations use `https://ingest.eu.maple.dev`. If you pass `endpoint=` to `OTLPSpanExporter` in code instead, it has to end in `/v1/traces`.
 
-The last two turn off CrewAI's own telemetry and a first-run prompt that blocks the process at exit. Don't use `OTEL_SDK_DISABLED=true` instead, because it disables your Maple traces too.
+The last two variables turn off CrewAI's own telemetry and a first-run prompt that blocks the process at exit. Don't use `OTEL_SDK_DISABLED=true` instead, because it disables your Maple traces too.
 
 ## Initialize tracing
 
@@ -132,7 +132,7 @@ def handle_message(conversation_id: str, text: str, history: str) -> str:
         return build_crew(text, history).kickoff().raw
 ```
 
-Put the user's message first in the task description, because Maple labels each turn with its first line. Give the crew a `name=`. `crew_id` and `crew_key` don't work as conversation ids.
+Put the user's message first in the task description, because Maple labels each turn with the description's first line. Give the crew a `name=`. `crew_id` and `crew_key` don't work as conversation ids.
 
 For conversational flows, wrap `flow.handle_turn(text, session_id=conversation_id)` in the same `using_session` and set `name = "support_flow"` on the flow class.
 

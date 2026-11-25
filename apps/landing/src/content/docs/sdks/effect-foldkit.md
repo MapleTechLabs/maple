@@ -7,7 +7,9 @@ navLabel: "Foldkit"
 sdk: "effect"
 ---
 
-The `/foldkit` entry point of `@maple-dev/effect-sdk` instruments a [Foldkit](https://foldkit.dev) app. It ships in `@maple-dev/effect-sdk` 0.12.0 and later; [install the SDK](/docs/sdks/effect#install) first, and see Foldkit's [getting started guide](https://foldkit.dev/get-started) if you are new to it. Foldkit already runs every Command inside an Effect span named after it. On their own those spans are disconnected root traces, one per focus move or scroll. `MapleFoldkit` turns them into one trace per page load or navigation, drops the Commands that did no real work, and adds crash reports and slow-phase spans.
+The `/foldkit` entry point of `@maple-dev/effect-sdk` instruments a [Foldkit](https://foldkit.dev) app. It ships in `@maple-dev/effect-sdk` 0.12.0 and later. [Install the SDK](/docs/sdks/effect#install) first, and see Foldkit's [getting started guide](https://foldkit.dev/get-started) if you are new to Foldkit.
+
+Foldkit already runs every Command inside an Effect span named after it. On their own those spans are disconnected root traces, one per focus move or scroll. `MapleFoldkit` turns them into one trace per page load or navigation, drops the Commands that did no real work, and adds crash reports and slow-phase spans.
 
 ## Quick start
 
@@ -47,7 +49,7 @@ Annotate the `routing` callback parameters. TypeScript cannot infer them through
 
 `instrument` merges the telemetry layer into `resources` and wraps `init`, `update`, `routing.onUrlChange`, `crash` and `slow`. Every other field passes through unchanged, and it works the same on a `makeElement` config. Your own `crash.report` and `slow.onSlow` callbacks still run after Maple's.
 
-`MapleFoldkit.make` builds on [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake), so flush on unload, sessions, session replay, privacy and global error capture all work as they do in the browser entry point, and it accepts every one of its options.
+`MapleFoldkit.make` builds on [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake), so flush on unload, sessions, session replay, privacy and global error capture all work as they do in the browser entry point. It accepts every `MapleFlush.make` option.
 
 ## What it records
 
@@ -55,7 +57,7 @@ Annotate the `routing` callback parameters. TypeScript cannot infer them through
 
 The first `init` opens a `pageload <route>` span that starts at the browser's navigation start, not when your JavaScript got there. Every `routing.onUrlChange` opens a `navigate <route>` span. Both carry `url.path`.
 
-The Commands that `init` or the URL change return are parented under that span, and so are the Commands started by their result Messages, and by those Messages' results in turn. `HttpClient` and RPC spans nest inside the Commands and send `traceparent`, so one trace runs from the click in the browser to your backend.
+The Commands that `init` or the URL change returns are parented under that span. So are the Commands started by their result Messages, and by those Messages' results in turn. `HttpClient` and RPC spans nest inside the Commands and send `traceparent`, so one trace runs from the click in the browser to your backend.
 
 A navigation ends:
 
@@ -86,7 +88,7 @@ Any other arg is still present, with the value `[redacted]`, so you can see whic
 
 ### Crashes
 
-When the Foldkit runtime crashes, the SDK reports an exception named `foldkit.crash` and flushes right away, because nothing else will trigger a flush once the runtime has stopped. It carries:
+When the Foldkit runtime crashes, the SDK reports an exception named `foldkit.crash` and flushes right away, because nothing else will trigger a flush once the runtime has stopped. The exception carries:
 
 | Attribute                       | Value                                                  |
 | ------------------------------- | ------------------------------------------------------ |
@@ -106,7 +108,7 @@ A navigation ends 150ms after its last Command, and never runs past 30 seconds f
 
 ### Web vitals
 
-With `webVitals: true`, LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` log events, linked to the `pageload` span once the app has started it (TTFB and FCP can come in earlier, without the link). CLS, INP and LCP are final when the page is hidden, so they arrive then.
+With `webVitals: true`, LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` log events. They are linked to the `pageload` span once the app has started it. TTFB and FCP can come in earlier, without the link. CLS, INP and LCP are final when the page is hidden, so they arrive then.
 
 ## Name navigations by route
 
@@ -125,7 +127,7 @@ const routeName = (pathname: string): string =>
 const maple = MapleFoldkit.make({ serviceName: "acme-web", ingestKey: "maple_pk_...", routeName })
 ```
 
-The full path stays on the span as `url.path`, sanitized as usual. The `routeName` result is used as is, so return a label, never the raw path. Keep ids and user data out of it, like `customer-123`: the SDK sends the label as part of the span name.
+The full path stays on the span as `url.path`, sanitized as usual. The `routeName` result is used as is, so return a label, never the raw path. Keep ids and user data, such as `customer-123`, out of the label: the SDK sends the label as part of the span name.
 
 ## Sampling
 
@@ -142,7 +144,7 @@ The full path stays on the span as `url.path`, sanitized as usual. The `routeNam
 | `keepCommands`         | `string[]`                              | `[]`                                  | Commands exported even without a child span                                    |
 | `sampleCommands`       | `Record<string, number>`                | `{}`                                  | Per-Command sample rates outside a navigation                                  |
 | `navigationSampleRate` | `number`                                | `1`                                   | Share of navigations traced                                                    |
-| `routeName`            | `(pathname: string) => string`          | the path                              | Navigation span name suffix, e.g. a route name; used as is, not sanitized      |
+| `routeName`            | `(pathname: string) => string`          | the path                              | Navigation span name suffix, such as a route name; used as is, not sanitized   |
 | `slowPhases`           | `false \| { Update?, View?, Patch? }`   | `{ Update: 16, View: 50, Patch: 50 }` | Slow-phase budgets in ms, or `false` to turn them off                          |
 
 The returned object has `instrument`, plus the `layer`, `flush()`, `dispose()` and `captureException(error)` of [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake). `dispose()` also ends any open navigation so it goes out with the final flush.

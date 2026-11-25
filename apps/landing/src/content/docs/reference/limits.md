@@ -40,7 +40,7 @@ See [Ingest API](/docs/reference/ingest) for status codes and retry guidance.
 
 ## Product events and session events
 
-See [Product events API](/docs/product-events/api). An event that breaks a **dropped** rule is discarded silently; the rest of the batch is still stored. Other fields are truncated to their limit.
+See [Product events API](/docs/product-events/api). An event that breaks a limit marked **Dropped** is discarded silently. The rest of the batch is still stored. Other fields are truncated to their limit.
 
 | Field                                | Limit                                      | Over the limit |
 | ------------------------------------ | ------------------------------------------ | -------------- |

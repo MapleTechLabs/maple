@@ -7,7 +7,7 @@ order: 2
 
 The `maple-k8s-infra` Helm chart collects host, kubelet and cluster metrics from your Kubernetes cluster over OpenTelemetry and sends them to Maple. Once it runs, the **Infrastructure** pages list your nodes, pods and workloads, and each service on the service map gains a pod-count badge and an Infrastructure tab.
 
-Running plain Docker hosts instead of, or alongside, Kubernetes? See [Docker infrastructure](/docs/infrastructure/docker). A single-container agent covers per-container metrics and logs. For hosts outside Kubernetes, see [Hosts](/docs/infrastructure/hosts).
+If you run plain Docker hosts instead of, or alongside, Kubernetes, see [Docker infrastructure](/docs/infrastructure/docker). A single-container agent covers per-container metrics and logs. For hosts outside Kubernetes, see [Hosts](/docs/infrastructure/hosts).
 
 The chart uses a split-collector architecture:
 
@@ -24,7 +24,7 @@ All signals are exported over OTLP HTTP to Maple's ingest gateway, which authent
 
 ## Install
 
-The install script creates the namespace and the ingest-key Secret and runs Helm for you. It prints your active `kubectl` context before it installs. Piped from `curl`, the script cannot read an answer to its confirmation prompt, so the command sets `MAPLE_INSTALL_YES=1`. Check that `kubectl config current-context` points at the right cluster first:
+The install script creates the namespace and the ingest-key Secret and runs Helm for you. It prints your active `kubectl` context before it installs. When piped from `curl`, the script cannot read an answer to its confirmation prompt, so the command sets `MAPLE_INSTALL_YES=1`. Check that `kubectl config current-context` points at the right cluster first:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MapleTechLabs/maple/main/deploy/k8s-infra/install.sh | \
@@ -41,7 +41,7 @@ curl -fsSLO https://raw.githubusercontent.com/MapleTechLabs/maple/main/deploy/k8
 MAPLE_INGEST_KEY=YOUR_INGEST_KEY MAPLE_CLUSTER_NAME=production bash install.sh
 ```
 
-Prefer Helm directly? Install the published OCI chart:
+To use Helm directly, install the published OCI chart:
 
 ```bash
 helm upgrade --install maple-k8s-infra \
@@ -142,7 +142,9 @@ kubectl rollout restart deployment -n shop
 
 The chart bundles the OpenTelemetry Operator and an `Instrumentation/maple-default` resource. It injects downward-API environment variables: `OTEL_EXPORTER_OTLP_ENDPOINT`, and the pod IP, UID, name, namespace and node in `OTEL_RESOURCE_ATTRIBUTES`. Your app's OpenTelemetry SDK reads those on startup. The agent's `k8sattributes` processor then adds `k8s.deployment.name`, `k8s.statefulset.name` or `k8s.daemonset.name` to each span, which joins `service.name` to its workload.
 
-**This only injects environment variables. It does not add an SDK to your app.** Your service must already emit OTLP spans, and its SDK must read the standard `OTEL_*` variables. Most auto-instrumentation agents and Maple's SDKs do. To opt many namespaces in at install time, list them under `autoInstrumentation.instrumentation.autoInstrumentNamespaces` instead of annotating each one.
+**This only injects environment variables. It does not add an SDK to your app.** Your service must already emit OTLP spans, and its SDK must read the standard `OTEL_*` variables. Most auto-instrumentation agents and Maple's SDKs do.
+
+To opt many namespaces in at install time, list them under `autoInstrumentation.instrumentation.autoInstrumentNamespaces` instead of annotating each one.
 
 ## Per-cloud notes
 
@@ -157,10 +159,10 @@ The chart bundles the OpenTelemetry Operator and an `Instrumentation/maple-defau
 ## Troubleshooting
 
 - **No hosts or pods after a few minutes.** Confirm both workloads are `Ready` and look for `k8sattributes` or exporter errors in `kubectl -n maple logs -l app.kubernetes.io/component=agent`.
-- **Empty Infrastructure tab on a service.** The namespace annotation wasn't applied or the pods weren't restarted, or your SDK ignores `OTEL_*` env vars. Verify with `kubectl exec -n <ns> <pod> -- env | grep OTEL`.
+- **Empty Infrastructure tab on a service.** The namespace annotation wasn't applied, the pods weren't restarted, or your SDK ignores `OTEL_*` env vars. Verify with `kubectl exec -n <ns> <pod> -- env | grep OTEL`.
 - **Operator webhook crash-looping.** This is usually a certificate issue. Switch to cert-manager with `opentelemetryOperator.admissionWebhooks.certManager.enabled=true` if your cluster requires it.
 
-Already running the OpenTelemetry Operator yourself? Set `autoInstrumentation.operator.enabled=false`. The `Instrumentation` resource still renders, so you can apply it to your own setup.
+If you already run the OpenTelemetry Operator yourself, set `autoInstrumentation.operator.enabled=false`. The `Instrumentation` resource still renders, so you can apply it to your own setup.
 
 ## Uninstall
 

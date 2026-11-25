@@ -6,7 +6,9 @@ order: 3.7
 icon: "railway"
 ---
 
-The Railway integration reads resource metrics for your Railway services with an API token. Maple polls Railway's metrics API every 5 minutes, one call per environment, and stores the results as OpenTelemetry gauges. You get CPU and memory per replica, network traffic in and out, and volume and ephemeral disk usage. The data appears under **Infrastructure → Railway** and in the [metrics explorer](/docs/explore/metrics). You do not need to install an agent or change your services.
+The Railway integration reads resource metrics for your Railway services with an API token. Maple polls Railway's metrics API every 5 minutes, one call per environment, and stores the results as OpenTelemetry gauges.
+
+You get CPU and memory per replica, network traffic in and out, and volume and ephemeral disk usage. The data appears under **Infrastructure → Railway** and in the [metrics explorer](/docs/explore/metrics). You do not need to install an agent or change your services.
 
 Maple only reads metrics with the token. It never changes anything in Railway.
 
@@ -14,7 +16,7 @@ This page is about collecting metrics from your Railway services. To run Maple i
 
 ## Prerequisites
 
-- You are an admin or engineer in the Maple organization. Connecting, **Sync now**, and disconnecting need one of those roles. Any member can see the status.
+- You are an admin or engineer in the Maple organization. Connecting, **Sync now** and disconnecting need one of those roles. Any member can see the status.
 - A Railway account or workspace token.
 
 ## 1. Create a token
@@ -25,12 +27,14 @@ The token is between 8 and 512 characters. Maple encrypts it at rest.
 
 ## 2. Connect
 
-1. Open **Sources** in Maple, click **Connect source**, and pick **Railway**.
+1. Open **Sources** in Maple, click **Connect source** and pick **Railway**.
 2. Paste the token into **Account or workspace token** and click **Check token**.
 
-Maple checks the token before saving it. It lists the workspaces, projects, environments, and services the token can see, then reads a few minutes of metrics from the first environment to prove the token can read metrics. If Railway rejects the token, the form shows **Railway rejected this token. Create an account or workspace token at railway.com/account/tokens.**
+Maple checks the token before saving it. It lists the workspaces, projects, environments and services the token can see, then reads a few minutes of metrics from the first environment to prove the token can read metrics. If Railway rejects the token, the form shows **Railway rejected this token. Create an account or workspace token at railway.com/account/tokens.**
 
-Once the token works, the connect step reads **Token works.** with the workspace and environment count, and lists each project with its service count. Maple then pulls the last hour of metrics right away, so the charts start full. Environments that do not finish within about 20 seconds catch up on the next poll. The flow moves to the **Go live** step, and it is safe to leave the page while the backfill runs.
+Once the token works, the connect step reads **Token works.** with the workspace and environment count, and lists each project with its service count.
+
+Maple then pulls the last hour of metrics right away, so the charts start full. Environments that do not finish within about 20 seconds catch up on the next poll. The flow moves to the **Go live** step, and it is safe to leave the page while the backfill runs.
 
 ## What Maple collects
 
@@ -38,7 +42,7 @@ Once the token works, the connect step reads **Token works.** with the workspace
 - **PR environments are skipped.** Each environment costs one Railway API call per poll, so Maple leaves ephemeral environments out.
 - **Samples every minute.** Maple asks Railway for 1-minute samples and stays 2 minutes behind the current time, because Railway is still averaging the newest samples.
 - **Every 5 minutes.** Each poll reads from where the last one stopped. After a gap, Maple catches up at most 6 hours per environment per poll.
-- **Discovery every hour.** Maple refreshes the list of projects, environments, and services once an hour. A new project or environment starts reporting within the hour. Environments that disappear from Railway stop being polled.
+- **Discovery every hour.** Maple refreshes the list of projects, environments and services once an hour. A new project or environment starts reporting within the hour. Environments that disappear from Railway stop being polled.
 - **Up to 15 environments per poll.** The environments furthest behind go first. The rest catch up on later polls.
 
 If Railway rate limits the token, Maple pauses polling for at least 15 minutes, or longer when Railway asks for longer.
@@ -55,13 +59,13 @@ If Railway rate limits the token, Maple pauses polling for at least 15 minutes, 
 
 ### Infrastructure → Railway
 
-The page shows one row per environment and service, with **Service**, **Memory**, **vCPU**, **Replicas**, and **Last seen**. When your services do not all share the same CPU or memory limit, an **Of limit** column shows peak usage against each limit. Values are summed across replicas. A band at the top shows the summed average memory across services and a **Polling** stat with the environment count and the last sync.
+The page shows one row per environment and service, with **Service**, **Memory**, **vCPU**, **Replicas** and **Last seen**. When your services do not all share the same CPU or memory limit, an **Of limit** column shows peak usage against each limit. Values are summed across replicas. A band at the top shows the summed average memory across services and a **Polling** stat with the environment count and the last sync.
 
-Click a service for its detail page. It shows **Avg CPU**, **Avg memory**, **Peak memory**, and **Replicas**, and charts for **CPU**, **Memory**, **Network (as reported by Railway)**, and **Disk**.
+Click a service for its detail page. It shows **Avg CPU**, **Avg memory**, **Peak memory** and **Replicas**, and charts for **CPU**, **Memory**, **Network (as reported by Railway)** and **Disk**.
 
 ### Metrics
 
-Every series is a gauge with the instrumentation scope `maple.railway`. Memory, network, and disk values are in bytes.
+Every series is a gauge with the instrumentation scope `maple.railway`. Memory, network and disk values are in bytes.
 
 | Metric                 | What it tells you                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------ |
@@ -101,7 +105,7 @@ The Railway card under **Sources** has these actions:
 - **The badge reads Needs attention.** At least one environment failed its last poll. The environment table shows the error under the environment name.
 - **This token can't see any projects yet.** The token reaches no projects. Check that it is an account or workspace token, not a project token.
 - **A PR environment has no metrics.** Maple skips PR environments on purpose.
-- **A new project or environment has no metrics yet.** Maple discovers them once an hour, so it starts reporting within the hour.
+- **A new project or environment has no metrics yet.** Maple discovers new projects and environments once an hour, so a new one starts reporting within the hour.
 
 ## Disconnect
 

@@ -42,7 +42,7 @@ Deleting an override hands the time back to the layers.
 
 ## Gaps
 
-A **gap** is a stretch with nobody on call: a restriction leaves it open and no other layer covers it. The on-call list and the schedule's page both name the gaps of the next 14 days.
+A **gap** is a stretch with nobody on call: a layer's restriction (**Only active in these windows**) leaves it open and no other layer covers it. The on-call list and the schedule's page both name the gaps of the next 14 days.
 
 A chain step that pages a schedule in a gap reaches nobody. Maple writes that on the incident's timeline and moves straight to the chain's next step. See [When a step reaches nobody](/docs/alerting/escalation-chains#when-a-step-reaches-nobody).
 
@@ -56,7 +56,7 @@ A person who leaves stays in the rotation until you edit it, but can no longer b
 
 ## Calendar feed
 
-A schedule can hand out a private link that calendar apps subscribe to. It shows the schedule's shifts from a week back to 60 days ahead, named after who is on call. Every handoff starts a new event, so a rotation with one person in it still shows a shift per rotation. A long override is one event with its real start and end.
+A schedule can hand out a private link that calendar apps subscribe to. The feed shows the schedule's shifts from a week back to 60 days ahead, named after who is on call. Every handoff starts a new event, so a rotation with one person in it still shows a shift per rotation. A long override is one event with its real start and end.
 
 1. Open the schedule and find **Calendar feed** at the bottom of the page.
 2. Select **Create calendar link** and copy the link. It is shown once.

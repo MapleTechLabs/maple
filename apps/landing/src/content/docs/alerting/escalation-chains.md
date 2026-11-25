@@ -54,7 +54,7 @@ Each severity tier of a rule can name its own chain.
 
 A step reaches nobody when its schedule has a gap, its people have left the organization, or its destinations are switched off. Maple then:
 
-1. Does not count the step as sent, and writes it on the incident's timeline: **Nobody on call on** and the schedule's name, or **An escalation step reached nobody** when no schedule was involved.
+1. Does not count the step as sent, and writes an entry on the incident's timeline: **Nobody on call on** and the schedule's name, or **An escalation step reached nobody** when no schedule was involved.
 2. Moves straight to the next step of the pass, without waiting.
 3. Emails the organization's admins when a whole pass ends without reaching anybody. The subject starts with "Nobody on call was reached".
 

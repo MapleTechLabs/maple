@@ -27,6 +27,18 @@ export interface SearchConsoleFilters {
 	readonly query?: string
 }
 
+/**
+ * The page URL as given, plus its path with one trailing slash added or removed. Google reports
+ * whichever form it crawled, so `https://acme.dev/docs` and `https://acme.dev/docs/` are the same
+ * page split across two rows. The query string and fragment are kept as they are.
+ */
+export const pageUrlVariants = (page: string): ReadonlyArray<string> => {
+	const path = Str.replace(/[?#][\s\S]*$/, "")(page)
+	const rest = Str.slice(path.length)(page)
+	const toggled = Str.endsWith("/")(path) ? Str.slice(0, -1)(path) : `${path}/`
+	return [page, `${toggled}${rest}`]
+}
+
 type DailyAccessor = ColumnAccessor<typeof Datasources.searchConsoleDaily.columns>
 
 /**
@@ -51,7 +63,7 @@ function dailyWhere(
 		$.Date.lte(utcSecondsParam("endDate")),
 		CH.when(filters.country, (v: string) => $.Country.eq(v)),
 		CH.when(filters.device, (v: string) => $.Device.eq(v)),
-		CH.when(filters.page, (v: string) => $.Page.eq(v)),
+		CH.when(filters.page, (v: string) => CH.inList($.Page, pageUrlVariants(v))),
 		CH.when(filters.query, (v: string) => $.Query.eq(v)),
 	]
 }

@@ -71,7 +71,12 @@ Call `registerTelemetry()` exactly once. Each call adds another integration, and
 
 ### Serverless, or an app that already uses OpenTelemetry
 
-Two setups need a handle on the span processor: a serverless handler that flushes after every invocation, and an app that already starts its own OpenTelemetry SDK (auto-instrumentation, Sentry, your own `NodeTracerProvider`), where you shouldn't start a second one. Install the exporter packages and create the processor yourself:
+Two setups need a handle on the span processor:
+
+- A serverless handler that flushes after every invocation.
+- An app that already starts its own OpenTelemetry SDK (auto-instrumentation, Sentry, your own `NodeTracerProvider`), where you shouldn't start a second one.
+
+Install the exporter packages and create the processor yourself:
 
 ```bash
 npm install @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto
@@ -88,7 +93,7 @@ Pass it as `new NodeSDK({ spanProcessors: [spanProcessor] })`, or add it to your
 
 ### Next.js
 
-In Next.js, register both in the `register()` function of `instrumentation.ts`, using `@vercel/otel` as in the [Next.js guide](/docs/guides/instrumentation-nextjs):
+In Next.js, register OpenTelemetry and the AI SDK integration in the `register()` function of `instrumentation.ts`. Use `@vercel/otel` as in the [Next.js guide](/docs/guides/instrumentation-nextjs):
 
 ```ts
 // instrumentation.ts (project root, or src/instrumentation.ts)
@@ -139,7 +144,9 @@ const result = streamText({
 })
 ```
 
-Use the chat or thread id your app already stores. It must stay the same for the whole conversation and differ between conversations. `functionId` becomes the agent name in Maple, so give each agent a distinct one.
+Use the chat or thread id your app already stores. It must stay the same for the whole conversation and differ between conversations.
+
+`functionId` becomes the agent name in Maple, so give each agent a distinct one.
 
 `ToolLoopAgent` doesn't take `runtimeContext` per call. Declare the id as a call option and turn it into runtime context in `prepareCall`:
 
@@ -185,7 +192,7 @@ To keep a call's prompts and replies out of Maple, set `recordInputs: false` and
 
 ## Flush in scripts and serverless functions
 
-A short-lived process can exit before its spans are exported. In a script, call `await sdk.shutdown()` in a `finally` block before exiting. In a serverless handler, call `await spanProcessor.forceFlush()` in a `finally` instead (see [the variant above](#serverless-or-an-app-that-already-uses-opentelemetry)).
+A short-lived process can exit before its spans are exported. In a script, call `await sdk.shutdown()` in a `finally` block before exiting. In a serverless handler, call `await spanProcessor.forceFlush()` in a `finally` block instead (see [the variant above](#serverless-or-an-app-that-already-uses-opentelemetry)).
 
 Read streams to the end (`await result.consumeStream()`) before flushing, since a stream's spans only end when it has been read. On Vercel, `@vercel/otel` flushes after each request, but queue consumers and cron jobs need their own `forceFlush()`.
 

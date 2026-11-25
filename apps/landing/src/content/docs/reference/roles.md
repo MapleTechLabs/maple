@@ -28,17 +28,17 @@ An organization always needs at least one Admin, and nobody can change their own
 
 The role editor lists permissions in groups. This table shows what each group contains:
 
-| Group                  | Permissions                                                                                                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Read access            | Read telemetry, run raw SQL, build dashboards, share dashboards publicly, ask Maple AI, connect devices and clients                                                                   |
-| Everyday work          | Approve Maple AI actions, edit the shared service map, create MCP keys, join the support channel                                                                                      |
-| Incident response      | Triage error issues, respond to incidents, run investigations, post status page updates, triage recommendations                                                                       |
-| Alerting and detection | Manage alerts, on-call schedules, SLOs and budgets, uptime monitors and error notifications; configure anomaly detection and AI triage                                                |
-| Status pages           | Edit status pages, control who can view them, manage break-glass tokens                                                                                                               |
-| Ingestion and data     | View the public ingest key, view and roll ingest keys, manage sources, ingest rules, attribute mappings and scrape targets, connect and query data sources, manage the data warehouse |
-| Integrations and code  | Manage integrations, configure code review, turn on automatic PR approval, open the Security Center, run code security audits                                                         |
-| Keys and AI providers  | Create restricted API keys, manage all API keys, manage model provider keys, see every MCP connection                                                                                 |
-| Organization           | Manage the organization, members, roles, billing and single sign-on; read the audit log                                                                                               |
+| Group                  | Permissions                                                                                                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read access            | Read telemetry, run raw SQL, build dashboards, share dashboards publicly, ask Maple AI, connect devices and clients                                                               |
+| Everyday work          | Approve Maple AI actions, edit the shared service map, create MCP keys, join the support channel                                                                                  |
+| Incident response      | Triage error issues, respond to incidents, run investigations, post status page updates, triage recommendations                                                                   |
+| Alerting and detection | Manage alerts, on-call schedules, SLOs and budgets, uptime monitors and error notifications; configure anomaly detection and AI triage                                            |
+| Status pages           | Edit status pages, control who can view them, manage break-glass tokens                                                                                                           |
+| Ingestion and data     | View public ingest key, view and roll ingest keys, manage sources, ingest rules, attribute mappings and scrape targets, connect and query data sources, manage the data warehouse |
+| Integrations and code  | Manage integrations, configure code review, turn on automatic PR approval, open the Security Center, run code security audits                                                     |
+| Keys and AI providers  | Create restricted API keys, manage all API keys, manage model provider keys, see every MCP connection                                                                             |
+| Organization           | Manage the organization, members, roles, billing and single sign-on; read the audit log                                                                                           |
 
 The editor marks some permissions **Sensitive**: they cover billing, keys and other credentials, public sharing and organization-wide settings. Give them only to roles that need them.
 
@@ -53,7 +53,7 @@ These permissions don't include Read telemetry:
 - Create restricted API keys
 - Join the support channel
 - Post status page updates
-- View the public ingest key
+- View public ingest key
 - Manage billing
 
 A role that holds only these can't see traces, logs, metrics or errors. That fits a role for billing or for posting status updates, and nothing else.
@@ -110,7 +110,7 @@ To change a member's role, go to **Settings → Members** and pick a role from t
 
 When you invite someone, you choose one of the built-in roles. Give them a custom role after they join.
 
-If your identity provider manages roles through [SCIM group mappings](/docs/reference/single-sign-on#map-groups-to-roles), groups map to the built-in roles only, and a role set by a mapping can't be changed by hand in Maple.
+If your identity provider manages roles through [SCIM group mappings](/docs/reference/single-sign-on#map-groups-to-roles), groups map to the built-in roles only. A role set by a mapping can't be changed by hand in Maple.
 
 ## When a member's role changes
 
@@ -126,7 +126,7 @@ CLI logins, MCP keys and clients, and mobile app sign-ins keep the permissions t
 | Alert destinations                           | Keep working                                                                                            |
 | Full-access API keys                         | Keep working                                                                                            |
 
-A role change leaves full-access API keys alone, so automation an Admin set up for the organization keeps running. If someone who made one should no longer have that access, revoke the key under **Settings → Keys**.
+A role change leaves full-access API keys alone, so automation an Admin set up for the organization keeps running. If someone who made a full-access key should no longer have that access, revoke the key under **Settings → Keys**.
 
 A change to a role with more permissions revokes nothing. Editing a custom role works the same way for everyone who holds it.
 

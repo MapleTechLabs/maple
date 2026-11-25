@@ -55,7 +55,7 @@ See the [Product events API](/docs/product-events/api) for the full field list, 
 
 All three paths carry the same ids. `user_id` is whatever you pass to `identify()` in the browser and to your backend calls. `visitor_id` is the anonymous browser cookie, shared across your subdomains. Maple links a visitor to the user it later becomes. A funnel counted by person therefore joins an anonymous visit on the marketing site, the signed-in app session, and a server-side event from a webhook handler into one person.
 
-`group_id` is the account, workspace or org the event belongs to. It is a filter and breakdown dimension. Funnels count persons, visitors, users or sessions, never groups. An event that carries only a `group_id` is stored and queryable, but it cannot be linked to a person.
+`group_id` is the account, workspace or org the event belongs to. It is a filter and breakdown dimension, and a funnel can count by group. An event that carries only a `group_id` is stored and queryable, but it cannot be linked to a person.
 
 ## User and account properties
 

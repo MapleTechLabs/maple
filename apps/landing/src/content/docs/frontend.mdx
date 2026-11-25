@@ -34,7 +34,7 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple public ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Use your public key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. EU organizations should say EU region.
+Use your public key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## What you get
 
@@ -49,7 +49,7 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 
 Detailed instructions for each of these are in the guide for your framework.
 
-- **Requests after an `await` can start their own trace.** In the browser, a request inside a data-loading function only joins the navigation's trace if it starts before the function's first `await`. Start independent requests together with `Promise.all`; for a request that depends on an earlier one, the guides show the extra line that keeps it in the trace.
+- **Requests after an `await` can start their own trace.** In the browser, a request inside a data-loading function only joins the navigation's trace if it starts before the function's first `await`. Start independent requests together with `Promise.all`. For a request that depends on an earlier one, the guides show the extra line that keeps it in the trace.
 - **Your API must allow the `traceparent` header.** For an API on another origin, add `traceparent` to `Access-Control-Allow-Headers` in its CORS configuration, or the browser blocks the request.
 - **Don't let a CDN cache server-rendered HTML that carries the trace context.** Every visitor served the cached page would join the same server trace. Only add the `Server-Timing` header or meta tag to responses rendered for one request.
 

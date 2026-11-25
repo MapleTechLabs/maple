@@ -73,7 +73,9 @@ A new monitor starts as **pending** until its first check.
 - **Up.** The first passing check brings the monitor back up and resolves the incident.
 - **Paused.** **Pause** on the monitor page stops the checks. **Resume** starts the monitor over from pending.
 
-A down monitor opens an incident with the signal type `uptime` and notifies its destinations, again every 30 minutes while it stays down. The notification reads, for example, "checkout-api is down", with the check's error. Each monitor manages its own alert rule; edit the monitor, not the rule.
+A down monitor opens an incident with the signal type `uptime` and notifies its destinations, then notifies them again every 30 minutes while it stays down. The notification reads, for example, "checkout-api is down", with the check's error.
+
+Each monitor manages its own alert rule. Edit the monitor, not the rule.
 
 ## Find a failed check's trace
 
@@ -83,9 +85,9 @@ The monitor page links each failed check to its trace, and charts response time 
 
 ## Create a check from an AI assistant, the API or code
 
-The same check, an HTTP monitor on a health endpoint with a JSON assertion, created four ways.
+The examples below create the same check four ways: an HTTP monitor on a health endpoint with a JSON assertion.
 
-On the [MCP server](/docs/reference/mcp), `manage_uptime_monitor action=create` creates a monitor, `manage_uptime_monitor action=update` changes or pauses it, and `list_uptime_monitors` shows every monitor with its last check and trace id:
+On the [MCP server](/docs/reference/mcp), `manage_uptime_monitor action=update` changes or pauses a monitor, and `list_uptime_monitors` shows every monitor with its last check and trace id. `manage_uptime_monitor action=create` creates a monitor from these parameters:
 
 ```json
 {
@@ -103,7 +105,7 @@ On the [MCP server](/docs/reference/mcp), `manage_uptime_monitor action=create` 
 
 The MCP tool sets the status, the response time and one body text assertion. For JSON path and header assertions, use the app, the API or Terraform.
 
-With the [API](/docs/reference/api), `POST /v2/uptime_monitors` creates a monitor. `kind` is required and must equal `config.type`. `config.headers` is an object of header names to values. `POST /v2/uptime_monitors/test` runs a config once without saving it:
+With the [API](/docs/reference/api), `POST /v2/uptime_monitors` creates a monitor. `kind` is required and must equal `config.type`. `config.headers` is an object of header names to values:
 
 ```bash
 curl https://api.maple.dev/v2/uptime_monitors \
@@ -126,6 +128,8 @@ curl https://api.maple.dev/v2/uptime_monitors \
     "service_name": "checkout"
   }'
 ```
+
+`POST /v2/uptime_monitors/test` runs a config once without saving it.
 
 In Terraform, use [`maple_uptime_monitor`](/docs/iac/terraform-resources#maple_uptime_monitor):
 
@@ -164,7 +168,7 @@ Checks for organizations in the US region run from Ashburn, Virginia (US East). 
 - **Public targets only.** Maple refuses private, loopback and cloud metadata addresses, on the first request and on every redirect. Use [Collector HTTP checks](/docs/alerting/uptime-monitoring#check-private-endpoints-from-your-collector) for private endpoints.
 - **Redirects.** A check follows up to 5 redirects. A redirect to another origin drops your configured headers and body.
 - **No browser or multi-step checks**, and no hosted certificate expiry check. For certificate expiry, use the Collector's [`httpcheck.tls.cert_remaining`](/docs/alerting/uptime-monitoring#alert-before-a-certificate-expires) metric.
-- **Plan allowance.** Each plan includes a number of monitors. Past it, creating one fails with `402` and "This organization already has N uptime monitors, the most its plan allows." Monitor rules do not count toward the [alert rule limit](/docs/reference/limits).
+- **Plan allowance.** Each plan includes a number of monitors. Past that number, creating one fails with `402` and "This organization already has N uptime monitors, the most its plan allows." Monitor rules do not count toward the [alert rule limit](/docs/reference/limits).
 
 ## Troubleshooting
 

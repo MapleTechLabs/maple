@@ -84,7 +84,7 @@ span.setAttributes({
 })
 ```
 
-`set`, `set_once` and `unset` apply to the user in `maple.product_event.user_id`; `group_set`, `group_set_once` and `group_unset` to the account in `maple.product_event.group_id`. A span without that id, or without `maple.product_event.name`, sets nothing. To set properties without counting a step, name the event `$identify`.
+`set`, `set_once` and `unset` apply to the user in `maple.product_event.user_id`. `group_set`, `group_set_once` and `group_unset` apply to the account in `maple.product_event.group_id`. A span without the matching id, or without `maple.product_event.name`, sets nothing. To set properties without counting a step, name the event `$identify`.
 
 ## Where the link shows up
 

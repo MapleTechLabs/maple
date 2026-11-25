@@ -6,7 +6,16 @@ order: 6
 icon: "cloudflare"
 ---
 
-The Cloudflare integration connects one or more Cloudflare accounts to Maple through OAuth. Maple polls Cloudflare's GraphQL Analytics API every 5 minutes and stores the results as OpenTelemetry metrics. You get zone traffic, cache, and latency; Workers invocations, errors, and CPU time; firewall and DNS activity; and Queues and Durable Objects stats. The data appears under **Infrastructure → Cloudflare**, on the service map, and in the [metrics explorer](/docs/explore/metrics). You do not need to set up Logpush or run an agent.
+The Cloudflare integration connects one or more Cloudflare accounts to Maple through OAuth. Maple polls Cloudflare's GraphQL Analytics API every 5 minutes and stores the results as OpenTelemetry metrics. You do not need to set up Logpush or run an agent.
+
+You get:
+
+- Zone traffic, cache and latency.
+- Workers invocations, errors and CPU time.
+- Firewall and DNS activity.
+- Queues and Durable Objects stats.
+
+The data appears under **Infrastructure → Cloudflare**, on the service map and in the [metrics explorer](/docs/explore/metrics).
 
 ## Prerequisites
 
@@ -25,17 +34,17 @@ The step reads **Cloudflare authorized**, and Maple starts collecting right away
 
 | Scope                                                                                                                                            | Used for                                                                                      |
 | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `account-analytics.read`                                                                                                                         | Workers, Queues, and Durable Objects analytics.                                               |
-| `analytics.read`                                                                                                                                 | Zone HTTP, firewall, and DNS analytics.                                                       |
+| `account-analytics.read`                                                                                                                         | Workers, Queues and Durable Objects analytics.                                                |
+| `analytics.read`                                                                                                                                 | Zone HTTP, firewall and DNS analytics.                                                        |
 | `zone.read`                                                                                                                                      | Listing your zones.                                                                           |
 | `query-cache.read`                                                                                                                               | Listing Hyperdrive configs for the service map. Optional.                                     |
-| `account-settings.read`, `workers-scripts.read`, `workers-scripts.write`, `workers-observability.write`, `workers-observability-telemetry.write` | Also requested on the consent screen. Analytics collection needs only the three scopes above. |
+| `account-settings.read`, `workers-scripts.read`, `workers-scripts.write`, `workers-observability.write`, `workers-observability-telemetry.write` | Also requested on the consent screen. Analytics collection needs only the first three scopes. |
 
 Maple also requests `offline_access` so the connection can refresh its token without you reconnecting.
 
 ## What Maple collects
 
-Maple reads these Cloudflare datasets in 5-minute buckets: HTTP requests (with breakdowns by path, country, and client), Workers invocations, firewall events, DNS queries, Queue backlog and consumers, and Durable Object invocations. On connect it backfills the last 24 hours, or less if your Cloudflare plan keeps less history.
+Maple reads these Cloudflare datasets in 5-minute buckets: HTTP requests (with breakdowns by path, country and client), Workers invocations, firewall events, DNS queries, Queue backlog and consumers, and Durable Object invocations. On connect it backfills the last 24 hours, or less if your Cloudflare plan keeps less history.
 
 The data is stored as metrics named `cloudflare.*`, for example:
 
@@ -52,24 +61,24 @@ Counters are delta sums per 5-minute bucket. Latency percentiles are gauges with
 
 ### Infrastructure → Cloudflare
 
-- **Zones**: **Zone**, **Requests**, **Error rate**, **Cache hit**, **Bandwidth**, and **TTFB p99**, with more sort options (visits, TTFB p50, origin p99).
-- **Workers**: **Script**, **Invocations**, **Error rate**, **CPU p99**, and **Duration p99**.
+- **Zones**: **Zone**, **Requests**, **Error rate**, **Cache hit**, **Bandwidth** and **TTFB p99**, with more sort options (visits, TTFB p50, origin p99).
+- **Workers**: **Script**, **Invocations**, **Error rate**, **CPU p99** and **Duration p99**.
 - **Platform**: Queues (backlog and consumers) and Durable Objects (requests and error rate).
 
 Click a zone for its detail page:
 
-- A stat rail with **Edge requests**, **5xx error rate**, **Bandwidth**, and **Visits**.
-- Charts: **Requests by status class**, **Requests by cache status**, and **Latency percentiles**.
+- A stat rail with **Edge requests**, **5xx error rate**, **Bandwidth** and **Visits**.
+- Charts: **Requests by status class**, **Requests by cache status** and **Latency percentiles**.
 - **Security events by action** and a table of top security rules (**Rule**, **Source**, **Action**, **Host**, **Events**).
 - **DNS queries by response code** and a table of query names with **Queries** and **NXDOMAIN** counts.
 
 ### Service map
 
-When a Worker also sends traces, Maple matches the script to the traced service by service name or `faas.name`. The service's panel on the [service map](/docs/explore/service-map) then gets a **Cloudflare edge** section with edge-reported (unsampled) **Requests**, **Error Rate**, and CPU p99. Scripts without a matching traced service, and zones, do not create nodes of their own.
+When a Worker also sends traces, Maple matches the script to the traced service by service name or `faas.name`. The service's panel on the [service map](/docs/explore/service-map) then gets a **Cloudflare edge** section with edge-reported (unsampled) **Requests**, **Error rate**, **CPU p99** and **Duration p99**. Scripts without a matching traced service, and zones, do not create nodes of their own.
 
 ### The Cloudflare source
 
-The source page shows each connected account, a **Zones** board with a status per zone (**Live**, **Issues**, **No data**, **Paused**, or **Disabled**) and 24-hour request counts, and a **Workers** card.
+The source page shows each connected account, a **Zones** board with a status per zone (**Live**, **Issues**, **No data**, **Paused** or **Disabled**) and 24-hour request counts, and a **Workers** card.
 
 **Manage zones** on the board picks which zones Maple collects, per account. Unchecked zones are paused, and data already collected for them stays. **Collect new zones automatically** adds zones created in Cloudflare later. Changing zones needs the org admin or engineer role.
 
