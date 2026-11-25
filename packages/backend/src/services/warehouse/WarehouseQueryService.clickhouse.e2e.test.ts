@@ -9,8 +9,14 @@ import { parseStatement } from "@maple-dev/effect-orm/sql"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
+import { RetentionService } from "@maple/backend/services/retention/RetentionService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	type TestDb,
+	TestEdgeCacheLive,
+} from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService, __testables } from "./WarehouseQueryService"
 import {
 	applyRealMigrations,
@@ -180,10 +186,15 @@ const buildLayer = () => {
 	const orgSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
-	const tokensLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive))
+	const retentionLive = RetentionService.layer.pipe(
+		Layer.provide(Layer.merge(testDb.layer, TestEdgeCacheLive)),
+	)
+	const tokensLive = TinybirdOrgTokenService.layerWithoutDependencies.pipe(
+		Layer.provide(Layer.mergeAll(envLive, retentionLive)),
+	)
 	return Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
-		Layer.provide(Layer.mergeAll(envLive, orgSettingsLive, tokensLive)),
+		Layer.provide(Layer.mergeAll(envLive, orgSettingsLive, tokensLive, retentionLive)),
 	)
 }
 

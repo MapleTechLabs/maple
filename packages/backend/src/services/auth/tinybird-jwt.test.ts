@@ -2,7 +2,7 @@
 import { createHmac } from "node:crypto"
 import { assert, describe, it } from "@effect/vitest"
 import { mintOrgReadJwt } from "./tinybird-jwt"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 const decodePart = (part: string): unknown => JSON.parse(Buffer.from(part, "base64url").toString("utf8"))
 
@@ -77,5 +77,60 @@ describe("mintOrgReadJwt", () => {
 		}
 		// The embedded quote is backslash-escaped, so the ClickHouse literal stays closed.
 		assert.strictEqual(decoded.scopes[0].filter, "OrgId = 'org_\\' OR 1=1 --'")
+	})
+
+	it("stops a datasource at its read bound and leaves the others on the org filter", () => {
+		const jwt = mintOrgReadJwt({
+			signingKey: SIGNING_KEY,
+			workspaceId: "ws-uuid-123",
+			orgId: "org_abc",
+			datasourceNames: ["traces", "logs", "trace_index"],
+			readBounds: new Map([
+				["traces", { column: "Timestamp", days: 7 }],
+				["trace_index", { column: "Bucket", days: 7, bucketMinutes: 5 }],
+				// Not a datasource of this token: it adds no scope.
+				["metrics_sum", { column: "TimeUnix", days: 7 }],
+			]),
+			nowSeconds: 0,
+			ttlSeconds: 60,
+		})
+		const decoded = decodePart(Str.split(".")(jwt)[1] ?? "") as {
+			scopes: ReadonlyArray<{ type: string; resource: string; filter: string }>
+		}
+		assert.deepStrictEqual(decoded.scopes, [
+			{
+				type: "DATASOURCES:READ",
+				resource: "traces",
+				filter: "OrgId = 'org_abc' AND Timestamp >= now() - INTERVAL 7 DAY",
+			},
+			{ type: "DATASOURCES:READ", resource: "logs", filter: "OrgId = 'org_abc'" },
+			{
+				type: "DATASOURCES:READ",
+				resource: "trace_index",
+				filter: "OrgId = 'org_abc' AND Bucket >= now() - INTERVAL 7 DAY - INTERVAL 5 MINUTE",
+			},
+		])
+	})
+
+	it("leaves every datasource on the bare org filter when there are no bounds", () => {
+		const jwt = mintOrgReadJwt({
+			signingKey: SIGNING_KEY,
+			workspaceId: "ws-uuid-123",
+			orgId: "org_abc",
+			datasourceNames: ["traces", "logs"],
+			readBounds: new Map(),
+			nowSeconds: 1_000,
+			ttlSeconds: 600,
+		})
+		const decoded = decodePart(Str.split(".")(jwt)[1] ?? "") as {
+			scopes: ReadonlyArray<{ resource: string; filter: string }>
+		}
+		assert.deepStrictEqual(
+			Arr.map(decoded.scopes, (scope) => [scope.resource, scope.filter]),
+			[
+				["traces", "OrgId = 'org_abc'"],
+				["logs", "OrgId = 'org_abc'"],
+			],
+		)
 	})
 })

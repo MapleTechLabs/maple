@@ -25,6 +25,7 @@ import * as P from "../lib/params"
 import { PROPERTY_FILTER_FIELDS, propertyFilterArgs, propertyFiltersOf } from "../lib/attribute-filters"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { sessionRetentionNote } from "../lib/product-identity"
+import { readHorizonDays } from "../lib/read-horizon"
 
 const TOOL = "query_paths"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
@@ -167,10 +168,12 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 				(value): value is string => value !== undefined,
 			)
 			const nowMs = yield* Clock.currentTimeMillis
+			const sessionsKeptDays = yield* readHorizonDays("sessions")
 			const sessionNote = sessionRetentionNote(
 				{ startTime: st, endTime: et },
 				nowMs,
 				Arr.some(Rec.values(filters), (value) => value !== undefined),
+				sessionsKeptDays,
 			)
 			const direction = params.direction ?? "after"
 			const depth = params.depth ?? DEFAULT_PATHS_DEPTH

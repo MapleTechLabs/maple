@@ -7,6 +7,7 @@ import { productEventsTotal } from "@maple/query-engine/observability"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { orFallback } from "../lib/fallback"
 import { sessionRetentionNote } from "../lib/product-identity"
+import { readHorizonDays } from "../lib/read-horizon"
 import { maxBreakdownRangeSeconds, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { MetricType, QueryEngineExecuteRequest, QuerySpec } from "@maple/domain/query-engine"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
@@ -1064,7 +1065,13 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				(Rec.keys(sessionFiltersOf(params)).length > 0 ||
 					Arr.contains(Rec.keys(SESSION_FILTERS), params.group_by ?? ""))
 			const nowMs = yield* Clock.currentTimeMillis
-			const sessionNote = sessionRetentionNote({ startTime: st, endTime: et }, nowMs, readsSessions)
+			const sessionsKeptDays = yield* readHorizonDays("sessions")
+			const sessionNote = sessionRetentionNote(
+				{ startTime: st, endTime: et },
+				nowMs,
+				readsSessions,
+				sessionsKeptDays,
+			)
 			const warnings = [
 				...metricsWarningsFor(params, metric),
 				...(sessionNote === undefined ? [] : [sessionNote]),

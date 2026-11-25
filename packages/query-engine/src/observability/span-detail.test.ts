@@ -74,12 +74,16 @@ const run = (
 	sqls: string[],
 	timestampHint?: Date,
 	opts?: { readonly indexed?: boolean; readonly boundedHit?: boolean },
+	lookup?: { readonly nowMs?: number; readonly lookbackHours?: number },
 ) =>
 	Effect.gen(function* () {
-		yield* TestClock.setTime(NOW)
-		return yield* spanDetail({ traceId: TRACE_ID, spanId: SPAN_ID, timestampHint }).pipe(
-			Effect.provide(Layer.succeed(WarehouseExecutor, makeExecutor(sqls, opts))),
-		)
+		yield* TestClock.setTime(lookup?.nowMs ?? NOW)
+		return yield* spanDetail({
+			traceId: TRACE_ID,
+			spanId: SPAN_ID,
+			timestampHint,
+			...(lookup?.lookbackHours === undefined ? undefined : { lookbackHours: lookup.lookbackHours }),
+		}).pipe(Effect.provide(Layer.succeed(WarehouseExecutor, makeExecutor(sqls, opts))))
 	})
 
 /** A timestamp hint far from where the fixture trace actually is. */
@@ -121,6 +125,31 @@ describe("spanDetail", () => {
 			assert.isFalse(result.found)
 			assert.lengthOf(sqls, 3)
 			assert.isTrue(Arr.every(sqls, (sql) => isProbe(sql) && Str.includes("Bucket >=")(sql)))
+		}),
+	)
+
+	it.effect("reaches a trace past the default 30 days when given a longer lookback", () =>
+		Effect.gen(function* () {
+			// The fixture trace is 66 days old by then.
+			const nowMs = Date.parse("2026-05-25T00:00:00Z")
+			const byDefault = yield* run([], undefined, { boundedHit: true }, { nowMs })
+			assert.isFalse(byDefault.found)
+			const sqls: string[] = []
+			const kept = yield* run(sqls, undefined, { boundedHit: true }, { nowMs, lookbackHours: 90 * 24 })
+			assert.isTrue(kept.found)
+			// The widest tier starts 90 days back, where the default stopped at 30.
+			assert.include(sqls[2], "Bucket >= toStartOfFiveMinutes(toDateTime64('2026-02-24 00:00:00', 9))")
+		}),
+	)
+
+	it.effect("probes no further back than a shorter lookback", () =>
+		Effect.gen(function* () {
+			const sqls: string[] = []
+			// Five days old, and the lookback is three.
+			const result = yield* run(sqls, undefined, { boundedHit: true }, { lookbackHours: 3 * 24 })
+			assert.isFalse(result.found)
+			assert.lengthOf(sqls, 2)
+			assert.include(sqls[1], "Bucket >= toStartOfFiveMinutes(toDateTime64('2026-03-22 00:00:00', 9))")
 		}),
 	)
 

@@ -1,13 +1,15 @@
 import { readFileSync } from "node:fs"
 import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
+import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { inject } from "vitest"
 
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
-import { Database } from "../platform/DatabaseLive"
+import { Database, DatabaseError, type DatabaseApi } from "../platform/DatabaseLive"
 import { makeDatabaseFromInstance } from "./DatabasePgliteLive"
+import { makeReadHorizonMemo, ReadHorizonMemo } from "../services/retention/RetentionService"
 
 declare module "vitest" {
 	interface ProvidedContext {
@@ -109,6 +111,49 @@ export const createTestDb = (track?: TestDb[], startParams: ReadonlyArray<string
 	}
 	track?.push(db)
 	return db
+}
+
+const edgeCaches = new WeakMap<TestDb, Layer.Layer<EdgeCacheService>>()
+
+/** An in-memory edge cache, a new one for each layer build it is provided to. */
+/** A read horizon memo of its own for each layer build, as each isolate has one. */
+export const TestReadHorizonMemoLive = Layer.sync(ReadHorizonMemo, makeReadHorizonMemo)
+
+export const TestEdgeCacheLive: Layer.Layer<EdgeCacheService> = Layer.sync(EdgeCacheService, () =>
+	makeEdgeCacheService(makeMemoryBackend()),
+)
+
+/**
+ * The in-memory edge cache of `db`: one per test database, shared by every service instance
+ * built over it, the way isolates over one database share the real one.
+ */
+export const testEdgeCache = (db: TestDb): Layer.Layer<EdgeCacheService> => {
+	const known = edgeCaches.get(db)
+	if (known !== undefined) return known
+	const created = Layer.succeed(EdgeCacheService)(makeEdgeCacheService(makeMemoryBackend()))
+	edgeCaches.set(db, created)
+	return created
+}
+
+/**
+ * A `Database` over `db` that counts its calls and fails them while `down` is set, for a
+ * service that must answer from a cache or outlive a failed read.
+ */
+export const makeSwitchableDatabase = (db: TestDb) => {
+	const state = { down: false, stalled: false, calls: 0 }
+	const layer = Layer.effect(
+		Database,
+		Effect.map(Database, (real): DatabaseApi => ({
+			execute: (fn) => {
+				state.calls += 1
+				if (state.stalled) return Effect.never
+				return state.down
+					? Effect.fail(new DatabaseError({ message: "database unavailable", cause: "test" }))
+					: real.execute(fn)
+			},
+		})),
+	).pipe(Layer.provide(db.layer))
+	return { layer, state }
 }
 
 const decodeQueryText = Schema.decodeUnknownSync(Schema.String)

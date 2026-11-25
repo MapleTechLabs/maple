@@ -2,18 +2,23 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgRetentionPolicies, Sources } from "@maple/db/tables"
 import { RetentionInvalidError, RetentionPersistenceError, SourceNotFoundError } from "@maple/domain/http"
 import {
+	DEFAULT_RETENTION_DAYS,
 	hasRetentionOverrides,
 	MAX_RETENTION_DAYS,
 	MIN_RETENTION_DAYS,
 	organizationRetentionDays,
 	readHorizonDays,
+	RETENTION_SIGNALS,
 	type RetentionDaysBySignal,
 	RetentionOverrides,
+	type RetentionSignal,
+	RetentionSignal as RetentionSignalSchema,
 	sourceRetentionDays,
 } from "@maple/domain/retention"
 import type { OrgId, SourceId, UserId } from "@maple/primitives"
+import { EdgeCacheService } from "@maple/cache"
 import type { MapleDb } from "@maple/db/client"
-import { Array as Arr, Clock, Context, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -35,8 +40,99 @@ export interface RetentionPolicy {
 	readonly sources: ReadonlyArray<SourceRetention>
 }
 
+/** How far back reads of an organization may reach, as the read path needs it. */
+export interface RetentionReadHorizon {
+	/** Days per signal: the longest any source keeps it. */
+	readonly days: RetentionDaysBySignal
+	/** The signals the organization or one of its sources set a period for, in `RETENTION_SIGNALS` order. */
+	readonly configured: ReadonlyArray<RetentionSignal>
+}
+
+/** What an organization that set nothing reads: the defaults, with no signal bounded by policy. */
+export const DEFAULT_READ_HORIZON: RetentionReadHorizon = { days: DEFAULT_RETENTION_DAYS, configured: [] }
+
+/** The read horizon of a policy, with the signals it or one of its sources set. */
+export const readHorizonOf = (policy: {
+	readonly overrides: RetentionOverrides
+	readonly readHorizonDays: RetentionDaysBySignal
+	readonly sources: ReadonlyArray<{ readonly overrides: RetentionOverrides }>
+}): RetentionReadHorizon => ({
+	days: policy.readHorizonDays,
+	configured: Arr.filter(
+		RETENTION_SIGNALS,
+		(signal) =>
+			policy.overrides[signal] !== undefined ||
+			Arr.some(policy.sources, (source) => source.overrides[signal] !== undefined),
+	),
+})
+
+/** The shared cache bucket of read horizons: one entry, every organization with a policy. */
+export const READ_HORIZON_CACHE_BUCKET = "retention-read-horizons"
+export const READ_HORIZON_CACHE_KEY = "configured"
+
+/** The read horizons of every organization that set a period, as the shared cache holds them. */
+const CachedReadHorizons = Schema.Struct({
+	/** When the policies were read from Postgres, by the clock of the isolate that read them. */
+	readAtMs: Schema.Number,
+	orgs: Schema.Array(
+		Schema.Struct({
+			orgId: Schema.String,
+			days: Schema.Struct({
+				traces: Schema.Number,
+				logs: Schema.Number,
+				metrics: Schema.Number,
+				sessions: Schema.Number,
+				events: Schema.Number,
+				profiles: Schema.Number,
+			}),
+			configured: Schema.Array(RetentionSignalSchema),
+		}),
+	),
+})
+
+/** How long the read horizons are served before the policies are read again. */
+export const READ_HORIZON_TTL_MS = 60_000
+/** After a failed policy read, how long the fallback is served before the next attempt. */
+export const READ_HORIZON_RETRY_MS = 10_000
+/** A read waits this long for the policies, then carries on with the fallback. */
+export const READ_HORIZON_LOAD_TIMEOUT_MS = 2_000
+/** A write this much older than a snapshot is in it, whatever two isolates' clocks disagree by. */
+export const READ_HORIZON_WRITE_SKEW_MS = 5_000
+/** How often a read on an isolate that holds nothing yet looks for the load under way. */
+const READ_HORIZON_COLD_POLL_MS = 5
+/** A refresh marker older than this is from a fiber that never cleared it. */
+const READ_HORIZON_REFRESH_STALE_MS = 10_000
+
+/** The read horizons an isolate holds: every organization with a policy, as last read. */
+export interface ReadHorizonMemoState {
+	known: { readonly byOrg: Map<string, RetentionReadHorizon>; readonly freshUntil: number } | undefined
+	refreshStartedAt: number | undefined
+	/** This isolate's own policy writes, kept until a snapshot read after them is loaded. */
+	readonly written: Map<string, { readonly horizon: RetentionReadHorizon; readonly atMs: number }>
+}
+export const makeReadHorizonMemo = (): ReadHorizonMemoState => ({
+	known: undefined,
+	refreshStartedAt: undefined,
+	written: new Map(),
+})
+const isolateReadHorizonMemo = makeReadHorizonMemo()
+
+/**
+ * One per isolate by default, so it outlives the service instance: cron lanes and many
+ * requests build a new instance each time. Tests provide their own, one per simulated isolate.
+ */
+export class ReadHorizonMemo extends Context.Reference<ReadHorizonMemoState>(
+	"@maple/backend/services/retention/ReadHorizonMemo",
+	{ defaultValue: () => isolateReadHorizonMemo },
+) {}
+
 export interface RetentionServiceApi {
 	readonly get: (orgId: OrgId) => Effect.Effect<RetentionPolicy, RetentionPersistenceError>
+	/**
+	 * The organization's read horizon from a per-isolate cache, for the read path. It never
+	 * fails or waits long: an unreadable policy serves the last known horizon, else the defaults.
+	 */
+	readonly readHorizon: (orgId: OrgId) => Effect.Effect<RetentionReadHorizon>
 	/** Replaces what the organization set. It applies to data ingested from now on. */
 	readonly setOrganization: (
 		orgId: OrgId,
@@ -80,6 +176,7 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const edgeCache = yield* EdgeCacheService
 			const dbExecute = makeDbExecute(database, "RetentionService", toPersistenceError)
 
 			// The org's periods and its sources' are read from one snapshot, so the horizon
@@ -128,6 +225,181 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 				)
 			})
 
+			// Every organization that set a period, in one snapshot. The read path asks for
+			// this instead of one policy per org, so a fan-out over many orgs costs one read.
+			const readConfigured = Effect.fn("RetentionService.readConfigured")(function* () {
+				const readAtMs = yield* Clock.currentTimeMillis
+				const { policies, sources } = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.all({
+							policies: db.run(
+								PG.from(OrgRetentionPolicies).select(($) => ({
+									orgId: $.orgId,
+									retentionDays: $.retentionDays,
+								})),
+							),
+							sources: db.run(
+								PG.from(Sources)
+									.select(($) => ({ orgId: $.orgId, retentionDays: $.retentionDays }))
+									.where(($) => [$.retentionDays.neq(NO_OVERRIDES)]),
+							),
+						}),
+						{ isolationLevel: "repeatable read", accessMode: "read only" },
+					),
+				)
+				const sourcesByOrg = Arr.groupBy(sources, (row) => row.orgId)
+				const overridesByOrg = new Map(Arr.map(policies, (row) => [row.orgId, row.retentionDays]))
+				const orgIds = Arr.dedupe([
+					...Arr.map(policies, (row) => row.orgId),
+					...Arr.map(sources, (row) => row.orgId),
+				])
+				const orgs = Arr.filter(
+					Arr.map(orgIds, (orgId) => {
+						const overrides = overridesByOrg.get(orgId) ?? NO_OVERRIDES
+						const sourceOverrides = Arr.map(sourcesByOrg[orgId] ?? [], (row) => row.retentionDays)
+						const horizon = readHorizonOf({
+							overrides,
+							sources: Arr.map(sourceOverrides, (each) => ({ overrides: each })),
+							readHorizonDays: readHorizonDays(overrides, sourceOverrides),
+						})
+						return { orgId, days: horizon.days, configured: horizon.configured }
+					}),
+					(org) => org.configured.length > 0,
+				)
+				yield* Effect.annotateCurrentSpan({ "result.rowCount": orgs.length })
+				return { readAtMs, orgs }
+			})
+
+			// The isolate's copy of the whole set. A set past `freshUntil` stays as the last known.
+			const state = yield* ReadHorizonMemo
+			const horizonOf = (orgId: OrgId) => state.known?.byOrg.get(orgId) ?? DEFAULT_READ_HORIZON
+			// A snapshot read before one of this isolate's writes must not undo it, whichever
+			// isolate read it. A write the snapshot is sure to hold is forgotten.
+			const withWrites = (byOrg: Map<string, RetentionReadHorizon>, readAtMs: number) => {
+				state.written.forEach((write, orgId) => {
+					if (write.atMs + READ_HORIZON_WRITE_SKEW_MS < readAtMs) {
+						state.written.delete(orgId)
+						return
+					}
+					if (write.horizon.configured.length > 0) byOrg.set(orgId, write.horizon)
+					else byOrg.delete(orgId)
+				})
+				return byOrg
+			}
+
+			const loadReadHorizons = Effect.fn("RetentionService.loadReadHorizons")(function* (
+				nowMs: number,
+			) {
+				// A new isolate asks the shared cache before Postgres, unless it is mid fan-out.
+				yield* edgeCache
+					.getOrCompute(
+						{
+							bucket: READ_HORIZON_CACHE_BUCKET,
+							key: READ_HORIZON_CACHE_KEY,
+							ttlSeconds: READ_HORIZON_TTL_MS / 1000,
+							schema: CachedReadHorizons,
+							skipReadWhenSlotsHeld: true,
+						},
+						readConfigured(),
+					)
+					.pipe(
+						Effect.timeoutOrElse({
+							duration: Duration.millis(READ_HORIZON_LOAD_TIMEOUT_MS),
+							orElse: () =>
+								Effect.fail(
+									new RetentionPersistenceError({
+										message: "Retention policies took too long to read",
+									}),
+								),
+						}),
+						Effect.tap((result) =>
+							Effect.annotateCurrentSpan({
+								"maple.retention.read_horizon.source": result.hit ? "edge_cache" : "postgres",
+								"maple.retention.read_horizon.orgs": result.value.orgs.length,
+							}),
+						),
+						Effect.map((result) => {
+							state.known = {
+								byOrg: withWrites(
+									new Map(
+										Arr.map(result.value.orgs, (org) => [
+											org.orgId,
+											{ days: org.days, configured: org.configured },
+										]),
+									),
+									result.value.readAtMs,
+								),
+								freshUntil: nowMs + READ_HORIZON_TTL_MS,
+							}
+						}),
+						// A telemetry read must not fail or stall on the policy read: the last known
+						// horizons, else the defaults, held from now so a slow database is not asked per read.
+						Effect.catchTag("@maple/http/retention/RetentionPersistenceError", (error) =>
+							Effect.gen(function* () {
+								const failedAtMs = yield* Clock.currentTimeMillis
+								yield* Effect.annotateCurrentSpan({
+									"maple.retention.read_horizon.source":
+										state.known === undefined ? "defaults" : "last_known",
+									"maple.retention.read_horizon.error": error.message,
+								})
+								state.known = {
+									byOrg: withWrites(
+										state.known?.byOrg ?? new Map<string, RetentionReadHorizon>(),
+										0,
+									),
+									freshUntil: failedAtMs + READ_HORIZON_RETRY_MS,
+								}
+							}),
+						),
+						Effect.ensuring(
+							Effect.sync(() => {
+								state.refreshStartedAt = undefined
+							}),
+						),
+					)
+			})
+
+			// No span of its own: a hit is a clock read and a map lookup on every warehouse read.
+			const readHorizonAfter = (orgId: OrgId, polls: number): Effect.Effect<RetentionReadHorizon> =>
+				Effect.flatMap(Clock.currentTimeMillis, (nowMs) => {
+					// While another fiber reads the policies, the rest never start a read of their own
+					// and never wait on that fiber: it may belong to another request, and its
+					// connection with it. They keep the last known horizons, or with none yet they
+					// look again shortly, since the defaults would let a bounded org read too far.
+					const startedAt = state.refreshStartedAt
+					const loading =
+						startedAt !== undefined && nowMs - startedAt < READ_HORIZON_REFRESH_STALE_MS
+					if (state.known !== undefined && (loading || nowMs < state.known.freshUntil)) {
+						return Effect.succeed(horizonOf(orgId))
+					}
+					if (loading && polls * READ_HORIZON_COLD_POLL_MS < READ_HORIZON_LOAD_TIMEOUT_MS) {
+						return Effect.flatMap(Effect.sleep(Duration.millis(READ_HORIZON_COLD_POLL_MS)), () =>
+							readHorizonAfter(orgId, polls + 1),
+						)
+					}
+					// Marked here, in the same step as the check, so the next reader sees it.
+					state.refreshStartedAt = nowMs
+					return Effect.map(loadReadHorizons(nowMs), () => horizonOf(orgId))
+				})
+			const readHorizon = (orgId: OrgId) => readHorizonAfter(orgId, 0)
+
+			/**
+			 * A write is read back by its own instance at once. The shared entry is dropped, so
+			 * the others follow as their own copy expires, within the TTL.
+			 */
+			const rememberPolicy = (orgId: OrgId, policy: RetentionPolicy) =>
+				Effect.gen(function* () {
+					const horizon = readHorizonOf(policy)
+					state.written.set(orgId, { horizon, atMs: yield* Clock.currentTimeMillis })
+					if (horizon.configured.length > 0) state.known?.byOrg.set(orgId, horizon)
+					else state.known?.byOrg.delete(orgId)
+					yield* edgeCache.invalidate({
+						bucket: READ_HORIZON_CACHE_BUCKET,
+						key: READ_HORIZON_CACHE_KEY,
+					})
+					return policy
+				})
+
 			const setOrganization = Effect.fn("RetentionService.setOrganization")(function* (
 				orgId: OrgId,
 				userId: UserId,
@@ -137,7 +409,7 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 				const overrides = yield* validOverrides(input)
 				const now = yield* Clock.currentTimeMillis
 				// The write and the policy it returns commit together: a failed read undoes the write.
-				return yield* dbExecute((db) =>
+				const policy = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							yield* db.run(
@@ -163,6 +435,7 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 						{ isolationLevel: "repeatable read" },
 					),
 				)
+				return yield* rememberPolicy(orgId, policy)
 			})
 
 			const setSource = Effect.fn("RetentionService.setSource")(function* (
@@ -178,7 +451,7 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 				})
 				const overrides = yield* validOverrides(input)
 				const now = yield* Clock.currentTimeMillis
-				return yield* dbExecute((db) =>
+				const policy = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							const updated = yield* db.run(
@@ -198,9 +471,10 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 						{ isolationLevel: "repeatable read" },
 					),
 				)
+				return yield* rememberPolicy(orgId, policy)
 			})
 
-			return { get, setOrganization, setSource } satisfies RetentionServiceApi
+			return { get, readHorizon, setOrganization, setSource } satisfies RetentionServiceApi
 		}),
 	},
 ) {

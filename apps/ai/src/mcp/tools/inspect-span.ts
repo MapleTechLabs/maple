@@ -4,6 +4,7 @@ import { withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, toSecondTimestamp, untrustedText } from "../lib/format"
 import * as P from "../lib/params"
+import { readHorizonDays } from "../lib/read-horizon"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { DateTime, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { hasAiSignal, renderAiSpan } from "../lib/render-ai-span"
@@ -191,8 +192,10 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 					? undefined
 					: Option.getOrUndefined(Option.map(DateTime.make(timestampMs), DateTime.toDateUtc))
 
+			// Without a timestamp the trace is located as far back as the org keeps traces.
+			const lookbackHours = (yield* readHorizonDays("traces")) * 24
 			const result = yield* withTenantExecutor(
-				spanDetail({ traceId: trace_id, spanId: span_id, timestampHint }),
+				spanDetail({ traceId: trace_id, spanId: span_id, timestampHint, lookbackHours }),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers("span_detail")))
 
 			// The decoded view needs the whole trace, not this span alone: the
