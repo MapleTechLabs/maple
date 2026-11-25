@@ -13,7 +13,9 @@ The Google Cloud integration connects an organization, a folder or a single proj
 | **Log forwarding**        | A Log Router sink sends Cloud Logging entries through Pub/Sub to Maple. They appear in [Logs](/docs/explore/logs) under the service that wrote them.                                                                                                                           |
 | **Metrics and resources** | Maple reads Cloud Monitoring metrics for Cloud Run, Cloud Functions, GKE, Compute Engine, Cloud SQL, Pub/Sub and HTTP(S) load balancers every 5 minutes, and lists the resources behind them every hour. The metrics are named `gcp.*` and work in dashboards and alert rules. |
 
-There is no OAuth step and no service account key, and Maple gets no write access to Google Cloud. You set a connection up in one of three ways, chosen under **How do you want to apply the setup?**. Each creates the same resources under the same names:
+There is no OAuth step and no service account key, and Maple gets no write access to Google Cloud.
+
+You set a connection up in one of three ways, chosen under **How do you want to apply the setup?**. Each creates the same resources under the same names:
 
 | Method                       | What you do                                                                                                                                               |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -25,7 +27,7 @@ If your workloads also send telemetry over OpenTelemetry, read [Google Cloud wit
 
 ## Prerequisites
 
-You need to be an admin or engineer in the Maple organization, and in Google Cloud:
+You need to be an admin or engineer in the Maple organization. In Google Cloud, you need these roles:
 
 | You connect     | Roles you need                                                                                                                                      |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -54,7 +56,7 @@ If a step fails, the script stops and prints what to do. Fix it and paste the sc
 
 Logs start arriving within about 10 minutes of the sink being created; entries written before then are not forwarded. The first metrics read lands within about 10 minutes, and Maple then reads every 5 minutes, about 5 minutes behind.
 
-The script contains a secret that lets anyone send logs to your Maple organization. Don't share or commit it, and run it in Cloud Shell, where it stays out of shell history. If it leaks, disconnect and connect again to get a new one. Manual and infrastructure-as-code setups carry no secret: Pub/Sub signs each push instead.
+The script contains a secret that lets anyone send logs to your Maple organization. Don't share or commit it, and run it in Cloud Shell, where it stays out of shell history. If the script leaks, disconnect and connect again to get a new secret. Manual and infrastructure-as-code setups carry no secret: Pub/Sub signs each push instead.
 
 ### Roles for running the script
 
@@ -71,13 +73,21 @@ Owner on the host project is the simplest. Without it, these predefined roles to
 
 ### Change collection
 
-Open the menu on the connection's row and choose **Edit data**, change **Log forwarding**, **Metrics and resources** or the log filter, and click **Save and continue**. Then apply the change the way you set the connection up: run the script again, follow the dialog's console steps, or apply the regenerated file.
+1. Open the menu on the connection's row and choose **Edit data**.
+2. Change **Log forwarding**, **Metrics and resources** or the log filter, and click **Save and continue**.
+3. Apply the change the way you set the connection up: run the script again, follow the dialog's console steps, or apply the regenerated file.
 
 Turning something off takes effect in Maple at once. Google Cloud keeps the sink or the read-only account until the change is applied, and the connection says so until then. A connection collects at least one of the two; to stop collecting, [disconnect](#disconnect).
 
 ### Log filter
 
-Platform, request and audit logs are forwarded. Admin Activity and Policy Denied audit entries do not land in logs: they go to the audit log in the Security section, which only organization admins can read. System Event audit entries stay in logs, and so do Kubernetes API writes (`k8s.io`), which are mostly a cluster's own controllers. A self-hosted gateway does the same only when it writes to the warehouse itself and `INGEST_AUDIT_TRAIL_ENABLED` is `true`; without the setting, or when it forwards telemetry to a collector, every audit entry stays a log. The default filter leaves out what costs a lot and says little:
+Platform, request and audit logs are forwarded.
+
+Admin Activity and Policy Denied audit entries do not land in logs: they go to the audit log in the Security section, which only organization admins can read. System Event audit entries stay in logs, and so do Kubernetes API writes (`k8s.io`), which are mostly a cluster's own controllers.
+
+A self-hosted gateway routes audit entries this way only when it writes to the warehouse itself and `INGEST_AUDIT_TRAIL_ENABLED` is `true`. Without the setting, or when the gateway forwards telemetry to a collector, every audit entry stays a log.
+
+The default filter leaves out what costs a lot and says little:
 
 | Left out                    | Reason                                                                                                                                                                                     |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -100,7 +110,7 @@ AND NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr")))
 AND NOT resource.type="k8s_container"
 ```
 
-For any other filter, paste the script into an editor, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`; in the console or a file, edit the sink's filter. It uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). On a connection that already has a sink, the dialog starts on **Keep current filter**, which leaves your filter alone.
+For any other filter, paste the script into an editor, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. In the console or a file, edit the sink's filter. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). On a connection that already has a sink, the dialog starts on **Keep current filter**, which leaves your filter alone.
 
 ## Verify
 
@@ -126,7 +136,11 @@ Each entry gets its `service.name` from the resource that wrote it, so workload 
 | App Engine              | The module ID.                                                    |
 | Everything else         | `gcp/<resource type>`, for example `gcp/cloudsql_database`.       |
 
-Entries carry `cloud.provider`, `cloud.account.id` (the project ID), `cloud.region`, the resource's labels as `gcp.resource.labels.*`, and the Kubernetes, Cloud Run or Compute Engine attributes of their resource. Fields with an OpenTelemetry convention take its name (`httpRequest` becomes `http.request.method`, `url.full`, `http.response.status_code` and so on); the rest keep their Cloud Logging names under `gcp.`. An entry's `trace` and `spanId` become the log's trace and span IDs. Entries in a log named `maple-setup` are setup reports: Maple reads them and doesn't store them, so don't log under that name.
+Entries carry `cloud.provider`, `cloud.account.id` (the project ID), `cloud.region`, the resource's labels as `gcp.resource.labels.*`, and the Kubernetes, Cloud Run or Compute Engine attributes of their resource.
+
+Fields with an OpenTelemetry convention take its name (`httpRequest` becomes `http.request.method`, `url.full`, `http.response.status_code` and so on). The rest keep their Cloud Logging names under `gcp.`. An entry's `trace` and `spanId` become the log's trace and span IDs.
+
+Entries in a log named `maple-setup` are setup reports: Maple reads them and doesn't store them, so don't log under that name.
 
 ### Metrics
 
@@ -166,7 +180,12 @@ The script, the console steps and the generated files grant the same roles. Mapl
 
 ## Google Cloud costs
 
-Google bills Pub/Sub for the log entries that pass through the topic and subscription (a narrower filter lowers it), and Cloud Monitoring reads to the host project: each connection runs 46 `timeSeries.list` queries every 5 minutes, growing with the number of time series. Cloud Asset Inventory searches are free. See [Pub/Sub pricing](https://cloud.google.com/pubsub/pricing) and [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
+Google bills two things to the host project:
+
+- Pub/Sub, for the log entries that pass through the topic and subscription. A narrower filter lowers the bill.
+- Cloud Monitoring reads. Each connection runs 46 `timeSeries.list` queries every 5 minutes, growing with the number of time series.
+
+Cloud Asset Inventory searches are free. See [Pub/Sub pricing](https://cloud.google.com/pubsub/pricing) and [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
 
 ## Limits
 
@@ -180,7 +199,7 @@ Google bills Pub/Sub for the log entries that pass through the topic and subscri
 
 ## Troubleshooting
 
-The connection's band names the problem and the fix; when it asks for another setup run, its button **Set up again** opens the dialog at **Method**. For the script, read its last lines in Cloud Shell. A few cases need more:
+The connection's band names the problem and the fix. When the band asks for another setup run, its **Set up again** button opens the dialog at **Method**. For the script, read its last lines in Cloud Shell. A few cases need more:
 
 | You see                                                 | Do                                                                                                                                                      |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -209,7 +228,9 @@ Open the **⋮** menu on the connection's row and choose **Disconnect**. Remove 
 - **Set up in the console**: delete them in the order the dialog lists. See [Removing](/docs/integrations/gcp-manual-setup#removing).
 - **Set up with Terraform or Alchemy**: destroy it there. See [Change or remove](/docs/integrations/gcp-infrastructure-as-code#change-or-remove).
 
-Then click **Disconnect**. Maple stops reading the connection's metrics and accepting its logs; data already in Maple is kept. Disconnecting first leaves Google Cloud publishing logs to Pub/Sub, billed by Google, and Maple keeps the cleanup script on the page until you dismiss it.
+Then click **Disconnect**. Maple stops reading the connection's metrics and accepting its logs; data already in Maple is kept.
+
+If you disconnect before you remove the resources, Google Cloud keeps publishing logs to Pub/Sub, billed by Google, and Maple keeps the cleanup script on the page until you dismiss it.
 
 ## Next steps
 

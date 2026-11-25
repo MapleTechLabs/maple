@@ -10,6 +10,10 @@ import { String as Str } from "effect"
 const assets = (files: Record<string, string>) => ({
 	fetch: async (request: Request): Promise<Response> => {
 		const { pathname } = new URL(request.url)
+		// Workers Assets (auto-trailing-slash) sends a directory page's bare path to its slash form.
+		if (!Str.endsWith("/")(pathname) && `${pathname}/index.html` in files) {
+			return new Response(null, { status: 307, headers: { Location: `${pathname}/` } })
+		}
 		// Workers Assets resolves a directory request to its index.html.
 		const resolved =
 			Str.endsWith("/")(pathname) && !(pathname in files) ? `${pathname}index.html` : pathname
@@ -95,6 +99,21 @@ describe("markdown content negotiation", () => {
 		expect(response.status).toBe(200)
 		expect(response.headers.get("Vary")).toBeNull()
 		expect(response.headers.get("Link")).toBeNull()
+	})
+})
+
+describe("trailing slash", () => {
+	it("redirects a bare page path to its slash form permanently, so search engines fold the two", async () => {
+		const res = await get("/pricing", { Accept: BROWSER_ACCEPT })
+		expect(res.status).toBe(308)
+		expect(res.headers.get("Location")).toBe("/pricing/")
+		// The same URL answers markdown clients with the twin, so caches key it on Accept.
+		expect(res.headers.get("Vary")).toBe("Accept")
+	})
+
+	it("serves the slash form directly", async () => {
+		const res = await get("/pricing/", { Accept: BROWSER_ACCEPT })
+		expect(res.status).toBe(200)
 	})
 })
 

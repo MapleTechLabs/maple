@@ -6,11 +6,11 @@ order: 5
 icon: "slack"
 ---
 
-The Slack integration adds the Maple bot to a Slack workspace and links that workspace to your Maple organization. Mention the bot in a channel and it answers in a thread, using the same assistant as Maple's chat, with access to your organization's traces, logs, metrics, and errors. Once the workspace is linked, its channels are also available as [alert destinations](/docs/alerting/notification-destinations).
+The Slack integration adds the Maple bot to a Slack workspace and links that workspace to your Maple organization. Mention the bot in a channel and it answers in a thread, using the same assistant as Maple's chat, with access to your organization's traces, logs, metrics and errors. Once the workspace is linked, its channels are also available as [alert destinations](/docs/alerting/notification-destinations).
 
 ## Prerequisites
 
-- You are an admin or engineer in the Maple organization. Only those roles can connect, change, or disconnect Slack workspaces.
+- You are an admin or engineer in the Maple organization. Only those roles can connect, change or disconnect Slack workspaces.
 - You can install apps in the Slack workspace.
 
 ## Install the bot
@@ -50,9 +50,11 @@ The bot has no slash commands.
 
 ### What the bot can do
 
-The bot answers questions from your Maple telemetry and alerting state: services, traces, logs, metrics, errors, alert rules, incidents, on-call schedules, and the list of dashboards. Telemetry can itself contain user identifiers, such as a `user.id` attribute on a span or a log line. From Slack the bot does not read session replays or look up individual users, and it does not read connected data sources, source code, or SQL.
+The bot answers questions from your Maple telemetry and alerting state: services, traces, logs, metrics, errors, alert rules, incidents, on-call schedules and the list of dashboards.
 
-The bot makes no changes from Slack. When a request would change something, such as creating a dashboard, editing an alert rule, or updating an error issue, the bot tells you to make the change in the Maple app. The one action in chat is acknowledging an alert with the button on its card.
+From Slack the bot does not read session replays or look up individual users, and it does not read connected data sources, source code or SQL. Telemetry can itself contain user identifiers, such as a `user.id` attribute on a span or a log line.
+
+The bot makes no changes from Slack. When a request would change something, such as creating a dashboard, editing an alert rule or updating an error issue, the bot tells you to make the change in the Maple app. The one action in chat is acknowledging an alert with the button on its card.
 
 ### Identity
 
@@ -89,8 +91,8 @@ On **Settings → Integrations → Slack**, click **Disconnect** next to the wor
 
 - **"The install link expired."** Start the install again from **Add to Slack**.
 - **"That workspace is already linked to a different Maple organization."** Disconnect it from the other organization first.
-- **"Only org admins and engineers can manage integrations."** Ask an admin or engineer in your organization to install it.
-- **The bot does not reply.** Make sure you mentioned it, that it is in the channel (`/invite @Maple`), and that the workspace shows **Connected** in Maple.
+- **"You need Manage integrations to manage integrations. Admin and Engineer have it."** Ask an admin or engineer in your organization to install it.
+- **The bot does not reply.** Make sure you mentioned it, that it is in the channel (`/invite @Maple`) and that the workspace shows **Connected** in Maple.
 - **"Maple's agent can't be reached from here right now."** The assistant is temporarily unavailable. Try again later.
 - **The channel list for alerts is empty or asks you to reinstall.** The workspace was linked before the alert scopes were added. Click **Open Slack integration** and reinstall with **Add to Slack**.
 

@@ -27,7 +27,7 @@ The sidebar narrows the list:
 | Group                    | The company or team passed to `identify()`. Shown once any session has one.                  |
 | Identity                 | **Name or email…** and **User ID…**, from `identify()`.                                      |
 
-Sessions with errors are marked in the list. The **with errors** and **engaged** chips in the toolbar narrow the list to sessions with errors, or to engaged sessions: not a bot, a bounce, an idle tab or a short glance at one page.
+Sessions with errors are marked in the list. In the toolbar, the **with errors** chip narrows the list to sessions with errors. The **engaged** chip narrows it to engaged sessions: sessions that are not a bot, a bounce, an idle tab or a short glance at one page.
 
 ## Watch a session
 

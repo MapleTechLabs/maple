@@ -156,6 +156,11 @@ const itemListJsonLd = {
                                     Maple vs {tool.name.split(" ")[0]}
                                 </a>
                             )}
+                            {tool.alternativesPath && (
+                                <a href={tool.alternativesPath} class="text-fg-muted hover:text-primary transition-colors">
+                                    {tool.name.split(" ")[0]} alternatives
+                                </a>
+                            )}
                         </div>
                     </article>
                 ))}

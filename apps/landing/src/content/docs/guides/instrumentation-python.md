@@ -9,7 +9,7 @@ sdk: "python"
 
 This guide sets up the OpenTelemetry Python SDK so your application sends traces, logs and metrics to Maple, with instrumentation for FastAPI, Django, Flask and common client libraries.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -115,7 +115,11 @@ export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repo
 opentelemetry-instrument python app.py
 ```
 
-`OTEL_EXPORTER_OTLP_PROTOCOL` matters here: the distro defaults to gRPC, which needs `opentelemetry-exporter-otlp-proto-grpc` instead. Maple accepts both protocols on the same endpoint. `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED` attaches the log exporter to the standard `logging` module. Use either this path or `telemetry.py`, not both.
+`OTEL_EXPORTER_OTLP_PROTOCOL` matters here: the distro defaults to gRPC, which needs `opentelemetry-exporter-otlp-proto-grpc` instead. Maple accepts both protocols on the same endpoint.
+
+`OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED` attaches the log exporter to the standard `logging` module.
+
+Use either the wrapper or `telemetry.py`, not both.
 
 ## Auto-instrumentation
 
@@ -201,7 +205,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the **Recent deploys** panel on each service page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
@@ -209,7 +213,7 @@ export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme
 
 ### Databases
 
-Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+Database instrumentation sets the `db.*` attributes for you. For a driver without instrumentation, set them on a `Client` span:
 
 ```python
 from opentelemetry.trace import SpanKind

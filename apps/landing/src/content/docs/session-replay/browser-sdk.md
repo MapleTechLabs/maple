@@ -122,7 +122,9 @@ Every span and replay event the SDK emits carries one **`session.id`** (a `crypt
 
 The session is stored in `sessionStorage` under the key `maple.session`, so it **survives reloads within a tab**. `sessionStorage` is per tab, so **each tab or window gets its own session**. When `sessionStorage` is unavailable (for example in some private-browsing modes), the SDK keeps the session in memory for the life of the page.
 
-The replay chunk a page is still sending when it unloads is kept in `sessionStorage` under `maple.replay.pending` and sent by the next page of the same session in that tab, if that page starts recording within ten minutes. Revoking consent removes it; with `privacy.requireConsent`, it is sent once consent is granted on that next page, unless it was revoked in between.
+When a page unloads while it is still sending a replay chunk, the SDK keeps the chunk in `sessionStorage` under `maple.replay.pending`. The next page of the same session in that tab sends it, if that page starts recording within ten minutes.
+
+Revoking consent removes the stored chunk. With `privacy.requireConsent`, the chunk is sent once consent is granted on that next page, unless consent was revoked in between.
 
 Client-side route changes in a single-page app do **not** start a new session. Session boundaries are purely time-based.
 
@@ -260,7 +262,10 @@ errors: {
 } // a 404 from a search box is expected here
 ```
 
-A request that gets no response at all (offline, DNS, CORS, or a timeout from `AbortSignal.timeout()`) is an error. A request your code aborts with its own `AbortController` is not, and neither is one the browser cancelled because the page unloaded (including a `location.reload()`), was hidden or went offline while it was in flight: that span is marked `maple.connection_lost` instead.
+A request that gets no response at all (offline, DNS, CORS, or a timeout from `AbortSignal.timeout()`) is an error. Two kinds of request are not:
+
+- A request your code aborts with its own `AbortController`.
+- A request the browser cancelled because the page unloaded (including a `location.reload()`), was hidden or went offline while the request was in flight. That span is marked `maple.connection_lost` instead.
 
 Some requests are expected to fail, such as analytics beacons an ad blocker stops. List them and their failures stop counting as errors (a string is an absolute URL prefix, a RegExp is tested against the full URL):
 
@@ -342,7 +347,7 @@ replay: {
 }
 ```
 
-Only text and JSON bodies are kept, cut to `maxLength` characters (1,000 by default, which is also the most Maple stores), and nothing is kept with `privacy.maskAllText`. Bodies can contain personal data, so list only endpoints whose payloads you are allowed to record.
+Only text and JSON bodies are kept, cut to `maxLength` characters (1,000 by default, which is also the most Maple stores). Nothing is kept with `privacy.maskAllText`. Bodies can contain personal data, so list only endpoints whose payloads you are allowed to record.
 
 ## Browser reports
 
@@ -372,9 +377,9 @@ MapleBrowser.endNavigation("/projects/:id")
 
 Using React Router or TanStack Router? `instrumentReactRouter` and `instrumentTanStackRouter` from `@maple-dev/browser/react` make these calls for you. See [React](#react).
 
-The browser has no async context: only requests `fn` starts before its first `await` nest under its span. Start independent requests together, with `Promise.all`.
+The browser has no async context, so only the requests that `fn` starts before its first `await` nest under its span. Start independent requests together, with `Promise.all`.
 
-All three do nothing on the server, before `init()`, with tracing disabled or before consent is granted; `traced` then only runs `fn`. A page load that happened before consent isn't traced later: the next navigation is a `navigate` span. Leaving the page or calling `shutdown()` ends an open navigation as interrupted, so it still exports.
+All three do nothing on the server, before `init()`, with tracing disabled or before consent is granted. In those cases `traced` only runs `fn`. A page load that happened before consent isn't traced later: the next navigation is a `navigate` span. Leaving the page or calling `shutdown()` ends an open navigation as interrupted, so it still exports.
 
 ## Custom events
 
@@ -386,7 +391,9 @@ MapleBrowser.track("checkout_completed", { plan: "pro", seats: 12 })
 
 Names are capped at 128 characters. Props are capped at 32 keys, 64-character keys, 1024-character values and 8 KB in total. Values are converted to strings (`Date` to ISO, objects to JSON; `null`, `undefined` and functions are dropped). Calls before `init()` finishes are queued, and `track()` never throws.
 
-Every session event, page views and `track()` calls alike, carries the person it belongs to: the visitor id, plus the `id` and `groupId` from `identify()`. That is what lets a funnel follow one person from an anonymous marketing visit through sign-in, and lets browser events line up with the same user's [server-side events](/docs/sdks/effect-server#server-side-track). Identity is resolved when the batch is sent, so an `identify()` shortly after `init()` still lands on the first page view. The visitor id is empty when the visitor cookie is off (consent not granted, Global Privacy Control, `persistVisitorId: false`). Events from older SDK builds arrive with no identity.
+Every session event, page views and `track()` calls alike, carries the person it belongs to: the visitor id, plus the `id` and `groupId` from `identify()`. That identity lets a funnel follow one person from an anonymous marketing visit through sign-in, and lets browser events line up with the same user's [server-side events](/docs/sdks/effect-server#server-side-track).
+
+Identity is resolved when the batch is sent, so an `identify()` shortly after `init()` still lands on the first page view. The visitor id is empty when the visitor cookie is off (consent not granted, Global Privacy Control, `persistVisitorId: false`). Events from older SDK builds arrive with no identity.
 
 ## Linking a marketing site to your app
 
@@ -417,7 +424,12 @@ MapleBrowser.init({ ingestKey, serviceName, privacy: { requireConsent: true } })
 MapleBrowser.setConsent(true)
 ```
 
-Revoking stops capture without uploading what is buffered, and a later grant starts a new session. Global Privacy Control is honored regardless of `requireConsent`. It suppresses the persistent visitor id (the one cross-session identifier the SDK stores) and leaves session-scoped capture alone. `doNotTrack` is ignored unless you set `privacy.respectDoNotTrack`. `privacy.persistVisitorId: false` turns the visitor id off entirely and deletes any already stored. `privacy.captureUserEmail: false` keeps the email from `identify()` out of Maple.
+Revoking consent stops capture without uploading what is buffered, and a later grant starts a new session.
+
+- Global Privacy Control is honored regardless of `requireConsent`. It suppresses the persistent visitor id (the one cross-session identifier the SDK stores) and leaves session-scoped capture alone.
+- `doNotTrack` is ignored unless you set `privacy.respectDoNotTrack`.
+- `privacy.persistVisitorId: false` turns the visitor id off entirely and deletes any id already stored.
+- `privacy.captureUserEmail: false` keeps the email from `identify()` out of Maple.
 
 ### Memory-only mode
 

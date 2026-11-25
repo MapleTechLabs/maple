@@ -7,21 +7,21 @@ order: 4
 
 ## Data and backups
 
-Everything lives on the `/data` volume: the store, its [restore points](/docs/local-mode/checkpoints-and-archives), and the CLI's config. Back up the volume to back up Maple.
+Everything lives on the `/data` volume: the store, its [restore points](/docs/local-mode/checkpoints-and-archives) and the CLI's config. Back up the volume to back up Maple.
 
 - Give the container time to stop cleanly: `--stop-timeout 30`, or `stop_grace_period` in Compose.
-- Run commands that change the store as the server's user: `docker exec -u 10001 maple maple checkpoint` (with Compose, `docker compose exec -u 10001 maple maple checkpoint`). Read-only commands such as `maple services` can run as any user.
 - The server runs as an unprivileged user (uid 10001). A volume mounted as root is handed to that user on start.
+- Run commands that change the store as the server's user: `docker exec -u 10001 maple maple checkpoint` (with Compose, `docker compose exec -u 10001 maple maple checkpoint`). Read-only commands such as `maple services` can run as any user.
 
 ## Upgrades
 
-Pull the new image and recreate the container on the same volume. `latest` follows each stable release; pin a release tag such as `ghcr.io/mapletechlabs/maple:v0.3.0` (the `v` is part of the tag) if you want to choose when you upgrade.
+Pull the new image and recreate the container on the same volume. `latest` follows each stable release. To choose when you upgrade, pin a release tag such as `ghcr.io/mapletechlabs/maple:v0.3.0` (the `v` is part of the tag).
 
 ## If the container is killed
 
 When the container is killed before it can stop cleanly (out of memory, a host crash), it starts again from its last restore point. It moves the damaged store aside as `/data/.maple/data.quarantine-*`, which you can delete once Maple is running again.
 
-Restore points are taken on each start of a store that has data, and every 30 minutes while new data arrives. So a kill loses at most the data since the last one. A store killed before its first restore point starts empty, since there is nothing to restore.
+Restore points are taken on each start of a store that has data, and every 30 minutes while new data arrives. So a kill loses at most the data since the last restore point. A store killed before its first restore point starts empty, since there is nothing to restore.
 
 One case needs you: a container killed and then upgraded to an image with a different storage engine cannot read the old restore point, and stops with an explanation. Run the previous image once to recover, or start fresh with:
 

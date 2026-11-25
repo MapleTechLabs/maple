@@ -24,7 +24,13 @@ A p95 latency alert tells you that 5% of requests were slower than some number. 
 
 ## The score in one line
 
-Apdex compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>: the share of requests that were fast enough to keep a user happy. You set one target time, <span class="hl-t">T</span>. Requests under <span class="hl-t">T</span> are <span class="hl-ok">satisfied</span> and score a point, requests under <span class="hl-t">4T</span> are <span class="hl-warn">tolerating</span> and score half, and everything slower is <span class="hl-bad">frustrated</span> and scores nothing. A request that failed is frustrated too, at any speed.
+Apdex compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>: the share of requests that were fast enough to keep a user happy. You set one target time, <span class="hl-t">T</span>:
+
+- Requests under <span class="hl-t">T</span> are <span class="hl-ok">satisfied</span> and score a point.
+- Requests under <span class="hl-t">4T</span> are <span class="hl-warn">tolerating</span> and score half.
+- Everything slower is <span class="hl-bad">frustrated</span> and scores nothing.
+
+A request that failed is frustrated too, at any speed.
 
 <div class="my-6 rounded-lg border border-border p-5 text-center not-prose" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
   <div class="font-mono text-[15px] text-fg">Apdex = (satisfied + 0.5 × tolerating) / total</div>
@@ -139,7 +145,7 @@ Five minutes is the default window. Short windows on low-traffic services are no
 
 An Apdex rule skips windows with no requests, so a service that goes quiet overnight does not read as a score of 0. The other fields (**Breaches to fire**, **Resolve after**, **Remind while open, every**) work as on every rule. See [How alert rules are evaluated](/docs/alerting/rule-evaluation).
 
-Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations) under **Notify**, and pick **Last 1 week** in the range picker above the chart to replay the rule over the past week. Then click **Create rule**.
+Pick a **Severity** and attach your [notification destinations](/docs/alerting/notification-destinations) under **Notify**. To replay the rule over the past week, pick **Last 1 week** in the range picker above the chart. Then click **Create rule**.
 
 ### Creating the same rule over the API
 

@@ -13,7 +13,7 @@ It needs Next.js 15.3 or later, for `instrumentation-client.ts`. The examples us
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step on this page.
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this page.
 
 ```text
 Set up Maple frontend tracing in this project.
@@ -37,7 +37,7 @@ npm install @maple-dev/browser @vercel/otel
 }
 ```
 
-Without it, npm installs an `@opentelemetry/api` that is too old for the browser SDK, and the build fails with `Export logs doesn't exist in target module`.
+Without the override, npm installs an `@opentelemetry/api` that is too old for the browser SDK, and the build fails with `Export logs doesn't exist in target module`.
 
 ## Initialize the SDK
 
@@ -58,7 +58,7 @@ MapleBrowser.init({
 ```
 
 - Use the public `maple_pk_` key from **Settings → Ingestion**. Next.js inlines `NEXT_PUBLIC_*` variables at build time, so set it where you build. EU organizations add `region: "eu"`.
-- `init()` traces `fetch` and `XMLHttpRequest`, records uncaught errors, Web Vitals and session replay. The [Browser SDK reference](/docs/session-replay/browser-sdk) lists every option.
+- `init()` traces `fetch` and `XMLHttpRequest`, and records uncaught errors, Web Vitals and session replay. The [Browser SDK reference](/docs/session-replay/browser-sdk) lists every option.
 - Same-origin requests (route handlers, Server Component payloads) always carry `traceparent`. `propagateTraceHeaderCorsUrls` adds APIs on other origins. Each must allow `traceparent` in `Access-Control-Allow-Headers`, or the browser blocks the request. List only your own APIs.
 
 ## Trace navigations
@@ -197,7 +197,7 @@ Add the same effect to `global-error.tsx`, which replaces the whole document whe
 
 - A Server Component error reaches the browser with a `digest`. Next.js records the original exception on its server span (`render route (app) /route` on a page load, `RSC GET /route` on a client navigation), so the browser skips it.
 - Each error is recorded once. `captureException` skips an error object the SDK already recorded, such as a root layout error the global handler caught in `next dev`.
-- A client component that throws on a full page load fails twice: on the server render span, and in the browser. Those are two executions of the bug. After a client navigation, only the browser one happens.
+- A client component that throws on a full page load fails twice: on the server render span and in the browser. Those are two executions of the bug. After a client navigation, only the browser failure happens.
 - `global-error.tsx` unmounts `MapleNavigation`, so the navigation that hit the error ends as interrupted.
 
 ## Join the page load to the server render

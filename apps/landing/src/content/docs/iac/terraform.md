@@ -109,7 +109,7 @@ resource "maple_uptime_monitor" "api" {
 }
 ```
 
-A value Maple fills in that you did not write, such as an HTTP monitor's `method = "GET"`, is not a change. A value you wrote that is different in Maple is, and the next apply puts yours back.
+A value Maple fills in that you did not write, such as an HTTP monitor's `method = "GET"`, is not a change. A value you wrote that is different in Maple is a change, and the next apply puts yours back.
 
 The quickest way to get a dashboard's widget documents is to build it in Maple and import it.
 
@@ -121,7 +121,7 @@ Notification credentials (`integration_key`, a webhook's `url` and `signing_secr
 
 ## Rotate API keys
 
-Set `rotate` on an API key to any value and change it to roll the key. Maple revokes the old key and issues a replacement with the same name and scopes, a new ID and a new secret, so anything that reads `maple_api_key.<name>.secret` picks up the new one on the same apply:
+Set `rotate` on an API key to any value. Change the value to roll the key. Maple revokes the old key and issues a replacement with the same name and scopes, a new ID and a new secret, so anything that reads `maple_api_key.<name>.secret` picks up the new one on the same apply:
 
 ```hcl
 resource "time_rotating" "quarterly" {

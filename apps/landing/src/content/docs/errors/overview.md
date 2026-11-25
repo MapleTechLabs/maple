@@ -41,6 +41,22 @@ The environment is not part of the fingerprint, so the same bug in staging and p
 
 Minified browser code renames functions and files on every deploy. Upload [source maps](/docs/errors/source-maps) so stacks show your original code and browser errors group on it.
 
+A new fingerprint becomes an issue on its first occurrence, usually within a minute of the error. This holds while your organization has opened fewer than 10 error issues in the last 24 hours. When several new fingerprints arrive in the same minute, they share the slots that are left, oldest first.
+
+Once your organization has opened 10 error issues in the last 24 hours, a new fingerprint becomes an issue only after 3 occurrences. An organization gets there during a bad deploy, for example, or when a missing migration throws many different errors at once. The 3-occurrence rule keeps a storm of one-off errors from burying the issues that matter.
+
+While a fingerprint waits for its 3 occurrences:
+
+- It notifies nobody.
+- Maple looks at it again only when it recurs, so it can keep waiting after slots free up.
+- It is dropped after 7 days without a new occurrence.
+
+Issues come from three sources. The **Source** filter names them:
+
+- **Exceptions**: fingerprinted errors from spans.
+- **Alert rules**: opened by an [alert rule](/docs/alerting/alert-rules), one per rule and group.
+- **Integrations**: raised by a connected system, such as a [PlanetScale](/docs/integrations/planetscale) event.
+
 ### Set the grouping yourself
 
 When the automatic grouping splits one bug into several issues, or merges two, set a `maple.fingerprint` attribute on the error span or on its exception event. Every error in a service that carries the same value becomes one issue, whatever its stack or message. The type, message and stack still show on the issue as usual.
@@ -65,17 +81,11 @@ const charge = Effect.gen(function* () {
 ```
 
 - The value is scoped to the organization and the service: the same value in two services is two issues.
-- A value on the exception event wins over one on the span. Surrounding whitespace is ignored, and only the first 200 characters count. An empty or whitespace-only value counts as unset, so the span's value applies; with neither set, Maple groups the error automatically.
+- A value on the exception event wins over one on the span.
+- Surrounding whitespace is ignored, and only the first 200 characters count.
+- An empty or whitespace-only value counts as unset. When the exception event's value is unset, the span's value applies. With neither set, Maple groups the error automatically.
 - Use a fixed name for the failure, never an ID or other per-request value, or every occurrence becomes its own issue.
-- Adding the attribute starts a new issue for those errors; the issue they had before stops receiving occurrences.
-
-A new fingerprint becomes an issue on its first occurrence, usually within a minute of the error. This holds while your organization has opened fewer than 10 error issues in the last 24 hours. When several new fingerprints arrive in the same minute, they share the slots that are left, oldest first. Past that, as during a bad deploy or a missing migration that throws many different errors at once, a new fingerprint becomes an issue only after 3 occurrences, so a storm of one-off errors cannot bury the issues that matter. Until a fingerprint gets there it notifies nobody. A waiting fingerprint is only looked at again when it recurs, so it can wait even after slots free up. One that waits for 7 days without a new occurrence is dropped.
-
-Issues come from three sources. The **Source** filter names them:
-
-- **Exceptions**: fingerprinted errors from spans.
-- **Alert rules**: opened by an [alert rule](/docs/alerting/alert-rules), one per rule and group.
-- **Integrations**: raised by a connected system, such as a [PlanetScale](/docs/integrations/planetscale) event.
+- Adding the attribute starts a new issue for those errors. The issue they had before stops receiving occurrences.
 
 ## Issue states
 
@@ -101,7 +111,7 @@ A **Done** issue becomes **Regressed** when a new occurrence arrives more than 1
 
 ### Won't fix and snooze
 
-**Won't fix** suppresses an issue. With a snooze time, the issue returns to **Triage** when it expires. Set a snooze time with the `transition_error_issue` MCP tool (`snooze_until`). The issue page shows when the snooze ends.
+**Won't fix** suppresses an issue. With a snooze time, the issue returns to **Triage** when the snooze expires. Set a snooze time with the `transition_error_issue` MCP tool (`snooze_until`). The issue page shows when the snooze ends.
 
 ### Fix verification
 
@@ -125,13 +135,27 @@ An issue has one lease at a time, so two people (or two agents) do not fix the s
 - **Extend** renews it.
 - **Release** gives it up. An **In progress** issue returns to **Todo**.
 
-A lease lasts 30 minutes by default. Any action by the holder renews it. When it expires, an issue still **In progress** returns to **Todo**. Moving an issue to **In progress** also takes the lease. Claiming fails while someone else holds it.
+A lease lasts 30 minutes by default. Any action by the holder renews it. When the lease expires, an issue still **In progress** returns to **Todo**.
+
+Moving an issue to **In progress** also takes the lease. Claiming fails while someone else holds the lease.
 
 ## Severity
 
 Severity is **Critical**, **High**, **Medium**, **Low**, or not set. Set it from the **Severity** select in the issue sidebar, or for several issues at once from the bulk bar. A severity you set by hand overrides one set by an agent or an alert rule.
 
-To route issues to destinations by severity, open **Settings → Automation** and turn on **Severity escalation**. Pick destinations per severity and click **Save policy**. **Min. AI confidence** on each severity sets how confident an AI diagnosis must be to notify; a severity you set by hand bypasses it. Under **Policy simulator**, pick a severity, decision source and AI confidence, then click **Evaluate policy** to see what the saved policy would do. Escalation fires once per issue and severity level, and only upward. When a manual severity change would notify destinations, Maple asks you to confirm with **Change severity and notify**. Only engineers and admins can change this policy.
+To route issues to destinations by severity:
+
+1. Open **Settings → Automation** and turn on **Severity escalation**.
+2. Pick destinations per severity.
+3. Click **Save policy**.
+
+Only engineers and admins can change this policy.
+
+**Min. AI confidence** on each severity sets how confident an AI diagnosis must be to notify. A severity you set by hand bypasses it.
+
+To see what the saved policy would do, pick a severity, decision source and AI confidence under **Policy simulator**, then click **Evaluate policy**.
+
+Escalation fires once per issue and severity level, and only upward. When a manual severity change would notify destinations, Maple asks you to confirm with **Change severity and notify**.
 
 ## Notifications
 
@@ -143,9 +167,23 @@ The error notification policy decides when Maple sends an issue to your [notific
 | Regression                | On      |
 | Incident resolved         | Off     |
 
-The minimum occurrence count (`min_occurrence_count`, default 1) is compared with the number of occurrences an incident opens with. It does not change when an issue opens. With the default of 1, a new error notifies on its first occurrence. Once your organization has opened 10 error issues in the last 24 hours, new errors need 3 occurrences to become an issue whatever the policy says, so a first-seen notification then needs at least 3, or the minimum count when that is higher. The count is checked once, when the incident opens: an incident that opens with fewer occurrences sends no first-seen notification, even if more arrive later. For a regression the minimum count applies as set. No destinations are selected by default, so nothing is sent until you add one.
+No destinations are selected by default, so nothing is sent until you add one.
 
-The Errors page has no screen for this policy. The `get_error_notification_policy` MCP tool reads it, including each destination's name and ID. Engineers and admins change it with `update_error_notification_policy`, which sets the destinations, the first-seen, regression, and resolve toggles, and the minimum count. Fields you leave out keep their value. `destination_ids` replaces the list: pass `[]` to clear it. An empty string is rejected rather than read as "no destinations".
+The minimum occurrence count (`min_occurrence_count`, default 1) is compared with the number of occurrences an incident opens with. It does not change when an issue opens.
+
+- With the default of 1, a new error notifies on its first occurrence.
+- Once your organization has opened 10 error issues in the last 24 hours, new errors need 3 occurrences to become an issue whatever the policy says. A first-seen notification then needs at least 3, or the minimum count when that is higher.
+- For a regression the minimum count applies as set.
+
+The count is checked once, when the incident opens. An incident that opens with fewer occurrences than the minimum sends no first-seen notification, even if more arrive later.
+
+The Errors page has no screen for this policy. The `get_error_notification_policy` MCP tool reads the policy, including each destination's name and ID.
+
+Engineers and admins change the policy with `update_error_notification_policy`. It sets the destinations, the first-seen, regression and resolve toggles, and the minimum count.
+
+- Fields you leave out keep their value.
+- `destination_ids` replaces the list. Pass `[]` to clear it.
+- An empty string is rejected rather than read as "no destinations".
 
 An incident opens when an issue fires with no open incident. It resolves after 30 minutes without new occurrences, or when the issue is marked **Done**.
 
@@ -170,7 +208,7 @@ Columns: **Error**, **Trend · 24h**, **Events**, **Service**, **Status**, and *
 
 - Sort by **Most recent** (default), **Most errors**, or **Severity**.
 - Filter by severity, and in the sidebar by **Regressed only**, **Service**, **Environment**, and **Source**.
-- Select rows to **Claim** them, change **Severity** or **Move to** a new state in bulk. **Merge** folds duplicate issues into the one you keep, which takes their occurrences; the others are archived.
+- Select rows to **Claim** them, change **Severity** or **Move to** a new state in bulk. **Merge** folds duplicate issues into the one you keep, which takes their occurrences. The others are archived.
 - Right-click a row for **Change status**, **Open in new tab**, **Copy link**, **Copy ID**, and **Copy agent prompt**.
 
 The list loads 50 issues at a time. Click **Load more** for the next page.

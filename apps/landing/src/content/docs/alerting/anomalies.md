@@ -19,19 +19,27 @@ Anomalies are for the problems you did not write an alert for. For a threshold y
 | **Error logs**   | service and environment | The rate of error-level logs is well above its baseline.                                                   |
 | **Error spike**  | error fingerprint       | One error type occurs far more often in 30 minutes than it does in a typical half hour.                    |
 
-Traffic loss only fires on near-total loss of a stream that is normally busy, at least one request a minute. A slow day does not open an anomaly. An error spike only applies to errors Maple has seen for more than a day; a brand-new error opens an [issue](/docs/errors/overview) instead.
+Traffic loss only fires on near-total loss of a stream that is normally busy, at least one request a minute. A slow day does not open an anomaly.
+
+An error spike only applies to errors Maple has seen for more than a day. A brand-new error opens an [issue](/docs/errors/overview) instead.
 
 ### Environments
 
-Maple watches production by default. It skips environments whose `deployment.environment` reads as non-production, such as `staging`, `development`, `dev-eu`, `local`, `qa`, `preview` or `pr-123`. An empty or unrecognised environment counts as production. To watch one of the skipped environments, list it in `included_environments` (see [Tuning](#tuning)).
+Maple watches production by default. It skips environments whose `deployment.environment` reads as non-production, such as `staging`, `development`, `dev-eu`, `local`, `qa`, `preview` or `pr-123`. An empty or unrecognized environment counts as production. To watch one of the skipped environments, list it in `included_environments` (see [Tuning](#tuning)).
 
 ## How detection works
 
-Maple checks every 5 minutes and always looks at the last 60 minutes. It compares them with the same 60 minutes on each of the previous 7 days, and with that window an hour earlier and an hour later. At 14:20 on a Monday, the window 13:20 to 14:20 is compared with 12:20 to 15:20 on the previous days, so daily traffic patterns are not anomalies.
+Maple checks every 5 minutes and always looks at the last 60 minutes. It compares those 60 minutes with the same 60 minutes on each of the previous 7 days, and with that window an hour earlier and an hour later. At 14:20 on a Monday, the window 13:20 to 14:20 is compared with 12:20 to 15:20 on the previous days, so daily traffic patterns are not anomalies.
 
-The baseline is the median of those windows, and the spread around it is measured robustly, so one bad hour last week does not move it. A signal breaches when it is far outside that spread **and** a set multiple above the median **and** past a minimum absolute change. All three must hold, which keeps quiet services from paging on noise.
+The baseline is the median of those windows. The spread around the median is measured robustly, so one bad hour last week does not move the baseline. A signal breaches when all three of these hold:
 
-Maple also checks the same window on its own. When a service is slow or failing at this time on most previous days, for example during a nightly job, that is its normal and does not open an anomaly.
+- It is far outside that spread.
+- It is a set multiple above the median.
+- It is past a minimum absolute change.
+
+Requiring all three keeps quiet services from paging on noise.
+
+Maple also checks the same window on its own. When a service is slow or failing at this time on most previous days, for example during a nightly job, that behavior is normal for the service and does not open an anomaly.
 
 A series is skipped until it has enough data:
 
@@ -46,9 +54,11 @@ On busy organizations Maple evaluates the 200 busiest services.
 
 An anomaly opens after 2 breaching checks in a row (10 minutes). Traffic loss needs 3 (15 minutes).
 
-It resolves after 3 healthy checks in a row, or 1 for traffic loss once requests come back. An anomaly with no breach for an hour resolves on its own. You can also resolve one by hand.
+An anomaly resolves after 3 healthy checks in a row, or 1 for traffic loss once requests come back. An anomaly with no breach for an hour resolves on its own. You can also resolve one by hand.
 
-An anomaly that breaches again within 6 hours of resolving reopens the same anomaly rather than opening a new one, and its reopen count goes up. Each reopen makes it wait longer before resolving again, up to 3 times as long, so a flapping signal stays one open anomaly instead of resolving and reopening every hour. Error spikes on one service and environment are grouped into one anomaly with every fingerprint listed.
+An anomaly that breaches again within 6 hours of resolving reopens instead of opening a new anomaly, and its reopen count goes up. Each reopen makes the anomaly wait longer before it resolves again, up to 3 times as long. A flapping signal then stays one open anomaly instead of resolving and reopening every hour.
+
+Error spikes on one service and environment are grouped into one anomaly with every fingerprint listed.
 
 ### Severity
 
@@ -77,7 +87,7 @@ Detection is on for every organization with **normal** sensitivity. An organizat
 | `enabled`               | `true`, `false`                                                        | Turns detection on or off for the whole organization.                                                                               |
 | `sensitivity`           | `low`, `normal`, `high`                                                | How far from baseline a signal must move. `low` needs about 1.5 times the deviation of `normal`, `high` about three quarters of it. |
 | `muted_signals`         | `error_rate`, `latency_p95`, `throughput`, `error_spike`, `log_volume` | Signals that never open an anomaly.                                                                                                 |
-| `included_environments` | environment names, e.g. `["staging"]`                                  | Non-production environments to watch anyway. Up to 50.                                                                              |
+| `included_environments` | environment names, such as `["staging"]`                               | Non-production environments to watch anyway. Up to 50.                                                                              |
 
 ```bash
 curl -X PATCH https://api.maple.dev/v2/anomalies/settings \

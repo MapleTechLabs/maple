@@ -232,7 +232,7 @@ A streamed `OpenAIChatGenerator` reply carries no token counts unless you ask fo
 OpenAIChatGenerator(model="gpt-4o-mini", generation_kwargs={"stream_options": {"include_usage": True}})
 ```
 
-Cost only appears with `OpenRouterChatGenerator`. Other providers show tokens and read as **unpriced**.
+Cost only appears with `OpenRouterChatGenerator`. Other providers show tokens and read as unpriced.
 
 ## Flush before short-lived processes exit
 
@@ -250,7 +250,7 @@ Long-running servers only need `provider.shutdown()` in their shutdown hook.
 
 ## Verify
 
-Run a conversation of at least two turns, one with a tool call, and open **Agent sessions** filtered by your service name. You should see one session per conversation id, labelled Haystack, with one turn per `pipeline.run()`, model calls with tokens, and tool calls with failed ones marked.
+Run a conversation of at least two turns, one with a tool call, and open **Agent sessions** filtered by your service name. You should see one session per conversation id, labeled **Haystack**, with one turn per `pipeline.run()`, model calls with tokens, and tool calls with failed ones marked.
 
 ## Troubleshooting
 

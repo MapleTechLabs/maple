@@ -34,7 +34,9 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_SERVICE_NAME="quickstart"
 ```
 
-The endpoint is the base URL. Maple takes OTLP over HTTP (protobuf or JSON) and OTLP over gRPC on the same host and port 443, so your SDK's default protocol works as long as the exporter package for it is installed. HTTP exporters append `/v1/traces`, `/v1/logs` and `/v1/metrics` themselves; gRPC exporters use the base URL as is. You never need port `4317`.
+The endpoint is the base URL. Maple takes OTLP over HTTP (protobuf or JSON) and OTLP over gRPC on the same host and port 443, so your SDK's default protocol works as long as the exporter package for it is installed.
+
+HTTP exporters append `/v1/traces`, `/v1/logs` and `/v1/metrics` themselves. gRPC exporters use the base URL as is. You never need port `4317`.
 
 ## 4. Send a trace
 
@@ -88,7 +90,7 @@ export function register() {
 }
 ```
 
-Start the dev server with `npm run dev` and open a page. Each request becomes a trace with spans for rendering, route handlers and server `fetch()` calls. On Next.js 13.4 and 14, enable the instrumentation hook first; see the [Next.js guide](/docs/guides/instrumentation-nextjs), which also covers logs and metrics.
+Start the dev server with `npm run dev` and open a page. Each request becomes a trace with spans for rendering, route handlers and server `fetch()` calls. On Next.js 13.4 and 14, enable the instrumentation hook first. See the [Next.js guide](/docs/guides/instrumentation-nextjs), which also covers logs and metrics.
 
 </LanguageTab>
 
@@ -101,7 +103,7 @@ pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http
 opentelemetry-bootstrap -a install
 ```
 
-Set the protocol to match the HTTP exporter installed above (the distro defaults to gRPC, which needs `opentelemetry-exporter-otlp-proto-grpc` instead), then start your app through the `opentelemetry-instrument` wrapper. No code changes:
+Set the protocol to match the HTTP exporter installed above. The distro defaults to gRPC, which needs `opentelemetry-exporter-otlp-proto-grpc` instead. Then start your app through the `opentelemetry-instrument` wrapper. No code changes:
 
 ```bash
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"

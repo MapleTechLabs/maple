@@ -22,7 +22,9 @@ Use the endpoint of your organization's [region](/docs/reference/regions). The e
 
 ## Connecting a client
 
-Any MCP client that speaks Streamable HTTP can connect. **Settings → MCP** in the dashboard shows the endpoint for your region and ready-made configuration for common clients. There are two ways to authenticate. Both are described in more detail on [Authentication](/docs/reference/authentication).
+Any MCP client that speaks Streamable HTTP can connect. **Settings → MCP** in the dashboard shows the endpoint for your region and ready-made configuration for common clients.
+
+There are two ways to authenticate. Both are described in more detail on [Authentication](/docs/reference/authentication).
 
 **API key.** Create a key under **Settings → MCP** or **Settings → Keys** and pass it as a Bearer token:
 
@@ -40,7 +42,7 @@ Any MCP client that speaks Streamable HTTP can connect. **Settings → MCP** in 
 
 For Claude Code: `claude mcp add --transport http maple https://api.maple.dev/mcp --header "Authorization: Bearer maple_ak_…"`.
 
-**OAuth.** Clients that support the MCP authorization flow need no key. The server publishes its protected-resource metadata at `https://api.maple.dev/.well-known/oauth-protected-resource/mcp` and its authorization server metadata at `https://api.maple.dev/.well-known/oauth-authorization-server`. Dynamic client registration and PKCE (`S256`) are supported, so the client needs only the endpoint URL. It opens a browser sign-in on first use.
+**OAuth.** Clients that support the MCP authorization flow need no key. The server publishes its protected-resource metadata at `https://api.maple.dev/.well-known/oauth-protected-resource/mcp` and its authorization server metadata at `https://api.maple.dev/.well-known/oauth-authorization-server`. Dynamic client registration and PKCE (`S256`) are supported, so the client needs only the endpoint URL. The client opens a browser sign-in on first use.
 
 Requests are scoped to the organization the key belongs to, or the one chosen at sign-in. A user in several organizations picks one during the OAuth consent step.
 
@@ -48,7 +50,7 @@ Requests are scoped to the organization the key belongs to, or the one chosen at
 
 The server exposes the tools below. Read-only tools are marked **read**; the rest change data in your organization. `tools/list` returns the current set with full parameter schemas.
 
-A `manage_…` tool holds one resource's writes: it takes an `action` (such as `create`, `update` or `delete`) and that action's parameters. The names these replaced, such as `create_slo`, still run.
+A `manage_…` tool holds one resource's writes: it takes an `action` (such as `create`, `update` or `delete`) and that action's parameters. The tool names that the `manage_…` tools replaced, such as `create_slo`, still run.
 
 Tools that take an alert rule, alert destination, dashboard or error issue ID accept either its UUID or its [REST API](/docs/reference/api) ID (`alrt_…`, `dest_…`, `dash_…`, `iss_…`). `list_alert_destinations`, `list_dashboards`, `get_dashboard` and `create_dashboard` return both. The REST API also accepts the UUID in place of its prefixed ID.
 
@@ -252,7 +254,7 @@ The write tools here need the org admin or engineer role.
 | `sync_vercel`          | write  | Sync Vercel now: projects, deployments and the state of Maple's drains                |
 | `manage_scrape_target` | write  | Start, pause, change or stop scraping a Prometheus endpoint that needs no credentials |
 
-These are admin-only. Connecting a provider, and adding a scrape credential, stay in the dashboard, under **Sources** or **Settings → Integrations**.
+These tools are admin-only. Connecting a provider, and adding a scrape credential, stay in the dashboard, under **Sources** or **Settings → Integrations**.
 
 ### Search Console
 

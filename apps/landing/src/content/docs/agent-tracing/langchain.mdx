@@ -307,7 +307,9 @@ def handle_message(conversation_id: str, text: str) -> str:
     return result["messages"][-1].content
 ```
 
-Use the id your app stores the chat under. A new UUID per request gives you one session per message. A plain chain (`prompt | model`, no graph) ignores `configurable`, so pass `{"metadata": {"thread_id": conversation_id}}` instead.
+Use the id your app stores the chat under. A new UUID per request gives you one session per message.
+
+A plain chain (`prompt | model`, no graph) ignores `configurable`, so pass `{"metadata": {"thread_id": conversation_id}}` instead.
 
 Keep `stream_usage=True` if `ChatOpenAI` uses a custom `base_url`, vLLM or a gateway. Without it, streamed replies have no tokens.
 
@@ -339,7 +341,9 @@ export async function handleMessage(conversationId: string, text: string) {
 }
 ```
 
-Use the id your app stores the chat under. A new UUID per request gives you one session per message. A plain chain (`prompt.pipe(model)`, no graph) ignores `configurable`, so pass `{ metadata: { thread_id: conversationId } }` instead.
+Use the id your app stores the chat under. A new UUID per request gives you one session per message.
+
+A plain chain (`prompt.pipe(model)`, no graph) ignores `configurable`, so pass `{ metadata: { thread_id: conversationId } }` instead.
 
 </LanguageTab>
 </LanguageTabs>

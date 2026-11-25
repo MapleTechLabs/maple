@@ -14,7 +14,7 @@ navLabel: "Overview"
 - **Your data stays on your server.** Everything lives on one volume, which you back up like any other.
 - **Two secrets guard it.** An ingest key for your applications and an access token for people and scripts. The image refuses to start without them.
 
-It is built for one team's telemetry on one machine: a single tenant, a single replica, and no alerting. For more than that, use [Maple Cloud](https://maple.dev).
+The image is built for one team's telemetry on one machine: a single tenant, a single replica, and no alerting. For more than that, use [Maple Cloud](https://maple.dev).
 
 ## The two secrets
 
@@ -51,7 +51,7 @@ docker run -d --name maple \
 
 Open `http://<host>:4318` and sign in with the access token.
 
-This serves plain HTTP on every interface, which is fine on a private network. On a machine reachable from the internet, publish the port on loopback only (`-p 127.0.0.1:4318:4318`) and put [a TLS proxy](/docs/self-hosting/deploy#behind-a-reverse-proxy) in front, so the access token and ingest key never cross the internet unencrypted.
+The command above serves plain HTTP on every interface, which is fine on a private network. On a machine reachable from the internet, publish the port on loopback only (`-p 127.0.0.1:4318:4318`) and put [a TLS proxy](/docs/self-hosting/deploy#behind-a-reverse-proxy) in front, so the access token and ingest key never cross the internet unencrypted.
 
 ## Next steps
 

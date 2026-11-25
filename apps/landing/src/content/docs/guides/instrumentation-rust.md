@@ -9,7 +9,7 @@ sdk: "rust"
 
 This guide sets up the OpenTelemetry Rust SDK so your application sends traces, logs and metrics to Maple. Spans and log events come from the `tracing` crate, bridged to OpenTelemetry.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ To have a coding agent do this setup, use the [maple-onboard](https://github.com
 
 ## Install
 
-Add these dependencies to `Cargo.toml`. The `opentelemetry*` crates must share one minor version, and `tracing-opentelemetry` must be the release built for it (0.32 pairs with 0.31). This guide pins 0.31, and the `reqwest-tracing` feature further down names the same version.
+Add these dependencies to `Cargo.toml`. The `opentelemetry*` crates must share one minor version, and `tracing-opentelemetry` must be the release built for that version (`tracing-opentelemetry` 0.32 pairs with `opentelemetry` 0.31). This guide pins 0.31, and the `reqwest-tracing` feature further down names the same version.
 
 ```toml
 [dependencies]
@@ -154,7 +154,7 @@ The example puts the endpoint and key in source. An ingest key can only write te
 
 ## Environment variables
 
-When you build an exporter without `with_endpoint` and `with_headers`, it reads the standard OpenTelemetry variables, and `Resource::builder()` reads `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`:
+When you build an exporter without `with_endpoint` and `with_headers`, it reads the standard OpenTelemetry variables. `Resource::builder()` reads `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`:
 
 ```bash
 export OTEL_SERVICE_NAME="my-rust-app"
@@ -187,7 +187,7 @@ let app = Router::new()
     .layer(TraceLayer::new_for_http());
 ```
 
-`TraceLayer` opens a `tracing` span for every request. It does not read incoming `traceparent` headers or set OpenTelemetry HTTP attributes. For that, use a crate built for it, such as `axum-tracing-opentelemetry`.
+`TraceLayer` opens a `tracing` span for every request. It does not read incoming `traceparent` headers or set OpenTelemetry HTTP attributes. To get both, use a crate built for OpenTelemetry, such as `axum-tracing-opentelemetry`.
 
 ### reqwest
 
@@ -223,8 +223,6 @@ async fn process_order(payment_client: &PaymentClient, order_id: String) -> Resu
 }
 ```
 
-Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
-
 For a span around a block:
 
 ```rust
@@ -240,13 +238,15 @@ async fn process_order(order_id: String) {
 }
 ```
 
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
+
 ## Attributes Maple uses
 
 Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the **Recent deploys** panel on each service page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
@@ -254,7 +254,7 @@ export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme
 
 ### Databases
 
-Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span. `tracing-opentelemetry` reads the `otel.kind` field as the span kind:
+Database instrumentation sets the `db.*` attributes for you. For a driver without instrumentation, set them on a `Client` span. `tracing-opentelemetry` reads the `otel.kind` field as the span kind:
 
 ```rust
 let span = info_span!(

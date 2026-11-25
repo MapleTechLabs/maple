@@ -6,13 +6,21 @@ order: 11
 icon: "aws"
 ---
 
-The AWS integration connects one AWS account to Maple through an IAM role in that account. The setup registers Maple as an **OIDC identity provider** in the account (`https://api.maple.dev/oidc/aws`, or `https://api.eu.maple.dev/oidc/aws` on the EU instance), the same mechanism GitHub Actions uses to reach AWS. To assume the role, Maple signs a token valid for five minutes and exchanges it with AWS STS for a 15-minute session. The role trusts only tokens whose subject is your connection (`aws-connection:<id>`), so no other Maple organization or connection can assume it. Maple stores no access key, secret or session for your account, and holds no long-lived AWS credential of its own.
+The AWS integration connects one AWS account to Maple through an IAM role in that account. The setup registers Maple as an **OIDC identity provider** in the account (`https://api.maple.dev/oidc/aws`, or `https://api.eu.maple.dev/oidc/aws` on the EU instance), the same mechanism GitHub Actions uses to reach AWS.
 
-Maple checks each connection every hour, and whenever you click **Sync now** on the connection. The check assumes the role and reads the role's own tags and attached policies. CloudWatch metrics can be streamed to Maple as well (see below). A resource inventory, a security scan, the audit log and cost each come as a **module**: a policy of its own on the same role, added by deploying the stack again. Turn a module on with its switch under **What Maple collects** on the AWS source's Connection tab. The **Audit log** module reads CloudTrail management write events (IAM changes, access keys, console sign-ins, resource changes; read-only calls are left out) into Security > Audit log. A role that already has the security scan's policy can read them, so turning Audit log on there needs no new deploy.
+To assume the role, Maple signs a token valid for five minutes and exchanges it with AWS STS for a 15-minute session. The role trusts only tokens whose subject is your connection (`aws-connection:<id>`), so no other Maple organization or connection can assume it. Maple stores no access key, secret or session for your account, and holds no long-lived AWS credential of its own.
+
+Maple checks each connection every hour, and whenever you click **Sync now** on the connection. The check assumes the role and reads the role's own tags and attached policies.
+
+A connection can also stream CloudWatch metrics to Maple (see [CloudWatch metrics](#cloudwatch-metrics)).
+
+A resource inventory, a security scan, the audit log and cost each come as a **module**: a policy of its own on the same role, added by deploying the stack again. Turn a module on with its switch under **What Maple collects** on the AWS source's Connection tab.
+
+The **Audit log** module reads CloudTrail management write events into **Security → Audit log**: IAM changes, access keys, console sign-ins and resource changes. Read-only calls are left out. A role that already has the security scan's policy can read these events, so turning Audit log on there needs no new deploy.
 
 ## Prerequisites
 
-You need to be an admin or engineer in the Maple organization, and in AWS, permission to create IAM roles and policies and CloudFormation stacks in the account you connect. The AWS managed `AdministratorAccess` policy covers it, and so do `IAMFullAccess` together with `AWSCloudFormationFullAccess`.
+You need to be an admin or engineer in the Maple organization. In AWS, you need permission to create IAM roles and policies and CloudFormation stacks in the account you connect. The AWS managed `AdministratorAccess` policy covers that permission, and so do `IAMFullAccess` together with `AWSCloudFormationFullAccess`.
 
 Find the 12-digit account ID in the account menu at the top right of the AWS console. Maple accepts it with or without the dashes the console shows.
 
@@ -28,11 +36,17 @@ Running the script again is always safe: it updates the stack in place, and repl
 
 ### In the console
 
-Choose **Console** in the setup and save the template. Then in CloudFormation, in the `us-east-1` region, choose **Create stack → With new resources**, upload the template, give the stack the name Maple shows, and acknowledge that it creates IAM resources. If the account already has Maple's identity provider (another Maple connection registered it), set the `CreateOidcProvider` parameter to `false`. The cleanup script looks for the stack in `us-east-1`.
+1. Choose **Console** in the setup and save the template.
+2. In CloudFormation, in the `us-east-1` region, choose **Create stack → With new resources** and upload the template.
+3. Give the stack the name Maple shows.
+4. If the account already has Maple's identity provider (another Maple connection registered it), set the `CreateOidcProvider` parameter to `false`.
+5. Acknowledge that the stack creates IAM resources.
+
+The cleanup script looks for the stack in `us-east-1`.
 
 ### With Terraform
 
-Choose **Terraform** in the setup and copy the file into your repository. It needs only the `aws` provider, configured for the account you connect. It looks up Maple's identity provider rather than owning it, since every Maple connection in the account shares it: if the account doesn't have it yet, register it once with the `aws iam create-open-id-connect-provider` command at the top of the file. Apply it, then click **Check now**.
+Choose **Terraform** in the setup and copy the file into your repository. The file needs only the `aws` provider, configured for the account you connect. It looks up Maple's identity provider rather than owning it, because every Maple connection in the account shares the provider. If the account doesn't have the provider yet, register it once with the `aws iam create-open-id-connect-provider` command at the top of the file. Apply the file, then click **Check now**.
 
 ## What the stack creates
 
@@ -41,15 +55,17 @@ Choose **Terraform** in the setup and copy the file into your repository. It nee
 | IAM OIDC provider for Maple's issuer            | Lets AWS verify Maple's tokens. One per account, shared by every Maple connection; the stack keeps it when deleted. |
 | IAM role `MapleIntegration-<id>`                | Assumed by Maple. Its trust policy accepts only tokens for your connection's subject.                               |
 | Inline policy `maple-self-read`                 | Lets the role read its own tags and attached policies, and nothing else. This is how Maple checks it.               |
-| Managed policy `MapleIntegration-<id>-<module>` | One per module you turn on. None until modules are available.                                                       |
+| Managed policy `MapleIntegration-<id>-<module>` | One per module you turn on. None until you turn a module on.                                                        |
 
-Every permission Maple asks for reads: none of them lets Maple create, change or delete anything in the account, and the base role reads only itself. The managed policies some modules attach are AWS's own read-only ones (`ViewOnlyAccess` for the inventory, `SecurityAudit` for the security scan). They cover how your resources are configured, not the data in them: Maple cannot read the objects in your S3 buckets, your log events or your database rows.
+Every permission Maple asks for is a read permission. None of them lets Maple create, change or delete anything in the account, and the base role reads only itself. The managed policies some modules attach are AWS's own read-only ones (`ViewOnlyAccess` for the inventory, `SecurityAudit` for the security scan). They cover how your resources are configured, not the data in them: Maple cannot read the objects in your S3 buckets, your log events or your database rows.
 
 The role is tagged with the setup version. When a later version of the setup changes the role, the connection shows **Update the stack**. Click **Deploy the stack again** and run the script to apply the change.
 
 ## CloudWatch metrics
 
-A connection can stream CloudWatch metrics to Maple. Under **Choose data**, pick the **Regions to stream** and the **Services to stream** (CloudWatch namespaces). Then click **Get the stream script** and run it in CloudShell. To change the selection later, open the connection's **Edit data**. In each region the script deploys a stack named `maple-metrics-<id>` with:
+A connection can stream CloudWatch metrics to Maple. Under **Choose data**, pick the **Regions to stream** and the **Services to stream** (CloudWatch namespaces). Then click **Get the stream script** and run it in CloudShell. To change the selection later, open the connection's **Edit data**.
+
+In each region the script deploys a stack named `maple-metrics-<id>` with:
 
 | Resource                 | Purpose                                                                                                  |
 | ------------------------ | -------------------------------------------------------------------------------------------------------- |
@@ -83,7 +99,9 @@ To cut Maple off at once, delete the role, or remove its trust in Maple's identi
 
 ## Disconnect
 
-Select **Disconnect** on the connection. Maple stops assuming the role and removes the source; data already collected stays. Maple has no write access to your account, so the role exists until you delete its stack. Maple shows a cleanup script for CloudShell that deletes it, and removes Maple's identity provider once no Maple role is left in the account. Or delete the stack in the CloudFormation console, and the identity provider under IAM → Identity providers.
+Select **Disconnect** on the connection. Maple stops assuming the role and removes the source; data already collected stays. Maple has no write access to your account, so the role exists until you delete its stack.
+
+Maple shows a cleanup script for CloudShell. The script deletes the stack, and removes Maple's identity provider once no Maple role is left in the account. Or delete the stack in the CloudFormation console, and the identity provider under IAM → Identity providers.
 
 ## Next steps
 

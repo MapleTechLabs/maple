@@ -12,7 +12,7 @@ import LanguageTab from "../../../components/docs/LanguageTab.astro"
 
 The Claude Agent SDK and Claude Code export OpenTelemetry spans for each turn, model request and tool call once you set a few environment variables. There is nothing to install.
 
-Spans only exist with `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`, and in the SDK every `query()` starts a new session unless you resume the conversation's session id.
+Spans only exist with `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`. In the SDK, every `query()` starts a new session unless you resume the conversation's session id.
 
 Tested with `@anthropic-ai/claude-agent-sdk` 0.3.283 (TypeScript), `claude-agent-sdk` 0.2.160 (Python) and Claude Code 2.1.283.
 
@@ -219,11 +219,19 @@ async def reply(conversation: dict, text: str) -> str | None:
 </LanguageTab>
 </LanguageTabs>
 
-`resume` reads the earlier turns from `~/.claude/projects/` on the same machine. If messages can land on different hosts, use the SDK's [`sessionStore`](https://code.claude.com/docs/en/agent-sdk/session-storage) option. A Python `ClaudeSDKClient`, or a TypeScript `query()` fed an async iterable, keeps one session for all its turns and needs none of this.
+`resume` reads the earlier turns from `~/.claude/projects/` on the same machine. If messages can land on different hosts, use the SDK's [`sessionStore`](https://code.claude.com/docs/en/agent-sdk/session-storage) option.
+
+A Python `ClaudeSDKClient`, or a TypeScript `query()` fed an async iterable, keeps one session for all its turns and needs none of this.
 
 ## Choose what content to record
 
-Claude Code redacts content by default. `OTEL_LOG_USER_PROMPTS=1` records prompts, which title each turn. `OTEL_LOG_TOOL_DETAILS=1` records Bash commands, file paths and tool error messages. `OTEL_LOG_TOOL_CONTENT=1` records tool results, including any secrets in files Claude reads or in command output. Turn on only what your Maple organization is allowed to store.
+Claude Code redacts content by default. Each variable turns on one kind of content:
+
+- `OTEL_LOG_USER_PROMPTS=1` records prompts, which title each turn.
+- `OTEL_LOG_TOOL_DETAILS=1` records Bash commands, file paths and tool error messages.
+- `OTEL_LOG_TOOL_CONTENT=1` records tool results, including any secrets in files Claude reads or in command output.
+
+Turn on only what your Maple organization is allowed to store.
 
 ## Let each turn finish exporting
 
@@ -238,7 +246,7 @@ The transcript has no assistant replies and cost shows as unpriced. Both are on 
 ## Troubleshooting
 
 - **Metrics and logs arrive, but no sessions.** Set `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` and `OTEL_TRACES_EXPORTER=otlp`.
-- **Nothing arrives at all.** `OTEL_EXPORTER_OTLP_PROTOCOL` is unset. Set `http/protobuf`. `CLAUDE_CODE_OTEL_DIAG_STDERR=1` prints export errors to the SDK's `stderr` callback.
+- **Nothing arrives at all.** `OTEL_EXPORTER_OTLP_PROTOCOL` is unset. Set it to `http/protobuf`. `CLAUDE_CODE_OTEL_DIAG_STDERR=1` prints export errors to the SDK's `stderr` callback.
 - **Every message is its own session.** Resume the conversation's session id as shown above, and don't set `forkSession`.
 - **Your agent's turns appear inside another trace.** The process inherited a `TRACEPARENT`. Drop it and `TRACESTATE` from the environment.
 - **The CLI ignores your values.** They are in a repository's `.claude/settings.json`, or a settings file overrides `options.env`. Use `~/.claude/settings.json`, or pass `settingSources: []`.

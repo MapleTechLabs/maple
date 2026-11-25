@@ -37,7 +37,7 @@ Below that is the verdict (completed, completed with warnings, or failed, with t
   <figcaption>The transcript. Each turn carries its tokens and cost, each reply its model; tool calls sit where the model made them.</figcaption>
 </figure>
 
-The **transcript** is the conversation as the model saw it: system instructions, user and assistant messages, and tool calls with arguments and results. It needs message content on your spans, which most instrumentations leave off by default; each framework guide shows the switch.
+The **transcript** is the conversation as the model saw it: system instructions, user and assistant messages, and tool calls with arguments and results. The transcript needs message content on your spans. Most instrumentations leave content off by default, and each framework guide shows the switch.
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-05-trace.webp" alt="The trace view of a session: three turns, each with an invoke_agent span, chat spans labeled with their model and token counts, and execute_tool spans, on a time axis with the idle gaps between turns removed. One tool span is marked with its error type." loading="lazy" />
@@ -76,7 +76,12 @@ A tool call counts as failed when its span has an `ERROR` status or an `error.ty
 
 ## Query sessions from your coding agent
 
-The [MCP server](/docs/reference/mcp) exposes the same data. `list_agent_sessions` finds sessions by cost, model, tool or failure, `get_agent_session` returns a session's verdict, checks and turns, `get_agent_session_transcript` returns what it did step by step, and `get_agent_tools_overview` and `get_agent_tool_error` return the tool rankings and failure groups.
+The [MCP server](/docs/reference/mcp) exposes the same data:
+
+- `list_agent_sessions` finds sessions by cost, model, tool or failure.
+- `get_agent_session` returns a session's verdict, checks and turns.
+- `get_agent_session_transcript` returns what the session did, step by step.
+- `get_agent_tools_overview` and `get_agent_tool_error` return the tool rankings and failure groups.
 
 ## When a session doesn't look right
 
@@ -84,6 +89,6 @@ The [MCP server](/docs/reference/mcp) exposes the same data. `list_agent_session
 - **The transcript is empty.** Content capture is off, or the framework writes content only to span events or logs. Content on span attributes must be a JSON string such as a `[{role, parts}]` array.
 - **Cost shows as unpriced.** Maple shows cost only when spans carry a cost attribute: `gen_ai.usage.cost`, `gen_ai.usage.total_cost`, `llm.cost.total`, `litellm.cost.total`, `operation.cost` or `openrouter.cost`. It does not price tokens itself.
 - **Token totals look doubled.** Two instrumentations recorded the same model call, usually the framework's and a provider SDK instrumentor. Turn one off.
-- **Nothing appears at all.** Check **Explore → Traces** for the service first. No traces there means the exporter isn't reaching Maple, often a short-lived script that exits before flushing. Traces there but no session means the framework's tracing isn't on.
+- **Nothing appears at all.** Check **Explore → Traces** for the service first. If the service has no traces, the exporter isn't reaching Maple. A common cause is a short-lived script that exits before flushing. If the service has traces but no session, the framework's tracing isn't on.
 
-A framework shown as **Unidentified** still gets sessions, transcripts and tools. If yours has no guide, [the OpenTelemetry GenAI guide](/docs/agent-tracing/opentelemetry) works for any agent, and a sample trace sent to [support@maple.dev](mailto:support@maple.dev) or [Discord](https://discord.gg/BnXjKuwJqP) helps us add one.
+A framework shown as **Unidentified** still gets sessions, transcripts and tools. If your framework has no guide, [the OpenTelemetry GenAI guide](/docs/agent-tracing/opentelemetry) works for any agent. A sample trace sent to [support@maple.dev](mailto:support@maple.dev) or [Discord](https://discord.gg/BnXjKuwJqP) helps us add a guide.

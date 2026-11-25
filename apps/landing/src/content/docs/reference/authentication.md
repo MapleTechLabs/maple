@@ -46,14 +46,18 @@ The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is disc
 
 ## Source tokens
 
-A source you connect under **Sources** can get its own ingest token, prefixed `maple_src_`. It is shown once, when the source is created, and is sent the same way as an ingest key. Telemetry sent with it is attributed to that source. A **Browser** source gets a public source token, prefixed `maple_src_pk_`, which is made to ship in client code like the public ingest key. Keep every other source token out of client bundles. A source token can also:
+A source you connect under **Sources** can get its own ingest token, prefixed `maple_src_`. It is shown once, when the source is created, and is sent the same way as an ingest key. Telemetry sent with it is attributed to that source.
+
+A **Browser** source gets a public source token, prefixed `maple_src_pk_`, which is made to ship in client code like the public ingest key. Keep every other source token out of client bundles.
+
+A source token can also:
 
 - **Allow only some signals**: `traces`, `logs`, `metrics`, `sessions` or `events`. Other signals are rejected with `403` `ingest_signal_not_allowed`.
 - **Expire**: after its expiry it is rejected with `401` `ingest_key_expired`.
 - **Be paused**: requests still get `200`, but the data is dropped, not stored or billed.
 - **Carry a rate limit** in requests per second: over it, `429` `ingest_key_rate_limited`.
 
-Manage them on the source's page or through `/v2/sources`.
+Manage source tokens on the source's page or through `/v2/sources`.
 
 ## API keys
 
@@ -69,7 +73,7 @@ The key is shown once, when it is created. Store it then; Maple keeps only a has
 
 A restricted key carries scopes of the form `<family>:read` or `<family>:write`, where the family is the first path segment under `/v2` (`dashboards`, `alerts`, `traces`, …). `write` implies `read`. The full list of families is in the [API reference](/docs/reference/api#resources). A request outside a key's scopes fails with `403` and `code: "insufficient_scope"`.
 
-`maple auth login` also creates an API key, described as "Created by maple auth login". It is not limited to scopes, but it acts with the role of the member who approved the login, and expires after 90 days. See [Using the CLI with hosted Maple](/docs/reference/cli#using-the-cli-with-hosted-maple).
+`maple auth login` also creates an API key, described as "Created by maple auth login". The key is not limited to scopes, but it acts with the role of the member who approved the login. It expires after 90 days. See [Using the CLI with hosted Maple](/docs/reference/cli#using-the-cli-with-hosted-maple).
 
 API requests are limited to 600 per 60 seconds per key. See [Limits](/docs/reference/limits).
 
@@ -87,4 +91,6 @@ The [MCP server](/docs/reference/mcp#connecting-a-client) page has client config
 
 The dashboard calls the REST API with the signed-in user's session token. You can do the same from a script, but API keys are the supported way to automate.
 
-A user who belongs to several organizations can choose which one a `/v2` request acts on with the `x-maple-org-id` header. Maple checks that the user is a member of that organization and applies the user's role there. If the check fails, the request is rejected with `403`; it is never served under a different organization. With an API key, the header may only name the key's own organization. Any other value is rejected.
+A user who belongs to several organizations can choose which one a `/v2` request acts on with the `x-maple-org-id` header. Maple checks that the user is a member of that organization and applies the user's role there. If the check fails, the request is rejected with `403`; it is never served under a different organization.
+
+With an API key, the header may only name the key's own organization. Any other value is rejected.
