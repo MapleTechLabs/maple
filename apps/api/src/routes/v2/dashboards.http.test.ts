@@ -1781,6 +1781,8 @@ describe("v2 raw SQL widgets", () => {
 			mode: "public",
 		})
 		expect(widget.status).toBe(403)
+		const rotated = await harness.request("POST", `/v2/dashboards/${id}/share/rotate`, sharer.secret)
+		expect(rotated.status).toBe(403)
 
 		const plain = await harness.request("POST", "/v2/dashboards", author.secret, board([]))
 		const shared = await harness.request("PUT", `/v2/dashboards/${plain.body.id}/share`, sharer.secret, {

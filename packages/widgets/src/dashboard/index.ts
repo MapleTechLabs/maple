@@ -29,6 +29,7 @@ export {
 } from "./migrations"
 export {
 	addsRawSql,
+	holdsRawSql,
 	dataSourceEndpoint,
 	dataSourceQuerySet,
 	dataSourcePromql,

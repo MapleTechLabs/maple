@@ -39,7 +39,7 @@ import { DashboardId } from "@maple/primitives"
 import { Clock, DateTime, Effect, Option, Ref, Result, Schema, Array as Arr } from "effect"
 import { Base64Url } from "effect/encoding"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { addsRawSql, dataSourceRawSql } from "@maple/widgets/dashboard"
+import { addsRawSql, holdsRawSql } from "@maple/widgets/dashboard"
 import * as Policy from "@maple/domain/policy"
 import { getTemplate, listTemplateMetadata } from "@maple/backend/dashboard-templates"
 import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
@@ -110,7 +110,7 @@ const requireRawSqlToShare = (
 	widgetId: string | null,
 ): Effect.Effect<void, ReturnType<typeof V2InsufficientPermissions.make>> => {
 	const shared = widgetId === null ? widgets : Arr.filter(widgets, (widget) => widget.id === widgetId)
-	return Arr.some(shared, (widget) => dataSourceRawSql(widget.dataSource) !== null)
+	return holdsRawSql(shared)
 		? Policy.check(permissions, "query:sql", (denial) => V2InsufficientPermissions.make(denial.message))
 		: Effect.void
 }
@@ -464,6 +464,11 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 			Effect.gen(function* () {
 				const context = yield* openScope(dashboardId, widgetId)
 				yield* requireShareableScopes(context.tenant.scopes)
+				yield* requireRawSqlToShare(
+					context.tenant.permissions,
+					context.dashboard.widgets,
+					context.scope.widgetId,
+				)
 				const rotated = yield* shares.rotate(
 					context.tenant.orgId,
 					context.tenant.userId,

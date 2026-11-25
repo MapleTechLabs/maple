@@ -155,6 +155,7 @@ describe("permission codes", () => {
 			"api_keys:manage",
 			"sso:manage",
 			"warehouse:manage",
+			"code_review:auto_approve",
 		] as const) {
 			expect(Policy.grantableToCustomRoles(permission)).toBe(false)
 		}

@@ -113,7 +113,7 @@ const holdersCell = (h: H, role: RoleEntry): Html =>
 				[h.Class(ROW_LINK_LIFT)],
 				[
 					personAvatarStack(h, {
-						label: `${memberCountLabel(role.memberCount)} hold ${role.name}`,
+						label: `${memberCountLabel(role.memberCount)} ${role.memberCount === 1 ? "holds" : "hold"} ${role.name}`,
 						total: role.memberCount,
 						people: Arr.map(role.holders, (holder) => ({
 							name: holder.name ?? holder.identifier,

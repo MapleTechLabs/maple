@@ -127,6 +127,23 @@ describe("custom role editor", () => {
 		)
 	})
 
+	test("unticking a permission unticks what it alone had ticked, and keeps what was ticked by hand", () => {
+		const reader = run(opened(STATUS_EDITOR.id), [
+			Message.ToggledPermission({ permission: "status_pages:edit" }),
+			Message.ToggledPermission({ permission: "telemetry:read" }),
+		])
+		const withSql = run(reader, [Message.ToggledPermission({ permission: "query:sql" })])
+		expect(
+			run(withSql, [Message.ToggledPermission({ permission: "query:sql" })]).permissions,
+		).not.toContain("telemetry:read")
+		const byHand = run(reader, [
+			Message.ToggledPermission({ permission: "telemetry:read" }),
+			Message.ToggledPermission({ permission: "query:sql" }),
+			Message.ToggledPermission({ permission: "query:sql" }),
+		])
+		expect(byHand.permissions).toContain("telemetry:read")
+	})
+
 	test("a permission needed by several says how many more need it", () => {
 		scene(
 			{ update: pageUpdate, view },

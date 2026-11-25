@@ -340,6 +340,7 @@ export const permissions = {
 		description: "Let Maple approve pull requests, and change the rules while it does.",
 		action: "turn on automatic pull request approval or change the review rules while it is on",
 		sensitive: true,
+		customRoles: false,
 	},
 	"security:manage": {
 		code: 19,

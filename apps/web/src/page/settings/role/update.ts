@@ -71,6 +71,7 @@ export const init = (route: RoleRoute, context: PageContext): Return => {
 			name: "",
 			description: "",
 			permissions: [],
+			autoTicked: [],
 			isDraftLoaded: false,
 			tabs: Tabs.init({ idBase: 0, values: TABS, selected: "permissions" }),
 			filter: "",
@@ -92,6 +93,7 @@ const withDrafts = (model: Model, role: RoleEntry): Model => ({
 	name: role.name,
 	description: role.description,
 	permissions: role.permissions,
+	autoTicked: [],
 	isDraftLoaded: true,
 })
 
@@ -108,15 +110,31 @@ export const requiredBy = (
 ): ReadonlyArray<Policy.Permission> =>
 	Arr.filter(permissions, (held) => Policy.implicationsOf(held).includes(permission))
 
-/** Ticking adds what the permission implies; unticking one another ticked permission needs does nothing. */
-const toggled = (
-	permissions: ReadonlyArray<Policy.Permission>,
-	permission: Policy.Permission,
-): ReadonlyArray<Policy.Permission> => {
-	if (!permissions.includes(permission)) return Policy.withImplied([...permissions, permission])
-	return requiredBy(permissions, permission).length > 0
-		? permissions
-		: Arr.filter(permissions, (held) => held !== permission)
+interface PermissionDraft {
+	readonly permissions: ReadonlyArray<Policy.Permission>
+	readonly autoTicked: ReadonlyArray<Policy.Permission>
+}
+
+/**
+ * Ticking adds what the permission implies, remembered as ticked for it. Unticking one another ticked
+ * permission needs does nothing; unticking any other also unticks what it alone had ticked.
+ */
+const toggled = (draft: PermissionDraft, permission: Policy.Permission): PermissionDraft => {
+	const { permissions, autoTicked } = draft
+	if (!permissions.includes(permission)) {
+		const next = Policy.withImplied([...permissions, permission])
+		const added = Arr.filter(next, (held) => held !== permission && !permissions.includes(held))
+		return { permissions: next, autoTicked: Arr.union(autoTicked, added) }
+	}
+	if (requiredBy(permissions, permission).length > 0) return draft
+	const implied = Policy.implicationsOf(permission)
+	const kept = Arr.filter(
+		permissions,
+		(held) => held !== permission && !(implied.includes(held) && autoTicked.includes(held)),
+	)
+	// Whatever a remaining permission still needs comes back.
+	const next = Policy.withImplied(kept)
+	return { permissions: next, autoTicked: Arr.filter(autoTicked, (held) => next.includes(held)) }
 }
 
 /** Whether the drafted name and description make a valid role. */
@@ -173,7 +191,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledPermission: ({ permission }) =>
 			whenEditable(model, () =>
 				Policy.grantableToCustomRoles(permission)
-					? { ...model, permissions: toggled(model.permissions, permission) }
+					? { ...model, ...toggled(model, permission) }
 					: model,
 			),
 		ToggledGroup: ({ group }) => ({
@@ -253,6 +271,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						name: saved.name,
 						description: saved.description,
 						permissions: saved.permissions,
+						autoTicked: [],
 					},
 					outMessage: toast("success", `${saved.name} saved`),
 				}),

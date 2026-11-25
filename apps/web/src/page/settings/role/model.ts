@@ -25,6 +25,8 @@ export const Model = Schema.Struct({
 	name: Schema.String,
 	description: Schema.String,
 	permissions: Schema.Array(Policy.PermissionName),
+	/** Draft permissions ticked only because another ticked permission implies them. */
+	autoTicked: Schema.Array(Policy.PermissionName),
 	isDraftLoaded: Schema.Boolean,
 	tabs: Tabs.Model,
 	filter: Schema.String,

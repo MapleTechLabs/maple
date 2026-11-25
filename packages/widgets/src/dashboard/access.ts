@@ -157,6 +157,10 @@ const rawSqlTexts = (widgets: ReadonlyArray<WidgetDataSources>): ReadonlyArray<s
 		}),
 	)
 
+/** Whether any of these widgets runs raw SQL, in its tile or a stat's sparkline. */
+export const holdsRawSql = (widgets: ReadonlyArray<WidgetDataSources>): boolean =>
+	rawSqlTexts(widgets).length > 0
+
 /**
  * Whether `after` holds raw SQL that `before` did not: a new SQL widget, or a changed text. Saving
  * SQL a board already had is not writing SQL; who may write it is the caller's rule.
