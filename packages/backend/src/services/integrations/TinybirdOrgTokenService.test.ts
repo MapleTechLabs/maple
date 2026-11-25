@@ -22,6 +22,8 @@ import { listOrgScopedDatasourceNames } from "@maple/backend/services/warehouse/
 import {
 	cleanupTestDbs,
 	createTestDb,
+	TestEdgeCacheLive,
+	testEdgeCache,
 	insertTestSource,
 	makeSwitchableDatabase,
 	type TestDb,
@@ -63,6 +65,7 @@ const tokenLayer = (
 		Layer.provide(Env.layer),
 		Layer.provide(config),
 		Layer.provide(database),
+		Layer.provide(TestEdgeCacheLive),
 	)
 
 const decodePayload = (jwt: string) =>
@@ -268,7 +271,7 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 				Layer.merge(TinybirdOrgTokenService.layer, RetentionService.layer).pipe(
 					Layer.provide(Env.layer),
 					Layer.provide(testConfig()),
-					Layer.provide(db.layer),
+					Layer.provide(Layer.merge(db.layer, testEdgeCache(db))),
 				),
 			),
 		)
@@ -276,7 +279,13 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 
 	/** A change made elsewhere: another instance over the same database, as another isolate is. */
 	const fromAnotherIsolate = <A, E>(db: TestDb, effect: Effect.Effect<A, E, RetentionService>) =>
-		effect.pipe(Effect.provide(Layer.fresh(RetentionService.layer).pipe(Layer.provide(db.layer))))
+		effect.pipe(
+			Effect.provide(
+				Layer.fresh(RetentionService.layer).pipe(
+					Layer.provide(Layer.merge(db.layer, testEdgeCache(db))),
+				),
+			),
+		)
 
 	const filtersOf = (token: string): Record<string, string> =>
 		Rec.fromEntries(Arr.map(decodePayload(token).scopes, (scope) => [scope.resource, scope.filter]))

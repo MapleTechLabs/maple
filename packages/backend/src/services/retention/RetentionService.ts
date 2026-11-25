@@ -12,9 +12,11 @@ import {
 	type RetentionDaysBySignal,
 	RetentionOverrides,
 	type RetentionSignal,
+	RetentionSignal as RetentionSignalSchema,
 	sourceRetentionDays,
 } from "@maple/domain/retention"
 import type { OrgId, SourceId, UserId } from "@maple/primitives"
+import { EdgeCacheService } from "@maple/cache"
 import type { MapleDb } from "@maple/db/client"
 import { Array as Arr, Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -58,6 +60,22 @@ export const readHorizonOf = (policy: RetentionPolicy): RetentionReadHorizon => 
 			policy.overrides[signal] !== undefined ||
 			Arr.some(policy.sources, (source) => source.overrides[signal] !== undefined),
 	),
+})
+
+/** The shared cache bucket of read horizons, one entry per org. */
+export const READ_HORIZON_CACHE_BUCKET = "retention-read-horizon"
+
+/** A read horizon as the shared cache holds it. */
+const CachedReadHorizon = Schema.Struct({
+	days: Schema.Struct({
+		traces: Schema.Number,
+		logs: Schema.Number,
+		metrics: Schema.Number,
+		sessions: Schema.Number,
+		events: Schema.Number,
+		profiles: Schema.Number,
+	}),
+	configured: Schema.Array(RetentionSignalSchema),
 })
 
 /** How long a read horizon is served before the policy is read again. */
@@ -119,6 +137,7 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const edgeCache = yield* EdgeCacheService
 			const dbExecute = makeDbExecute(database, "RetentionService", toPersistenceError)
 
 			// The org's periods and its sources' are read from one snapshot, so the horizon
@@ -190,32 +209,46 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				refreshing.set(orgId, nowMs)
-				return yield* get(orgId).pipe(
-					Effect.tap(() =>
-						Effect.annotateCurrentSpan("maple.retention.read_horizon.source", "postgres"),
-					),
-					Effect.map((policy) =>
-						remember(orgId, readHorizonOf(policy), nowMs + READ_HORIZON_TTL_MS),
-					),
-					// A telemetry read must not fail on the policy read: the last known horizon, else
-					// the defaults, held for a short while so a down database is not asked per read.
-					Effect.catchTag("@maple/http/retention/RetentionPersistenceError", (error) => {
-						const known = horizons.get(orgId)
-						return Effect.as(
-							Effect.annotateCurrentSpan({
-								"maple.retention.read_horizon.source":
-									known === undefined ? "defaults" : "last_known",
-								"maple.retention.read_horizon.error": error.message,
-							}),
-							remember(
-								orgId,
-								known?.horizon ?? DEFAULT_READ_HORIZON,
-								nowMs + READ_HORIZON_RETRY_MS,
+				// A fresh service instance asks the shared cache before Postgres: about half of
+				// warehouse reads run on one, and the policy read costs them a transaction.
+				return yield* edgeCache
+					.getOrCompute(
+						{
+							bucket: READ_HORIZON_CACHE_BUCKET,
+							key: orgId,
+							ttlSeconds: READ_HORIZON_TTL_MS / 1000,
+							schema: CachedReadHorizon,
+							skipReadWhenSlotsHeld: true,
+						},
+						Effect.map(get(orgId), readHorizonOf),
+					)
+					.pipe(
+						Effect.tap((result) =>
+							Effect.annotateCurrentSpan(
+								"maple.retention.read_horizon.source",
+								result.hit ? "edge_cache" : "postgres",
 							),
-						)
-					}),
-					Effect.ensuring(Effect.sync(() => refreshing.delete(orgId))),
-				)
+						),
+						Effect.map((result) => remember(orgId, result.value, nowMs + READ_HORIZON_TTL_MS)),
+						// A telemetry read must not fail on the policy read: the last known horizon, else
+						// the defaults, held for a short while so a down database is not asked per read.
+						Effect.catchTag("@maple/http/retention/RetentionPersistenceError", (error) => {
+							const known = horizons.get(orgId)
+							return Effect.as(
+								Effect.annotateCurrentSpan({
+									"maple.retention.read_horizon.source":
+										known === undefined ? "defaults" : "last_known",
+									"maple.retention.read_horizon.error": error.message,
+								}),
+								remember(
+									orgId,
+									known?.horizon ?? DEFAULT_READ_HORIZON,
+									nowMs + READ_HORIZON_RETRY_MS,
+								),
+							)
+						}),
+						Effect.ensuring(Effect.sync(() => refreshing.delete(orgId))),
+					)
 			})
 
 			// No span of its own: a hit is a clock read and a map lookup on every warehouse read.
@@ -236,10 +269,15 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 					return Effect.succeed(cached.horizon)
 				})
 
-			/** A write is read back by its own isolate at once; the others follow within the TTL. */
+			/**
+			 * A write is read back by its own instance at once. The shared entry is dropped, so
+			 * the others follow as their own copy expires, within the TTL.
+			 */
 			const rememberPolicy = (orgId: OrgId, policy: RetentionPolicy) =>
-				Effect.map(Clock.currentTimeMillis, (nowMs) => {
+				Effect.gen(function* () {
+					const nowMs = yield* Clock.currentTimeMillis
 					remember(orgId, readHorizonOf(policy), nowMs + READ_HORIZON_TTL_MS)
+					yield* edgeCache.invalidate({ bucket: READ_HORIZON_CACHE_BUCKET, key: orgId })
 					return policy
 				})
 

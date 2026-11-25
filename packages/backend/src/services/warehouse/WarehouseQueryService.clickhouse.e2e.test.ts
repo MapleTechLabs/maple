@@ -11,7 +11,12 @@ import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgCli
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { RetentionService } from "@maple/backend/services/retention/RetentionService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	type TestDb,
+	TestEdgeCacheLive,
+} from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService, __testables } from "./WarehouseQueryService"
 import {
 	applyRealMigrations,
@@ -181,7 +186,9 @@ const buildLayer = () => {
 	const orgSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
-	const retentionLive = RetentionService.layer.pipe(Layer.provide(testDb.layer))
+	const retentionLive = RetentionService.layer.pipe(
+		Layer.provide(Layer.merge(testDb.layer, TestEdgeCacheLive)),
+	)
 	const tokensLive = TinybirdOrgTokenService.layerWithoutDependencies.pipe(
 		Layer.provide(Layer.mergeAll(envLive, retentionLive)),
 	)
