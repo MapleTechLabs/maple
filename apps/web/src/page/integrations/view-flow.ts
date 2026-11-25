@@ -10,7 +10,6 @@ import { cardView } from "./view"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlowView } from "../infra-integrations/gcp/integration/view-flow-gcp"
 import { prometheusFlowView } from "./view-flow-prometheus"
-import { githubFlowView } from "./view-flow-github"
 import { awsFlowView } from "../infra-integrations/aws/integration/view-flow-aws"
 
 type H = HtmlBuilder<Message>
@@ -82,8 +81,6 @@ export const flowView = (
 			return awsFlowView(h, model, stage, timeZone)
 		case "gcp":
 			return gcpFlowView(h, model, stage, timeZone)
-		case "github":
-			return githubFlowView(h, model, stage)
 		default:
 			return genericFlowView(h, model, integration, stage, timeZone)
 	}

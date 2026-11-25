@@ -15,7 +15,6 @@ import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
 import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
-import { githubCard } from "./view-github"
 import { awsCard } from "../infra-integrations/aws/integration/view-aws"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
@@ -58,8 +57,6 @@ export const cardView = (
 	const provider = providerModuleOf(integration)
 	if (provider !== undefined) return provider.card(h, model, timeZone, focusId)
 	switch (integration) {
-		case "github":
-			return githubCard(h, model, timeZone)
 		case "gcp":
 			return [gcpCard(h, model, timeZone, focusId)]
 		case "aws":

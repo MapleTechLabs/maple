@@ -5,7 +5,6 @@ import type { Model } from "./model"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlow } from "../infra-integrations/gcp/integration/flow-gcp"
 import { prometheusFlow } from "./flow-prometheus"
-import { githubFlow } from "./flow-github"
 import { awsFlow } from "../infra-integrations/aws/integration/flow-aws"
 
 // Where a source stands in `/sources/new`'s flow: Connect, Choose data, Go live.
@@ -65,8 +64,6 @@ export const flowOf = (model: Model, integration: DataIntegration, context: Flow
 			return awsFlow(model)
 		case "gcp":
 			return gcpFlow(model)
-		case "github":
-			return githubFlow(model)
 		default:
 			return genericFlow(model, integration)
 	}

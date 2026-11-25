@@ -12,8 +12,8 @@ import { ReadClock } from "./command"
 import { Message } from "./message"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import type { Model } from "./model"
-import { PLANETSCALE_PROVIDER } from "./provider-modules"
-import { subscriptions, tickerStream } from "./subscription"
+import { GITHUB_PROVIDER, PLANETSCALE_PROVIDER } from "./provider-modules"
+import { tickerStream } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -231,10 +231,11 @@ describe("GitHub repository discovery", () => {
 				result: Result.succeed(pending),
 			}),
 		)
-		const dependency = subscriptions.githubPoll.modelToDependencies({ model, context })
+		const ticker = GITHUB_PROVIDER.ticker
+		expect(ticker?.isActive(model)).toBe(true)
 		const polls = await Effect.gen(function* () {
 			const fiber = yield* Effect.forkChild(
-				subscriptions.githubPoll.dependenciesToStream(dependency).pipe(
+				(ticker === null ? Stream.empty : tickerStream(ticker)).pipe(
 					Stream.take(8),
 					Stream.mapEffect((message) =>
 						Effect.map(Clock.currentTimeMillis, (at) => ({ message, at })),
@@ -258,6 +259,6 @@ describe("GitHub repository discovery", () => {
 				}),
 			)
 		}
-		expect(subscriptions.githubPoll.modelToDependencies({ model, context }).isPolling).toBe(true)
+		expect(ticker?.isActive(model)).toBe(true)
 	})
 })

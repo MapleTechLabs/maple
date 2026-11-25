@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import type { GithubInstallationSelection } from "@maple/domain/http"
 import type * as Keyed from "@maple/views/data/keyed"
 import { PageOutMessage, type PageContext, type PageReturn } from "../contract"
@@ -8,7 +8,7 @@ import type { Message } from "./message"
 import { canManage, type Model, type Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
-import { providerModuleOf } from "./provider-modules"
+import { PROVIDER_MODULES, providerModuleOf } from "./provider-modules"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
 
@@ -48,7 +48,7 @@ export const clickedConnect = (model: Model, context: PageContext, githubMode?: 
 	if (
 		!Schema.is(ConnectProvider)(integration) ||
 		model.connect.isStarting ||
-		model.githubCard.selectingInstallation !== null
+		Arr.some(PROVIDER_MODULES, (provider) => provider.blocksConnect(model))
 	)
 		return { model }
 	if ((integration === "linear" || integration === "google-search-console") && !canManage(model))
@@ -69,14 +69,11 @@ export const clickedConnect = (model: Model, context: PageContext, githubMode?: 
 /** The start mutation's `reactivityKeys` re-read the provider's status on success. */
 export const succeededStart = (model: Model, context: PageContext, attempt: number): Return => {
 	const active = model.connect.active
-	// The popup is out: a GitHub account choice it replaces goes now, not at the click, so a
-	// blocked popup or a failed start keeps the verified picker.
-	const started =
-		active?.provider === "github"
-			? { ...model, githubCard: { ...model.githubCard, selection: null } }
-			: model
 	return active !== null && active.attempt === attempt
-		? chain(withConnect(started, { isStarting: false }), [
+		? chain(withConnect(model, { isStarting: false }), [
+				// The popup is out, not at the click: a blocked popup or a failed start keeps state.
+				(next) =>
+					providerModuleOf(active.provider)?.onConnectOpened(next, context) ?? { model: next },
 				(next) => refreshProvider(next, context, active.provider),
 				// PlanetScale's start invalidates every `planetscaleIntegration` read, the inventory too.
 				(next) =>
@@ -143,13 +140,13 @@ export const receivedCallback = (
 	github?: GithubInstallationSelection,
 ): Return => {
 	const label = PROVIDERS[provider].label
-	if (provider === "github" && status === "success" && github !== undefined)
-		return {
-			model: {
-				...withConnect(model, { active: null, isStarting: false, isClosed: false }),
-				githubCard: { ...model.githubCard, selection: github, selectingInstallation: null },
-			},
-		}
+	const onPayload = providerModuleOf(provider)?.onConnectPayload ?? null
+	if (status === "success" && github !== undefined && onPayload !== null)
+		return onPayload(
+			withConnect(model, { active: null, isStarting: false, isClosed: false }),
+			context,
+			github,
+		)
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
 		return chain(model, [
@@ -187,8 +184,9 @@ export const receivedRelay = (
 	message: string,
 	github?: GithubInstallationSelection,
 ): Return => {
-	// GitHub authorization that found accounts: the picker, same as a direct callback.
-	if (provider === "github" && status === "success" && github !== undefined)
+	// An authorization that found accounts (GitHub's): the picker, same as a direct callback.
+	const takesPayload = (providerModuleOf(provider)?.onConnectPayload ?? null) !== null
+	if (status === "success" && github !== undefined && takesPayload)
 		return receivedCallback(model, context, provider, status, message, github)
 	const ended =
 		model.connect.active?.provider === provider

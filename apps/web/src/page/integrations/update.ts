@@ -9,8 +9,6 @@ import { integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
-import { initGithubCard } from "./github"
-import * as Github from "./update-github"
 import { initPrometheusCard } from "./prometheus"
 import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
 import { initAwsCard } from "../infra-integrations/aws/integration/aws"
@@ -36,6 +34,7 @@ import {
 	CLOUDFLARE_PROVIDER,
 	everyProvider,
 	FLEET_PROVIDER,
+	GITHUB_PROVIDER,
 	LINEAR_PROVIDER,
 	PLANETSCALE_PROVIDER,
 	PROVIDER_MODULES,
@@ -163,7 +162,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: CHAT_PROVIDER.initial(),
 		linearCard: LINEAR_PROVIDER.initial(),
-		githubCard: initGithubCard(),
+		githubCard: GITHUB_PROVIDER.initial(),
 		cloudflareCard: CLOUDFLARE_PROVIDER.initial(),
 		prometheusCard: initPrometheusCard(),
 		planetscaleCard: PLANETSCALE_PROVIDER.initial(),
@@ -290,11 +289,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{ isCurrent: s.chat.key === key, previous: s.chat },
 			),
 		CompletedLoadGithub: ({ key, result }) =>
-			// Only the current read settles the switches; a superseded answer is dropped below too.
-			accepted(Github.settledSwitches(model, s.github.key === key && Result.isSuccess(result)), {
-				...s,
-				github: Keyed.accept(s.github, key, result),
-			}),
+			GITHUB_PROVIDER.onStatus(
+				accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }).model,
+				context,
+				{ isCurrent: s.github.key === key, previous: s.github },
+			),
+		GotGithubMessage: ({ message: child }) => GITHUB_PROVIDER.update(model, child, context),
 		CompletedLoadSearchConsole: ({ key, result }) =>
 			SEARCH_CONSOLE_PROVIDER.onStatus(
 				accepted(model, { ...s, searchConsole: Keyed.accept(s.searchConsole, key, result) }).model,
@@ -351,10 +351,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConnect: () => Connect.clickedConnect(model, context),
 		ClickedOpenGithubInstallPage: () => Connect.clickedConnect(model, context, "install"),
-		ClickedSelectGithubInstallation: ({ installationId }) =>
-			Github.clickedInstallation(model, installationId),
-		CompletedSelectGithubInstallation: ({ state, installationId, failure }) =>
-			Github.completedInstallation(model, context, state, installationId, failure),
 		ClickedTarget: ({ id }) => Prometheus.clickedTarget(model, context, id),
 		CompletedFetchChecks: ({ key, result }) => ({
 			model: {
@@ -484,34 +480,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const refreshed = requestStatus(model, context, "gcp", "Refresh")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
 		},
-		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
-		CompletedGithubRefreshSpin: ({ version }) => Github.completedRefreshSpin(model, version),
-		ToggledCiTraces: () => Github.toggledCiTraces(model),
-		CompletedCiTraces: ({ enabled, failure }) =>
-			Github.completedCiTraces(model, context, enabled, failure),
-		ToggledAuditLog: () => Github.toggledAuditLog(model),
-		CompletedAuditLog: ({ enabled, failure }) =>
-			Github.completedAuditLog(model, context, enabled, failure),
-		ToggledAuditCategory: ({ id }) => Github.toggledAuditCategory(model, id),
-		CompletedAuditCategory: ({ id, enabled, failure }) =>
-			Github.completedAuditCategory(model, context, id, enabled, failure),
-		TickedGithubPoll: () => requestStatus(model, context, "github", "Refresh"),
-		EndedGithubForcePoll: ({ version }) => Github.endedForcePoll(model, version),
-		ClickedRepoDelete: ({ repoId }) => Github.clickedRepoDelete(model, repoId),
-		GotRepoDeleteDialogMessage: ({ message: child }) => Github.gotRepoDeleteDialog(model, child),
-		ConfirmedRepoDelete: () => Github.confirmedRepoDelete(model),
-		CompletedRepoDelete: ({ repoId, failure }) =>
-			Github.completedRepoDelete(model, context, repoId, failure),
-		GotBranchPopoverMessage: ({ repoId, message: child }) =>
-			Github.gotBranchPopover(model, repoId, child),
-		ChangedBranchQuery: ({ value }) => ({
-			model: { ...model, githubCard: { ...model.githubCard, branchQuery: value } },
-		}),
-		ClickedBranch: ({ repoId, branch }) => Github.clickedBranch(model, repoId, branch),
-		GotBranchDialogMessage: ({ message: child }) => Github.gotBranchDialog(model, child),
-		ConfirmedBranch: () => Github.confirmedBranch(model),
-		CompletedTrackedBranch: ({ repoId, branch, backfillQueued, failure }) =>
-			Github.completedTrackedBranch(model, context, repoId, branch, backfillQueued, failure),
 		SucceededStartConnect: ({ attempt }) => Connect.succeededStart(model, context, attempt),
 		FailedStartConnect: ({ attempt, title, description }) =>
 			Connect.failedStart(model, attempt, title, description),

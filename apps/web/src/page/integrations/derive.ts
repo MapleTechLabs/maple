@@ -119,19 +119,6 @@ export const HEALTH_TONE = {
 export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
 	`${lastSync.verb} ${formatRelativeTime(lastSync.at, nowMs)}`
 
-const githubStatus = (statuses: Statuses) =>
-	fold(
-		statuses.github,
-		(status): CardStatus => {
-			if (status.state === "disconnected") return { label: "Deactivated", variant: "warn" }
-			if (status.state === "suspended") return { label: "Suspended", variant: "warn" }
-			if (!status.connected) return NOT_CONNECTED
-			const count = Arr.filter(status.repositories, (repo) => repo.status === "active").length
-			return { label: count > 0 ? countLabel(count, "repo") : "Connected", variant: "ok" }
-		},
-		unavailableStatus,
-	)
-
 /** The header badge per integration; `null` while loading. */
 export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
 	const provider = providerModuleOf(id)
@@ -165,8 +152,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 			return scrapeStatus(statuses, "prometheus")
 		case "warpstream":
 			return { label: "Via Prometheus", variant: "outline" }
-		case "github":
-			return githubStatus(statuses)
 		default:
 			return null
 	}
@@ -271,45 +256,6 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
-const githubOverview = (statuses: Statuses) =>
-	fold(
-		statuses.github,
-		(status): IntegrationOverview => {
-			const context =
-				status.accountLogin !== null ? `@${status.accountLogin} · GitHub App` : "GitHub App"
-			const halted = (stateLabel: string, issue: string): IntegrationOverview => ({
-				kind: "connected",
-				health: "attention",
-				stateLabel,
-				context,
-				stat: null,
-				lastSync: null,
-				issue,
-			})
-			if (status.state === "disconnected") return halted("Deactivated", "Reinstall the app")
-			if (status.state === "suspended") return halted("Suspended", "Suspended on GitHub")
-			if (!status.connected) return CONNECT
-			const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
-			const removed = status.repositories.length - active.length
-			const failing = Arr.filter(active, (repo) => repo.lastSyncError != null).length
-			const issue =
-				failing > 0
-					? `${countLabel(failing, "repo")} failing`
-					: removed > 0
-						? `${countLabel(removed, "repo")} removed`
-						: null
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				context,
-				stat: active.length > 0 ? `${countLabel(active.length, "repo")} synced` : null,
-				lastSync: lastSyncOf(maxMs(Arr.map(active, (repo) => repo.lastSyncedAt))),
-				issue,
-			}
-		},
-		unavailableOverview,
-	)
-
 /** One integration's overview; `null` while its status loads. */
 export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview => {
 	const provider = providerModuleOf(id)
@@ -323,8 +269,6 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return scrapeOverview(statuses, "prometheus")
 		case "warpstream":
 			return SET_UP
-		case "github":
-			return githubOverview(statuses)
 		default:
 			return null
 	}

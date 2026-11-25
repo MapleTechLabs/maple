@@ -1,6 +1,5 @@
 import * as Policy from "@maple/domain/policy"
 import { DataSourceKind } from "@maple/domain/data-sources"
-import { GithubAuditCategoryId } from "@maple/domain/github-audit"
 import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
@@ -14,7 +13,6 @@ import {
 	ScrapeTargetId,
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
-	VcsRepositoryId,
 	VercelIntegrationStatus,
 } from "@maple/domain/http"
 import {
@@ -44,7 +42,6 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
-import * as Popover from "@maple/views/ui/popover"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
@@ -66,6 +63,7 @@ import {
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import { LinearMessage } from "./linear"
 import { FleetMessage } from "./fleet/fleet"
+import { GithubMessage } from "./github"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import {
@@ -141,12 +139,6 @@ export const Message = defineMessageUnion({
 	 * GitHub account", and "Change repos on GitHub" (an installed account gets its settings).
 	 */
 	ClickedOpenGithubInstallPage: {},
-	ClickedSelectGithubInstallation: { installationId: Schema.String },
-	CompletedSelectGithubInstallation: {
-		state: Schema.String,
-		installationId: Schema.String,
-		failure: Schema.NullOr(LoadFailure),
-	},
 	SucceededStartConnect: { attempt: Schema.Number },
 	FailedStartConnect: { attempt: Schema.Number, title: Schema.String, description: Schema.String },
 	/** The authorize URL arrived but the popup was gone and could not be reopened. */
@@ -163,36 +155,6 @@ export const Message = defineMessageUnion({
 	GotDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedDisconnect: {},
 	CompletedDisconnect: { integration: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedGithubRefresh: {},
-	CompletedGithubRefreshSpin: { version: Schema.Number },
-	ToggledCiTraces: {},
-	CompletedCiTraces: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
-	ToggledAuditLog: {},
-	CompletedAuditLog: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
-	ToggledAuditCategory: { id: GithubAuditCategoryId },
-	CompletedAuditCategory: {
-		id: GithubAuditCategoryId,
-		enabled: Schema.Boolean,
-		failure: Schema.NullOr(LoadFailure),
-	},
-	/** The 3 s status poll while the popup is out, a branch change settles or a repo syncs. */
-	TickedGithubPoll: {},
-	EndedGithubForcePoll: { version: Schema.Number },
-	ClickedRepoDelete: { repoId: VcsRepositoryId },
-	GotRepoDeleteDialogMessage: { message: Dialog.Message },
-	ConfirmedRepoDelete: {},
-	CompletedRepoDelete: { repoId: VcsRepositoryId, failure: Schema.NullOr(LoadFailure) },
-	GotBranchPopoverMessage: { repoId: VcsRepositoryId, message: Popover.Message },
-	ChangedBranchQuery: { value: Schema.String },
-	ClickedBranch: { repoId: VcsRepositoryId, branch: Schema.String },
-	GotBranchDialogMessage: { message: Dialog.Message },
-	ConfirmedBranch: {},
-	CompletedTrackedBranch: {
-		repoId: VcsRepositoryId,
-		branch: Schema.String,
-		backfillQueued: Schema.Boolean,
-		failure: Schema.NullOr(LoadFailure),
-	},
 	ClickedTarget: { id: ScrapeTargetId },
 	CompletedFetchChecks: {
 		key: Schema.String,
@@ -237,6 +199,7 @@ export const Message = defineMessageUnion({
 	GotVercelMessage: { message: VercelMessage },
 	GotPlanetscaleMessage: { message: PlanetscaleMessage },
 	GotCloudflareMessage: { message: CloudflareMessage },
+	GotGithubMessage: { message: GithubMessage },
 	GotAwsAccountIdMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },

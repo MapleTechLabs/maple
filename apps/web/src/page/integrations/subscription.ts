@@ -9,7 +9,6 @@ import { Message } from "./message"
 import { openerReturns, relayedReturns } from "./connect-returns"
 import type { Model } from "./model"
 import { type MountedProvider, PROVIDER_MODULES } from "./provider-modules"
-import { githubStatusOf } from "./update-github"
 import { CAPABILITIES, CAPABILITY_IDS } from "../infra-integrations/gcp/integration/gcp-configure-copy"
 import { runConfirmed } from "../infra-integrations/gcp/integration/gcp-configure-derive"
 import { configureConnector } from "../infra-integrations/gcp/integration/update-gcp-configure"
@@ -144,9 +143,6 @@ const popupFlow = ({ provider, attempt, githubMode }: ConnectAttempt) =>
 		}),
 	)
 
-const GITHUB_POLL_MS = 3_000
-const FORCE_POLL_WINDOW_MS = 10_000
-
 /** A status poll: paused while the tab is hidden or offline, one catch-up tick on return. */
 const every = (millis: number, message: () => Message) =>
 	Stream.map(pollTicks(Duration.millis(millis)), message)
@@ -161,9 +157,14 @@ export const tickerStream = (ticker: NonNullable<MountedProvider["ticker"]>): St
 				Duration.millis(ticker.everyMs),
 			).pipe(Stream.map(() => ticker.tick))
 
-const after = (millis: number, message: () => Message) =>
-	Stream.fromEffect(Effect.delay(Effect.sync(message), Duration.millis(millis))).pipe(
+/** A module's one-shot: its messages `afterMs` on, held until the tab is back. */
+const delayedStream = (
+	delayed: NonNullable<MountedProvider["delayed"]>,
+	version: number,
+): Stream.Stream<Message> =>
+	Stream.fromEffect(Effect.delay(Effect.void, Duration.millis(delayed.afterMs))).pipe(
 		Stream.concat(Stream.never),
+		Stream.flatMap(() => Stream.flatMap(whenPresent(), () => Stream.fromIterable(delayed.fire(version)))),
 	)
 
 /** A metric stream delivers about every minute. */
@@ -232,25 +233,6 @@ const isScrapePage = (model: Model): boolean => {
 	return integration === "prometheus" || integration === "warpstream"
 }
 
-/** The popup is out, repository discovery is pending, or a repository is still syncing. */
-const isGithubPolling = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "github") return false
-	const status = githubStatusOf(model)
-	const syncing =
-		status?.connected === true &&
-		status.repositoryDiscovery?._tag !== "Failed" &&
-		Arr.some(
-			status.repositories,
-			(repo) => repo.syncStatus === "pending" || repo.syncStatus === "backfilling",
-		)
-	return (
-		model.connect.active !== null ||
-		model.githubCard.isForcePolling ||
-		status?.repositoryDiscovery?._tag === "Pending" ||
-		syncing
-	)
-}
-
 /** The provider whose callback messages this page listens for. */
 const listeningProvider = (model: Model): ConnectProvider | null => {
 	const integration = integrationOfSearch(model.search.integration)
@@ -282,36 +264,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: phase === "popup"
 							? popupFlow(attempt)
 							: grace(attempt),
-			},
-		),
-		githubPoll: entry(
-			{ isPolling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isPolling: isGithubPolling(model) }),
-				dependenciesToStream: ({ isPolling }) =>
-					isPolling ? every(GITHUB_POLL_MS, () => Message.TickedGithubPoll()) : Stream.empty,
-			},
-		),
-		/**
-		 * `FORCE_POLL_WINDOW_MS`: the poll after a branch change stops on its own, with one last read
-		 * once the tab is back, so a window spent hidden or offline still lands the change.
-		 */
-		githubForcePoll: entry(
-			{ version: Schema.NullOr(Schema.Number) },
-			{
-				modelToDependencies: ({ model }) => ({
-					version: model.githubCard.isForcePolling ? model.githubCard.forcePollVersion : null,
-				}),
-				dependenciesToStream: ({ version }) =>
-					version === null
-						? Stream.empty
-						: Stream.flatMap(
-								after(FORCE_POLL_WINDOW_MS, () => Message.EndedGithubForcePoll({ version })),
-								(ended) =>
-									Stream.flatMap(whenPresent(), () =>
-										Stream.make(Message.TickedGithubPoll(), ended),
-									),
-							),
 			},
 		),
 		/** The scrape target list every 30 s; the selected target's checks every 10 s. */
@@ -378,6 +330,29 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ isWaiting }) =>
 					isWaiting ? every(10_000, () => Message.TickedGcpRefresh()) : Stream.empty,
 			},
+		),
+		/** Each provider module's one-shot (GitHub's force-poll window), fired once the tab is back. */
+		...Rec.fromEntries(
+			Arr.flatMap(PROVIDER_MODULES, (provider) => {
+				const delayed = provider.delayed
+				return delayed === null
+					? []
+					: [
+							keyed(
+								`${provider.id}Delayed`,
+								entry(
+									{ version: Schema.NullOr(Schema.Number) },
+									{
+										modelToDependencies: ({ model }) => ({
+											version: delayed.versionOf(model),
+										}),
+										dependenciesToStream: ({ version }) =>
+											version === null ? Stream.empty : delayedStream(delayed, version),
+									},
+								),
+							),
+						]
+			}),
 		),
 		/** Each provider module's tick (Railway's first-sync poll, Supabase's card clock). */
 		...Rec.fromEntries(
