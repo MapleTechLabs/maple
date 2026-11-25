@@ -13,6 +13,7 @@ import {
 	OrgIngestRuleStats,
 	OrgIngestRules,
 	OrgIngestSamplingPolicies,
+	OrgRetentionPolicies,
 	Sources,
 	VercelProjects,
 } from "./tables"
@@ -54,6 +55,8 @@ export const INGEST_GATEWAY_GRANTS: ReadonlyArray<{
 	{ table: OrgIngestRules, privileges: ["SELECT"] },
 	{ table: OrgIngestRuleSettings, privileges: ["SELECT"] },
 	{ table: OrgBillingLinks, privileges: ["SELECT"] },
+	// Read with each key and connector, to stamp rows with how long their source keeps them.
+	{ table: OrgRetentionPolicies, privileges: ["SELECT"] },
 	// Last used / last rejected on sources, and each connector's health columns.
 	{ table: Sources, privileges: ["SELECT", "UPDATE"] },
 	{ table: CloudflareLogpushConnectors, privileges: ["SELECT", "UPDATE"] },
