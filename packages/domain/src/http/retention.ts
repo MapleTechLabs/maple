@@ -16,3 +16,17 @@ export class RetentionPersistenceError extends HttpTaggedError<RetentionPersiste
 		exposure: "redacted",
 	},
 ) {}
+
+/** A period outside what can be stored: not a whole number of days, or out of bounds. */
+export class RetentionInvalidError extends HttpTaggedError<RetentionInvalidError>()(
+	"@maple/http/retention/RetentionInvalidError",
+	{ message: Schema.String },
+	{
+		status: 400,
+		code: "retention_invalid",
+		title: "Invalid retention period",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}

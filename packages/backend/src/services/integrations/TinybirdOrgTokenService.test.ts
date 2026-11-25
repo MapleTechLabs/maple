@@ -1,11 +1,34 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Array as Arr, String as Str } from "effect"
-import { OrgId } from "@maple/domain"
+import { afterEach, assert, describe, it } from "@effect/vitest"
+import {
+	Cause,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { OrgId, SourceId, UserId } from "@maple/domain/http"
 import { Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { JWT_CACHE_MAX_ENTRIES, TinybirdOrgTokenService } from "./TinybirdOrgTokenService"
 import { Env } from "@maple/backend/platform/Env"
+import type { Database } from "@maple/backend/platform/DatabaseLive"
+import { mintOrgReadJwt } from "@maple/backend/services/auth/tinybird-jwt"
+import { READ_HORIZON_TTL_MS, RetentionService } from "@maple/backend/services/retention/RetentionService"
+import { listOrgScopedDatasourceNames } from "@maple/backend/services/warehouse/warehouse-catalog"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	insertTestSource,
+	makeSwitchableDatabase,
+	type TestDb,
+} from "@maple/backend/testing/test-pglite"
+
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
 
 const SIGNING_KEY = "explicit-test-signing-key"
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -31,7 +54,16 @@ const testConfig = (extra: Record<string, string> = {}, includeSigning = true) =
 		}),
 	)
 
-const layer = TinybirdOrgTokenService.layer.pipe(Layer.provide(Env.layer), Layer.provide(testConfig()))
+/** The service as an app root builds it, over a database of its own unless one is given. */
+const tokenLayer = (
+	config = testConfig(),
+	database: Layer.Layer<Database> = createTestDb(trackedDbs).layer,
+) =>
+	TinybirdOrgTokenService.layer.pipe(
+		Layer.provide(Env.layer),
+		Layer.provide(config),
+		Layer.provide(database),
+	)
 
 const decodePayload = (jwt: string) =>
 	JSON.parse(Buffer.from(Str.split(".")(jwt)[1], "base64url").toString("utf8")) as {
@@ -51,7 +83,7 @@ describe("TinybirdOrgTokenService", () => {
 			assert.strictEqual(payload.workspace_id, "ws-uuid-abc")
 			assert.isAbove(payload.scopes.length, 0)
 			assert.isTrue(Arr.every(payload.scopes, (s) => s.filter === "OrgId = 'org_a'"))
-		}).pipe(Effect.provide(layer)),
+		}).pipe(Effect.provide(tokenLayer())),
 	)
 
 	it.effect("returns the cached token on a second call within its lifetime", () =>
@@ -62,7 +94,7 @@ describe("TinybirdOrgTokenService", () => {
 			yield* TestClock.setTime(120_000)
 			const second = yield* svc.getOrgReadToken(asOrgId("org_a"))
 			assert.strictEqual(second, first)
-		}).pipe(Effect.provide(layer)),
+		}).pipe(Effect.provide(tokenLayer())),
 	)
 
 	it.effect("re-mints after the cached token nears expiry", () =>
@@ -74,7 +106,7 @@ describe("TinybirdOrgTokenService", () => {
 			const second = yield* svc.getOrgReadToken(asOrgId("org_a"))
 			assert.notStrictEqual(second, first)
 			assert.isAbove(decodePayload(second).exp, decodePayload(first).exp)
-		}).pipe(Effect.provide(layer)),
+		}).pipe(Effect.provide(tokenLayer())),
 	)
 
 	it.effect("issues distinct tokens per org", () =>
@@ -84,14 +116,11 @@ describe("TinybirdOrgTokenService", () => {
 			const b = yield* svc.getOrgReadToken(asOrgId("org_b"))
 			assert.notStrictEqual(a, b)
 			assert.isTrue(Arr.every(decodePayload(b).scopes, (s) => s.filter === "OrgId = 'org_b'"))
-		}).pipe(Effect.provide(layer)),
+		}).pipe(Effect.provide(tokenLayer())),
 	)
 
 	it.effect("applies the configured per-org Tinybird RPS limit", () => {
-		const limitedLayer = TinybirdOrgTokenService.layer.pipe(
-			Layer.provide(Env.layer),
-			Layer.provide(testConfig({ TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: "25" })),
-		)
+		const limitedLayer = tokenLayer(testConfig({ TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: "25" }))
 		return Effect.gen(function* () {
 			const svc = yield* TinybirdOrgTokenService
 			const a = decodePayload(yield* svc.getOrgReadToken(asOrgId("org_a")))
@@ -103,10 +132,7 @@ describe("TinybirdOrgTokenService", () => {
 	})
 
 	it.effect("gives Maple's own reads a bucket apart from raw SQL, without the raw-SQL ceiling", () => {
-		const limitedLayer = TinybirdOrgTokenService.layer.pipe(
-			Layer.provide(Env.layer),
-			Layer.provide(testConfig({ TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: "25" })),
-		)
+		const limitedLayer = tokenLayer(testConfig({ TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: "25" }))
 		return Effect.gen(function* () {
 			const svc = yield* TinybirdOrgTokenService
 			const raw = decodePayload(yield* svc.getOrgReadToken(asOrgId("org_a"), "raw-sql"))
@@ -147,17 +173,12 @@ describe("TinybirdOrgTokenService", () => {
 			)
 			const everything = decodePayload(yield* svc.getOrgReadToken(asOrgId("org_a"), "trusted-read"))
 			assert.lengthOf(yield* resourcesFor("SELECT 1"), everything.scopes.length)
-		}).pipe(Effect.provide(layer)),
+		}).pipe(Effect.provide(tokenLayer())),
 	)
 
 	const startsUnsigned = (extra: Record<string, string>) =>
 		Effect.asVoid(TinybirdOrgTokenService).pipe(
-			Effect.provide(
-				TinybirdOrgTokenService.layer.pipe(
-					Layer.provide(Env.layer),
-					Layer.provide(testConfig(extra, false)),
-				),
-			),
+			Effect.provide(tokenLayer(testConfig(extra, false))),
 			Effect.exit,
 		)
 
@@ -188,14 +209,11 @@ describe("TinybirdOrgTokenService", () => {
 			const reminted = yield* svc.getOrgReadToken(asOrgId("org_0"))
 			assert.notStrictEqual(reminted, first)
 			assert.isAbove(decodePayload(reminted).exp, decodePayload(first).exp)
-		}).pipe(Effect.provide(layer)),
+		}).pipe(Effect.provide(tokenLayer())),
 	)
 
 	it.effect("returns a typed error when signing configuration is missing", () => {
-		const missingLayer = TinybirdOrgTokenService.layer.pipe(
-			Layer.provide(Env.layer),
-			Layer.provide(testConfig({}, false)),
-		)
+		const missingLayer = tokenLayer(testConfig({}, false))
 		return Effect.gen(function* () {
 			const svc = yield* TinybirdOrgTokenService
 			const error = yield* Effect.flip(svc.getOrgReadToken(asOrgId("org_a")))
@@ -206,10 +224,7 @@ describe("TinybirdOrgTokenService", () => {
 	})
 
 	it.effect("fails startup when only one Tinybird JWT setting is configured", () => {
-		const malformedLayer = TinybirdOrgTokenService.layer.pipe(
-			Layer.provide(Env.layer),
-			Layer.provide(testConfig({ TINYBIRD_WORKSPACE_ID: "" })),
-		)
+		const malformedLayer = tokenLayer(testConfig({ TINYBIRD_WORKSPACE_ID: "" }))
 		return Effect.asVoid(TinybirdOrgTokenService).pipe(
 			Effect.provide(malformedLayer),
 			Effect.exit,
@@ -223,10 +238,7 @@ describe("TinybirdOrgTokenService", () => {
 	})
 
 	it.effect("fails startup for a non-positive JWT RPS limit", () => {
-		const malformedLayer = TinybirdOrgTokenService.layer.pipe(
-			Layer.provide(Env.layer),
-			Layer.provide(testConfig({ TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: "0" })),
-		)
+		const malformedLayer = tokenLayer(testConfig({ TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: "0" }))
 		return Effect.asVoid(TinybirdOrgTokenService).pipe(
 			Effect.provide(malformedLayer),
 			Effect.exit,
@@ -237,5 +249,193 @@ describe("TinybirdOrgTokenService", () => {
 				}
 			}),
 		)
+	})
+})
+
+describe("TinybirdOrgTokenService retention read horizon", () => {
+	const ORG_A = asOrgId("org_a")
+	const ORG_B = asOrgId("org_b")
+	const ANA = Schema.decodeSync(UserId)("user_ana")
+	const decodeSourceId = Schema.decodeSync(SourceId)
+
+	/** The service and the retention service it reads, as one app root builds them. */
+	const withPolicies = <A, E>(
+		run: (db: TestDb) => Effect.Effect<A, E, TinybirdOrgTokenService | RetentionService>,
+	) => {
+		const db = createTestDb(trackedDbs)
+		return run(db).pipe(
+			Effect.provide(
+				Layer.merge(TinybirdOrgTokenService.layer, RetentionService.layer).pipe(
+					Layer.provide(Env.layer),
+					Layer.provide(testConfig()),
+					Layer.provide(db.layer),
+				),
+			),
+		)
+	}
+
+	/** A change made elsewhere: another instance over the same database, as another isolate is. */
+	const fromAnotherIsolate = <A, E>(db: TestDb, effect: Effect.Effect<A, E, RetentionService>) =>
+		effect.pipe(Effect.provide(Layer.fresh(RetentionService.layer).pipe(Layer.provide(db.layer))))
+
+	const filtersOf = (token: string): Record<string, string> =>
+		Rec.fromEntries(Arr.map(decodePayload(token).scopes, (scope) => [scope.resource, scope.filter]))
+	/** The scopes that carry more than the org filter. */
+	const boundedIn = (token: string, orgId: OrgId) =>
+		Rec.filter(filtersOf(token), (filter) => filter !== `OrgId = '${orgId}'`)
+	const since = (orgId: OrgId, column: string, days: number) =>
+		`OrgId = '${orgId}' AND ${column} >= now() - INTERVAL ${days} DAY`
+
+	it.effect("an org that set nothing gets the token it got before retention could be set", () =>
+		withPolicies(() =>
+			Effect.gen(function* () {
+				const tokens = yield* TinybirdOrgTokenService
+				const retention = yield* RetentionService
+				// Another org's periods are not this org's.
+				yield* retention.setOrganization(ORG_B, ANA, { traces: 7, logs: 7 })
+				const token = yield* tokens.getOrgReadToken(ORG_A)
+				assert.strictEqual(
+					token,
+					mintOrgReadJwt({
+						signingKey: SIGNING_KEY,
+						workspaceId: "ws-uuid-abc",
+						orgId: ORG_A,
+						datasourceNames: listOrgScopedDatasourceNames(),
+						nowSeconds: 0,
+						ttlSeconds: decodePayload(token).exp,
+					}),
+				)
+				assert.deepStrictEqual(boundedIn(token, ORG_A), {})
+			}),
+		),
+	)
+
+	it.effect("cuts a shortened signal's raw tables at the org's period, and no other table", () =>
+		withPolicies(() =>
+			Effect.gen(function* () {
+				const tokens = yield* TinybirdOrgTokenService
+				const retention = yield* RetentionService
+				yield* retention.setOrganization(ORG_A, ANA, { logs: 7, metrics: 14 })
+				assert.deepStrictEqual(boundedIn(yield* tokens.getOrgReadToken(ORG_A), ORG_A), {
+					logs: since(ORG_A, "TimestampTime", 7),
+					metrics_sum: since(ORG_A, "TimeUnix", 14),
+					metrics_gauge: since(ORG_A, "TimeUnix", 14),
+					metrics_histogram: since(ORG_A, "TimeUnix", 14),
+					metrics_exponential_histogram: since(ORG_A, "TimeUnix", 14),
+				})
+			}),
+		),
+	)
+
+	it.effect("cuts traces and the tables projected from them together, each by its own column", () =>
+		withPolicies(() =>
+			Effect.gen(function* () {
+				const tokens = yield* TinybirdOrgTokenService
+				const retention = yield* RetentionService
+				yield* retention.setOrganization(ORG_A, ANA, { traces: 7 })
+				const everything = yield* tokens.getOrgReadToken(ORG_A, "trusted-read")
+				assert.deepStrictEqual(boundedIn(everything, ORG_A), {
+					traces: since(ORG_A, "Timestamp", 7),
+					// A bucket the horizon cuts through still locates spans that are kept.
+					trace_index: `${since(ORG_A, "Bucket", 7)} - INTERVAL 5 MINUTE`,
+					trace_list_mv: since(ORG_A, "Timestamp", 7),
+					service_map_spans: since(ORG_A, "Timestamp", 7),
+					service_map_children: since(ORG_A, "Timestamp", 7),
+					service_overview_spans: since(ORG_A, "Timestamp", 7),
+					ai_trace_index: since(ORG_A, "Timestamp", 7),
+					ai_crawler_requests: since(ORG_A, "Timestamp", 7),
+					scanner_requests: since(ORG_A, "Timestamp", 7),
+				})
+				// The token of one statement lists fewer datasources, bounded the same way.
+				const one = yield* tokens.getOrgReadToken(
+					ORG_A,
+					"trusted-read",
+					"SELECT count() FROM trace_index AS i INNER JOIN logs AS l ON i.OrgId = l.OrgId WHERE i.OrgId = 'org_a'",
+				)
+				assert.deepStrictEqual(filtersOf(one), {
+					logs: "OrgId = 'org_a'",
+					// A bucket the horizon cuts through still locates spans that are kept.
+					trace_index: `${since(ORG_A, "Bucket", 7)} - INTERVAL 5 MINUTE`,
+				})
+			}),
+		),
+	)
+
+	it.effect("reaches as far back as the source that keeps a signal longest", () =>
+		withPolicies((db) =>
+			Effect.gen(function* () {
+				const tokens = yield* TinybirdOrgTokenService
+				const retention = yield* RetentionService
+				const sourceOf = (orgId: OrgId) =>
+					Effect.map(
+						Effect.promise(() => insertTestSource(db, { orgId, platform: "nodejs" })),
+						decodeSourceId,
+					)
+				yield* retention.setOrganization(ORG_A, ANA, { traces: 7 })
+				yield* retention.setSource(ORG_A, ANA, yield* sourceOf(ORG_A), { traces: 90 })
+				assert.strictEqual(
+					filtersOf(yield* tokens.getOrgReadToken(ORG_A))["traces"],
+					since(ORG_A, "Timestamp", 90),
+				)
+				// A source's period alone bounds the signal, with no period on the org.
+				yield* retention.setSource(ORG_B, ANA, yield* sourceOf(ORG_B), { logs: 400 })
+				assert.deepStrictEqual(boundedIn(yield* tokens.getOrgReadToken(ORG_B), ORG_B), {
+					logs: since(ORG_B, "TimestampTime", 400),
+				})
+			}),
+		),
+	)
+
+	it.effect("a period changed elsewhere changes the token long before the old one would be re-minted", () =>
+		withPolicies((db) =>
+			Effect.gen(function* () {
+				const tokens = yield* TinybirdOrgTokenService
+				const unbounded = yield* tokens.getOrgReadToken(ORG_A)
+				yield* fromAnotherIsolate(
+					db,
+					RetentionService.use((other) => other.setOrganization(ORG_A, ANA, { traces: 7 })),
+				)
+				assert.strictEqual(yield* tokens.getOrgReadToken(ORG_A), unbounded)
+
+				yield* TestClock.adjust(READ_HORIZON_TTL_MS)
+				const shortened = yield* tokens.getOrgReadToken(ORG_A)
+				assert.strictEqual(filtersOf(shortened)["traces"], since(ORG_A, "Timestamp", 7))
+
+				yield* fromAnotherIsolate(
+					db,
+					RetentionService.use((other) => other.setOrganization(ORG_A, ANA, { traces: 60 })),
+				)
+				yield* TestClock.adjust(READ_HORIZON_TTL_MS)
+				assert.strictEqual(
+					filtersOf(yield* tokens.getOrgReadToken(ORG_A))["traces"],
+					since(ORG_A, "Timestamp", 60),
+				)
+			}),
+		),
+	)
+
+	it.effect("a period set on this instance changes the next token", () =>
+		withPolicies(() =>
+			Effect.gen(function* () {
+				const tokens = yield* TinybirdOrgTokenService
+				const retention = yield* RetentionService
+				const before = yield* tokens.getOrgReadToken(ORG_A)
+				yield* retention.setOrganization(ORG_A, ANA, { logs: 3 })
+				const after = yield* tokens.getOrgReadToken(ORG_A)
+				assert.notStrictEqual(after, before)
+				assert.strictEqual(filtersOf(after)["logs"], since(ORG_A, "TimestampTime", 3))
+			}),
+		),
+	)
+
+	it.effect("still mints a token for the org when its policy cannot be read", () => {
+		const database = makeSwitchableDatabase(createTestDb(trackedDbs))
+		database.state.down = true
+		return Effect.gen(function* () {
+			const tokens = yield* TinybirdOrgTokenService
+			const token = yield* tokens.getOrgReadToken(ORG_A)
+			assert.isAbove(decodePayload(token).scopes.length, 0)
+			assert.deepStrictEqual(boundedIn(token, ORG_A), {})
+		}).pipe(Effect.provide(tokenLayer(testConfig(), database.layer)))
 	})
 })

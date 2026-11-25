@@ -29,6 +29,7 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testin
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { NotificationDispatcher } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
+import { RetentionService } from "@maple/backend/services/retention/RetentionService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
@@ -172,13 +173,17 @@ const makeTickLayer = (database: string) => {
 	const orgChSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
+	const retentionLive = RetentionService.layer.pipe(Layer.provide(databaseLive))
 	const warehouseLive = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				envLive,
 				orgChSettingsLive,
-				TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive)),
+				retentionLive,
+				TinybirdOrgTokenService.layerWithoutDependencies.pipe(
+					Layer.provide(Layer.mergeAll(envLive, retentionLive)),
+				),
 			),
 		),
 	)

@@ -2,6 +2,7 @@
 // (a billing webhook's event carries the account and no user). The tools that count by a key read
 // the events' identity coverage when they come back empty, and say which key would work.
 import { Effect, Option, Array as Arr, String as Str } from "effect"
+import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
 import { parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import type { FunnelKeyBy, FunnelStep } from "@maple/query-model"
 import {
@@ -11,7 +12,6 @@ import {
 import { orFallback } from "./fallback"
 import { formatNumber } from "./format"
 import { withTenantExecutor } from "./query-warehouse"
-import { SESSION_RETENTION_HOURS } from "./time"
 
 /** The identity a key reads off an event, as a notice names it. */
 const KEY_BY_IDENTITY = {
@@ -103,15 +103,19 @@ export const identityNoteFor = <K extends FunnelKeyBy>(
 	})
 }
 
-/** `Sessions are kept 30 days` once a window that reads them starts before that. */
+/**
+ * `Sessions are kept 30 days` once a window that reads them starts before that. `keptDays` is
+ * the org's sessions read horizon; a session dimension read further back finds nothing.
+ */
 export const sessionRetentionNote = (
 	window: { readonly startTime: string; readonly endTime: string },
 	nowMs: number,
 	readsSessions: boolean,
+	keptDays: number = DEFAULT_RETENTION_DAYS.sessions,
 ): string | undefined => {
-	const kept = nowMs - SESSION_RETENTION_HOURS * 3_600_000
+	const kept = nowMs - keptDays * 86_400_000
 	if (!readsSessions || parseWarehouseDateTime(window.startTime) >= kept) return undefined
-	const seesNothing = `Sessions are kept 30 days: session steps, filters and dimensions see nothing before ${warehouseDateTime(kept)}`
+	const seesNothing = `Sessions are kept ${keptDays} ${keptDays === 1 ? "day" : "days"}: session steps, filters and dimensions see nothing before ${warehouseDateTime(kept)}`
 	return parseWarehouseDateTime(window.endTime) <= kept
 		? `${seesNothing}, and this whole window is older than that, so it reads as having none.`
 		: `${seesNothing}, so the earlier part of this window reads as having none.`

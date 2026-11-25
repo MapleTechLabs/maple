@@ -201,6 +201,47 @@ describe("inspectTrace", () => {
 		}),
 	)
 
+	it.effect("reaches a trace past the default 30 days when given a longer lookback", () =>
+		Effect.gen(function* () {
+			// 68 days before NOW.
+			const stored = {
+				window: { start: "2026-02-01 08:00:00", end: "2026-02-01 08:00:00" },
+				probeTimestamp: "2026-02-01 08:00:00.250000000",
+			}
+			const byDefault = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, stored))
+			assert.strictEqual(byDefault.spanCount, 0)
+
+			const captured: Captured = { pipeCalls: [], probes: [] }
+			const kept = yield* run(makeExecutor(captured, stored), { widenedLookbackHours: 90 * 24 })
+			assert.strictEqual(kept.spanCount, 1)
+			// 90 days before NOW bounds the widest tier, where the default stopped at 30.
+			assert.include(captured.probes[2], "Timestamp >= '2026-01-10 00:00:00'")
+			const [read] = hierarchyCalls(captured)
+			assert.strictEqual(read?.params.start_time, "2026-02-01 07:00:00")
+		}),
+	)
+
+	it.effect("probes no further back than a shorter lookback", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { pipeCalls: [], probes: [] }
+			// 21 days before NOW, and the lookback is three.
+			const result = yield* run(
+				makeExecutor(captured, {
+					window: { start: "2026-03-20 08:00:00", end: "2026-03-20 08:00:00" },
+					probeTimestamp: "2026-03-20 08:00:00.250000000",
+				}),
+				{ widenedLookbackHours: 3 * 24 },
+			)
+			assert.strictEqual(result.spanCount, 0)
+			assert.lengthOf(captured.probes, 2)
+			assert.deepStrictEqual(result.scanned, {
+				startTime: "2026-04-07 00:00:00",
+				endTime: "2026-04-10 00:00:00",
+				widened: false,
+			})
+		}),
+	)
+
 	it.effect("returns empty after every tier misses when the trace is nowhere", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { pipeCalls: [], probes: [] }

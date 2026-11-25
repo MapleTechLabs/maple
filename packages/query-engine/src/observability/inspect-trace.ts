@@ -60,7 +60,8 @@ export interface InspectTraceOptions {
 	readonly timeRange?: TimeRange
 	/**
 	 * How far back `trace_index` is searched when there is no hint (or the hint
-	 * missed); the tree is then read from the trace's own bounds. Defaults to 30 days.
+	 * missed); the tree is then read from the trace's own bounds. The org's traces
+	 * retention where the caller knows it. Defaults to 30 days.
 	 */
 	readonly widenedLookbackHours?: number
 	/**

@@ -5,12 +5,18 @@ import {
 	listTrustedReadDatasourceNames,
 } from "@maple/backend/services/warehouse/warehouse-catalog"
 import { mintOrgReadJwt, type OrgReadJwtUse } from "@maple/backend/services/auth/tinybird-jwt"
+import { readBoundsOf, readHorizonKey } from "@maple/backend/services/auth/tinybird-read-horizon"
+import { RetentionService } from "@maple/backend/services/retention/RetentionService"
 import { Env } from "@maple/backend/platform/Env"
 
 // Per-org Tinybird read JWTs scope a read to one org's rows (row-level security enforced by
 // Tinybird; see services/auth/tinybird-jwt.ts): always for raw SQL, and for every one of Maple's own
 // compiled tenant reads where managed reads are Tinybird and the signing key is set. A cache entry expires SKEW seconds
 // early, so a cached Tinybird client (30s executor cache) never outlives its JWT.
+//
+// The same filter carries the org's retention read horizon (services/auth/tinybird-read-horizon.ts):
+// a signal the org set a period for is cut at that many days on its raw tables, for every reader
+// of this token. An org that set nothing keeps the bare org filter.
 
 const JWT_TTL_SECONDS = 600
 /** Re-mint this many seconds before true expiry (must exceed the executor's 30s client cache). */
@@ -41,6 +47,7 @@ export class TinybirdOrgTokenService extends Context.Service<
 >()("@maple/backend/services/TinybirdOrgTokenService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
+		const retention = yield* RetentionService
 		// The scope allowlists are static per deploy — compute them once. Maple's own reads also
 		// reach the datasources raw SQL is kept out of (the audit log), so they get the wider list.
 		const datasourceNamesFor = {
@@ -90,10 +97,14 @@ export class TinybirdOrgTokenService extends Context.Service<
 					: namedIn(statement, datasourceNamesFor[use])
 			yield* Effect.annotateCurrentSpan("maple.tinybird.jwt.scopes", datasourceNames.length)
 			const nowMs = yield* Clock.currentTimeMillis
-			// Tokens differ by use (their name) and by the datasources they list.
+			// Served from its own cache, and it never fails: a policy that cannot be read
+			// falls back there, so the read itself goes on.
+			const horizon = yield* retention.readHorizon(orgId)
+			// Tokens differ by use (their name), by the datasources they list, and by the read
+			// horizon: a changed policy mints a new token instead of waiting out the old one.
 			const cacheKey = `${use}:${orgId}:${
 				statement === undefined ? "*" : Arr.join(datasourceNames, ",")
-			}`
+			}:${readHorizonKey(horizon)}`
 			const cached = cache.get(cacheKey)
 			if (cached !== undefined && cached.expiresAt > nowMs) {
 				// Map iteration order is insertion order; refresh it on access so the
@@ -128,6 +139,17 @@ export class TinybirdOrgTokenService extends Context.Service<
 					message: "TINYBIRD_SIGNING_KEY must not be empty",
 				})
 			}
+			const readBounds = readBoundsOf(horizon)
+			if (Option.isNone(readBounds)) {
+				return yield* new TinybirdOrgTokenMintError({
+					message: "The org's retention read horizon is not a whole number of days",
+					cause: readHorizonKey(horizon),
+				})
+			}
+			yield* Effect.annotateCurrentSpan(
+				"maple.tinybird.jwt.read_bounded_scopes",
+				Arr.filter(datasourceNames, (name) => readBounds.value.has(name)).length,
+			)
 			const token = yield* Effect.try({
 				try: () =>
 					mintOrgReadJwt({
@@ -135,6 +157,7 @@ export class TinybirdOrgTokenService extends Context.Service<
 						workspaceId,
 						orgId,
 						datasourceNames,
+						readBounds: readBounds.value,
 						nowSeconds: Math.floor(nowMs / 1000),
 						ttlSeconds: JWT_TTL_SECONDS,
 						use,
@@ -160,5 +183,7 @@ export class TinybirdOrgTokenService extends Context.Service<
 		return { getOrgReadToken } satisfies TinybirdOrgTokenServiceApi
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make)
+	/** For a caller that provides its own `RetentionService`. */
+	static readonly layerWithoutDependencies = Layer.effect(this, this.make)
+	static readonly layer = this.layerWithoutDependencies.pipe(Layer.provide(RetentionService.layer))
 }

@@ -39,6 +39,7 @@ import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Env, orgScopedReadsApply } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
+import { RetentionService } from "@maple/backend/services/retention/RetentionService"
 
 // WarehouseQueryService — the API's managed-warehouse executor.
 //
@@ -419,6 +420,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			const env = yield* Env
 			const orgClickHouseSettings = yield* OrgClickHouseSettingsService
 			const orgTokens = yield* TinybirdOrgTokenService
+			const retention = yield* RetentionService
 			const sqlClientFactory = yield* WarehouseSqlClientFactory
 
 			// The managed (env-level) READ upstream: the Tinybird CH-gateway or vanilla
@@ -541,6 +543,10 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			 * tenant then returns nothing instead of that org's rows. Multi-org deployments must
 			 * configure the signing key (checked at boot). The executor says which reads are one
 			 * tenant's (`scope`); writes and cross-org reads never are and keep the shared token.
+			 *
+			 * The org's retention read horizon rides on that JWT too, so it holds for compiled reads
+			 * and raw SQL alike. BYO ClickHouse orgs and env-level vanilla ClickHouse do not use the
+			 * token and are not bounded: those orgs own their cluster.
 			 */
 			const resolveRouteEffect = Effect.fn("WarehouseQueryService.resolveRoute")(function* (
 				tenant: ExecutionTenant,
@@ -620,6 +626,9 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 				yield* Effect.annotateCurrentSpan("clientSource", "managed")
 				const managed = yield* resolveManagedConfig()
 				if (purpose === "read" && orgScopedRead === undefined) {
+					// The org token carries the org's retention read horizon. `warmRoute` lands here,
+					// so the reads a request then fans out find it cached instead of each asking Postgres.
+					if (orgScopedReadsApply(env)) yield* retention.readHorizon(tenant.orgId)
 					return { source: "managed" as const, ...managed }
 				}
 
@@ -710,7 +719,14 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
-		Layer.provide(Layer.mergeAll(OrgClickHouseSettingsService.layer, TinybirdOrgTokenService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				OrgClickHouseSettingsService.layer,
+				TinybirdOrgTokenService.layerWithoutDependencies,
+			),
+		),
+		// One instance under both: the route warms the horizon cache the token reads.
+		Layer.provide(RetentionService.layer),
 	)
 }
 

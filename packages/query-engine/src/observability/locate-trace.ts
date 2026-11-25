@@ -6,6 +6,10 @@ import { WarehouseExecutor, type WarehouseExecutorError } from "./WarehouseExecu
 
 const HOUR_MS = 60 * 60 * 1000
 
+/**
+ * How far back a trace lookup reaches when its caller does not know the org's own traces
+ * retention: what the raw table keeps for an org that set nothing.
+ */
 export const TRACE_RETENTION_HOURS = TRACES_TTL_DAYS * 24
 
 /** Probe tier edges, newest first: most lookups land in the last day or week. */
