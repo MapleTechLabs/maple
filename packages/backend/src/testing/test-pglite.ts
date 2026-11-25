@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
+import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { inject } from "vitest"
@@ -109,6 +110,25 @@ export const createTestDb = (track?: TestDb[], startParams: ReadonlyArray<string
 	}
 	track?.push(db)
 	return db
+}
+
+const edgeCaches = new WeakMap<TestDb, Layer.Layer<EdgeCacheService>>()
+
+/** An in-memory edge cache, a new one for each layer build it is provided to. */
+export const TestEdgeCacheLive: Layer.Layer<EdgeCacheService> = Layer.sync(EdgeCacheService, () =>
+	makeEdgeCacheService(makeMemoryBackend()),
+)
+
+/**
+ * The in-memory edge cache of `db`: one per test database, shared by every service instance
+ * built over it, the way isolates over one database share the real one.
+ */
+export const testEdgeCache = (db: TestDb): Layer.Layer<EdgeCacheService> => {
+	const known = edgeCaches.get(db)
+	if (known !== undefined) return known
+	const created = Layer.succeed(EdgeCacheService)(makeEdgeCacheService(makeMemoryBackend()))
+	edgeCaches.set(db, created)
+	return created
 }
 
 /**
