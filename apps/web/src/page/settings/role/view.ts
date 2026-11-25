@@ -3,7 +3,6 @@ import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, Option, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { actionBar } from "@maple/views/ui/action-bar"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
@@ -28,7 +27,7 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { statusDot } from "@maple/views/ui/status-dot"
+import { saveBar } from "../../kit/save-bar"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
@@ -474,46 +473,17 @@ const roleTabs = (h: H, model: Model, role: RoleEntry): Html =>
 		},
 	})
 
-const unsavedBar = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> => {
-	const changes = unsavedChanges(model)
-	if (changes === 0 && !model.isSaving) return []
-	return [
-		actionBar(h, {
-			label: "Unsaved changes",
-			leading: [
-				statusDot(h, { tone: "live" }),
-				typography(h, { size: "sm", tone: "foreground", className: "shrink-0" }, [
-					`${changes} unsaved ${changes === 1 ? "change" : "changes"}`,
-				]),
-				typography(h, { size: "sm", tone: "muted", truncate: true }, [
-					`Applies to ${memberCountLabel(role.memberCount)} on their next request.`,
-				]),
-			],
-			actions: [
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "sm",
-						isDisabled: model.isSaving,
-						attributes: [h.OnClick(Message.ClickedDiscard())],
-					},
-					["Discard"],
-				),
-				button(
-					h,
-					{
-						size: "sm",
-						isLoading: model.isSaving,
-						isDisabled: !isValidDraft(model),
-						attributes: [h.OnClick(Message.ClickedSave())],
-					},
-					["Save role"],
-				),
-			],
-		}),
-	]
-}
+const unsavedBar = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> =>
+	saveBar(h, {
+		isDirty: unsavedChanges(model) > 0,
+		isPending: model.isSaving,
+		changeCount: unsavedChanges(model),
+		context: `Applies to ${memberCountLabel(role.memberCount)} on their next request.`,
+		onDiscard: Message.ClickedDiscard(),
+		onSave: Message.ClickedSave(),
+		saveLabel: "Save role",
+		isSaveDisabled: !isValidDraft(model),
+	})
 
 /** Built-in roles are fixed presets: say so up front, and point at duplicating one to change it. */
 const builtInBanner = (h: H): Html =>
