@@ -1,4 +1,5 @@
 import { DashboardWidgetSchema } from "@maple/domain/http"
+import type { AiCardGate } from "@maple/domain/billing"
 import type { OrgId } from "@maple/domain"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Array, Option, Schema, Stream, Record as Rec } from "effect"
@@ -30,6 +31,8 @@ export interface PageContext {
 	readonly hasCloudSecurity?: boolean
 	/** The org is in the `llmEvals` rollout, so Agent sessions shows its Evals tab and session scores; absent means it is not. */
 	readonly hasLlmEvals?: boolean
+	/** Maple AI waits on billing (`getAiCardGate`): its entry points ask for a card; absent means it runs. */
+	readonly aiCardGate?: AiCardGate
 }
 
 /** The sidebar's last-hour presence probe (`null` until it answers) and the integration statuses. */

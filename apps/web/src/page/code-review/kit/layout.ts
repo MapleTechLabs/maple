@@ -1,3 +1,5 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { aiCardNotice } from "../../kit/billing/ai-card-gate"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { IconName } from "@maple/views/ui/icon"
@@ -70,6 +72,8 @@ export type LayoutOptions<M> = Readonly<{
 	filters?: ReadonlyArray<Html>
 	/** The page's own sheet or dialog, rendered after the content. */
 	overlay?: Html
+	/** Reviews run on Maple AI: a notice above the content asks for a card first. */
+	aiCardGate?: AiCardGate
 	h: HtmlBuilder<M>
 }>
 
@@ -100,7 +104,9 @@ const tabs = <M>(options: LayoutOptions<M>): Html => {
 }
 
 /** The frame every Code Review tab renders in. */
-export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: ReadonlyArray<Html>): Html => {
+export const codeReviewLayout = <M>(options: LayoutOptions<M>, content: ReadonlyArray<Html>): Html => {
+	const children =
+		options.aiCardGate === undefined ? content : [aiCardNotice(options.h, options.aiCardGate), ...content]
 	const page = dashboardPage(
 		options.h,
 		{

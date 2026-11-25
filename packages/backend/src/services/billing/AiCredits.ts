@@ -4,7 +4,7 @@
  * once the org is out of credits or at its paid-overage cap.
  */
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
+import { AI_CREDITS_FEATURE_ID, aiCardGateOf } from "@maple/domain/billing"
 import { BillingCustomer } from "@maple/domain/http"
 import type { OrgId } from "@maple/primitives"
 import { EdgeCacheService } from "@maple/cache"
@@ -20,12 +20,13 @@ export class AiCreditsUnavailable extends Schema.TaggedError<AiCreditsUnavailabl
 	{ message: Schema.String },
 ) {}
 
-export const AiCreditsRefusal = Schema.Literals(["no_credits", "used_up", "cap_reached"])
+export const AiCreditsRefusal = Schema.Literals(["card_required", "no_credits", "used_up", "cap_reached"])
 export type AiCreditsRefusal = typeof AiCreditsRefusal.Type
 
 /**
- * The org may not spend AI credits: its plan includes none (`resetsAt` null), it spent them with no
- * overage allowed, or its paid overage reached the cap an admin set. `resetsAt` is epoch ms.
+ * The org may not spend AI credits: it holds no paid plan yet (the no-card trial, or none), its plan
+ * includes none (both `resetsAt` null), it spent them with no overage allowed, or its paid overage
+ * reached the cap an admin set. `resetsAt` is epoch ms.
  */
 export class AiCreditsExhausted extends Schema.TaggedError<AiCreditsExhausted>()(
 	"@maple/backend/billing/AiCreditsExhausted",
@@ -51,6 +52,20 @@ export const missingAiCredits = (
 	customer: BillingCustomer,
 	nowMs: number,
 ): Option.Option<AiCreditsExhausted> => {
+	// Before the balance: a trial or plan-less org must never fall through to "unmetered".
+	const cardGate = aiCardGateOf(customer.subscriptions)
+	if (Option.isSome(cardGate)) {
+		return Option.some(
+			new AiCreditsExhausted({
+				message:
+					cardGate.value === "trial"
+						? "Maple AI starts once a card is on file. An admin can add one under Settings > Billing; nothing is charged until the free trial ends."
+						: "Maple AI needs an active plan. An admin can subscribe under Settings > Billing.",
+				reason: "card_required",
+				resetsAt: null,
+			}),
+		)
+	}
 	const balance = customer.balances?.[AI_CREDITS_FEATURE_ID]
 	if (balance === undefined) {
 		return Option.some(

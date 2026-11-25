@@ -1,3 +1,5 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { aiCardNotice } from "../../kit/billing/ai-card-gate"
 import type { AiTriageResult } from "@maple/domain/http"
 import { parseDiagnosisMarker } from "./kit/diagnosis-marker"
 import { cn } from "@maple/ui/lib/utils"
@@ -53,6 +55,8 @@ export type ConversationViewOptions<M> = Readonly<{
 	diagnosisCard?: (report: AiTriageResult) => Html
 	/** False for a viewer who follows the thread without driving it: the composer is left out. */
 	canReply?: boolean
+	/** Maple AI waits on a card: the composer gives way to the notice that asks for one. */
+	aiCardGate?: AiCardGate
 }>
 
 /** Approvals, sub-agent rows, inline cards and the chat's tables and charts. */
@@ -303,22 +307,27 @@ export const conversationView = <M>(
 							),
 						],
 						[
-							...(model.historyReady &&
+							...(options.aiCardGate === undefined &&
+							model.historyReady &&
 							model.messages.length === 0 &&
 							options.suggestions !== undefined
 								? [suggestionPills(h, options.suggestions)]
 								: []),
 							...notices(h, model, options),
-							composer(h, {
-								textareaId: options.textareaId,
-								draft: model.draft,
-								placeholder: options.placeholder,
-								status: model.status,
-								onStop: loading ? options.toMessage(Message.ClickedStop()) : undefined,
-								isDisabled: false,
-								onInput: (text) => options.toMessage(Message.ChangedDraft({ text })),
-								onSubmit: options.toMessage(Message.SubmittedComposer()),
-							}),
+							options.aiCardGate !== undefined
+								? aiCardNotice(h, options.aiCardGate, { size: "sm" })
+								: composer(h, {
+										textareaId: options.textareaId,
+										draft: model.draft,
+										placeholder: options.placeholder,
+										status: model.status,
+										onStop: loading
+											? options.toMessage(Message.ClickedStop())
+											: undefined,
+										isDisabled: false,
+										onInput: (text) => options.toMessage(Message.ChangedDraft({ text })),
+										onSubmit: options.toMessage(Message.SubmittedComposer()),
+									}),
 						],
 					),
 				]),

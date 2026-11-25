@@ -291,12 +291,15 @@ const content = (h: H, model: Model): Html =>
 			}),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	codeReviewLayout(
 		{
 			h,
 			active: "settings",
 			search: {},
+			...(inputs.context.aiCardGate === undefined
+				? undefined
+				: { aiCardGate: inputs.context.aiCardGate }),
 			overlay: repoDialog(h, model),
 		},
 		[content(h, model)],

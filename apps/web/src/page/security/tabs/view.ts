@@ -15,6 +15,8 @@ import { runsBody, startRunAction } from "./view-runs"
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const gate = pageGateOf(model)
+	const aiGate =
+		inputs.context.aiCardGate === undefined ? undefined : { aiCardGate: inputs.context.aiCardGate }
 	if (gate !== null)
 		return securityLayout(
 			h,
@@ -44,6 +46,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					hasCloud: inputs.context.hasCloudSecurity === true,
 					source: "code",
+					...aiGate,
 					codeTab: "overview",
 					actions: overviewActions(h, model),
 					overlay,
@@ -56,6 +59,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					hasCloud: inputs.context.hasCloudSecurity === true,
 					source: "code",
+					...aiGate,
 					codeTab: "findings",
 					actions: addTargetButton(h, model),
 					overlay,
@@ -68,8 +72,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					hasCloud: inputs.context.hasCloudSecurity === true,
 					source: "code",
+					...aiGate,
 					codeTab: "runs",
-					actions: startRunAction(h, model) ?? addTargetButton(h, model),
+					actions: startRunAction(h, model, inputs.context.aiCardGate) ?? addTargetButton(h, model),
 					overlay,
 				},
 				runsBody(h, model, inputs.context.timeZone),

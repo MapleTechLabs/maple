@@ -1,3 +1,5 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { aiCardAction } from "../../kit/billing/ai-card-gate"
 import { isSloBudgetIncident } from "@maple/domain/slo"
 import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 import type {
@@ -285,6 +287,7 @@ const investigateAction = (
 	h: H,
 	model: Model,
 	investigation: V2Investigation | null,
+	aiCardGate: AiCardGate | undefined,
 ): ReadonlyArray<Html> => {
 	if (investigation !== null)
 		return [
@@ -298,6 +301,7 @@ const investigateAction = (
 				[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 			),
 		]
+	if (aiCardGate !== undefined) return [aiCardAction(h, aiCardGate)]
 	return [
 		gatedControl(h, model, "investigations:run", (isLocked) =>
 			button(
@@ -656,6 +660,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							h,
 							model,
 							AsyncData.getOrElse(model.investigation.data, () => null),
+							inputs.context.aiCardGate,
 						),
 					]),
 				},

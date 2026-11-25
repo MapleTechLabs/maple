@@ -1,3 +1,4 @@
+import { labAiCardGate } from "../ai-card-gate-flag"
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
 import {
@@ -44,6 +45,7 @@ const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab"),
 	pinnedNamespace: null,
 	timeZone: "UTC",
+	...labAiCardGate(),
 }
 const issueId = Schema.decodeSync(ErrorIssueId)("0199a004-0000-7000-8000-000000000001")
 const NOW = Date.UTC(2026, 10, 1, 12)

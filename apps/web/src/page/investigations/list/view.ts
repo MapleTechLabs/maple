@@ -62,6 +62,8 @@ import { Array as Arr, String as Str, Option } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { canRunInvestigations } from "../../kit/session-grants"
 import { gatedLinkButton } from "../../kit/gated-controls"
+import { aiCardNotice } from "../../kit/billing/ai-card-gate"
+import type { AiCardGate } from "@maple/domain/billing"
 
 type H = HtmlBuilder<Message>
 
@@ -366,7 +368,7 @@ const HERO_SUGGESTIONS = [
 const HUB_TITLE = "Ask, and Maple goes and finds out."
 
 /** The first-run page. */
-const hubHero = (h: H, model: Model): Html => {
+const hubHero = (h: H, model: Model, aiCardGate: AiCardGate | undefined): Html => {
 	const presence = presenceOf(model.presence, "traces")
 	return vstack(
 		h,
@@ -411,7 +413,9 @@ const hubHero = (h: H, model: Model): Html => {
 						),
 					]
 				: []),
-			bar(h, model, true, "A service, a symptom, a question…"),
+			// Waiting on a card, the notice takes the bar's place and nothing offers to start.
+			...(aiCardGate === undefined ? [] : [aiCardNotice(h, aiCardGate)]),
+			...(aiCardGate === undefined ? [bar(h, model, true, "A service, a symptom, a question…")] : []),
 			vstack(
 				h,
 				{ gap: "2", as: "ul" },
@@ -423,7 +427,7 @@ const hubHero = (h: H, model: Model): Html => {
 								h,
 								{
 									onClick: Message.ClickedSuggestion({ title: suggestion }),
-									isDisabled: model.isCreating,
+									isDisabled: model.isCreating || aiCardGate !== undefined,
 									className:
 										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground hover:border-border-strong active:border-border-strong hover:bg-surface-sunken active:bg-surface-sunken disabled:opacity-64",
 								},
@@ -533,7 +537,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	// The hero is the investigate bar and what to ask it: only for who may start one.
 	const canRun = canRunInvestigations(model)
 	const isFirstRun = canRun && AsyncData.isSuccess(model.firstPage.data) && all.length === 0
-	if (isFirstRun) return dashboardPage(h, {}, [hubHero(h, model)])
+	if (isFirstRun) return dashboardPage(h, {}, [hubHero(h, model, inputs.context.aiCardGate)])
 	const visible = visibleOf(model, all)
 	const isLoadingMore = isLoadingMoreOf(model)
 	const hasMore = nextCursorOf(model) !== null || isLoadingMore
@@ -606,7 +610,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			title: "Investigations",
 			sticky: h.div(
 				[h.Class("contents")],
-				[...(notice === null ? [] : [notice]), ...(canRun ? [bar(h, model)] : [])],
+				[
+					...(notice === null ? [] : [notice]),
+					...(inputs.context.aiCardGate === undefined
+						? canRun
+							? [bar(h, model)]
+							: []
+						: [aiCardNotice(h, inputs.context.aiCardGate, { className: "mb-4" })]),
+				],
 			),
 		},
 		[

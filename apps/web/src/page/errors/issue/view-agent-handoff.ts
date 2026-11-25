@@ -1,3 +1,5 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { aiCardAction } from "../../kit/billing/ai-card-gate"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -129,23 +131,30 @@ const investigationSummary = (investigation: V2Investigation): string =>
 		? "Gathering evidence from traces, logs and recent deploys."
 		: (investigation.error ?? "Finished without a diagnosis."))
 
-const investigationLane = (h: H, investigation: V2Investigation | null, isStarting: boolean): Html =>
+const investigationLane = (
+	h: H,
+	investigation: V2Investigation | null,
+	isStarting: boolean,
+	aiCardGate: AiCardGate | undefined,
+): Html =>
 	investigation === null
 		? lane(h, {
 				glyph: "PulseIcon",
 				title: "Let Maple find the root cause",
 				note: "Reads traces, logs and deploys, and writes up a diagnosis.",
 				actions: [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: isStarting,
-							attributes: [h.OnClick(Message.ClickedInvestigate())],
-						},
-						[icon(h, "PulseIcon"), isStarting ? "Starting…" : "Start investigation"],
-					),
+					aiCardGate === undefined
+						? button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									isDisabled: isStarting,
+									attributes: [h.OnClick(Message.ClickedInvestigate())],
+								},
+								[icon(h, "PulseIcon"), isStarting ? "Starting…" : "Start investigation"],
+							)
+						: aiCardAction(h, aiCardGate),
 				],
 			})
 		: lane(h, {
@@ -178,8 +187,9 @@ export const getItFixedPanel = (
 	model: Model,
 	issue: ErrorIssueDocument,
 	investigation: V2Investigation | null,
+	aiCardGate: AiCardGate | undefined,
 ): Html => {
-	const maple = investigationLane(h, investigation, model.isStartingInvestigation)
+	const maple = investigationLane(h, investigation, model.isStartingInvestigation, aiCardGate)
 	// The prompt drives the error tools, so alert issues get Maple's lane alone. So does a viewer
 	// who cannot run one: the prompt tells an agent to claim and fix the issue.
 	if (issue.kind !== "error" || !canRunInvestigations(model))

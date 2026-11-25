@@ -92,7 +92,7 @@ export const PR_REVIEW_FAILURE_COPY = {
 	org_key_no_credits:
 		"This organization's OpenRouter key has run out of credits. An admin can add credits on OpenRouter.",
 	ai_credits_exhausted:
-		"This organization is out of AI credits or has reached its AI spending cap. An admin can review it under Settings > Billing.",
+		"This organization can't spend AI credits: it needs a card on file, is out of credits, or reached its AI spending cap. An admin can fix it under Settings > Billing.",
 	agent_error: "The review run failed with an error.",
 	no_report: "It ended without filing a report.",
 	ended_early: "It stopped before it finished, so its partial findings are not posted here.",

@@ -1,3 +1,5 @@
+import type { AiCardGate } from "@maple/domain/billing"
+import { aiCardAction, aiCardNotice } from "../../kit/billing/ai-card-gate"
 import {
 	type InvestigationStatus,
 	MANUAL_INVESTIGATION_TRANSITIONS,
@@ -81,7 +83,12 @@ const titleContent = (h: H, investigation: V2Investigation): Html => {
 }
 
 /** The status's primary verb, and the overflow menu. */
-const headerActions = (h: H, model: Model, investigation: V2Investigation): Html => {
+const headerActions = (
+	h: H,
+	model: Model,
+	investigation: V2Investigation,
+	aiCardGate: AiCardGate | undefined,
+): Html => {
 	const status = investigation.status
 	const isBusy = model.busy !== null
 	// The server's own rules: a run in flight can be neither resolved nor restarted.
@@ -123,16 +130,19 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 	return detailActions(h, [
 		hstack(h, { gap: "2" }, [
 			...(handoff === null ? [] : [handoff]),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: primary.variant,
-					isDisabled: isBusy || !primaryAllowed,
-					attributes: [h.OnClick(Message.ClickedPrimary())],
-				},
-				[primary.label],
-			),
+			// "Run again" is a new AI run: while it waits on a card, the button asks for one.
+			aiCardGate !== undefined && primary.label === "Run again"
+				? aiCardAction(h, aiCardGate)
+				: button(
+						h,
+						{
+							size: "sm",
+							variant: primary.variant,
+							isDisabled: isBusy || !primaryAllowed,
+							attributes: [h.OnClick(Message.ClickedPrimary())],
+						},
+						[primary.label],
+					),
 			h.submodel({
 				slotId: "investigation-actions",
 				model: model.actionsMenu,
@@ -202,6 +212,7 @@ const documentTab = (
 	timeZone: string,
 	trigger: TipTrigger,
 	canDrive: boolean,
+	aiCardGate: AiCardGate | undefined,
 ): ReadonlyArray<Html> => {
 	const isResolved = investigation.status === "resolved"
 	const canvas = provenanceCanvas(h, model, investigation, timeZone)
@@ -219,7 +230,18 @@ const documentTab = (
 		pageScrollArea(h, {}, [
 			vstack(h, { className: "gap-7" }, [...sections, investigationMeta(h, model, investigation)]),
 		]),
-		...(isResolved || !canDrive ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
+		...(isResolved || !canDrive
+			? []
+			: [
+					h.div(
+						[h.Class("shrink-0 px-4 pb-4")],
+						[
+							aiCardGate === undefined
+								? followUpComposer(h)
+								: aiCardNotice(h, aiCardGate, { size: "sm" }),
+						],
+					),
+				]),
 	]
 }
 
@@ -251,6 +273,7 @@ const conversationTab = (
 	timeZone: string,
 	trigger: TipTrigger,
 	canDrive: boolean,
+	aiCardGate: AiCardGate | undefined,
 ): ReadonlyArray<Html> => {
 	const { conversation } = model
 	if (conversation === null) return []
@@ -263,6 +286,7 @@ const conversationTab = (
 			timeZone,
 			textareaId: `investigation-chat-${model.id}`,
 			canReply: canDrive,
+			...(aiCardGate === undefined ? undefined : { aiCardGate }),
 			placeholder: placeholderOf(investigation),
 			emptyState: () => investigationLead(h, investigation),
 			scrollerMount: Mount.mapMessage(MountMessageScroller({ focusMessageId: null }), () =>
@@ -291,6 +315,7 @@ const readyPage = (
 	investigation: V2Investigation,
 	timeZone: string,
 	canDrive: boolean,
+	aiCardGate: AiCardGate | undefined,
 ): Html => {
 	const tab = tabOf(model)
 	const isConversation = tab === "chat" || tab === "transcript"
@@ -309,14 +334,31 @@ const readyPage = (
 					h,
 					{
 						titleContent: titleContent(h, investigation),
-						actions: canDrive ? headerActions(h, model, investigation) : undefined,
+						actions: canDrive ? headerActions(h, model, investigation, aiCardGate) : undefined,
 						tabs: tabs(h, investigation, tab),
 						fill: true,
 					},
 					[
 						...(isConversation
-							? conversationTab(h, model, investigation, timeZone, trigger, canDrive)
-							: documentTab(h, model, investigation, tab, timeZone, trigger, canDrive)),
+							? conversationTab(
+									h,
+									model,
+									investigation,
+									timeZone,
+									trigger,
+									canDrive,
+									aiCardGate,
+								)
+							: documentTab(
+									h,
+									model,
+									investigation,
+									tab,
+									timeZone,
+									trigger,
+									canDrive,
+									aiCardGate,
+								)),
 						actionSheet(h, model, investigation, timeZone, trigger),
 						...(portal === null ? [] : [portal]),
 					],
@@ -335,6 +377,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				model.sync.investigation,
 				timeZone,
 				inputs.context.audience !== "analyst",
+				inputs.context.aiCardGate,
 			)
 		case "Missing":
 			return dashboardPage(h, {}, [

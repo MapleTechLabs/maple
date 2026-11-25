@@ -1,5 +1,7 @@
+import { Option } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+	aiCardGateOf,
 	cycleSpend,
 	hasHadPlan,
 	isActivePlanSubscription,
@@ -297,5 +299,21 @@ describe("the no-card trial", () => {
 
 	it("reads the latest trial row when Autumn kept several", () => {
 		expect(startupTrialDays([trial(NOW - DAY, "expired"), trial(NOW + 2 * DAY)], NOW)).toBe(2)
+	})
+
+	it("holds Maple AI for a card while the trial runs, and for a plan once it ended", () => {
+		const gate = (subs: Parameters<typeof aiCardGateOf>[0]) => Option.getOrNull(aiCardGateOf(subs))
+		expect(gate([trial(NOW + DAY)])).toBe("trial")
+		// An ended trial, one Autumn dropped, a lapsed plan and an add-on alone are not paid plans.
+		expect(gate([trial(NOW - DAY, "expired")])).toBe("no_plan")
+		expect(gate([])).toBe("no_plan")
+		expect(gate([{ planId: "startup", status: "expired" }])).toBe("no_plan")
+		expect(gate([{ planId: "bringyourowncloud", addOn: true, status: "active" }])).toBe("no_plan")
+	})
+
+	it("lets any active paid plan run Maple AI, a card added mid-trial and a custom plan included", () => {
+		const gate = (subs: Parameters<typeof aiCardGateOf>[0]) => Option.getOrNull(aiCardGateOf(subs))
+		expect(gate([trial(NOW + DAY, "expired"), { planId: "startup", status: "active" }])).toBeNull()
+		expect(gate([{ planId: "enterprise_acme", status: "active" }])).toBeNull()
 	})
 })

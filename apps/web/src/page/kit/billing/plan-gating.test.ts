@@ -8,6 +8,7 @@ import {
 	CatalogPlanPrice,
 } from "@maple/domain/http"
 import {
+	getAiCardGate,
 	getFeatureQuotas,
 	getLapsedPlan,
 	getNoCardTrial,
@@ -463,5 +464,30 @@ describe("the no-card trial", () => {
 		expect(hasEndedNoCardTrial(endedTrial)).toBe(true)
 		expect(hasEndedNoCardTrial(endedPlan)).toBe(false)
 		expect(resolvePlanAccess({ customer: endedTrial, isLoading: false })).toBe("app")
+	})
+})
+
+describe("getAiCardGate", () => {
+	const trial = buildSubscription({ planId: "trial", trialEndsAt: Date.UTC(2026, 11, 9) })
+
+	it("asks for a card on the no-card trial and for a plan once none is active", () => {
+		expect(getAiCardGate(buildCustomer([trial]))).toBe("trial")
+		expect(
+			getAiCardGate(buildCustomer([buildSubscription({ planId: "trial", status: "expired" })])),
+		).toBe("no_plan")
+		expect(getAiCardGate(buildCustomer([]))).toBe("no_plan")
+	})
+
+	it("lets a paid plan through, and an org on its own OpenRouter key even on the trial", () => {
+		expect(getAiCardGate(buildCustomer([buildSubscription({ planId: "startup" })]))).toBeNull()
+		expect(
+			getAiCardGate(
+				buildCustomer([trial, buildSubscription({ planId: "openrouter_byok", addOn: true })]),
+			),
+		).toBeNull()
+	})
+
+	it("says nothing before billing answers: the server still checks", () => {
+		expect(getAiCardGate(undefined)).toBeNull()
 	})
 })

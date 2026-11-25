@@ -1,3 +1,4 @@
+import { labAiCardGate } from "../ai-card-gate-flag"
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import {
@@ -165,6 +166,7 @@ export const context: PageContext = {
 	pinnedNamespace: null,
 	timeZone: "UTC",
 	hasCloudSecurity: true,
+	...labAiCardGate(),
 }
 
 type Step<M, Msg> = Readonly<{ model: M; commands: ReadonlyArray<Command.Command<Msg, never, Resources>> }>

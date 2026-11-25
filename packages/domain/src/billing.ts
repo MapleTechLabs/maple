@@ -80,6 +80,30 @@ export interface TrialSubscription extends PlanGatingSubscription {
 	readonly trialEndsAt?: number | null
 }
 
+/**
+ * Why Maple AI waits on billing: `trial` while the no-card trial runs (a card unlocks it, nothing
+ * charged until the trial ends), `no_plan` when no paid plan is active (an ended trial, a lapsed
+ * plan, none at all). Gating on the plan, not the balance, keeps a trial that vanished from
+ * Autumn from reading as an unmetered plan.
+ */
+export type AiCardGate = "trial" | "no_plan"
+
+/**
+ * The org's `AiCardGate`, or none once a paid plan is active (custom and legacy plans included). A
+ * past-due plan is still active (Autumn flags it `pastDue`), so it keeps Maple AI.
+ */
+export const aiCardGateOf = (
+	subscriptions: ReadonlyArray<PlanGatingSubscription>,
+): Option.Option<AiCardGate> => {
+	if (Arr.some(subscriptions, (sub) => isActivePlanSubscription(sub) && sub.planId !== TRIAL_PLAN_ID))
+		return Option.none()
+	const isOnTrial = Arr.some(
+		subscriptions,
+		(sub) => sub.planId === TRIAL_PLAN_ID && sub.status === "active",
+	)
+	return Option.some(isOnTrial ? "trial" : "no_plan")
+}
+
 /** The org held a base plan, the trial included: the no-card trial is once per org. */
 export const hasHadPlan = (subscriptions: ReadonlyArray<TrialSubscription>): boolean =>
 	Arr.some(subscriptions, isPlanSubscription)

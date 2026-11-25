@@ -236,7 +236,9 @@ export const trial = plan({
 		{ featureId: "browser_sessions", included: 5000, reset: { interval: "month" } },
 		{ featureId: "product_events", included: 1_000_000, reset: { interval: "month" } },
 		{ featureId: UPTIME_MONITORS_FEATURE_ID, included: 10 },
-		{ featureId: "ai_credits", included: 10 },
+		// Maple AI waits for a card (`aiCardGateOf`). Zero, not absent: a plan without the
+		// balance reads as unmetered, so an empty one is the backstop.
+		{ featureId: "ai_credits", included: 0 },
 	],
 	freeTrial: {
 		durationLength: TRIAL_DURATION_DAYS,

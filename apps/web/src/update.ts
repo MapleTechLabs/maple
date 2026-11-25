@@ -62,7 +62,7 @@ import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
 import * as Policy from "@maple/domain/policy"
 import { identityOf, isSameIdentity, type SessionIdentity } from "./platform/session-identity"
-import { getActivePlan, hasSelectedPlan } from "./page/kit/billing/plan-gating"
+import { getActivePlan, getAiCardGate, hasSelectedPlan } from "./page/kit/billing/plan-gating"
 import {
 	AppRoute,
 	flaggedRouteRedirect,
@@ -270,6 +270,12 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 									clerkOrganizationOf(model),
 									(organization) => organization.flags.llmEvals,
 								),
+							...Option.match(
+								Option.fromNullishOr(
+									isClerkAuthEnabled ? getAiCardGate(customerOf(model.customer)) : null,
+								),
+								{ onNone: () => undefined, onSome: (aiCardGate) => ({ aiCardGate }) },
+							),
 						})),
 					),
 	}),
