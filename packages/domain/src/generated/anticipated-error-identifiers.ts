@@ -197,6 +197,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/planetscale-cost/PlanetScaleCostReconnectRequiredError",
 	"@maple/http/pr-review/PrReviewNotFoundError",
 	"@maple/http/pr-review/PrReviewReplyNotFoundError",
+	"@maple/http/retention/RetentionInvalidError",
 	"@maple/http/roles/RoleConflictError",
 	"@maple/http/roles/RoleMemberNotFoundError",
 	"@maple/http/roles/RoleNotFoundError",

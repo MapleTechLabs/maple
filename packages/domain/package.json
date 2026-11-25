@@ -53,6 +53,7 @@
 		"./investigations": "./src/investigations.ts",
 		"./oncall-schedules": "./src/oncall-schedules.ts",
 		"./recommendation-issues": "./src/recommendation-issues.ts",
+		"./retention": "./src/retention.ts",
 		"./saved-views": "./src/saved-views.ts",
 		"./supabase": "./src/supabase.ts",
 		"./vcs": "./src/vcs.ts",
