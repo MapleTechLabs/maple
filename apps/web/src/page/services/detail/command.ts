@@ -24,6 +24,7 @@ import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
 import { listMonitors } from "../../kit/uptime/commands"
+import { listServiceSourceMaps } from "../../kit/source-maps"
 import { Message } from "./message"
 
 const Names = Schema.optional(Schema.Array(Schema.String))
@@ -255,6 +256,8 @@ export const FetchCommit = Command.define("FetchServiceDeployCommit", {
 				authorLogin: commit.authorLogin,
 				authorAvatarUrl: commit.authorAvatarUrl,
 				committedAt: commit.committedAt,
+				repoFullName: commit.repoFullName,
+				htmlUrl: commit.htmlUrl,
 			}
 		}).pipe(
 			Effect.mapError((error) => ({ tag: errorTag(error) })),
@@ -321,5 +324,15 @@ export const FetchUptimeMonitors = Command.define("FetchServiceDetailUptimeMonit
 	execute: ({ key }) =>
 		Effect.all([Effect.result(listMonitors), readGrants]).pipe(
 			Effect.map(([result, grants]) => Message.CompletedFetchUptimeMonitors({ key, result, grants })),
+		),
+})
+
+/** The service's newest source maps; the Overview's Source maps card shows when it has any. */
+export const FetchSourceMaps = Command.define("FetchServiceDetailSourceMaps", {
+	args: { key: Schema.String, serviceName: Schema.String },
+	messages: [Message.CompletedFetchSourceMaps],
+	execute: ({ key, serviceName }) =>
+		listServiceSourceMaps(serviceName).pipe(
+			settleTo((result) => Message.CompletedFetchSourceMaps({ key, result })),
 		),
 })

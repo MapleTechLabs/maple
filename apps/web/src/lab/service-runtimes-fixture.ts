@@ -1,4 +1,5 @@
 import { ServiceName } from "@maple/domain/http"
+import { V2SourceMap } from "@maple/domain/http/v2"
 import { Array as Arr, Order, Schema } from "effect"
 import type { ServiceRuntime } from "../page/kit/service-runtimes"
 import type { Issue, Usage, Workload } from "../page/services/detail/model"
@@ -128,6 +129,8 @@ export const RUNTIMES_COMMITS: ReadonlyMap<string, Commit> = new Map([
 			authorLogin: "ines-d",
 			authorAvatarUrl: null,
 			committedAt: RUNTIMES_NOW - 26 * 60 * MINUTE,
+			repoFullName: "acme/fleet",
+			htmlUrl: "https://github.com/acme/fleet",
 		},
 	],
 	[
@@ -139,6 +142,8 @@ export const RUNTIMES_COMMITS: ReadonlyMap<string, Commit> = new Map([
 			authorLogin: "karai",
 			authorAvatarUrl: null,
 			committedAt: RUNTIMES_NOW - 52 * MINUTE,
+			repoFullName: "acme/fleet",
+			htmlUrl: "https://github.com/acme/fleet",
 		},
 	],
 ])
@@ -272,3 +277,21 @@ export const RUNTIMES_DEPENDENCIES: DependencyBundle = {
 		},
 	],
 }
+
+/** The newest release's maps, uploaded with the deploy; one has already mapped a stack. */
+export const RUNTIMES_SOURCE_MAPS: ReadonlyArray<V2SourceMap> = Arr.map(
+	["assets/index-Bx81.js", "assets/vendor-Kq2d.js", "assets/app-9fPz.js"],
+	(path, index) =>
+		Schema.decodeSync(V2SourceMap)({
+			object: "source_map",
+			id: `6c5e2b1a-1f2e-4d3c-8b7a-01234567890${index}`,
+			debug_id: null,
+			service: "fleet-api",
+			version: SHA_DEPLOY,
+			minified_path: path,
+			size_bytes: 482_113,
+			has_sources_content: true,
+			created_at: iso(RUNTIMES_NOW - 50 * MINUTE),
+			last_used_at: index === 0 ? iso(RUNTIMES_NOW - 12 * MINUTE) : null,
+		}),
+)
