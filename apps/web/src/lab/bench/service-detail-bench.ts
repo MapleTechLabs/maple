@@ -83,6 +83,8 @@ const COMMITS: Readonly<Record<string, CommitData>> = Rec.fromEntries(
 				authorLogin: deploy.author,
 				authorAvatarUrl: null,
 				committedAt: END_TIME_MS - (BUCKET_COUNT - deploy.at) * BUCKET_MS - index * 60_000,
+				repoFullName: "acme/fleet",
+				htmlUrl: "https://github.com/acme/fleet",
 			},
 		}),
 	]),
