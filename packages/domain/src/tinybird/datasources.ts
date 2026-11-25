@@ -1,6 +1,7 @@
 import { column, defineDatasource, engine, type InferRow, t } from "@maple-dev/effect-orm/tinybird"
 import * as CH from "@maple-dev/effect-orm/clickhouse"
 import { OrgId, type SloLatencyThresholdMs, SpanId, TraceId } from "@maple/primitives"
+import { DEFAULT_RETENTION_DAYS, type RetentionSignal } from "../retention"
 
 /**
  * A `DateTime` column queried as a `DateTime.Utc`. ClickHouse sends the
@@ -30,6 +31,13 @@ export const TRACES_TTL_DAYS = 30
 
 /** How long `ci_runs` and `ci_jobs` keep a run. */
 export const CI_TTL_DAYS = 365
+
+/**
+ * Days a raw row is stored for, stamped by the ingest gateway. Nothing reads it yet. A writer
+ * that leaves it out gets the period the table keeps today.
+ */
+const retentionDaysColumn = (signal: RetentionSignal) =>
+	column(t.uint16().default(DEFAULT_RETENTION_DAYS[signal]), { jsonPath: "$.retention_days" })
 
 /**
  * OpenTelemetry logs datasource
@@ -70,6 +78,7 @@ export const logs = defineDatasource("logs", {
 		LogAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.log_attributes",
 		}),
+		RetentionDays: retentionDaysColumn("logs"),
 		// The `*AttributeItems` search arrays are ClickHouse-only: see
 		// `clickhouse/clickhouse-only-columns.ts`.
 	},
@@ -234,6 +243,7 @@ export const traces = defineDatasource("traces", {
 		 * Server/Consumer kinds, or any root span (ParentSpanId = '').
 		 */
 		IsEntryPoint: t.uint8().defaultExpr(IS_ENTRY_POINT_EXPR),
+		RetentionDays: retentionDaysColumn("traces"),
 		// The `*AttributeItems` search arrays are ClickHouse-only: see
 		// `clickhouse/clickhouse-only-columns.ts`.
 	},
@@ -1781,6 +1791,7 @@ export const metricsSum = defineDatasource("metrics_sum", {
 			jsonPath: "$.aggregation_temporality",
 		}),
 		IsMonotonic: column(t.bool(), { jsonPath: "$.is_monotonic" }),
+		RetentionDays: retentionDaysColumn("metrics"),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimeUnix)",
@@ -1844,6 +1855,7 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 		ExemplarsFilteredAttributes: column(t.array(t.map(t.string().lowCardinality(), t.string())), {
 			jsonPath: "$.exemplars_filtered_attributes[:]",
 		}),
+		RetentionDays: retentionDaysColumn("metrics"),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimeUnix)",
@@ -1919,6 +1931,7 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 		AggregationTemporality: column(t.int32(), {
 			jsonPath: "$.aggregation_temporality",
 		}),
+		RetentionDays: retentionDaysColumn("metrics"),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimeUnix)",
@@ -1998,6 +2011,7 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 		AggregationTemporality: column(t.int32(), {
 			jsonPath: "$.aggregation_temporality",
 		}),
+		RetentionDays: retentionDaysColumn("metrics"),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimeUnix)",
@@ -2847,6 +2861,7 @@ export const sessionReplays = defineDatasource("session_replays", {
 		LastActivityAt: column(utcDateTime64(9).nullable(), {
 			jsonPath: "$.last_activity_at",
 		}),
+		RetentionDays: retentionDaysColumn("sessions"),
 	},
 	engine: engine.replacingMergeTree({
 		partitionKey: "toDate(StartTime)",
@@ -2896,6 +2911,7 @@ export const sessionReplayEvents = defineDatasource("session_replay_events", {
 		// The rrweb event array, serialized as a JSON string.
 		Events: column(t.string(), { jsonPath: "$.events" }),
 		IsCheckpoint: column(t.uint8().default(0), { jsonPath: "$.is_checkpoint" }),
+		RetentionDays: retentionDaysColumn("sessions"),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
@@ -2963,30 +2979,13 @@ export const sessionEvents = defineDatasource("session_events", {
 		VisitorId: column(t.string().default(""), { jsonPath: "$.visitor_id" }),
 		UserId: column(t.string().default(""), { jsonPath: "$.user_id" }),
 		GroupId: column(t.string().default(""), { jsonPath: "$.group_id" }),
+		RetentionDays: retentionDaysColumn("sessions"),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "SessionId", "Timestamp", "Seq"],
 		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
-	// Widening the `Attributes` keys off LowCardinality is an incompatible
-	// change to Tinybird, which refuses the deployment without an explicit
-	// forward query. This is the managed-warehouse counterpart of ClickHouse
-	// migration 0012: the migration issues `MODIFY COLUMN` against a BYO
-	// cluster, whereas Tinybird rebuilds the table and replays live rows
-	// through this SELECT. Every other column is carried forward untouched;
-	// only the map is re-typed, and the cast preserves values because
-	// `LowCardinality(String)` keys are already strings. The identity columns
-	// (migration 0021) are new, so existing rows carry them forward as their
-	// default `''` — Tinybird requires every schema column to appear here.
-	forwardQuery: `SELECT
-		OrgId, SessionId, Timestamp, Seq, Type, Url, TraceId, Level, Message,
-		TargetSelector, TargetText, NetMethod, NetUrl, NetStatus, NetDurationMs,
-		ErrorStack,
-		CAST(Attributes, 'Map(String, String)') AS Attributes,
-		defaultValueOfTypeName('String') AS VisitorId,
-		defaultValueOfTypeName('String') AS UserId,
-		defaultValueOfTypeName('String') AS GroupId`,
 	indexes: [
 		{
 			// `Type` is not in the sorting key, so the "top custom events" query
@@ -3106,6 +3105,8 @@ export const productEvents = defineDatasource("product_events", {
 		TraceId: t.string().default(""),
 		/** The annotated span within {@link TraceId}. `''` on non-trace rows. */
 		SpanId: t.string().default(""),
+		// No `RetentionDays` yet: the two views that fill this table would have to select it, and
+		// a forward query makes any column change a copy. It arrives with the table's rebuild.
 	},
 	// REQUIRED: without it Tinybird REBUILDS this table from its 30-day sources,
 	// dropping history past 30 days and every `/v1/events` row at any age (they
@@ -3398,6 +3399,7 @@ export const profiles = defineDatasource("profiles", {
 		 * `jsonPath`: the insert never names it. Wrap it in `toString()` in every SELECT.
 		 */
 		StackHash: t.uint64().defaultExpr("cityHash64(Frames, FrameFiles, FrameLines)"),
+		RetentionDays: retentionDaysColumn("profiles"),
 	},
 	indexes: [
 		// The span panel looks samples up by span alone; near-unique values and `''` on most rows.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Array as Arr, Option, Schema } from "effect"
+import { Array as Arr, Option, Record, Schema } from "effect"
+import { migration_0075_retention_days } from "./clickhouse/migrations/0075_retention_days"
 import { tinybirdProjectManifest } from "./generated/tinybird-project-manifest"
 import {
 	DEFAULT_RETENTION_DAYS,
@@ -35,6 +36,59 @@ describe("retention defaults", () => {
 				expect(ttlDays(datasource), `${signal}: ${datasource}`).toBe(DEFAULT_RETENTION_DAYS[signal])
 			}
 		}
+	})
+})
+
+describe("the RetentionDays column", () => {
+	const columnDefault = (datasource: string): number | undefined =>
+		Option.getOrUndefined(
+			Option.flatMap(
+				Arr.findFirst(
+					tinybirdProjectManifest.datasources,
+					(candidate) => candidate.name === datasource,
+				),
+				(found) =>
+					Option.map(
+						Option.fromNullishOr(
+							/\bRetentionDays UInt16 [^\n]*DEFAULT (\d+)/.exec(found.content),
+						),
+						(match) => Number(match[1]),
+					),
+			),
+		)
+
+	it("defaults to the days each raw table keeps, so an unstamped row expires as it does today", () => {
+		for (const signal of RETENTION_SIGNALS) {
+			for (const datasource of RETENTION_SIGNAL_DATASOURCES[signal]) {
+				// `product_events` gets the column when it is rebuilt.
+				if (datasource === "product_events") continue
+				expect(columnDefault(datasource), datasource).toBe(ttlDays(datasource))
+			}
+		}
+	})
+
+	it("is added to a self-managed cluster with the same default per table", () => {
+		const migrated = Record.fromEntries(
+			Arr.map(migration_0075_retention_days.statements, (statement) => {
+				const match =
+					/^ALTER TABLE (\w+) ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT (\d+)$/.exec(
+						statement,
+					)
+				return [match?.[1] ?? statement, Number(match?.[2])] as const
+			}),
+		)
+		const expected = Record.fromEntries(
+			Arr.map(
+				Arr.filter(
+					Arr.flatMap(RETENTION_SIGNALS, (signal) => RETENTION_SIGNAL_DATASOURCES[signal]),
+					(datasource) => datasource !== "product_events",
+				),
+				(datasource) => [datasource, ttlDays(datasource)] as const,
+			),
+		)
+		expect(migrated).toEqual(expected)
+		// A table listed twice would add its column with the first default and hide behind the second.
+		expect(migration_0075_retention_days.statements).toHaveLength(Record.keys(expected).length)
 	})
 })
 

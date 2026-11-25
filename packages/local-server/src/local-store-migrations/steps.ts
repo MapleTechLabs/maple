@@ -154,6 +154,20 @@ const SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS = [
 	["EstimatedUnder10000Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
 ] as const
 
+/** v66 -> v67: each raw table's RetentionDays default, the period it kept at that version. */
+const RETENTION_DAYS_DEFAULTS = [
+	["traces", 30],
+	["logs", 30],
+	["metrics_sum", 90],
+	["metrics_gauge", 90],
+	["metrics_histogram", 90],
+	["metrics_exponential_histogram", 90],
+	["session_replays", 30],
+	["session_replay_events", 30],
+	["session_events", 30],
+	["profiles", 14],
+] as const
+
 const STEP_ROWS: ReadonlyArray<StepRow> = [
 	{
 		slug: "error-rollup",
@@ -2271,7 +2285,8 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				"Recreate service_platforms_hourly_mv so new rows carry the service-identity columns",
 			],
 		],
-		verifies: "Verify the v66 physical schema, retained raw telemetry counts, and the platforms rollup row count",
+		verifies:
+			"Verify the v66 physical schema, retained raw telemetry counts, and the platforms rollup row count",
 		dispositions: [
 			{
 				name: "service_platforms_hourly",
@@ -2281,6 +2296,33 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 					"Eight columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and every existing row reads back empty or zero, which ClassifiedSpanCount marks as unclassified.",
 			},
 			TRACES_UNDER_REPLACED_VIEWS,
+		],
+	},
+	{
+		// Metadata-only: each default is the bundled period and nothing reads the column yet.
+		// A store's raised retention floor lives in its TTLs, not here: whatever makes a local
+		// TTL read this column must keep the floor above it. product_events is left out.
+		slug: "retention-days",
+		description: "Add RetentionDays to the raw tables, defaulted to the period each keeps today",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: Arr.map(RETENTION_DAYS_DEFAULTS, ([table, days]) =>
+			addColumns(table, [["RetentionDays", `UInt16 DEFAULT ${days}`]]),
+		),
+		plan: [
+			[
+				"add-retention-days-columns",
+				"Add RetentionDays to ten raw tables, each defaulted to the period the table keeps today",
+			],
+		],
+		verifies: "Verify the v67 physical schema and retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "raw telemetry tables (traces, logs, metrics, session replays and events, profiles)",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"One column is added as a metadata-only default; no part is rewritten and the row counts are verified unchanged. No TTL changes: a store with a raised retention floor still keeps its rows for the floor, which the TTL holds, while the column reads the bundled default.",
+			},
 		],
 	},
 	// local-schema:bump appends the next step above this line.

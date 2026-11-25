@@ -28,6 +28,12 @@ edge grain wrong double-counts every span in the first and last partial bucket, 
 still looks reasonable. See the comment on `edgeGrain` in
 `packages/query-engine/src/ch/queries/traces.ts`.
 
+The raw tables (`RETENTION_SIGNAL_DATASOURCES` in `packages/domain/src/retention.ts`) carry a
+`RetentionDays` column: the days the row is stored for. Nothing writes or reads it yet: every row
+takes the column default, the period the table keeps today, so the TTLs above still decide when a
+row expires. `product_events` does not have it yet: views fill that table and a forward query
+guards it, so it gets the column when it is rebuilt.
+
 ---
 
 ## When a materialized view is justified
