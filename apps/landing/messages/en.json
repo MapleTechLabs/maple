@@ -71,7 +71,8 @@
 	"hero_title": "Traces, logs, errors, replays,",
 	"hero_title_sub": "uptime, on‑call. One app.",
 	"hero_title_accent": "Your agent reads it too.",
-	"hero_subtitle": "$39/month with 100 GB each of logs, traces and metrics, then $0.30 per GB. No per-host or per-seat fees. Source on GitHub under FSL-1.1, Apache 2.0 after two years.",
+	"hero_subtitle": "Every error, log line and session replay links to the trace behind it. $39 a month for your whole team.",
+	"hero_cta_note": "14-day free trial · No credit card required",
 
 	"customers_eyebrow": "Trusted by teams at",
 	"customers_story_cta": "Read the story",
