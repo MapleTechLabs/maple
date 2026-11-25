@@ -84,6 +84,12 @@ const objects: ReadonlyArray<S.SchemaObject> = [
 	),
 ]
 
+const shippedSql = (name: string): string =>
+	Option.getOrElse(
+		Arr.findFirst(latestSnapshotStatements, (sql) => nameOf(sql) === name),
+		() => "",
+	)
+
 /** Where the emitter is wrong and effect-orm is right; each needs a migration to fix live tables. */
 const KNOWN_DIFFERENCES = {
 	// The emitter drops ENGINE_VER, so live self-managed and CLI tables keep no version.
@@ -94,13 +100,54 @@ const KNOWN_DIFFERENCES = {
 	cost_daily: "ENGINE = ReplacingMergeTree(IngestedAt)",
 } satisfies Record<string, string>
 
+/**
+ * Where the emitter keeps one period per table on purpose: self-managed inserts never stamp
+ * `RetentionDays`, so a row-level TTL there reads the column default. Rewrites the rendered
+ * row-level layout to that form; returns `undefined` for any other table.
+ */
+const ROW_RETENTION =
+	/PARTITION BY \(RetentionDays, (toDate\(\w+\))\) (ORDER BY .*) TTL toDate\(\w+\) \+ toIntervalDay\(RetentionDays\) SETTINGS ttl_only_drop_parts = 1$/
+const asOnePeriod = (sql: string): string | undefined =>
+	Option.getOrUndefined(
+		Option.flatMap(
+			Option.all([
+				Option.fromNullishOr(ROW_RETENTION.exec(sql)),
+				Option.fromNullishOr(/RetentionDays UInt16 DEFAULT (\d+)/.exec(sql)),
+			]),
+			([layout, days]) =>
+				Option.some(
+					Str.replace(
+						layout[0],
+						`PARTITION BY ${layout[1]} ${layout[2]} TTL ${layout[1]} + INTERVAL ${days[1]} DAY`,
+					)(sql),
+				),
+		),
+	)
+
 describe("effect-orm DDL parity", () => {
-	const rendered = new Map(
+	const renderedAsIs = new Map(
 		Arr.map(S.renderSchema(Effect.runSync(S.entitiesOf(objects))), (sql) => [
 			nameOf(sql),
 			normalize(sql),
 		]),
 	)
+	const onePeriod = new Set(
+		Arr.map(
+			Arr.filter([...renderedAsIs], ([, sql]) => asOnePeriod(sql) !== undefined),
+			([name]) => name,
+		),
+	)
+	const rendered = new Map(Arr.map([...renderedAsIs], ([name, sql]) => [name, asOnePeriod(sql) ?? sql]))
+
+	it("keeps one period on self-managed copies of the tables that expire each row on its own", () => {
+		expect([...onePeriod].sort()).toEqual(
+			Arr.filter([...renderedAsIs.keys()], (name) =>
+				Str.includes("toIntervalDay(RetentionDays)")(renderedAsIs.get(name) ?? ""),
+			).sort(),
+		)
+		expect(onePeriod.has("traces")).toBe(true)
+		for (const name of onePeriod) expect(shippedSql(name)).toContain(" + INTERVAL ")
+	})
 	const shippedWithClickHouseOnly = new Map(
 		Arr.map(latestSnapshotStatements, (sql) => [nameOf(sql), normalize(sql)]),
 	)

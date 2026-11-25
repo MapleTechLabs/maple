@@ -18,6 +18,7 @@ import { migration_0037_service_overview_spans_span_kind } from "./0037_service_
 import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
 import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
+import { migration_0076_retention_storage } from "./0076_retention_storage"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { migrations } from "./index"
 
@@ -364,14 +365,42 @@ describe("migration 0037: service_overview_spans records why a row is an entry p
 		expect(addKind).toContain("ADD COLUMN IF NOT EXISTS SpanKind")
 		expect(addRoot).toContain("ADD COLUMN IF NOT EXISTS IsRoot")
 		expect(drop).toBe("DROP VIEW IF EXISTS service_overview_spans_mv")
-		expect(create).toBe(
-			Option.getOrUndefined(
-				Arr.findFirst(latestSnapshotStatements, (stmt) =>
-					Str.includes("service_overview_spans_mv TO")(stmt),
-				),
-			),
-		)
+		// Migration 0076 recreated the view again, so this one is checked for what it added.
+		expect(create).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS service_overview_spans_mv TO")
+		expect(create).toContain("SpanKind")
 		expect(create).toContain("toUInt8(ParentSpanId = '') AS IsRoot")
+	})
+})
+
+describe("migration 0076: span projections and product events carry their retention", () => {
+	const statements = migration_0076_retention_storage.statements
+	const creates = Arr.filter(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
+	const viewName = (stmt: string) => Arr.getUnsafe(Str.split(" ")(stmt), 6)
+
+	it("adds the columns, then drops each view before creating it as the schema ships it", () => {
+		const kinds = Arr.map(statements, (stmt) =>
+			Str.startsWith("ALTER TABLE")(stmt) ? 0 : Str.startsWith("DROP VIEW")(stmt) ? 1 : 2,
+		)
+		expect(kinds).toEqual([...kinds].sort())
+		const drops = Arr.filter(statements, (stmt) => Str.startsWith("DROP VIEW")(stmt))
+		expect(Arr.map(drops, (stmt) => Str.replace("DROP VIEW IF EXISTS ", "")(stmt))).toEqual(
+			Arr.map(creates, viewName),
+		)
+		for (const create of creates) {
+			expect(latestSnapshotStatements, viewName(create)).toContain(create)
+		}
+	})
+
+	it("copies each span's RetentionDays, and the events period into product_events", () => {
+		for (const create of creates) {
+			const fromTraces = Str.includes("FROM traces")(create)
+			const intoEvents = Str.includes(" TO product_events AS")(create)
+			expect(create, viewName(create)).toMatch(
+				intoEvents ? /EventsRetentionDays AS RetentionDays/ : /\bRetentionDays\n\s+FROM traces/,
+			)
+			expect(fromTraces || intoEvents, viewName(create)).toBe(true)
+		}
+		expect(migration_0076_retention_storage.requiredForIngest).toBe(false)
 	})
 })
 

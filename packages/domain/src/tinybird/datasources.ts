@@ -26,18 +26,45 @@ export const TRACE_BUCKET_FN = "toStartOfFiveMinutes"
 export const TRACE_BUCKET_MINUTES = 5
 export const TRACE_BUCKET_EXPR = `${TRACE_BUCKET_FN}(Timestamp)`
 
-/** How long `traces` and `trace_index` keep a row; trace-id lookups scan no further back. */
-export const TRACES_TTL_DAYS = 30
-
 /** How long `ci_runs` and `ci_jobs` keep a run. */
 export const CI_TTL_DAYS = 365
 
 /**
- * Days a raw row is stored for, stamped by the ingest gateway. Nothing reads it yet. A writer
- * that leaves it out gets the period the table keeps today.
+ * Days a raw row is stored for, stamped by the ingest gateway from its source's policy. A writer
+ * that leaves it out gets the signal's default period.
  */
 const retentionDaysColumn = (signal: RetentionSignal) =>
 	column(t.uint16().default(DEFAULT_RETENTION_DAYS[signal]), { jsonPath: "$.retention_days" })
+
+/**
+ * The source's `events` period on a row a view turns into a `product_events` row. The row's own
+ * `RetentionDays` is its traces or sessions period, the wrong one for the event.
+ */
+const eventsRetentionDaysColumn = () =>
+	column(t.uint16().default(DEFAULT_RETENTION_DAYS.events), { jsonPath: "$.events_retention_days" })
+
+/** A span projection's copy of its span's `RetentionDays`, so the row expires with the span. */
+const spanRetentionDaysColumn = () => t.uint16().default(DEFAULT_RETENTION_DAYS.traces)
+
+/**
+ * Storage for a table whose rows carry `RetentionDays`: each partition holds one period and one
+ * day, so TTL drops it whole once that day is past its period and never rewrites a row.
+ */
+const rowRetentionStorage = (timeColumn: string) => ({
+	partitionKey: `(RetentionDays, toDate(${timeColumn}))`,
+	ttl: `toDate(${timeColumn}) + toIntervalDay(RetentionDays)`,
+	settings: { ttl_only_drop_parts: 1 },
+})
+
+/**
+ * One-shot forward queries for the deploy that partitions the raw tables by `RetentionDays`.
+ * Tinybird copies each raw table, and with these copies every datasource fed from one from the
+ * live deployment instead of replaying the raw rows, which would drop the longer history of every
+ * rollup. Remove both once that deploy is live in every workspace.
+ */
+export const RETENTION_REPARTITION_FORWARD_QUERY = "SELECT *"
+/** The same for a span projection gaining `RetentionDays` (last in its schema): its rows kept 30 days. */
+export const RETENTION_COLUMN_FORWARD_QUERY = `SELECT *, toUInt16(${DEFAULT_RETENTION_DAYS.traces}) AS RetentionDays`
 
 /**
  * OpenTelemetry logs datasource
@@ -137,9 +164,8 @@ export const logs = defineDatasource("logs", {
 		},
 	],
 	engine: engine.mergeTree({
-		partitionKey: "toDate(TimestampTime)",
+		...rowRetentionStorage("TimestampTime"),
 		sortingKey: ["OrgId", "toStartOfFiveMinutes(Timestamp)", "ServiceName", "Timestamp"],
-		ttl: "toDate(TimestampTime) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -244,6 +270,7 @@ export const traces = defineDatasource("traces", {
 		 */
 		IsEntryPoint: t.uint8().defaultExpr(IS_ENTRY_POINT_EXPR),
 		RetentionDays: retentionDaysColumn("traces"),
+		EventsRetentionDays: eventsRetentionDaysColumn(),
 		// The `*AttributeItems` search arrays are ClickHouse-only: see
 		// `clickhouse/clickhouse-only-columns.ts`.
 	},
@@ -302,9 +329,8 @@ export const traces = defineDatasource("traces", {
 	// trace-id read through `trace_index` seeks a few granules. Measured
 	// 2026-10-19 against the prod workload: `docs/warehouse-rollups.md`.
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "ServiceName", TRACE_BUCKET_EXPR, "TraceId"],
-		ttl: `toDate(Timestamp) + INTERVAL ${TRACES_TTL_DAYS} DAY`,
 	}),
 })
 
@@ -366,6 +392,7 @@ export const sourceUsageHourly = defineDatasource("source_usage_hourly", {
 		MetricCount: t.uint64(),
 		MetricSizeBytes: t.uint64(),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	// Unpartitioned like service_usage: one row per source-hour stays tiny. 90 days
 	// matches the minutely-tier retention; reads only cover the last 24 hours.
 	engine: engine.summingMergeTree({
@@ -401,11 +428,13 @@ export const serviceMapSpans = defineDatasource("service_map_spans", {
 		StatusCode: t.string().lowCardinality(),
 		TraceState: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
+	// One-shot, see RETENTION_COLUMN_FORWARD_QUERY.
+	forwardQuery: RETENTION_COLUMN_FORWARD_QUERY,
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", TRACE_BUCKET_EXPR, "TraceId", "SpanId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -433,11 +462,13 @@ export const serviceMapChildren = defineDatasource("service_map_children", {
 		StatusCode: t.string().lowCardinality(),
 		TraceState: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
+	// One-shot, see RETENTION_COLUMN_FORWARD_QUERY.
+	forwardQuery: RETENTION_COLUMN_FORWARD_QUERY,
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", TRACE_BUCKET_EXPR, "TraceId", "ParentSpanId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -563,6 +594,7 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 		// of the window.
 		DurationQuantiles: t.aggregateFunction("quantilesTDigestWeighted(0.5, 0.95), UInt64", t.uint32()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		// DbNamespace is a grouping dimension, so it must live in the sorting key —
@@ -610,6 +642,7 @@ export const serviceMapDbEdgesMinutely = defineDatasource("service_map_db_edges_
 		// whose earlier spans went into `traces` before the view existed.
 		FirstInsertedAt: t.simpleAggregateFunction("min", utcDateTime()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Minute)",
 		sortingKey: ["OrgId", "Minute", "DeploymentEnv", "ServiceName", "DbSystem", "DbNamespace"],
@@ -667,6 +700,7 @@ export const serviceMapDbQuerySignaturesHourly = defineDatasource("service_map_d
 		DurationQuantiles: t.aggregateFunction("quantilesTDigestWeighted(0.5, 0.95), UInt64", t.uint32()),
 		DbNamespace: t.string().lowCardinality(),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		// DbNamespace sits before QueryKey: the detail panel filters by
@@ -721,6 +755,7 @@ export const serviceExternalEdgesHourly = defineDatasource("service_external_edg
 		// state, same reason, same migration.
 		DurationQuantiles: t.aggregateFunction("quantilesTDigestWeighted(0.5, 0.95), UInt64", t.uint32()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: [
@@ -826,6 +861,7 @@ export const servicePlatformsHourly = defineDatasource("service_platforms_hourly
 		ConsumerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 		RootSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: ["OrgId", "Hour", "ServiceName", "DeploymentEnv"],
@@ -861,11 +897,13 @@ export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
 		// '' / 0 on rows materialized before migration 0037.
 		SpanKind: t.string().lowCardinality().default(""),
 		IsRoot: t.uint8().default(0),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
+	// One-shot, see RETENTION_COLUMN_FORWARD_QUERY.
+	forwardQuery: RETENTION_COLUMN_FORWARD_QUERY,
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "ServiceName", "Timestamp"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 	indexes: [
 		{
@@ -933,6 +971,7 @@ export const serviceOverviewHourly = defineDatasource("service_overview_hourly",
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
 		...sloLatencyLadderColumns,
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Hour)",
 		sortingKey: ["OrgId", "ServiceName", "Hour", "DeploymentEnv", "ServiceNamespace", "CommitSha"],
@@ -984,6 +1023,7 @@ export const serviceOverviewMinutely = defineDatasource("service_overview_minute
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
 		...sloLatencyLadderColumns,
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		// Daily parts, not monthly: at minute grain a month-wide part is far too
 		// coarse to prune a 12h window. Matches `service_operations_minutely`.
@@ -1036,6 +1076,7 @@ export const errorEvents = defineDatasource("error_events", {
 		// The end user (`user.id`, else `enduser.id`), '' when the span named none. Not hashed.
 		UserId: t.string().default(""),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "FingerprintHash", "Timestamp"],
@@ -1087,6 +1128,7 @@ export const errorEventsByTime = defineDatasource("error_events_by_time", {
 		// The end user (`user.id`, else `enduser.id`), '' when the span named none. Not hashed.
 		UserId: t.string().default(""),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "FingerprintHash"],
@@ -1137,6 +1179,7 @@ export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_mi
 		// like a regression and reopen the issue.
 		ServiceVersions: t.simpleAggregateFunction("groupUniqArrayArray", t.array(t.string())),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Minute)",
 		sortingKey: ["OrgId", "Minute", "FingerprintHash"],
@@ -1163,6 +1206,7 @@ export const errorFingerprintLineage = defineDatasource("error_fingerprint_linea
 		FingerprintHash: t.uint64(),
 		PreviousFingerprintHash: t.uint64(),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	// Each (hash, previous hash) pair is its own key, so a bump that folds two old issues
 	// into one hash keeps both; repeats of a pair merge away.
 	engine: engine.aggregatingMergeTree({
@@ -1202,11 +1246,13 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 		HasError: t.uint8(),
 		TraceState: t.string(),
 		ServiceNamespace: t.string().lowCardinality(),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
+	// One-shot, see RETENTION_COLUMN_FORWARD_QUERY.
+	forwardQuery: RETENTION_COLUMN_FORWARD_QUERY,
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 	indexes: [
 		{
@@ -1246,6 +1292,7 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 		DurationMax: t.simpleAggregateFunction("max", t.uint64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95)", t.uint64()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: [
@@ -1283,11 +1330,13 @@ export const traceIndex = defineDatasource("trace_index", {
 		Bucket: utcDateTime(),
 		MinTimestamp: t.simpleAggregateFunction("min", utcDateTime64(9)),
 		MaxTimestamp: t.simpleAggregateFunction("max", utcDateTime64(9)),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
+	// One-shot, see RETENTION_COLUMN_FORWARD_QUERY.
+	forwardQuery: RETENTION_COLUMN_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
-		partitionKey: "toDate(Bucket)",
+		...rowRetentionStorage("Bucket"),
 		sortingKey: ["OrgId", "TraceId", "ServiceName", "Bucket"],
-		ttl: `toDate(Bucket) + INTERVAL ${TRACES_TTL_DAYS} DAY`,
 	}),
 })
 
@@ -1393,11 +1442,13 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		ToolDescription: t.string(),
 		FailedToolCallResult: t.string(),
 		ErrorFingerprint: t.uint64(),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
+	// One-shot, see RETENTION_COLUMN_FORWARD_QUERY.
+	forwardQuery: RETENTION_COLUMN_FORWARD_QUERY,
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -1447,6 +1498,7 @@ export const aiEvaluations = defineDatasource("ai_evaluations", {
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	// A session page reads its scores by trace: `TraceId` is not in the sorting key.
 	indexes: [
 		{
@@ -1484,11 +1536,13 @@ export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
 		Host: t.string().lowCardinality(),
 		Path: t.string(),
 		HttpStatus: t.uint16(),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
+	// One-shot, see RETENTION_COLUMN_FORWARD_QUERY.
+	forwardQuery: RETENTION_COLUMN_FORWARD_QUERY,
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -1516,11 +1570,13 @@ export const scannerRequests = defineDatasource("scanner_requests", {
 		HttpStatus: t.uint16(),
 		ClientAddress: t.string(),
 		UserAgent: t.string(),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
+	// One-shot, see RETENTION_COLUMN_FORWARD_QUERY.
+	forwardQuery: RETENTION_COLUMN_FORWARD_QUERY,
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -1548,6 +1604,7 @@ export const serviceRuntimesHourly = defineDatasource("service_runtimes_hourly",
 		SdkVersion: t.string().lowCardinality(),
 		SpanCount: t.uint64(),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.summingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: [
@@ -1614,6 +1671,7 @@ export const userActivityHourly = defineDatasource("user_activity_hourly", {
 		UserNameAt: t.simpleAggregateFunction("max", t.uint32()).default(0),
 		UserEmailAt: t.simpleAggregateFunction("max", t.uint32()).default(0),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: ["OrgId", "ServiceNamespace", "UserId", "Hour", "ServiceName"],
@@ -1645,6 +1703,7 @@ export const userActivityDaily = defineDatasource("user_activity_daily", {
 		ErrorLogCount: t.simpleAggregateFunction("sum", t.uint64()),
 		SessionIds: t.aggregateFunction("uniqIf", t.string(), t.uint8()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Day)",
 		sortingKey: ["OrgId", "ServiceNamespace", "UserId", "Day", "ServiceName"],
@@ -1687,6 +1746,7 @@ export const ciRuns = defineDatasource("ci_runs", {
 		PullRequest: t.uint32(),
 		WorkflowPath: t.string().lowCardinality(),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.mergeTree({
 		partitionKey: "toYYYYMM(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
@@ -1725,6 +1785,7 @@ export const ciJobs = defineDatasource("ci_jobs", {
 		RunnerName: t.string().lowCardinality(),
 		RunnerLabels: t.string().lowCardinality(),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.mergeTree({
 		partitionKey: "toYYYYMM(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
@@ -1794,9 +1855,8 @@ export const metricsSum = defineDatasource("metrics_sum", {
 		RetentionDays: retentionDaysColumn("metrics"),
 	},
 	engine: engine.mergeTree({
-		partitionKey: "toDate(TimeUnix)",
+		...rowRetentionStorage("TimeUnix"),
 		sortingKey: ["OrgId", "ServiceName", "MetricName", "Attributes", "toUnixTimestamp64Nano(TimeUnix)"],
-		ttl: "toDate(TimeUnix) + INTERVAL 90 DAY",
 	}),
 })
 
@@ -1858,9 +1918,8 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 		RetentionDays: retentionDaysColumn("metrics"),
 	},
 	engine: engine.mergeTree({
-		partitionKey: "toDate(TimeUnix)",
+		...rowRetentionStorage("TimeUnix"),
 		sortingKey: ["OrgId", "ServiceName", "MetricName", "Attributes", "toUnixTimestamp64Nano(TimeUnix)"],
-		ttl: "toDate(TimeUnix) + INTERVAL 90 DAY",
 	}),
 })
 
@@ -1934,9 +1993,8 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 		RetentionDays: retentionDaysColumn("metrics"),
 	},
 	engine: engine.mergeTree({
-		partitionKey: "toDate(TimeUnix)",
+		...rowRetentionStorage("TimeUnix"),
 		sortingKey: ["OrgId", "ServiceName", "MetricName", "Attributes", "toUnixTimestamp64Nano(TimeUnix)"],
-		ttl: "toDate(TimeUnix) + INTERVAL 90 DAY",
 	}),
 })
 
@@ -2014,9 +2072,8 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 		RetentionDays: retentionDaysColumn("metrics"),
 	},
 	engine: engine.mergeTree({
-		partitionKey: "toDate(TimeUnix)",
+		...rowRetentionStorage("TimeUnix"),
 		sortingKey: ["OrgId", "ServiceName", "MetricName", "Attributes", "toUnixTimestamp64Nano(TimeUnix)"],
-		ttl: "toDate(TimeUnix) + INTERVAL 90 DAY",
 	}),
 })
 
@@ -2048,6 +2105,7 @@ export const metricCatalog = defineDatasource("metric_catalog", {
 		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: ["OrgId", "MetricType", "ServiceName", "MetricName", "Hour"],
@@ -2083,6 +2141,7 @@ export const awsMetricsHourly = defineDatasource("aws_metrics_hourly", {
 		Peak: t.simpleAggregateFunction("max", t.float64()),
 		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: [
@@ -2386,6 +2445,7 @@ export const serviceOperationsMinutely = defineDatasource("service_operations_mi
 		RequestBodyBytes: t.simpleAggregateFunction("sum", t.uint64()),
 		RequestBodyCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Minute)",
 		sortingKey: ["OrgId", "ServiceName", "DeploymentEnv", "Minute", "SpanName"],
@@ -2451,6 +2511,7 @@ export const serviceOperationsHourly = defineDatasource("service_operations_hour
 		RequestBodyBytes: t.simpleAggregateFunction("sum", t.uint64()),
 		RequestBodyCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Hour)",
 		sortingKey: ["OrgId", "ServiceName", "DeploymentEnv", "Hour", "SpanName"],
@@ -2505,6 +2566,7 @@ export const serviceEndpointDetailsHourly = defineDatasource("service_endpoint_d
 		// -1 when the slowest request carried no body size: argMax skips a NULL argument.
 		SlowestBodySize: t.aggregateFunction("argMax", t.int64(), t.uint64()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Hour)",
 		sortingKey: [
@@ -2575,6 +2637,7 @@ export const tracesAggregatesHourly = defineDatasource("traces_aggregates_hourly
 		DurationMin: t.simpleAggregateFunction("min", t.uint64()),
 		DurationMax: t.simpleAggregateFunction("max", t.uint64()),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: [
@@ -2635,6 +2698,7 @@ export const spanMetricsCallsHourly = defineDatasource("span_metrics_calls_hourl
 		//   AggregateFunction(argMax, Float64, DateTime64(9))
 		LastValue: t.aggregateFunction("argMax, Float64", t.dateTime64(9)),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: [
@@ -2864,10 +2928,9 @@ export const sessionReplays = defineDatasource("session_replays", {
 		RetentionDays: retentionDaysColumn("sessions"),
 	},
 	engine: engine.replacingMergeTree({
-		partitionKey: "toDate(StartTime)",
+		...rowRetentionStorage("StartTime"),
 		sortingKey: ["OrgId", "SessionId"],
 		ver: "Version",
-		ttl: "toDate(StartTime) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -2914,9 +2977,8 @@ export const sessionReplayEvents = defineDatasource("session_replay_events", {
 		RetentionDays: retentionDaysColumn("sessions"),
 	},
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "SessionId", "ChunkSeq"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -2980,11 +3042,11 @@ export const sessionEvents = defineDatasource("session_events", {
 		UserId: column(t.string().default(""), { jsonPath: "$.user_id" }),
 		GroupId: column(t.string().default(""), { jsonPath: "$.group_id" }),
 		RetentionDays: retentionDaysColumn("sessions"),
+		EventsRetentionDays: eventsRetentionDaysColumn(),
 	},
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "SessionId", "Timestamp", "Seq"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 	indexes: [
 		{
@@ -3105,18 +3167,20 @@ export const productEvents = defineDatasource("product_events", {
 		TraceId: t.string().default(""),
 		/** The annotated span within {@link TraceId}. `''` on non-trace rows. */
 		SpanId: t.string().default(""),
-		// No `RetentionDays` yet: the two views that fill this table would have to select it, and
-		// a forward query makes any column change a copy. It arrives with the table's rebuild.
+		/**
+		 * The source's `events` period. Direct rows carry the gateway's stamp; the two views copy
+		 * `EventsRetentionDays` from their session_events or traces row, never its own stamp.
+		 */
+		RetentionDays: retentionDaysColumn("events"),
 	},
 	// REQUIRED: without it Tinybird REBUILDS this table from its 30-day sources,
 	// dropping history past 30 days and every `/v1/events` row at any age (they
-	// have no source). `SELECT *` since the TraceId/SpanId columns shipped: the
-	// one-shot that defaulted them would now wipe them on every copy.
-	forwardQuery: "SELECT *",
+	// have no source). Back to `SELECT *` once the RetentionDays deploy is live:
+	// left in, the next copy would reset every row to 365 days.
+	forwardQuery: `SELECT *, toUInt16(${DEFAULT_RETENTION_DAYS.events}) AS RetentionDays`,
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "Timestamp", "VisitorId", "SessionId", "Seq"],
-		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
 	}),
 	indexes: [
 		{
@@ -3237,6 +3301,7 @@ export const personProperties = defineDatasource("person_properties", {
 		UnsetAt: t.simpleAggregateFunction("max", utcDateTime64(9)),
 		LastSeen: t.simpleAggregateFunction("max", utcDateTime64(9)),
 	},
+	forwardQuery: RETENTION_REPARTITION_FORWARD_QUERY,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "tuple()",
 		sortingKey: ["OrgId", "Kind", "Key", "Id"],
@@ -3344,8 +3409,6 @@ export const costDaily = defineDatasource("cost_daily", {
 
 export type CostDailyRow = InferRow<typeof costDaily>
 
-export const PROFILES_TTL_DAYS = 14
-
 /**
  * Continuous profiling: one row per distinct stack per exported profile, the producer's samples of
  * that stack summed. Flattened at ingest from the pprof-shaped OTLP payload, so the dictionary
@@ -3407,9 +3470,8 @@ export const profiles = defineDatasource("profiles", {
 		{ name: "idx_trace_id", expr: "TraceId", type: "bloom_filter(0.01)", granularity: 1 },
 	],
 	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
+		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "ServiceName", "SampleType", "toStartOfHour(Timestamp)", "StackHash"],
-		ttl: `toDate(Timestamp) + INTERVAL ${PROFILES_TTL_DAYS} DAY`,
 	}),
 })
 

@@ -46,6 +46,30 @@ const ERROR_RETENTION = {
 	targetRetentionDays: 90,
 } as const
 
+/** v67 -> v68: the span projections that copy their span's RetentionDays, and the views that fill them and product_events. */
+const RETENTION_STORAGE_SPAN_PROJECTIONS = [
+	"service_map_spans",
+	"service_map_children",
+	"service_overview_spans",
+	"trace_list_mv",
+	"trace_index",
+	"ai_trace_index",
+	"ai_crawler_requests",
+	"scanner_requests",
+] as const
+const RETENTION_STORAGE_VIEWS = [
+	"service_map_spans_mv",
+	"service_map_children_mv",
+	"service_overview_spans_mv",
+	"trace_list_mv_mv",
+	"trace_index_mv",
+	"ai_trace_index_mv",
+	"ai_crawler_requests_mv",
+	"scanner_requests_mv",
+	"product_events_mv",
+	"product_events_traces_mv",
+] as const
+
 const TRACES_UNDER_REPLACED_VIEWS: StateDispositionEntry = {
 	name: "traces",
 	classification: "authoritative",
@@ -2322,6 +2346,51 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				disposition: "preserve-exact",
 				guarantee:
 					"One column is added as a metadata-only default; no part is rewritten and the row counts are verified unchanged. No TTL changes: a store with a raised retention floor still keeps its rows for the floor, which the TTL holds, while the column reads the bundled default.",
+			},
+		],
+	},
+	{
+		// Metadata-only: a local store never stamps these columns, so every row reads its default
+		// and each table keeps one period under its unchanged TTL. The views are recreated by the
+		// bootstrap; nothing is backfilled.
+		slug: "retention-storage",
+		description:
+			"Add RetentionDays to the span projections and product_events, EventsRetentionDays to traces and session_events, and recreate their views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			...Arr.map(RETENTION_STORAGE_SPAN_PROJECTIONS, (table) =>
+				addColumns(table, [["RetentionDays", "UInt16 DEFAULT 30"]]),
+			),
+			addColumns("product_events", [["RetentionDays", "UInt16 DEFAULT 365"]]),
+			addColumns("traces", [["EventsRetentionDays", "UInt16 DEFAULT 365"]]),
+			addColumns("session_events", [["EventsRetentionDays", "UInt16 DEFAULT 365"]]),
+			dropViews(...RETENTION_STORAGE_VIEWS),
+		],
+		plan: [
+			[
+				"add-retention-storage-columns",
+				"Add RetentionDays to eight span projections and product_events, and EventsRetentionDays to traces and session_events",
+			],
+			[
+				"recreate-retention-storage-views",
+				"Recreate the ten views that fill them so new rows carry the columns",
+			],
+		],
+		verifies: "Verify the v68 physical schema and retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "traces and session_events",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"One column is added as a metadata-only default; no part is rewritten and the row counts are verified unchanged.",
+			},
+			{
+				name: "span projections and product_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"One column is added as a metadata-only default and every existing row keeps its TTL; only the view definitions change.",
 			},
 		],
 	},

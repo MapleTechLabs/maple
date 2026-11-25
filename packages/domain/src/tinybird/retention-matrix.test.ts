@@ -93,8 +93,30 @@ const RETENTION_DAYS = {
 
 const ZERO_RETENTION_DATASOURCES = ["service_map_edges_hourly_ingest"] as const
 
+/** One row per span or trace, fed from `traces`: they keep what the span keeps. Rollups keep their own periods. */
+const SPAN_PROJECTIONS = [
+	"ai_crawler_requests",
+	"ai_trace_index",
+	"scanner_requests",
+	"service_map_children",
+	"service_map_spans",
+	"service_overview_spans",
+	"trace_index",
+	"trace_list_mv",
+] as const
+
+/** Days a datasource keeps a row: its fixed TTL, or for a row-level TTL the period an unstamped row gets. */
+const keptDays = (content: string): number | undefined => {
+	const fixed = /ENGINE_TTL "[^"]+ \+ INTERVAL (\d+) DAY"/.exec(content)
+	const perRow = /ENGINE_TTL "[^"]+ \+ toIntervalDay\(RetentionDays\)"/.test(content)
+		? /\bRetentionDays UInt16 [^\n]*DEFAULT (\d+)/.exec(content)
+		: null
+	const days = fixed?.[1] ?? perRow?.[1]
+	return days === undefined ? undefined : Number(days)
+}
+
 describe("Tinybird retention matrix", () => {
-	it("assigns every stored datasource to the intended 30/90/365-day tier", () => {
+	it("assigns every stored datasource to the intended tier, a raw row its default period", () => {
 		const actualNames = Arr.map(tinybirdProjectManifest.datasources, ({ name }) => name).sort()
 		expect(actualNames).toEqual([...Rec.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
 
@@ -103,9 +125,27 @@ describe("Tinybird retention matrix", () => {
 				Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === name),
 			)
 			expect(datasource, name).toBeDefined()
-			expect(datasource!.content, datasource!.name).toMatch(
-				new RegExp(`ENGINE_TTL "[^"]+ \\+ INTERVAL ${expectedDays} DAY"`),
-			)
+			expect(keptDays(datasource!.content), datasource!.name).toBe(expectedDays)
+		}
+	})
+
+	it("expires a row-level projection of traces with its span, at the span's own period", () => {
+		for (const name of SPAN_PROJECTIONS) {
+			const content = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === name),
+			)?.content
+			expect(content, name).toMatch(/ENGINE_PARTITION_KEY "\(RetentionDays, toDate\(\w+\)\)"/)
+			expect(content, name).toMatch(/ENGINE_TTL "toDate\(\w+\) \+ toIntervalDay\(RetentionDays\)"/)
+			expect(content, name).toContain(`ENGINE_SETTINGS "ttl_only_drop_parts=1"`)
+		}
+		const fedByTraces = Arr.filter(tinybirdProjectManifest.pipes, (pipe) =>
+			Arr.some(SPAN_PROJECTIONS, (name) =>
+				new RegExp(`\\nDATASOURCE ${name}(\\n|$)`).test(pipe.content),
+			),
+		)
+		expect(fedByTraces).toHaveLength(SPAN_PROJECTIONS.length)
+		for (const pipe of fedByTraces) {
+			expect(pipe.content, pipe.name).toMatch(/\bRetentionDays\n\s+FROM traces\b/)
 		}
 	})
 
