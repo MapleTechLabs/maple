@@ -68,7 +68,7 @@ describe("retention tab", () => {
 			given(edited),
 			expectView(
 				text(
-					"Logs received from now on are kept for 1 week. Logs already stored keep the period they arrived under.",
+					"Logs arriving from a minute after you save are kept for 1 week. Logs already stored keep the period they arrived under.",
 				),
 			).toExist(),
 		)
@@ -80,7 +80,9 @@ describe("retention tab", () => {
 			{ update, view: withViewInputs(view, inputs)() },
 			given(edited),
 			expectView(
-				text("Applies to spans received from now on. 90 days of history is there by Feb 23, 2027."),
+				text(
+					"Applies to spans arriving from a minute after you save. 90 days of history is there by Feb 23, 2027.",
+				),
 			).toExist(),
 		)
 	})

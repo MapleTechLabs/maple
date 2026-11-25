@@ -158,7 +158,9 @@ describe("source retention", () => {
 			given(edited),
 			resolveTheme,
 			expectView(
-				text("Applies to spans received from now on. 30 days of history is there by Dec 25."),
+				text(
+					"Applies to spans arriving from a minute after you save. 30 days of history is there by Dec 25.",
+				),
 			).toExist(),
 		)
 	})
@@ -171,7 +173,7 @@ describe("source retention", () => {
 			resolveTheme,
 			expectView(
 				text(
-					"Logs received from now on are kept for 2 weeks. Logs already stored keep the period they arrived under.",
+					"Logs arriving from a minute after you save are kept for 2 weeks. Logs already stored keep the period they arrived under.",
 				),
 			).toExist(),
 		)

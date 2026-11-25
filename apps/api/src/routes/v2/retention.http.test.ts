@@ -26,9 +26,12 @@ import { HttpV2RetentionLive } from "./retention.http"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const testConfig = () =>
+const testConfig = (clickhouseUrl?: string) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
+			...(clickhouseUrl === undefined
+				? {}
+				: { CLICKHOUSE_URL: clickhouseUrl, CLICKHOUSE_PROVIDER: "clickhouse" }),
 			PORT: "3482",
 			MCP_PORT: "3483",
 			TINYBIRD_HOST: "https://api.tinybird.co",
@@ -62,7 +65,7 @@ const warehouseOf = (ownWarehouse: boolean) =>
 			),
 	})
 
-const makeHarness = (ownWarehouse = false) => {
+const makeHarness = (ownWarehouse = false, clickhouseUrl?: string) => {
 	const testDb = createTestDb(createdDbs)
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -70,7 +73,11 @@ const makeHarness = (ownWarehouse = false) => {
 		RetentionService.layer.pipe(
 			Layer.provide(Layer.mergeAll(testEdgeCache(testDb), TestReadHorizonMemoLive)),
 		),
-	).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer.pipe(Layer.provide(testConfig())), testDb.layer)))
+	).pipe(
+		Layer.provideMerge(
+			Layer.mergeAll(Env.layer.pipe(Layer.provide(testConfig(clickhouseUrl))), testDb.layer),
+		),
+	)
 
 	// The audit actions the routes record, in order.
 	const recorded: Array<string> = []
@@ -215,6 +222,15 @@ describe("v2 retention", () => {
 		const refused = await harness.request("PATCH", "/v2/retention", token, { logs: 90 })
 		expect(refused.status).toBe(400)
 		expect(harness.auditActions()).toEqual([])
+		await harness.dispose()
+	})
+
+	it("a deployment on its own ClickHouse cannot set Maple's periods either", async () => {
+		const harness = makeHarness(false, "https://clickhouse.internal:8443")
+		const token = await harness.key()
+		const read = await harness.request("GET", "/v2/retention", token)
+		expect(read.body.storage).toBe("own_warehouse")
+		expect((await harness.request("PATCH", "/v2/retention", token, { logs: 90 })).status).toBe(400)
 		await harness.dispose()
 	})
 })

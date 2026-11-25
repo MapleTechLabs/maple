@@ -150,7 +150,7 @@ const persistence = publicError(RetentionPersistenceError)
 const invalid = publicError(RetentionInvalidError)
 
 const WRITE_NOTE =
-	"Data keeps the period in force when it arrived. Reads reach as far back as the longest period any source keeps, so a shorter period hides older data only when nothing keeps it longer; a longer one applies to data received from now on. Requires the `retention:write` scope and the Manage retention permission."
+	"Data keeps the period in force when it arrived. Reads reach as far back as the longest period any source keeps, so a shorter period hides older data only when nothing keeps it longer; a longer one applies to data received from about a minute after the change, once the ingest gateway reads the new policy. Requires the `retention:write` scope and the Manage retention permission."
 
 export class V2RetentionApiGroup extends HttpApiGroup.make("retention")
 	.add(
