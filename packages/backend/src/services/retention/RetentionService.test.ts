@@ -369,16 +369,37 @@ describe("RetentionService.readHorizon", () => {
 		),
 	)
 
+	it.effect("after a write whose read-back fails, the next read loads the committed period", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				// The isolate holds a fresh copy from before the write.
+				yield* retention.readHorizon(ORG)
+				const commit = database.calls + 1
+				database.afterCall = (call) =>
+					Effect.sync(() => {
+						if (call === commit) database.down = true
+					})
+				yield* retention.setOrganization(ORG, ANA, { traces: 7 })
+				database.down = false
+				assert.strictEqual((yield* retention.readHorizon(ORG)).days.traces, 7)
+			}),
+		),
+	)
+
 	it.effect("a write answers with what it committed when its read-back hangs", () =>
 		withSwitchableDb((database) =>
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
-				const commit = database.calls + 1
+				// The read-back gets its answer and never hands it over.
+				const hanging = yield* Deferred.make<void>()
+				const readBack = database.calls + 2
 				database.afterCall = (call) =>
-					Effect.sync(() => {
-						if (call === commit) database.stalled = true
-					})
+					call === readBack
+						? Effect.andThen(Deferred.succeed(hanging, undefined), Effect.never)
+						: Effect.void
 				const write = yield* Effect.forkChild(retention.setOrganization(ORG, ANA, { traces: 7 }))
+				yield* Deferred.await(hanging)
 				yield* TestClock.adjust(READ_HORIZON_LOAD_TIMEOUT_MS)
 				assert.strictEqual((yield* Fiber.join(write)).days.traces, 7)
 			}),
