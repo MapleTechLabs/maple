@@ -161,7 +161,7 @@ window [AND SpanId = ?] GROUP BY Frames` → the client folds the (frames[], val
 - **spanOverlap**: the time-window fallback for the span tab: same service instance
   (`ResourceAttributes['service.instance.id']`) and `Timestamp BETWEEN span.start AND span.end`.
 
-Retention: 7 d raw / 30 d rollup by default, with `profiles` as a signal in
+Retention: 14 d raw / 30 d rollup by default, with `profiles` as a signal in
 `packages/domain/src/retention.ts` so per-org and per-source periods apply.
 
 Sizing sanity: the eBPF agent samples at ~20 Hz/core and pre-aggregates per stack before

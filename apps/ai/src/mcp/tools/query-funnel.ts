@@ -30,6 +30,7 @@ import { PROPERTY_FILTER_FIELDS, propertyFilterArgs, propertyFiltersOf } from ".
 import { doc } from "../lib/tool-doc"
 import { orFallback } from "../lib/fallback"
 import { identityNoteFor, isBlankStep, sessionRetentionNote } from "../lib/product-identity"
+import { readHorizonDays } from "../lib/read-horizon"
 
 const TOOL = "query_funnel"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
@@ -317,7 +318,8 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 									}
 						})
 
-			// Sessions are kept 30 days, so anything read off them is blind to the part before that.
+			// Sessions are kept for the org's own period (30 days unless it set one), so anything
+			// read off them is blind to the part before that.
 			const readsSessions =
 				Arr.some(steps, (step) => step.kind === "session") ||
 				(breakdownBy !== undefined &&
@@ -327,7 +329,13 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					breakdownBy !== "host") ||
 				Arr.some(Rec.values(filters), (value) => value !== undefined)
 			const nowMs = yield* Clock.currentTimeMillis
-			const sessionNote = sessionRetentionNote({ startTime: st, endTime: et }, nowMs, readsSessions)
+			const sessionsKeptDays = yield* readHorizonDays("sessions")
+			const sessionNote = sessionRetentionNote(
+				{ startTime: st, endTime: et },
+				nowMs,
+				readsSessions,
+				sessionsKeptDays,
+			)
 			// Asked for and not read: say so, or the missing section reads as "nothing to report".
 			const detailsNote =
 				wantsDetails && details === undefined

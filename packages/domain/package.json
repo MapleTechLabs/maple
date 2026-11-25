@@ -108,6 +108,7 @@
 		"./tinybird/span-display-name": "./src/tinybird/span-display-name.ts",
 		"./clickhouse": "./src/clickhouse/index.ts",
 		"./generated/clickhouse-schema": "./src/generated/clickhouse-schema.ts",
+		"./generated/tinybird-project-manifest": "./src/generated/tinybird-project-manifest.ts",
 		"./where-clause": "./src/where-clause.ts",
 		"./http/warehouse-errors": "./src/http/warehouse-errors.ts",
 		"./chat-annotations": "./src/chat-annotations.ts",
