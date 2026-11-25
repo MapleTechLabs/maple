@@ -68,6 +68,7 @@ import {
 	flaggedRouteRedirect,
 	hrefOf,
 	isPublicRoute,
+	scopedRoleRedirect,
 	type Redirect,
 	routeRedirect,
 	securityRouteRedirect,
@@ -774,14 +775,18 @@ const flagRedirectOf = (model: Model): Option.Option<Redirect> =>
 		: Option.none()
 
 /**
- * A Security route opened by someone whose role lacks `security:manage` (a member). Waits for
- * Clerk's membership read, so an admin is never bounced while it loads; the API refuses either way.
+ * A page the viewer's role cannot read: anything but the telemetry pages for a role limited to
+ * namespaces, a Security route for one that lacks `security:manage` (a member). Waits for Clerk's
+ * membership read, so an admin is never bounced while it loads; the API refuses either way.
  */
 const roleRedirectOf = (model: Model): Option.Option<Redirect> =>
 	isClerkAuthEnabled
 		? Option.flatMap(
 				Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeGrants),
-				(grants) => securityRouteRedirect(model.route, Policy.can(grants, "security:manage")),
+				(grants) =>
+					Option.orElse(scopedRoleRedirect(model.route, Policy.isScoped(grants)), () =>
+						securityRouteRedirect(model.route, Policy.can(grants, "security:manage")),
+					),
 			)
 		: Option.none()
 

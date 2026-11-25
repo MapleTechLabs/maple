@@ -68,7 +68,9 @@ characters each, made of letters, digits, spaces and `. _ : / @ + -`.
 ## Known limits
 
 - A role limited to namespaces reaches only the endpoints marked `ScopedTelemetry`: the trace list
-  and trace detail, logs, metric charts and the services overview. Rollups that only name a
+  and trace detail, logs, metric series and the services overview. In the dashboard that is
+  Services (the Overview tab of a service), Traces and Logs; the Metrics page stays closed, since
+  its list reads a catalog with no namespace. Rollups that only name a
   service stay closed to it until they carry a namespace column: errors, the metric list,
   per-operation and per-endpoint service pages, usage, attribute autocomplete. So do alerts,
   incidents, investigations, dashboards, the service map, session replays, product analytics, raw
@@ -79,6 +81,8 @@ characters each, made of letters, digits, spaces and `. _ : / @ + -`.
   a minute, a cached membership up to five) pins the grants held before it. Limiting someone's role
   retires what they held then, not a key they mint in that window.
 - Telemetry sent without a `service.namespace` belongs to no namespace: no limited role reads it.
+- A limited member still opens Settings and reads what every member reads there: the member list,
+  the role list (namespaces included) and the org's billing usage totals.
 - The trace list pages by root span, so a trace that starts in another namespace is not listed for
   a limited role, even when some of its spans are in the role's namespaces. Opened by id, it shows
   those spans.

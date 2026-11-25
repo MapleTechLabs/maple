@@ -260,3 +260,35 @@ const isSecurityRoute = AppRoute.isAnyOf([
 /** The Security Center needs `security:manage`: anyone else opening it goes home. */
 export const securityRouteRedirect = (route: AppRoute, canReadSecurity: boolean): Option.Option<Redirect> =>
 	!canReadSecurity && isSecurityRoute(route) ? redirect(AppRoute.Home({ search: {} }), true) : Option.none()
+
+// What a role limited to namespaces can open: the telemetry pages whose reads the API keeps to
+// its namespaces, the account, sign-in and plan pages every member has, and the status pages a
+// role may post to. The API refuses the rest.
+const isScopedRoleRoute = AppRoute.isAnyOf([
+	"Services",
+	"Service",
+	"Traces",
+	"Trace",
+	"Logs",
+	"Log",
+	"Account",
+	"Settings",
+	"RoleEditor",
+	"StatusPages",
+	"StatusPage",
+	"StatusPageView",
+	"CliLogin",
+	"McpAuthorize",
+	"QuickStart",
+	"SelectPlan",
+	"SignIn",
+	"SignUp",
+	"OrgRequired",
+	"Unsubscribe",
+	"Share",
+	"NotFound",
+])
+
+/** A role limited to namespaces opening a page it cannot read goes to Services, its first page. */
+export const scopedRoleRedirect = (route: AppRoute, isScoped: boolean): Option.Option<Redirect> =>
+	isScoped && !isScopedRoleRoute(route) ? redirect(AppRoute.Services({ search: {} }), true) : Option.none()

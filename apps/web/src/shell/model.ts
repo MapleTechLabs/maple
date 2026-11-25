@@ -138,9 +138,15 @@ export type ShellClerk = Readonly<{
 const isReadOnly = (grants: Policy.Grants): boolean =>
 	Arr.every(grants, (permission) => Policy.permissions[permission].group === "read")
 
-/** Who the shell is drawn for; self-hosted has no Clerk membership, so it is never an analyst. */
-export const shellAudience = (clerk: ShellClerk | null): NavAudience =>
-	clerk !== null && Option.exists(clerk.maybeGrants, isReadOnly) ? "analyst" : "operator"
+/**
+ * Who the shell is drawn for; self-hosted has no Clerk membership, so it is always an operator. A
+ * role limited to namespaces is asked first: it holds only read permissions too, but not an analyst's.
+ */
+export const shellAudience = (clerk: ShellClerk | null): NavAudience => {
+	if (clerk === null) return "operator"
+	if (Option.exists(clerk.maybeGrants, Policy.isScoped)) return "scoped"
+	return Option.exists(clerk.maybeGrants, isReadOnly) ? "analyst" : "operator"
+}
 
 /** A rail item's tooltip: right of the item, centred. */
 export const initRailTooltip = (): Tooltip.Model =>

@@ -104,6 +104,23 @@ describe("navGroups for an analyst", () => {
 	})
 })
 
+describe("navGroups for a role limited to namespaces", () => {
+	const hrefs = (flags: NavFlags) =>
+		Arr.dedupe(
+			Arr.flatMap(navGroups(flags, "scoped"), (group) =>
+				Arr.flatMap(group.items, (item) => [
+					item.href,
+					...Arr.map(item.subItems ?? [], (sub) => sub.href),
+				]),
+			),
+		)
+
+	test("links to the telemetry pages its reads are kept to its namespaces on, and nothing else", () => {
+		expect(hrefs(OFF)).toEqual(["/services", "/traces", "/logs"])
+		expect(hrefs({ cloudSecurity: true, securityAudit: true })).toEqual(hrefs(OFF))
+	})
+})
+
 describe("navGroups", () => {
 	const titles = (flags: NavFlags) =>
 		Arr.flatMap(navGroups(flags), (group) => Arr.map(group.items, (item) => item.title))

@@ -22,6 +22,7 @@ export const customRole = (input: {
 	readonly name: string
 	readonly description?: string
 	readonly permissions: ReadonlyArray<Policy.Permission>
+	readonly namespaces?: ReadonlyArray<string>
 	readonly memberCount?: number
 }): CustomRoleResponse =>
 	new CustomRoleResponse({
@@ -29,6 +30,7 @@ export const customRole = (input: {
 		name: input.name,
 		description: input.description ?? "",
 		permissions: input.permissions,
+		namespaces: input.namespaces ?? [],
 		memberCount: input.memberCount ?? 0,
 		createdAt: 0,
 		updatedAt: 0,
@@ -73,10 +75,13 @@ export const roleList = (custom: ReadonlyArray<CustomRoleResponse>): RoleListRes
 		customRoleLimit: Policy.MAX_CUSTOM_ROLES,
 		holders: {
 			...Rec.fromEntries(
-				Arr.map(Policy.builtInRoles, (role, index): readonly [string, ReadonlyArray<RoleMemberResponse>] => [
-					role.role,
-					holdersPreview(index * 2, BUILT_IN_COUNTS[role.clerkKey]),
-				]),
+				Arr.map(
+					Policy.builtInRoles,
+					(role, index): readonly [string, ReadonlyArray<RoleMemberResponse>] => [
+						role.role,
+						holdersPreview(index * 2, BUILT_IN_COUNTS[role.clerkKey]),
+					],
+				),
 			),
 			...Rec.fromEntries(
 				Arr.map(custom, (role): readonly [string, ReadonlyArray<RoleMemberResponse>] => [
@@ -102,6 +107,16 @@ export const STATUS_EDITOR = customRole({
 	name: "Status page editor",
 	description: "Reads telemetry and runs the status pages.",
 	permissions: ["telemetry:read", "status_pages:edit", "status_page_incidents:post"],
+})
+
+/** Checkout team: reads telemetry only from the checkout and payments namespaces, held by two people. */
+export const CHECKOUT_TEAM = customRole({
+	id: roleId("checkout"),
+	name: "Checkout team",
+	description: "Contractors on the checkout flow.",
+	permissions: [Policy.SCOPED_READ, "devices:connect"],
+	namespaces: ["checkout", "payments"],
+	memberCount: 2,
 })
 
 export const roleMembers = (

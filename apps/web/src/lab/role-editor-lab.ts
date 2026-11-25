@@ -10,15 +10,23 @@ import { Message as RoleMessage } from "../page/settings/role/message"
 import * as RoleModel from "../page/settings/role/model"
 import * as RoleUpdate from "../page/settings/role/update"
 import * as RoleView from "../page/settings/role/view"
-import { ON_CALL, roleList, roleMembers, STATUS_EDITOR } from "../page/settings/roles/test-roles"
+import {
+	CHECKOUT_TEAM,
+	ON_CALL,
+	roleList,
+	roleMembers,
+	STATUS_EDITOR,
+} from "../page/settings/roles/test-roles"
 import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"
 
 // `/lab/role-editor`: one role's editor over fixtures, seen by an admin. `?state=` picks a start: a
 // custom role with unsaved changes compared with Member (`custom`), the built-in Engineer role
-// read-only (`built-in`), or a custom role nobody holds on its Members tab (`members-empty`).
+// read-only (`built-in`), a custom role nobody holds on its Members tab (`members-empty`), a role
+// limited to two namespaces (`limited`), or a custom role whose limit was just turned on, with no
+// namespace chosen yet (`limiting`).
 
-export const LabState = Schema.Literals(["custom", "built-in", "members-empty"])
+export const LabState = Schema.Literals(["custom", "built-in", "members-empty", "limited", "limiting"])
 export type LabState = typeof LabState.Type
 
 export const Flags = Schema.Struct({ state: LabState })
@@ -46,6 +54,8 @@ const ROLE_KEYS = {
 	custom: ON_CALL.id,
 	"built-in": "engineer",
 	"members-empty": STATUS_EDITOR.id,
+	limited: CHECKOUT_TEAM.id,
+	limiting: ON_CALL.id,
 } as const satisfies {
 	readonly [State in LabState]: string
 }
@@ -72,11 +82,17 @@ export const init = (flags: Flags): Return => {
 	const loaded = Arr.reduce(
 		[
 			RoleMessage.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:admin"]) }),
-			RoleMessage.CompletedFetchRoles({ result: Result.succeed(roleList([ON_CALL, STATUS_EDITOR])) }),
+			RoleMessage.CompletedFetchRoles({
+				result: Result.succeed(roleList([CHECKOUT_TEAM, ON_CALL, STATUS_EDITOR])),
+			}),
+			RoleMessage.CompletedFetchNamespaces({
+				result: Result.succeed(["checkout", "payments", "platform", "search"]),
+			}),
 			RoleMessage.CompletedFetchMembers({
 				result: Result.succeed(flags.state === "members-empty" ? roleMembers([]) : HOLDERS),
 			}),
 			...(flags.state === "custom" ? EDITS : []),
+			...(flags.state === "limiting" ? [RoleMessage.ToggledLimit()] : []),
 		],
 		fresh,
 		step,

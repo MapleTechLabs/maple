@@ -8,7 +8,13 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { dashboardPage } from "../page/kit/dashboard-page"
 import * as CreateDialog from "../page/settings/roles/create-dialog"
 import * as RolesModel from "../page/settings/roles/model"
-import { ON_CALL, roleList, roleMembers, STATUS_EDITOR } from "../page/settings/roles/test-roles"
+import {
+	CHECKOUT_TEAM,
+	ON_CALL,
+	roleList,
+	roleMembers,
+	STATUS_EDITOR,
+} from "../page/settings/roles/test-roles"
 import * as RolesUpdate from "../page/settings/roles/update"
 import * as RolesView from "../page/settings/roles/view"
 import type { Resources } from "../platform/resources"
@@ -39,7 +45,7 @@ export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
 
-const LIST = roleList([ON_CALL, STATUS_EDITOR])
+const LIST = roleList([CHECKOUT_TEAM, ON_CALL, STATUS_EDITOR])
 
 const opened = (dialog: Dialog.Model): Dialog.Model => Dialog.init(dialog.id, dialog.kind, { isOpen: true })
 

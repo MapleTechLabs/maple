@@ -7,7 +7,7 @@ import { meter } from "@maple/views/ui/meter"
 import { personLabel } from "@maple/views/ui/person-avatar"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { PERMISSION_TOTAL, permissionCountLabel } from "./roles"
+import { hasNamespaceLimit, PERMISSION_TOTAL, permissionCountLabel, type RoleEntry } from "./roles"
 
 // Pieces the Roles tab, the role editor and the create dialog draw the same way.
 
@@ -16,6 +16,19 @@ export const roleTypeBadge = <M>(h: HtmlBuilder<M>, isBuiltIn: boolean): Html =>
 	isBuiltIn
 		? badge(h, { variant: "meta", size: "sm" }, [icon(h, "LockIcon"), "Built-in"])
 		: badge(h, { variant: "meta", size: "sm" }, ["Custom"])
+
+/** "2 namespaces" on a role that reads only the namespaces it names; nothing on any other. */
+export const namespaceLimitBadge = <M>(
+	h: HtmlBuilder<M>,
+	role: Pick<RoleEntry, "namespaces">,
+): ReadonlyArray<Html> =>
+	hasNamespaceLimit(role)
+		? [
+				badge(h, { variant: "meta", size: "sm" }, [
+					`${role.namespaces.length} ${role.namespaces.length === 1 ? "namespace" : "namespaces"}`,
+				]),
+			]
+		: []
 
 /** "All 49" or "16 of 49" over a thin meter, the same tone for every role. */
 export const permissionMeter = <M>(h: HtmlBuilder<M>, count: number): Html =>

@@ -68,7 +68,22 @@ const signedIn = (role: string | null): Model => ({
 
 const audienceOf = (model: Model) => Option.getOrThrow(pageContextOf(model)).audience
 
+/** Signed in on a custom role: Clerk's `org:custom`, with the grants its membership carries. */
+const signedInWith = (grants: Policy.Grants): Model => {
+	const model = signedIn(Policy.CUSTOM_ROLE_CLERK_KEY)
+	return {
+		...model,
+		clerkSnapshot: { ...snapshotOf(Policy.CUSTOM_ROLE_CLERK_KEY), maybeGrants: Option.some(grants) },
+	}
+}
+
 describe("page context audience", () => {
+	test("a role limited to namespaces is told so, though it holds only read permissions like an analyst", () => {
+		const model = signedInWith([Policy.SCOPED_READ, "devices:connect"])
+		expect(audienceOf(model)).toBe("scoped")
+		expect(Shell.shellAudience(shellClerkOf(model))).toBe("scoped")
+	})
+
 	test("an analyst's pages are told so, as their shell is", () => {
 		const model = signedIn("org:analyst")
 		expect(audienceOf(model)).toBe("analyst")

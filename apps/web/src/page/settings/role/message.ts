@@ -3,6 +3,7 @@ import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SessionGrants } from "../../kit/session-grants"
@@ -17,6 +18,9 @@ export const Message = defineMessageUnion({
 	ChangedName: { value: Schema.String },
 	ChangedDescription: { value: Schema.String },
 	ToggledPermission: { permission: Policy.PermissionName },
+	ToggledLimit: {},
+	GotNamespacesMessage: { message: Combobox.Message },
+	CompletedFetchNamespaces: { result: Schema.Result(Schema.Array(Schema.String), LoadFailure) },
 	ToggledGroup: { group: Schema.String },
 	ChangedFilter: { value: Schema.String },
 	ClearedFilter: {},

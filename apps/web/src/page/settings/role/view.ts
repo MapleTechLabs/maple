@@ -7,6 +7,7 @@ import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { collapsible } from "@maple/views/ui/collapsible"
+import { chipsView } from "@maple/views/ui/combobox-view"
 import { badge } from "@maple/views/ui/display"
 import {
 	empty,
@@ -18,9 +19,11 @@ import {
 	emptyTitle,
 } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
+import { field, fieldDescription, fieldError, fieldLabel, type FieldState } from "@maple/views/ui/field"
 import { grid } from "@maple/views/ui/grid"
 import { icon } from "@maple/views/ui/icon"
 import { label } from "@maple/views/ui/label"
+import { panel } from "@maple/views/ui/panel"
 import { dividedList } from "@maple/views/ui/rule"
 import { searchInput } from "@maple/views/ui/search-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
@@ -28,6 +31,7 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { saveBar } from "../../kit/save-bar"
+import { switchRow } from "../../kit/switch-row"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
@@ -40,19 +44,21 @@ import * as CreateDialog from "../roles/create-dialog"
 import {
 	findRole,
 	isSensitive,
+	isTickable,
 	isValidRoleDescription,
 	isValidRoleName,
 	memberCountLabel,
 	membersHref,
+	namespacesLabel,
 	type RoleEntry,
 	rolesHref,
 } from "../roles/roles"
 import { entriesOf } from "../roles/update"
-import { holderLabel, roleTextField, roleTypeBadge } from "../roles/view-parts"
+import { holderLabel, namespaceLimitBadge, roleTextField, roleTypeBadge } from "../roles/view-parts"
 import { Message } from "./message"
 import { canManageRoles } from "../roles/model"
 import type { Model, PermissionFilter } from "./model"
-import { isEditable, isValidDraft, requiredBy, roleOf, unsavedChanges } from "./update"
+import { isEditable, isValidDraft, namespaceChoices, requiredBy, roleOf, unsavedChanges } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -64,7 +70,10 @@ const titleBlock = (h: H, role: RoleEntry): Html =>
 		backLink(h),
 		detailTitle(h, {
 			title: [role.name],
-			adornment: roleTypeBadge(h, role.isBuiltIn),
+			adornment: hstack(h, { gap: "1.5" }, [
+				roleTypeBadge(h, role.isBuiltIn),
+				...namespaceLimitBadge(h, role),
+			]),
 			meta: [typography(h, { size: "xs", tone: "muted" }, [memberCountLabel(role.memberCount)])],
 		}),
 	])
@@ -89,7 +98,9 @@ const duplicateAction = (h: H, model: Model): Html =>
 
 /** The permissions a role's page lists: all of them for a built-in role, the grantable ones for a custom role. */
 const listable = (role: RoleEntry): ReadonlyArray<Policy.Permission> =>
-	role.isBuiltIn ? Policy.allPermissions : Arr.filter(Policy.allPermissions, Policy.grantableToCustomRoles)
+	Arr.filter(Policy.allPermissions, (permission) =>
+		role.isBuiltIn ? permission !== Policy.SCOPED_READ : isTickable(permission),
+	)
 
 const matchesFilter = (model: Model, permission: Policy.Permission): boolean => {
 	const query = Str.toLowerCase(Str.trim(model.filter))
@@ -180,11 +191,20 @@ const requiredNote = (needers: ReadonlyArray<Policy.Permission>): string => {
 	return rest.length === 0 ? `Required by ${first}` : `Required by ${first} and ${rest.length} more`
 }
 
+/** Why a limited role cannot hold `permission`, for the row's badge. */
+const limitNote = (permission: Policy.Permission): string =>
+	permission === "telemetry:read" ? "Replaced by the namespace limit" : "Needs every namespace"
+
+/** Whether the draft's namespace limit rules `permission` out. */
+const isRuledOut = (model: Model, permission: Policy.Permission): boolean =>
+	model.isLimited && !Policy.holdableWhenScoped(permission)
+
 /** The row's text: label, code and badges on one line, the description under it. */
 const permissionText = (
 	h: H,
 	permission: Policy.Permission,
 	needers: ReadonlyArray<Policy.Permission>,
+	isRuledOutByLimit = false,
 ): Html => {
 	const spec = Policy.permissions[permission]
 	return vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
@@ -196,6 +216,9 @@ const permissionText = (
 			...(needers.length === 0
 				? []
 				: [badge(h, { variant: "meta", size: "xs" }, [requiredNote(needers)])]),
+			...(isRuledOutByLimit
+				? [badge(h, { variant: "meta", size: "xs" }, [limitNote(permission)])]
+				: []),
 		]),
 		typography(h, { size: "xs", tone: "muted" }, [spec.description]),
 	])
@@ -224,7 +247,7 @@ const permissionRow = (
 			[h.Key(permission), h.Class(ROW)],
 			[
 				grantMark(h, isChecked),
-				permissionText(h, permission, []),
+				permissionText(h, permission, [], isRuledOut(model, permission)),
 				compareCell(h, model, permission, compared),
 			],
 		)
@@ -242,10 +265,10 @@ const permissionRow = (
 				toParentMessage: () => Message.ToggledPermission({ permission }),
 				id: `${inputId}-root`,
 				inputId,
-				isDisabled: needers.length > 0,
+				isDisabled: needers.length > 0 || isRuledOut(model, permission),
 				className: "mt-0.5",
 			}),
-			permissionText(h, permission, needers),
+			permissionText(h, permission, needers, isRuledOut(model, permission)),
 			compareCell(h, model, permission, compared),
 		],
 	)
@@ -308,6 +331,104 @@ const groupPanel = (
 	]
 }
 
+// Namespaces
+
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
+
+const NAMESPACE_IDS = {
+	control: "role-namespaces-input",
+	label: "role-namespaces-label",
+	error: "role-namespaces-error",
+	description: "role-namespaces-description",
+}
+
+const namespacePicker = (h: H, model: Model): Html => {
+	const isOverLimit = model.namespaces.length > Policy.MAX_ROLE_NAMESPACES
+	const state: FieldState = {
+		...IDLE,
+		isFilled: model.namespaces.length > 0,
+		isInvalid: model.namespaces.length === 0 || isOverLimit,
+	}
+	return field(h, { state }, [
+		fieldLabel(h, { ids: NAMESPACE_IDS, state }, "Namespaces"),
+		h.submodel({
+			slotId: "role-namespaces",
+			model: { ...model.namespacesBox, selected: model.namespaces },
+			view: chipsView,
+			toParentMessage: (message) => Message.GotNamespacesMessage({ message }),
+			viewInputs: {
+				items: namespaceChoices(model),
+				ariaLabelledBy: NAMESPACE_IDS.label,
+				ariaDescribedBy: NAMESPACE_IDS.description,
+				placeholder: model.namespaces.length === 0 ? "Choose or type a namespace…" : "Add namespace…",
+				emptyText: model.isNamespaceListFailed
+					? "Couldn't load the namespaces. Type one's exact name."
+					: "No namespaces reported in the last 7 days. Type one's exact name.",
+				toView: (parts) => h.div([h.Class("sm:max-w-md")], parts),
+			},
+		}),
+		...(state.isInvalid
+			? [
+					fieldError(
+						h,
+						{ ids: NAMESPACE_IDS, state },
+						isOverLimit
+							? `A role can name up to ${Policy.MAX_ROLE_NAMESPACES} namespaces.`
+							: "Choose at least one namespace.",
+					),
+				]
+			: []),
+		fieldDescription(
+			h,
+			{ ids: NAMESPACE_IDS, state },
+			"Matches the service.namespace resource attribute exactly. Telemetry sent without one is in no namespace, so this role does not read it.",
+		),
+	])
+}
+
+const LIMIT_DESCRIPTION =
+	"Members read traces, logs, metrics and services from the namespaces you choose, and nothing else. Pages that need every namespace, like alerts, dashboards and Maple AI, stay closed to them. A chat bot in Slack or Hazel still answers anyone in its channel."
+
+/** A custom role's namespace limit: a switch to edit, a sentence to read. Built-in roles read everything. */
+const namespaceSection = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> => {
+	if (role.isBuiltIn) return []
+	if (!isEditable(model))
+		return model.isLimited
+			? [
+					alert(h, { variant: "info", role: "status" }, [
+						icon(h, "LockIcon"),
+						alertTitle(h, [`Limited to ${namespacesLabel(model.namespaces)}`]),
+						alertDescription(h, [
+							"Members on this role read telemetry only from these namespaces.",
+						]),
+					]),
+				]
+			: []
+	return [
+		panel(h, {}, [
+			switchRow(
+				h,
+				{
+					id: "role-limit",
+					className: "p-4",
+					label: "Limit to namespaces",
+					description: LIMIT_DESCRIPTION,
+					isChecked: model.isLimited,
+					isDisabled: model.isSaving,
+					onToggle: Message.ToggledLimit(),
+				},
+				model.isLimited ? [namespacePicker(h, model)] : [],
+			),
+		]),
+	]
+}
+
 const SHOW_OPTIONS = [
 	{ value: "all", label: "All" },
 	{ value: "granted", label: "Granted" },
@@ -361,6 +482,7 @@ const permissionsPanel = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Ht
 	)
 	return [
 		vstack(h, { gap: "3", className: "pt-4" }, [
+			...namespaceSection(h, model, role),
 			hstack(h, { gap: "3", wrap: true, justify: "between" }, [
 				hstack(h, { gap: "2", wrap: true }, [
 					searchInput(h, {

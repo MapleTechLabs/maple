@@ -234,8 +234,9 @@ const analystIncidentsItem: NavItem = {
 /**
  * Who the sidebar is drawn for. An analyst follows the product without operating it, so they get
  * the pages that answer "is it working and how is it doing", not the ones for digging or setup.
+ * A role limited to namespaces gets the telemetry pages its reads are kept to them on.
  */
-export const NavAudience = Schema.Literals(["operator", "analyst"])
+export const NavAudience = Schema.Literals(["operator", "analyst", "scoped"])
 export type NavAudience = typeof NavAudience.Type
 
 /** The org rollout flags that gate a nav row each. */
@@ -265,6 +266,31 @@ const analystNavGroups = (): ReadonlyArray<NavGroup> => [
 			{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 			costItem,
+		],
+	},
+]
+
+// The pages a role limited to namespaces can read (`scopedRoleRedirect` sends the rest to Services).
+// Not Metrics: the metric list reads a catalog that carries no namespace yet.
+const scopedNavGroups = (): ReadonlyArray<NavGroup> => [
+	{
+		id: "monitor",
+		label: "Monitor",
+		items: [{ title: "Services", href: "/services", icon: "ServerIcon" }],
+	},
+	{
+		id: "analyze",
+		label: "Analyze",
+		items: [
+			{
+				title: "Explore",
+				href: "/traces",
+				icon: "LayersIcon",
+				subItems: [
+					{ title: "Traces", href: "/traces", icon: "PulseIcon" },
+					{ title: "Logs", href: "/logs", icon: "FileIcon" },
+				],
+			},
 		],
 	},
 ]
@@ -314,10 +340,15 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 
 /**
  * `navGroups(flags, audience)`; `releases` and `securityAudit` (or
- * `cloudSecurity`) gate a row each, and an analyst gets {@link analystNavGroups}.
+ * `cloudSecurity`) gate a row each, an analyst gets {@link analystNavGroups} and a role limited to
+ * namespaces {@link scopedNavGroups}.
  */
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>
-	audience === "analyst" ? analystNavGroups() : operatorNavGroups(flags)
+	audience === "operator"
+		? operatorNavGroups(flags)
+		: audience === "analyst"
+			? analystNavGroups()
+			: scopedNavGroups()
 
 /** Segment-aware prefix match: `/services` must not claim `/service-map`. */
 export const isPathActive = (currentPath: string, href: string): boolean =>

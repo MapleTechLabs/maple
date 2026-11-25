@@ -29,11 +29,18 @@ export const SERVICE_TABS: ReadonlyArray<{ readonly value: ServiceTab; readonly 
 	{ value: "profiles", label: "Profiles" },
 ]
 
-type Rollouts = Pick<PageContext, "hasProfiling">
+type Rollouts = Pick<PageContext, "hasProfiling" | "audience">
 
-/** The tabs the org is shown: Profiles only inside the `profiling` rollout. */
-export const serviceTabs = (context: Rollouts): ReadonlyArray<(typeof SERVICE_TABS)[number]> =>
-	context.hasProfiling === true ? SERVICE_TABS : Arr.filter(SERVICE_TABS, (tab) => tab.value !== "profiles")
+/**
+ * The tabs the viewer is shown: Profiles only inside the `profiling` rollout, and only Overview
+ * for a role limited to namespaces, whose reads the other tabs' rollups cannot be kept to.
+ */
+export const serviceTabs = (context: Rollouts): ReadonlyArray<(typeof SERVICE_TABS)[number]> => {
+	if (context.audience === "scoped") return Arr.filter(SERVICE_TABS, (tab) => tab.value === "overview")
+	return context.hasProfiling === true
+		? SERVICE_TABS
+		: Arr.filter(SERVICE_TABS, (tab) => tab.value !== "profiles")
+}
 
 /**
  * An unknown `?tab=` (a stale link) falls back to Overview, and so does Profiles outside the
@@ -41,6 +48,7 @@ export const serviceTabs = (context: Rollouts): ReadonlyArray<(typeof SERVICE_TA
  */
 export const tabOf = (search: Search, context: Rollouts = {}): ServiceTab => {
 	const tab = Option.getOrElse(decodeTab(search.tab), (): ServiceTab => "overview")
+	if (context.audience === "scoped") return "overview"
 	return tab === "profiles" && context.hasProfiling !== true ? "overview" : tab
 }
 

@@ -25,14 +25,22 @@ export type RoleEntry = Readonly<{
 	name: string
 	description: string
 	permissions: ReadonlyArray<Policy.Permission>
+	/** The namespaces the role is limited to; empty when it reads them all. */
+	namespaces: ReadonlyArray<string>
 	memberCount: number
 	/** The first few holders, for the list's avatars; `memberCount` counts them all. */
 	holders: ReadonlyArray<RoleMemberResponse>
 	isBuiltIn: boolean
 }>
 
-/** Every permission there is: a role's count reads "N of" this. */
-export const PERMISSION_TOTAL = Policy.allPermissions.length
+/** What a role holds by ticking: the scoped read comes from its namespaces, so it is neither listed nor counted. */
+export const tickedPermissions = (
+	permissions: ReadonlyArray<Policy.Permission>,
+): ReadonlyArray<Policy.Permission> =>
+	Arr.filter(permissions, (permission) => permission !== Policy.SCOPED_READ)
+
+/** Every permission a role can be given: a role's count reads "N of" this. */
+export const PERMISSION_TOTAL = tickedPermissions(Policy.allPermissions).length
 
 export const isSensitive = (permission: Policy.Permission): boolean =>
 	"sensitive" in Policy.permissions[permission]
@@ -56,6 +64,7 @@ const builtInEntry = (
 	name: role.label,
 	description: role.summary,
 	permissions: role.permissions,
+	namespaces: [],
 	memberCount,
 	holders,
 	isBuiltIn: true,
@@ -84,6 +93,7 @@ export const roleEntries = (list: RoleListResponse): ReadonlyArray<RoleEntry> =>
 		name: role.name,
 		description: role.description,
 		permissions: role.permissions,
+		namespaces: role.namespaces ?? [],
 		memberCount: role.memberCount,
 		holders: list.holders[role.id] ?? [],
 		isBuiltIn: false,
@@ -97,9 +107,24 @@ export const findRole = (entries: ReadonlyArray<RoleEntry>, key: string): Option
 export const builtInKeyOf = (clerkKey: string): Option.Option<string> =>
 	Option.map(Policy.builtInRoleOf(clerkKey), (role) => role.role)
 
-/** What a custom role may hold: members, roles and the organization stay with Admin. */
+/** Whether a custom role may be given `permission` by ticking it. */
+export const isTickable = (permission: Policy.Permission): boolean =>
+	Policy.grantableToCustomRoles(permission) && permission !== Policy.SCOPED_READ
+
+/** What a custom role may be given: members, roles and the organization stay with Admin. */
 export const grantablePermissions = (permissions: ReadonlyArray<Policy.Permission>) =>
-	Arr.filter(permissions, Policy.grantableToCustomRoles)
+	Arr.filter(permissions, isTickable)
+
+/** Whether the role reads telemetry only from the namespaces it names. */
+export const hasNamespaceLimit = (role: Pick<RoleEntry, "namespaces">): boolean => role.namespaces.length > 0
+
+/** "checkout", "checkout and payments", "checkout, payments and 2 more". */
+export const namespacesLabel = (namespaces: ReadonlyArray<string>): string => {
+	const [first, second, ...rest] = namespaces
+	if (first === undefined) return "every namespace"
+	if (second === undefined) return first
+	return rest.length === 0 ? `${first} and ${second}` : `${first}, ${second} and ${rest.length} more`
+}
 
 /** "All 49" or "16 of 49". */
 export const permissionCountLabel = (count: number): string =>
@@ -116,11 +141,13 @@ export const listRoles = Effect.flatMap(MapleInternalApiClient, (client) => clie
 export const listRoleMembers = (roleId: RoleKey) =>
 	Effect.flatMap(MapleInternalApiClient, (client) => client.roles.members({ params: { roleId } }))
 
-/** A role's name, description and permissions as typed: checked only when sent. */
+/** A role's name, description, ticked permissions and namespaces as typed: checked only when sent. */
 export const RoleDraft = Schema.Struct({
 	name: Schema.String,
 	description: Schema.String,
 	permissions: Schema.Array(Policy.PermissionName),
+	/** The namespaces the role is limited to; empty when it reads them all. */
+	namespaces: Schema.Array(Schema.String),
 })
 export type RoleDraft = typeof RoleDraft.Type
 
@@ -140,9 +167,12 @@ const decodeCreate = Schema.decodeUnknownEffect(CreateRoleRequest)
 const decodeUpdate = Schema.decodeUnknownEffect(UpdateRoleRequest)
 
 export const createRole = (draft: RoleDraft) =>
-	decodeCreate(
-		draft.description === "" ? { name: draft.name, permissions: draft.permissions } : draft,
-	).pipe(
+	decodeCreate({
+		name: draft.name,
+		permissions: draft.permissions,
+		namespaces: draft.namespaces,
+		...(draft.description !== "" && { description: draft.description }),
+	}).pipe(
 		Effect.flatMap((payload) =>
 			Effect.flatMap(MapleInternalApiClient, (client) => client.roles.create({ payload })),
 		),

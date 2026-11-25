@@ -1,5 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as CreateDialog from "../roles/create-dialog"
@@ -27,6 +28,24 @@ export const Model = Schema.Struct({
 	permissions: Schema.Array(Policy.PermissionName),
 	/** Draft permissions ticked only because another ticked permission implies them. */
 	autoTicked: Schema.Array(Policy.PermissionName),
+	/** Whether the draft limits the role to namespaces; `namespaces` are the ones it names. */
+	isLimited: Schema.Boolean,
+	namespaces: Schema.Array(Schema.String),
+	/**
+	 * What turning the limit on unticked, and which of those ticks were only implied, so turning it
+	 * off again puts both back. `null` when the limit was not turned on in this draft.
+	 */
+	setAside: Schema.NullOr(
+		Schema.Struct({
+			permissions: Schema.Array(Policy.PermissionName),
+			autoTicked: Schema.Array(Policy.PermissionName),
+		}),
+	),
+	/** The picker's list could not be read: it then offers only the draft's own namespaces. */
+	isNamespaceListFailed: Schema.Boolean,
+	namespacesBox: Combobox.Model,
+	/** The namespaces the organization reported under lately, for the picker. */
+	knownNamespaces: Schema.Array(Schema.String),
 	isDraftLoaded: Schema.Boolean,
 	tabs: Tabs.Model,
 	filter: Schema.String,
