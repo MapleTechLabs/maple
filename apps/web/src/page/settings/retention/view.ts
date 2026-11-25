@@ -1,5 +1,10 @@
 import * as Policy from "@maple/domain/policy"
-import type { V2RetentionDays, V2RetentionPolicy } from "@maple/domain/http/v2"
+import {
+	encodePublicId,
+	PublicIdPrefixes,
+	type V2RetentionDays,
+	type V2RetentionPolicy,
+} from "@maple/domain/http/v2"
 import { RETENTION_SIGNALS, type RetentionSignal } from "@maple/domain/retention"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -155,13 +160,14 @@ const signalsSection = (h: H, model: Model, inputs: Inputs): Html =>
 		],
 	)
 
+/** The source's name, or its public id while the names are not loaded. */
 const sourceName = (model: Model, id: string): string =>
 	Option.getOrElse(
 		Option.map(
 			Arr.findFirst(model.sourceNames ?? [], (source) => source.id === id),
 			(source) => source.name,
 		),
-		() => "A source",
+		() => encodePublicId(PublicIdPrefixes.source, id),
 	)
 
 /** "Logs 6 months, traces 1 week". */

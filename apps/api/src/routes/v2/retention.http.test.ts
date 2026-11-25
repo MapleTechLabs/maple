@@ -137,7 +137,7 @@ const makeHarness = (ownWarehouse = false, selfManaged = false) => {
 		request,
 		key,
 		auditActions,
-		source: () => insertTestSource(testDb, { orgId: ORG, platform: "nodejs" }),
+		source: (orgId: OrgId = ORG) => insertTestSource(testDb, { orgId, platform: "nodejs" }),
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -207,14 +207,18 @@ describe("v2 retention", () => {
 		await harness.dispose()
 	})
 
-	it("a source of another organization is not found", async () => {
+	it("a source of another organization is not found, and is left as it was", async () => {
 		const harness = makeHarness()
 		const token = await harness.key()
-		const missing = encodePublicId(PublicIdPrefixes.source, "00000000-0000-4000-8000-000000000001")
-		const { status } = await harness.request("PATCH", `/v2/retention/sources/${missing}`, token, {
+		const theirs = encodePublicId(
+			PublicIdPrefixes.source,
+			await harness.source(Schema.decodeSync(OrgId)("org_retention_e2e_other")),
+		)
+		const { status } = await harness.request("PATCH", `/v2/retention/sources/${theirs}`, token, {
 			logs: 90,
 		})
 		expect(status).toBe(404)
+		expect(harness.auditActions()).toEqual([])
 		await harness.dispose()
 	})
 
