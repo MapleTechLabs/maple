@@ -1326,7 +1326,9 @@ export const traceIndex = defineDatasource("trace_index", {
 	...RETENTION_COLUMN_FORWARD,
 	engine: engine.aggregatingMergeTree({
 		...rowRetentionStorage("Bucket"),
-		sortingKey: ["OrgId", "TraceId", "ServiceName", "Bucket"],
+		// An aggregating table must sort by every non-aggregate column. RetentionDays goes last, so
+		// trace-id reads still seek on the prefix; it is also in the partition key on managed storage.
+		sortingKey: ["OrgId", "TraceId", "ServiceName", "Bucket", "RetentionDays"],
 	}),
 })
 

@@ -23,6 +23,7 @@ import {
 import { Array as Arr, Effect, Option } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { type RetentionPolicy, RetentionService } from "@maple/backend/services/retention/RetentionService"
+import { Env } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { diffAuditChanges } from "@/routes/v2/audit-changes"
 
@@ -83,11 +84,16 @@ export const HttpV2RetentionLive = HttpApiBuilder.group(MapleApiV2, "retention",
 		const warehouses = yield* OrgClickHouseSettingsService
 
 		/** An org on its own ClickHouse keeps that cluster's retention; Maple's periods do not apply. */
+		const env = yield* Env
+		// A deployment on its own ClickHouse (not the Tinybird gateway) keeps that cluster's TTLs.
+		const isSelfManagedDeployment =
+			Option.isSome(env.CLICKHOUSE_URL) && env.CLICKHOUSE_PROVIDER !== "tinybird"
+
 		const storageOf = (orgId: OrgId) =>
 			warehouses.resolveRuntimeConfig(orgId).pipe(
 				Effect.mapBoth({
 					onSuccess: (config): V2RetentionPolicy["storage"] =>
-						Option.isSome(config) ? "own_warehouse" : "managed",
+						isSelfManagedDeployment || Option.isSome(config) ? "own_warehouse" : "managed",
 					onFailure: (error) =>
 						new RetentionPersistenceError({
 							message: "Couldn't read where telemetry is stored",
@@ -122,12 +128,12 @@ export const HttpV2RetentionLive = HttpApiBuilder.group(MapleApiV2, "retention",
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const storage = yield* requireManagedStorage(tenant.orgId)
-					const { before, policy } = yield* retention.updateOrganization(
+					const { before, after, policy } = yield* retention.updateOrganization(
 						tenant.orgId,
 						tenant.userId,
 						(current) => applyRetentionPatch(current, payload),
 					)
-					const changes = auditChanges(before, policy.overrides)
+					const changes = auditChanges(before, after)
 					if (changes !== undefined) yield* recordHttpAudit("retention.updated", { changes })
 					return toV2RetentionPolicy(policy, storage)
 				}),
@@ -136,15 +142,11 @@ export const HttpV2RetentionLive = HttpApiBuilder.group(MapleApiV2, "retention",
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const storage = yield* requireManagedStorage(tenant.orgId)
-					const { before, policy } = yield* retention.updateSource(
+					const { before, after, policy } = yield* retention.updateSource(
 						tenant.orgId,
 						tenant.userId,
 						params.id,
 						(current) => applyRetentionPatch(current, payload),
-					)
-					const after = Option.match(
-						Arr.findFirst(policy.sources, (source) => source.sourceId === params.id),
-						{ onNone: (): RetentionOverrides => ({}), onSome: (source) => source.overrides },
 					)
 					const changes = auditChanges(before, after)
 					if (changes !== undefined)

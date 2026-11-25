@@ -131,9 +131,10 @@ export class ReadHorizonMemo extends Context.Reference<ReadHorizonMemoState>(
 	{ defaultValue: () => isolateReadHorizonMemo },
 ) {}
 
-/** A retention write: what was set before it, and the policy after. */
+/** A retention write: what was set before and after it, from its own transaction, and the policy after. */
 export interface RetentionWrite {
 	readonly before: RetentionOverrides
+	readonly after: RetentionOverrides
 	readonly policy: RetentionPolicy
 }
 
@@ -493,12 +494,12 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 										}),
 									}),
 							)
-							return { before, policy: yield* readPolicy(db, orgId) }
+							return { before, after: overrides, policy: yield* readPolicy(db, orgId) }
 						}),
 					),
 				)
 				const policy = yield* rememberPolicy(orgId, written.policy)
-				return { before: written.before, policy } satisfies RetentionWrite
+				return { before: written.before, after: written.after, policy } satisfies RetentionWrite
 			})
 
 			const updateSource = Effect.fn("RetentionService.updateSource")(function* (
@@ -536,12 +537,16 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 									.set({ retentionDays: overrides, updatedAt: now, updatedBy: userId })
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)]),
 							)
-							return { before: row.retentionDays, policy: yield* readPolicy(db, orgId) }
+							return {
+								before: row.retentionDays,
+								after: overrides,
+								policy: yield* readPolicy(db, orgId),
+							}
 						}),
 					),
 				)
 				const policy = yield* rememberPolicy(orgId, written.policy)
-				return { before: written.before, policy } satisfies RetentionWrite
+				return { before: written.before, after: written.after, policy } satisfies RetentionWrite
 			})
 
 			/** Replaces what the organization set. */

@@ -26,9 +26,16 @@ import { HttpV2RetentionLive } from "./retention.http"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const testConfig = () =>
+/** The deployment's own ClickHouse, when it has one. */
+const SELF_MANAGED_CLICKHOUSE = {
+	CLICKHOUSE_URL: "https://clickhouse.internal:8443",
+	CLICKHOUSE_PROVIDER: "clickhouse",
+}
+
+const testConfig = (selfManaged: boolean) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
+			...(selfManaged ? SELF_MANAGED_CLICKHOUSE : undefined),
 			PORT: "3482",
 			MCP_PORT: "3483",
 			TINYBIRD_HOST: "https://api.tinybird.co",
@@ -62,7 +69,7 @@ const warehouseOf = (ownWarehouse: boolean) =>
 			),
 	})
 
-const makeHarness = (ownWarehouse = false) => {
+const makeHarness = (ownWarehouse = false, selfManaged = false) => {
 	const testDb = createTestDb(createdDbs)
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -70,7 +77,11 @@ const makeHarness = (ownWarehouse = false) => {
 		RetentionService.layer.pipe(
 			Layer.provide(Layer.mergeAll(testEdgeCache(testDb), TestReadHorizonMemoLive)),
 		),
-	).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer.pipe(Layer.provide(testConfig())), testDb.layer)))
+	).pipe(
+		Layer.provideMerge(
+			Layer.mergeAll(Env.layer.pipe(Layer.provide(testConfig(selfManaged))), testDb.layer),
+		),
+	)
 
 	// The audit actions the routes record, in order.
 	const recorded: Array<string> = []
@@ -126,7 +137,7 @@ const makeHarness = (ownWarehouse = false) => {
 		request,
 		key,
 		auditActions,
-		source: () => insertTestSource(testDb, { orgId: ORG, platform: "nodejs" }),
+		source: (orgId: OrgId = ORG) => insertTestSource(testDb, { orgId, platform: "nodejs" }),
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -196,14 +207,18 @@ describe("v2 retention", () => {
 		await harness.dispose()
 	})
 
-	it("a source of another organization is not found", async () => {
+	it("a source of another organization is not found, and is left as it was", async () => {
 		const harness = makeHarness()
 		const token = await harness.key()
-		const missing = encodePublicId(PublicIdPrefixes.source, "00000000-0000-4000-8000-000000000001")
-		const { status } = await harness.request("PATCH", `/v2/retention/sources/${missing}`, token, {
+		const theirs = encodePublicId(
+			PublicIdPrefixes.source,
+			await harness.source(Schema.decodeSync(OrgId)("org_retention_e2e_other")),
+		)
+		const { status } = await harness.request("PATCH", `/v2/retention/sources/${theirs}`, token, {
 			logs: 90,
 		})
 		expect(status).toBe(404)
+		expect(harness.auditActions()).toEqual([])
 		await harness.dispose()
 	})
 
@@ -215,6 +230,15 @@ describe("v2 retention", () => {
 		const refused = await harness.request("PATCH", "/v2/retention", token, { logs: 90 })
 		expect(refused.status).toBe(400)
 		expect(harness.auditActions()).toEqual([])
+		await harness.dispose()
+	})
+
+	it("a deployment on its own ClickHouse cannot set Maple's periods either", async () => {
+		const harness = makeHarness(false, true)
+		const token = await harness.key()
+		const read = await harness.request("GET", "/v2/retention", token)
+		expect(read.body.storage).toBe("own_warehouse")
+		expect((await harness.request("PATCH", "/v2/retention", token, { logs: 90 })).status).toBe(400)
 		await harness.dispose()
 	})
 })

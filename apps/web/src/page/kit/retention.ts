@@ -117,10 +117,10 @@ export const changeSentence = (
 	const lower = Str.toLowerCase(noun)
 	if (change.to === change.from) return null
 	if (change.to > change.from)
-		return `Applies to ${lower} received from now on. ${periodLabel(change.to)} of history is there by ${dayLabel(nowMs + change.to * DAY_MS, nowMs, timeZone)}.`
+		return `Applies to ${lower} arriving from a minute after you save. ${periodLabel(change.to)} of history is there by ${dayLabel(nowMs + change.to * DAY_MS, nowMs, timeZone)}.`
 	const before = policy.read_horizon_days[signal]
 	const after = horizonWith(policy, signal, change.edit)
 	return after < before
 		? `${noun} older than ${periodLabel(after)} are hidden once you save. Switch back to see them again while they are still stored.`
-		: `${noun} received from now on are kept for ${periodLabel(change.to)}. ${noun} already stored keep the period they arrived under.`
+		: `${noun} arriving from a minute after you save are kept for ${periodLabel(change.to)}. ${noun} already stored keep the period they arrived under.`
 }
