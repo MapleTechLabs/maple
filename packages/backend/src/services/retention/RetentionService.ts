@@ -72,6 +72,8 @@ export const READ_HORIZON_CACHE_KEY = "configured"
 
 /** The read horizons of every organization that set a period, as the shared cache holds them. */
 const CachedReadHorizons = Schema.Struct({
+	/** When the policies were read from Postgres, by the clock of the isolate that read them. */
+	readAtMs: Schema.Number,
 	orgs: Schema.Array(
 		Schema.Struct({
 			orgId: Schema.String,
@@ -94,6 +96,8 @@ export const READ_HORIZON_TTL_MS = 60_000
 export const READ_HORIZON_RETRY_MS = 10_000
 /** A read waits this long for the policies, then carries on with the fallback. */
 export const READ_HORIZON_LOAD_TIMEOUT_MS = 2_000
+/** A write this much older than a snapshot is in it, whatever two isolates' clocks disagree by. */
+export const READ_HORIZON_WRITE_SKEW_MS = 5_000
 /** A refresh marker older than this is from a fiber that never cleared it. */
 const READ_HORIZON_REFRESH_STALE_MS = 10_000
 
@@ -101,7 +105,7 @@ const READ_HORIZON_REFRESH_STALE_MS = 10_000
 export interface ReadHorizonMemoState {
 	known: { readonly byOrg: Map<string, RetentionReadHorizon>; readonly freshUntil: number } | undefined
 	refreshStartedAt: number | undefined
-	/** This isolate's own policy writes, kept until a load that started after them has them. */
+	/** This isolate's own policy writes, kept until a snapshot read after them is loaded. */
 	readonly written: Map<string, { readonly horizon: RetentionReadHorizon; readonly atMs: number }>
 }
 export const makeReadHorizonMemo = (): ReadHorizonMemoState => ({
@@ -222,6 +226,7 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 			// Every organization that set a period, in one snapshot. The read path asks for
 			// this instead of one policy per org, so a fan-out over many orgs costs one read.
 			const readConfigured = Effect.fn("RetentionService.readConfigured")(function* () {
+				const readAtMs = yield* Clock.currentTimeMillis
 				const { policies, sources } = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.all({
@@ -260,16 +265,20 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 					(org) => org.configured.length > 0,
 				)
 				yield* Effect.annotateCurrentSpan({ "result.rowCount": orgs.length })
-				return { orgs }
+				return { readAtMs, orgs }
 			})
 
 			// The isolate's copy of the whole set. A set past `freshUntil` stays as the last known.
 			const state = yield* ReadHorizonMemo
 			const horizonOf = (orgId: OrgId) => state.known?.byOrg.get(orgId) ?? DEFAULT_READ_HORIZON
-			// A load that started before one of this isolate's writes must not undo it.
-			const withWrites = (byOrg: Map<string, RetentionReadHorizon>, sinceMs: number) => {
+			// A snapshot read before one of this isolate's writes must not undo it, whichever
+			// isolate read it. A write the snapshot is sure to hold is forgotten.
+			const withWrites = (byOrg: Map<string, RetentionReadHorizon>, readAtMs: number) => {
 				state.written.forEach((write, orgId) => {
-					if (write.atMs < sinceMs) return
+					if (write.atMs + READ_HORIZON_WRITE_SKEW_MS < readAtMs) {
+						state.written.delete(orgId)
+						return
+					}
 					if (write.horizon.configured.length > 0) byOrg.set(orgId, write.horizon)
 					else byOrg.delete(orgId)
 				})
@@ -317,13 +326,10 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 											{ days: org.days, configured: org.configured },
 										]),
 									),
-									nowMs,
+									result.value.readAtMs,
 								),
 								freshUntil: nowMs + READ_HORIZON_TTL_MS,
 							}
-							state.written.forEach((write, orgId) => {
-								if (write.atMs < nowMs) state.written.delete(orgId)
-							})
 						}),
 						// A telemetry read must not fail or stall on the policy read: the last known
 						// horizons, else the defaults, held from now so a slow database is not asked per read.
