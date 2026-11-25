@@ -21,6 +21,8 @@ export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) 
  * byte-identical in all of them.
  */
 export const TRACE_BUCKET_FN = "toStartOfFiveMinutes"
+/** The width of that bucket. A reader bounding `trace_index.Bucket` by time allows for it. */
+export const TRACE_BUCKET_MINUTES = 5
 export const TRACE_BUCKET_EXPR = `${TRACE_BUCKET_FN}(Timestamp)`
 
 /** How long `traces` and `trace_index` keep a row; trace-id lookups scan no further back. */
