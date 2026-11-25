@@ -22,6 +22,15 @@ export interface TinybirdJwtScope {
 }
 
 /**
+ * Hides a datasource's rows older than `days`, by `column`. The caller passes a whole number of
+ * days and a column name of Maple's own; neither ever comes from a request.
+ */
+export interface ReadBound {
+	readonly column: string
+	readonly days: number
+}
+
+/**
  * What reads with the token: SQL a customer wrote, or a query Maple compiled. Each draws from its
  * own Tinybird rate bucket, so a customer's raw SQL cannot starve the org's alert evaluation.
  */
@@ -36,6 +45,8 @@ export interface MintOrgReadJwtInput {
 	readonly orgId: string
 	/** Every datasource the token may read. Each gets an `OrgId = '<org>'` filter. */
 	readonly datasourceNames: ReadonlyArray<string>
+	/** Datasources whose filter also stops at the org's read horizon. The rest keep the bare org filter. */
+	readonly readBounds?: ReadonlyMap<string, ReadBound>
 	/** Current time in whole seconds (Unix epoch). */
 	readonly nowSeconds: number
 	/** Token lifetime in seconds. */
@@ -54,16 +65,24 @@ export interface MintOrgReadJwtInput {
 const tokenNameForOrg = (orgId: string, use: OrgReadJwtUse): string =>
 	`${use === "raw-sql" ? "maple-raw-sql" : "maple-read"}-${Str.slice(0, 16)(createHash("sha256").update(orgId).digest("hex"))}`
 
+// Verified on Tinybird Local: the time bound is ANDed onto every scan like the org filter, hides
+// the older rows, and `OR 1=1`, subqueries and `UNION ALL` do not escape it.
+const scopeFilter = (orgLiteral: string, bound: ReadBound | undefined): string =>
+	bound === undefined
+		? orgLiteral
+		: `${orgLiteral} AND ${bound.column} >= now() - INTERVAL ${bound.days} DAY`
+
 /**
  * Mint a per-org Tinybird read JWT scoped to `datasourceNames`, each filtered to
- * `OrgId = '<orgId>'`. HS256, signed with the workspace admin token.
+ * `OrgId = '<orgId>'`, and to its read bound where it has one. HS256, signed with the
+ * workspace admin token.
  */
 export function mintOrgReadJwt(input: MintOrgReadJwtInput): string {
 	const orgLiteral = `OrgId = '${escapeClickHouseString(input.orgId)}'`
 	const scopes: ReadonlyArray<TinybirdJwtScope> = Arr.map(input.datasourceNames, (resource) => ({
 		type: "DATASOURCES:READ",
 		resource,
-		filter: orgLiteral,
+		filter: scopeFilter(orgLiteral, input.readBounds?.get(resource)),
 	}))
 
 	return signHs256Jwt(

@@ -50,8 +50,15 @@ import {
 	type OrgClickHouseSettingsServiceApi,
 } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
+import { RetentionService } from "@maple/backend/services/retention/RetentionService"
+import type { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	makeSwitchableDatabase,
+	type TestDb,
+} from "@maple/backend/testing/test-pglite"
 
 const trackedDbs: TestDb[] = []
 
@@ -92,6 +99,23 @@ const makeConfig = (extra: Record<string, string> = {}, includeTinybirdSigning =
 		}),
 	)
 
+/**
+ * The org token service and the retention service whose horizon it reads: one instance under
+ * both, as `WarehouseQueryService.layer` wires them.
+ */
+const tokenLayers = <E>(
+	envLive: Layer.Layer<Env, E>,
+	databaseLive: Layer.Layer<Database> = createTestDb(trackedDbs).layer,
+) => {
+	const retentionLive = RetentionService.layer.pipe(Layer.provide(databaseLive))
+	return Layer.mergeAll(
+		retentionLive,
+		TinybirdOrgTokenService.layerWithoutDependencies.pipe(
+			Layer.provide(Layer.mergeAll(envLive, retentionLive)),
+		),
+	)
+}
+
 const buildLayer = (testDb: TestDb, extra: Record<string, string> = {}, includeTinybirdSigning = true) => {
 	const configLive = makeConfig(extra, includeTinybirdSigning)
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
@@ -100,7 +124,7 @@ const buildLayer = (testDb: TestDb, extra: Record<string, string> = {}, includeT
 	const orgSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
-	const tinybirdTokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive))
+	const tinybirdTokenLive = tokenLayers(envLive, databaseLive)
 	return warehouseServiceLayer.pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(envLive, orgSettingsLive, tinybirdTokenLive)),
@@ -336,7 +360,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 		// managed Tinybird JWT signing configuration.
 		const configLive = makeConfig({}, false)
 		const envLive = Env.layer.pipe(Layer.provide(configLive))
-		const tokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive))
+		const tokenLive = tokenLayers(envLive)
 		// Partial stub: the cast hides absent members from the compiler, so a
 		// method the executor calls at runtime fails as "not a function" rather
 		// than as a type error. `invalidateRuntimeConfig` is stubbed because
@@ -373,7 +397,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 		const source = new OrgClickHouseSettingsPersistenceError({ message: "database unavailable" })
 		const configLive = makeConfig({}, false)
 		const envLive = Env.layer.pipe(Layer.provide(configLive))
-		const tokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive))
+		const tokenLive = tokenLayers(envLive)
 		const orgSettingsLive = Layer.succeed(OrgClickHouseSettingsService, {
 			resolveRuntimeConfig: () => Effect.fail(source),
 			invalidateRuntimeConfig: () => Effect.succeed(false),
@@ -420,7 +444,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 			({ source }) => {
 				const configLive = makeConfig({}, false)
 				const envLive = Env.layer.pipe(Layer.provide(configLive))
-				const tokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive))
+				const tokenLive = tokenLayers(envLive)
 				const orgSettingsLive = Layer.succeed(OrgClickHouseSettingsService, {
 					resolveRuntimeConfig: () => Effect.fail(source),
 					invalidateRuntimeConfig: () => Effect.succeed(false),
@@ -571,6 +595,83 @@ describe("WarehouseQueryService org-scoped reads", () => {
 			assert.notStrictEqual(read?.secret, "managed-token")
 			assert.deepStrictEqual(orgFilters(read?.secret ?? ""), ["OrgId = 'org_test'"])
 		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), GATEWAY)))
+	})
+
+	/** A period set elsewhere, before this isolate first reads the org's policy. */
+	const setRetention = (testDb: TestDb, overrides: { readonly traces?: number; readonly logs?: number }) =>
+		RetentionService.use((retention) =>
+			retention.setOrganization(asOrgId("org_test"), asUserId("user_test"), overrides),
+		).pipe(Effect.provide(Layer.fresh(RetentionService.layer).pipe(Layer.provide(testDb.layer))))
+
+	it.effect("stops a compiled read and raw SQL alike at the org's retention period", () => {
+		const used = recordCredentials()
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* setRetention(testDb, { traces: 7 })
+			const tenant = makeTenant()
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'")),
+			)
+			yield* WarehouseQueryService.use((service) =>
+				service.rawSqlQuery(tenant, "SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
+			)
+			const [compiled, raw] = used
+			const traceBound = "OrgId = 'org_test' AND Timestamp >= now() - INTERVAL 7 DAY"
+			// The compiled read's token lists the one datasource its statement names.
+			assert.deepStrictEqual(orgFilters(compiled?.secret ?? ""), [traceBound])
+			// Raw SQL's token lists them all: traces is cut, a signal with no period is not.
+			assert.includeMembers(orgFilters(raw?.secret ?? ""), [traceBound, "OrgId = 'org_test'"])
+		}).pipe(Effect.provide(buildLayer(testDb, GATEWAY)))
+	})
+
+	it.effect("runs the read on the org filter alone when the retention policy cannot be read", () => {
+		const used = recordCredentials()
+		const database = makeSwitchableDatabase(createTestDb(trackedDbs))
+		database.state.down = true
+		return Effect.gen(function* () {
+			// An ingest-routed read reads no settings row, so the policy is its only use of Postgres.
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(
+					makeTenant(),
+					rawCompiledQuery<Record<string, unknown>>({
+						sql: "SELECT 1 FROM alert_checks WHERE OrgId = 'org_test'",
+						tenantScope: "single-tenant",
+						route: "ingest",
+						reason: "test-fixture",
+						justification: "Synthetic SQL asserting executor behaviour, not a product query.",
+					}),
+				),
+			)
+			assert.isAbove(database.state.calls, 0)
+			assert.deepStrictEqual(
+				Arr.map(used, (read) => orgFilters(read.secret)),
+				[["OrgId = 'org_test'"]],
+			)
+		}).pipe(Effect.provide(buildLayer({ ...createTestDb(trackedDbs), layer: database.layer }, GATEWAY)))
+	})
+
+	it.effect("a request that warms its route reads the policy once for the reads it fans out", () => {
+		const used = recordCredentials()
+		const database = makeSwitchableDatabase(createTestDb(trackedDbs))
+		return Effect.gen(function* () {
+			const tenant = makeTenant()
+			yield* WarehouseQueryService.use((service) => service.warmRoute(tenant))
+			const warmed = database.state.calls
+			assert.isAbove(warmed, 0)
+			yield* Effect.forEach(
+				["traces", "logs", "metrics_sum", "trace_index"],
+				(table) =>
+					WarehouseQueryService.use((service) =>
+						service.compiledQuery(
+							tenant,
+							scopedSql(`SELECT 1 FROM ${table} WHERE OrgId = 'org_test'`),
+						),
+					),
+				{ concurrency: "unbounded", discard: true },
+			)
+			assert.lengthOf(used, 4)
+			assert.strictEqual(database.state.calls, warmed)
+		}).pipe(Effect.provide(buildLayer({ ...createTestDb(trackedDbs), layer: database.layer }, GATEWAY)))
 	})
 
 	// Both need to see past one org: a write lands rows, a cross-org read enumerates tenants.

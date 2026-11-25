@@ -78,4 +78,49 @@ describe("mintOrgReadJwt", () => {
 		// The embedded quote is backslash-escaped, so the ClickHouse literal stays closed.
 		assert.strictEqual(decoded.scopes[0].filter, "OrgId = 'org_\\' OR 1=1 --'")
 	})
+
+	it("stops a datasource at its read bound and leaves the others on the org filter", () => {
+		const jwt = mintOrgReadJwt({
+			signingKey: SIGNING_KEY,
+			workspaceId: "ws-uuid-123",
+			orgId: "org_abc",
+			datasourceNames: ["traces", "logs", "trace_index"],
+			readBounds: new Map([
+				["traces", { column: "Timestamp", days: 7 }],
+				["trace_index", { column: "Bucket", days: 7 }],
+				// Not a datasource of this token: it adds no scope.
+				["metrics_sum", { column: "TimeUnix", days: 7 }],
+			]),
+			nowSeconds: 0,
+			ttlSeconds: 60,
+		})
+		const decoded = decodePart(Str.split(".")(jwt)[1] ?? "") as {
+			scopes: ReadonlyArray<{ type: string; resource: string; filter: string }>
+		}
+		assert.deepStrictEqual(decoded.scopes, [
+			{
+				type: "DATASOURCES:READ",
+				resource: "traces",
+				filter: "OrgId = 'org_abc' AND Timestamp >= now() - INTERVAL 7 DAY",
+			},
+			{ type: "DATASOURCES:READ", resource: "logs", filter: "OrgId = 'org_abc'" },
+			{
+				type: "DATASOURCES:READ",
+				resource: "trace_index",
+				filter: "OrgId = 'org_abc' AND Bucket >= now() - INTERVAL 7 DAY",
+			},
+		])
+	})
+
+	it("mints the same token with no bounds as before there were any", () => {
+		const input = {
+			signingKey: SIGNING_KEY,
+			workspaceId: "ws-uuid-123",
+			orgId: "org_abc",
+			datasourceNames: ["traces", "logs"],
+			nowSeconds: 1_000,
+			ttlSeconds: 600,
+		}
+		assert.strictEqual(mintOrgReadJwt({ ...input, readBounds: new Map() }), mintOrgReadJwt(input))
+	})
 })
