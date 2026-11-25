@@ -112,13 +112,15 @@ Open **⋮ → Share…** and pick who can open the dashboard's link:
 | Anyone in this organization | Signed-in members of your organization, from the link.                            |
 | Anyone with the link        | Anyone who has the link, without signing in. They see the dashboard and its data. |
 
-**Replace** issues a new link and stops the old one working. Shared views render query builder charts, raw SQL, notes, funnels, paths, and the errors, service and logs widgets. The dialog names any widget that will not render for viewers.
+**Replace** issues a new link and stops the old one from working.
+
+Shared views render query builder charts, raw SQL, notes, funnels, paths, and the errors, service and logs widgets. The dialog names any widget that will not render for viewers.
 
 To put a single chart into another page, see [Embed dashboard charts](/docs/dashboards/embed-charts).
 
 ## Find, export and restore
 
-- **Dashboards** lists every dashboard, with search, sorting, and tags. Star a dashboard to add it to **Favorites**. Favorites are stored on your device.
+- **Dashboards** lists every dashboard, with search, sorting and tags. Star a dashboard to add it to **Favorites**. Favorites are stored on your device.
 - **⋮ → Export as JSON** downloads the dashboard. **Import** on the Dashboards page loads it back, into this or another organization.
 - **⋮ → Version history** lists every saved version of the dashboard, so you can look at an earlier one and restore it.
 

@@ -9,7 +9,11 @@ icon: "googlecloud"
 
 Manual setup creates the same resources as the [setup script](/docs/integrations/gcp), by hand in the Google Cloud console. It takes about 20 minutes.
 
-In Maple, open **Sources**, click **Connect source** and pick **Google Cloud**. Enter the scope, choose what to collect and click **Create connection**, then choose **Console steps** under **How do you want to apply the setup?**. Maple lists the steps below with this connection's names and values: copy them from there. Each step has an **Open in console** link to the right page.
+1. In Maple, open **Sources**, click **Connect source** and pick **Google Cloud**.
+2. Enter the scope, choose what to collect and click **Create connection**.
+3. Under **How do you want to apply the setup?**, choose **Console steps**.
+
+Maple lists the steps below with this connection's names and values. Copy the names and values from there. Each step has an **Open in console** link to the right page.
 
 ## Prerequisites
 
@@ -21,7 +25,7 @@ In Maple, open **Sources**, click **Connect source** and pick **Google Cloud**. 
 
 ## Step by step
 
-The screenshots show a project connection. Steps 2 to 7 are for **Log forwarding**, the rest for **Metrics and resources**: the dialog leaves out what you didn't choose. A folder or organization has one more step, Service Usage Consumer on the host project.
+The screenshots show a project connection. Steps 2 to 7 are for **Log forwarding** and steps 8 to 10 for **Metrics and resources**. Step 1 is for both: the dialog leaves out what you didn't choose. A folder or organization has one more step, Service Usage Consumer on the host project.
 
 ### 1. Enable the APIs
 
@@ -50,7 +54,7 @@ Pub/Sub signs each push to Maple as this account.
 3. Open the new account, go to its **Principals with access** tab, not **Permissions**, and click **Grant access**.
 4. In **New principals**, type `gcp-sa-pubsub` and pick **Cloud Pub/Sub Service Account for Project …**. The role picker starts on **Service Account Admin**: replace it with **Service Account Token Creator**, and click **Save**.
 
-Step 4 is only needed where the Pub/Sub service agent was created before April 8, 2021, and harmless elsewhere. The grant is listed only with **Include Google-provided role grants** ticked.
+The grant in item 4 of this list is only needed where the Pub/Sub service agent was created before April 8, 2021, and is harmless elsewhere. The grant is listed only with **Include Google-provided role grants** ticked.
 
 <figure class="shot">
   <img src="/screenshots/docs/gcp-manual-03-push-account.webp" alt="The Create service account form with the name Maple log push identity, the ID maple-push-… and the description filled in, and the Create and close button." loading="lazy" />
@@ -214,7 +218,7 @@ Then click **I've removed them** in the dialog: Maple can't see a removal and ta
   <figcaption>Deleting the topic asks you to type <code>delete</code>.</figcaption>
 </figure>
 
-A connection collects at least one of the two. To stop collecting altogether, open the connection's menu → **Disconnect**: under **Delete them in the console instead** it lists everything still set up. For the read-only account, remove its roles in **IAM & Admin → IAM** (tick it → **Remove access**), then delete the account.
+A connection collects at least one of the two. To stop collecting altogether, open the connection's menu → **Disconnect**. Under **Delete them in the console instead**, the dialog lists everything still set up. For the read-only account, remove its roles in **IAM & Admin → IAM** (tick it → **Remove access**), then delete the account.
 
 <figure class="shot">
   <img src="/screenshots/docs/gcp-manual-13-remove-access.webp" alt="The confirmation to remove the read-only service account's access, listing that it loses all non-inherited roles on the resource." loading="lazy" />

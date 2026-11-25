@@ -9,7 +9,7 @@ sdk: "go"
 
 This guide sets up the OpenTelemetry Go SDK so your application sends traces, logs and metrics to Maple, and adds instrumentation for `net/http`, gRPC and `database/sql`.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -143,7 +143,9 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/my-go-app"
 ```
 
-In `initTelemetry`, call `otlptracehttp.New(ctx)`, `otlpmetrichttp.New(ctx)` and `otlploghttp.New(ctx)` with no options, and build the resource with `resource.New(ctx, resource.WithFromEnv())` so it reads `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`. The `*http` exporters always use OTLP over HTTP; setting the protocol variable keeps the configuration explicit for any other tool that reads it.
+In `initTelemetry`, call `otlptracehttp.New(ctx)`, `otlpmetrichttp.New(ctx)` and `otlploghttp.New(ctx)` with no options. Build the resource with `resource.New(ctx, resource.WithFromEnv())` so it reads `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`.
+
+The `*http` exporters always use OTLP over HTTP; setting the protocol variable keeps the configuration explicit for any other tool that reads it.
 
 ## Auto-instrumentation
 
@@ -204,7 +206,7 @@ import "github.com/XSAM/otelsql"
 db, err := otelsql.Open("postgres", dsn)
 ```
 
-Pass the request `ctx` to `db.QueryContext` and friends so query spans nest under the request span.
+Pass the request `ctx` to `db.QueryContext` and the other `...Context` methods so query spans nest under the request span.
 
 ## Custom spans
 
@@ -235,7 +237,9 @@ func processOrder(ctx context.Context, orderID string) error {
 }
 ```
 
-Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map). Always pass `ctx` down the call chain so child spans link to their parent.
+Always pass `ctx` down the call chain so child spans link to their parent.
+
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
 ## Attributes Maple uses
 
@@ -243,7 +247,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the **Recent deploys** panel on each service page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
@@ -251,7 +255,7 @@ export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme
 
 ### Databases
 
-`otelsql` and `otelpgx` wrap `database/sql` and `pgx` and set these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+`otelsql` and `otelpgx` wrap `database/sql` and `pgx` and set the `db.*` attributes for you. For a driver without instrumentation, set them on a `Client` span:
 
 ```go
 ctx, span := tracer.Start(ctx, "SELECT users",

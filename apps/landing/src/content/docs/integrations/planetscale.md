@@ -6,7 +6,7 @@ order: 3
 icon: "planetscale"
 ---
 
-You connect a PlanetScale organization once, with an OAuth authorization. It covers everything Maple reads: the database inventory, query insights, branch metrics from PlanetScale's [metrics API](https://planetscale.com/docs/api/reference/get_branch_metrics), and the webhooks Maple registers for you. Maple reads every branch's metrics every 5 minutes, and picks up new branches and databases on its own.
+You connect a PlanetScale organization once, with an OAuth authorization. The authorization covers everything Maple reads: the database inventory, query insights, branch metrics from PlanetScale's [metrics API](https://planetscale.com/docs/api/reference/get_branch_metrics), and the webhooks Maple registers for you. Maple reads every branch's metrics every 5 minutes, and picks up new branches and databases on its own.
 
 ## Prerequisites
 
@@ -14,12 +14,16 @@ You connect a PlanetScale organization once, with an OAuth authorization. It cov
 
 ## 1. Authorize Maple
 
-In Maple, open **Sources**, click **Connect source** and pick **PlanetScale**. Click **Continue with PlanetScale**. A popup takes you to PlanetScale to authorize Maple's OAuth application. The step moves on by itself once you approve. You can revoke access from PlanetScale at any time.
+1. In Maple, open **Sources**, click **Connect source** and pick **PlanetScale**.
+2. Click **Continue with PlanetScale**. A popup takes you to PlanetScale to authorize Maple's OAuth application.
+3. Approve. The step moves on by itself.
+
+You can revoke access from PlanetScale at any time.
 
 - If the authorization covers one organization, Maple binds it automatically.
 - If it covers several, pick the one to collect from. One source watches one organization.
 
-The OAuth application needs `read_databases` for the database inventory, the service map, and query insights. If it is missing, the setup shows **Reconnect with read_databases**.
+The OAuth application needs `read_databases` for the database inventory, the service map and query insights. If it is missing, the setup shows **Reconnect with read_databases**.
 
 ## 2. Pick the branches
 
@@ -29,15 +33,20 @@ To change the organization or the branch filters later, open the source and choo
 
 Maple then shows a **Checking the connection** list: access to the organization, the databases and branches it found, and the first branch metrics. Nothing else is asked of you. Within 10 minutes Maple reads each branch's last minutes from the metrics API and the last row completes.
 
-Maple reads every ready branch that passes your branch filters. For Postgres branches that is pod CPU and memory, disk usage and free space, PgBouncer connections, WAL size, and replica lag. For Vitess branches it is connections and router (vtgate) CPU and memory per zone; the metrics API serves no pod or disk metrics for Vitess.
+Maple reads every ready branch that passes your branch filters:
+
+- **Postgres branches**: pod CPU and memory, disk usage and free space, PgBouncer connections, WAL size and replica lag.
+- **Vitess branches**: connections, and router (vtgate) CPU and memory per zone. The metrics API serves no pod or disk metrics for Vitess.
 
 Connections set up with a service token before the metrics API existed keep scraping PlanetScale's Prometheus endpoints with it, and the card shows **Streaming branch metrics from** your organization as before.
 
 ## 3. Webhooks
 
-Maple registers a webhook on every database in the organization, including databases you create later, within a few minutes. Out-of-memory restarts, storage thresholds, and anomalies open triage issues, and deploy requests and branch changes appear on the charts as they happen. The **Webhooks** row shows how many databases have one.
+Maple registers a webhook on every database in the organization, including databases you create later, within a few minutes. Out-of-memory restarts, storage thresholds and anomalies open triage issues, and deploy requests and branch changes appear on the charts as they happen. The **Webhooks** row shows how many databases have one.
 
-Registering webhooks needs the `write_databases` access. If you connected before Maple asked for it, the row reads **Needs attention**; click **Reconnect**. Maple only creates, re-enables, and deletes its own webhook and leaves your other webhooks alone. PlanetScale allows 5 webhooks per database, so a database that already has 5 shows the error on the row. Disconnecting removes Maple's webhooks.
+Registering webhooks needs the `write_databases` access. If you connected before Maple asked for it, the row reads **Needs attention**. Click **Reconnect**.
+
+Maple only creates, re-enables and deletes its own webhook and leaves your other webhooks alone. PlanetScale allows 5 webhooks per database, so a database that already has 5 shows the error on the row. Disconnecting removes Maple's webhooks.
 
 ## Verify
 
@@ -47,7 +56,7 @@ Registering webhooks needs the `write_databases` access. If you connected before
 
 ## What you get
 
-Each branch series carries `planetscale_organization_name`, `planetscale_database_name`, `planetscale_branch_name`, and `planetscale_database_branch_id`, which keys every series to a branch. Series read from the metrics API also carry `planetscale_source="api"`. The main metrics:
+Each branch series carries `planetscale_organization_name`, `planetscale_database_name`, `planetscale_branch_name` and `planetscale_database_branch_id`. The branch ID keys every series to a branch. Series read from the metrics API also carry `planetscale_source="api"`. The main metrics:
 
 | Metric                                     | What it tells you                                                     |
 | ------------------------------------------ | --------------------------------------------------------------------- |
@@ -65,7 +74,7 @@ Group dashboards and [alert rules](/docs/alerting/alert-rules) by `planetscale_d
 
 ## Troubleshooting
 
-- **The metrics row shows an error.** It reads **Metrics collection degraded** with what the last poll hit. A failing branch costs only its own window; the others keep arriving.
+- **The metrics row shows an error.** The row reads **Metrics collection degraded** with what the last poll hit. A failing branch costs only its own window. The other branches keep arriving.
 - **Authorization shows as revoked.** Click **Reconnect** to authorize again.
 - **Metrics stopped arriving.** The row reads **Metrics collection stalled**. Check the error on the health row.
 - **The status stays on Waiting for first metrics.** After 30 minutes without metrics the check stops on its own. Click **Check again** once you have fixed the cause.

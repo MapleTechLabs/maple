@@ -23,7 +23,12 @@ Maple's own SDKs send their ingest key the same way, so an app already set up fo
 
 Open the server in a browser and sign in with the access token. Everyone uses the same token, and a sign-in lasts 30 days in that browser. There are no separate user accounts: to remove someone's access, [rotate the token](/docs/self-hosting/operations#rotating-secrets).
 
-Failed sign-ins and wrong Bearer tokens are rate-limited: after 10 failures from one address (an IPv6 /64 counts as one) within a minute, that address gets `429 Too Many Requests` until the oldest failure is a minute old, even with the right token. Past 100 failures a minute from all addresses together, every new attempt is refused the same way. Browsers that are already signed in keep working.
+Failed sign-ins and wrong Bearer tokens are rate-limited:
+
+- After 10 failures from one address within a minute, that address gets `429 Too Many Requests` until the oldest failure is a minute old, even with the right token. An IPv6 /64 counts as one address.
+- Past 100 failures a minute from all addresses together, every new attempt is refused the same way.
+
+Browsers that are already signed in keep working.
 
 ## Query from the CLI
 

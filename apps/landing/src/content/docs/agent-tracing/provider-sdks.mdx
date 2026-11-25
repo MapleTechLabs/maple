@@ -10,7 +10,7 @@ icon: "openai"
 import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
 import LanguageTab from "../../../components/docs/LanguageTab.astro"
 
-Use this guide when your agent is your own loop around `client.chat.completions.create`, `client.messages.create` or `client.models.generate_content`. An instrumentation library records each model call, and you add the turn and tool spans and put the conversation id on the turn span. If you use an agent framework on top of these SDKs, use [that framework's guide](/docs/agent-tracing) instead.
+Use this guide when your agent is your own loop around `client.chat.completions.create`, `client.messages.create` or `client.models.generate_content`. In Python, an instrumentation library records each model call. In TypeScript, a helper from this guide records it. You add the turn and tool spans and put the conversation id on the turn span. If you use an agent framework on top of these SDKs, use [that framework's guide](/docs/agent-tracing) instead.
 
 ## Quick setup with a coding agent
 
@@ -36,7 +36,9 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="SPAN_ONLY"
 ```
 
-For an EU organization, use `https://ingest.eu.maple.dev`. `SPAN_ONLY` records prompts and replies for the transcript. Leave it unset to keep content out of Maple. `EVENT_ONLY` or `true` leaves the transcript empty.
+For an EU organization, use `https://ingest.eu.maple.dev`.
+
+`SPAN_ONLY` records prompts and replies for the transcript. Leave `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` unset to keep content out of Maple. `EVENT_ONLY` or `true` leaves the transcript empty.
 
 ## Set up tracing
 

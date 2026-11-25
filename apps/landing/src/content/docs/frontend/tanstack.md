@@ -13,7 +13,7 @@ Tested with `@tanstack/react-router` 1.170, `@tanstack/react-start` 1.169 and `@
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide.
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this page.
 
 ```text
 Set up Maple frontend tracing in this project.
@@ -88,7 +88,7 @@ List only your own APIs. The backend reads the header through its OpenTelemetry 
 
 `instrumentTanStackRouter` from `@maple-dev/browser/react` opens a span when the router starts a navigation and ends it when the route resolves.
 
-**TanStack Start:** call it in an effect in the root route's component (`RootDocument` in the scaffold), so it attaches after hydration. Attached in `getRouter()`, the page load never ends and the first click closes it as interrupted.
+**TanStack Start:** call it in an effect in the root route's component (`RootDocument` in the scaffold), so it attaches after hydration. If you attach it in `getRouter()` instead, the page load never ends and the first click closes it as interrupted.
 
 ```tsx
 // src/routes/__root.tsx
@@ -141,7 +141,7 @@ export const Route = createFileRoute("/projects/$projectId")({
 })
 ```
 
-The browser has no async context: only requests started before the first `await` in `fn` nest under the loader span. Start independent requests together with `Promise.all`; for a request that needs an earlier result, carry the context across the `await`:
+The browser has no async context: only requests started before the first `await` in `fn` nest under the loader span. Start independent requests together with `Promise.all`. For a request that needs an earlier result, carry the context across the `await`:
 
 ```ts
 import { context } from "@opentelemetry/api"
@@ -161,11 +161,11 @@ loader: ({ params }) =>
 
 ## Report route errors
 
-A route's own `onCatch` replaces `defaultOnCatch`; call `MapleBrowser.captureException(error)` there too. Errors thrown in event handlers are recorded by the SDK's global handler as `browser.uncaught_error`.
+A route's own `onCatch` replaces `defaultOnCatch`, so call `MapleBrowser.captureException(error)` there too. Errors thrown in event handlers are recorded by the SDK's global handler as `browser.uncaught_error`.
 
 ## Join the server render (TanStack Start)
 
-The page load joins the server's trace when the HTML response has a `Server-Timing: traceparent;desc="…"` entry. The server has to be instrumented with OpenTelemetry and write it.
+The page load joins the server's trace when the HTML response has a `Server-Timing: traceparent;desc="…"` entry. The server has to be instrumented with OpenTelemetry and write that entry.
 
 1. Start the OpenTelemetry Node SDK from the [Node.js guide](/docs/guides/instrumentation-nodejs), preloaded with `--import` in front of your server. Its HTTP instrumentation opens a span per request, with the server-side loader fetches under it. In development:
 

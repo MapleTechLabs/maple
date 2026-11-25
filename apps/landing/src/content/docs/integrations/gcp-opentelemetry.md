@@ -29,9 +29,11 @@ The connection then adds node and cluster logs, audit logs and the `gcp.gke.*` m
 
 1. Instrument the service with an OpenTelemetry SDK that exports to Maple, with the settings under [Instrument a Cloud Run service](#instrument-a-cloud-run-service).
 2. [Connect Google Cloud](/docs/integrations/gcp#connect).
-3. If the service exports logs over OpenTelemetry, untick **Cloud Run** under [**Log filter**](#change-the-filter): by default the connection forwards what a Cloud Run container writes to stdout and stderr.
+3. If the service exports logs over OpenTelemetry, keep **Cloud Run** unticked under [**Log filter**](#change-the-filter): by default the connection does not forward what a Cloud Run container writes to stdout and stderr.
 
-The connection adds Cloud Run's request logs and the `gcp.cloud_run.*` metrics. Cloud Run sends a `traceparent` header with every request. An SDK that continues it gives the server span the trace ID of Google's request log for that request, so the request log, your spans and your log lines join on one trace.
+The connection adds Cloud Run's request logs and the `gcp.cloud_run.*` metrics.
+
+Cloud Run sends a `traceparent` header with every request. An SDK that continues it gives the server span the trace ID of Google's request log for that request, so the request log, your spans and your log lines join on one trace.
 
 ### Compute Engine
 
@@ -43,7 +45,7 @@ The connection adds audit logs and the `gcp.gce.*` metrics.
 
 ## Application output
 
-Application output is what the code of a runtime writes to stdout and stderr. The connection forwards none by default: send it over OpenTelemetry. Platform, request and audit logs are forwarded either way. For workloads that can't, click **Forward application output instead** under **Log filter** and tick their runtimes.
+Application output is what the code of a runtime writes to stdout and stderr. The connection forwards none by default: send it over OpenTelemetry. For workloads that can't send it over OpenTelemetry, click **Forward application output instead** under **Log filter** and tick their runtimes. Platform, request and audit logs are forwarded either way.
 
 | Runtime             | Left out when unticked                                                                                | Still forwarded                          |
 | ------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -66,7 +68,10 @@ Other places your code runs have no tick and are always forwarded: Compute Engin
 
 ## Change the filter
 
-Open the menu on the connection's row and choose **Edit data**. Under **Log filter**, choose **Replace filter**. To forward application output, click **Forward application output instead** and tick its runtimes. Click **Save and continue**, then copy the script and run it in Cloud Shell again.
+1. Open the menu on the connection's row and choose **Edit data**.
+2. Under **Log filter**, choose **Replace filter**.
+3. To forward application output, click **Forward application output instead** and tick its runtimes.
+4. Click **Save and continue**, then copy the script and run it in Cloud Shell again.
 
 | Log filter              | The sink forwards                                                                     |
 | ----------------------- | ------------------------------------------------------------------------------------- |
@@ -81,7 +86,7 @@ These settings decide whether every trace arrives and joins Google's request log
 
 | Setting      | On Cloud Run                                                                                                                                                                                                                                                                                                                               |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Service name | Set `service.name` to the Cloud Run service name, `K_SERVICE`. Google's request logs arrive in Maple under that name. With another one, your spans and logs land in a different service than the request logs.                                                                                                                             |
+| Service name | Set `service.name` to the Cloud Run service name, `K_SERVICE`. Google's request logs arrive in Maple under that name. With another name, your spans and logs land in a different service than the request logs.                                                                                                                            |
 | Sampling     | Sample every trace: `AlwaysOnSampler`, or `OTEL_TRACES_SAMPLER=always_on`. Cloud Run sets the sampled flag of `traceparent` on about one request per ten seconds per instance. The SDK's default sampler follows that flag and drops the rest, while the log records of those requests still arrive.                                       |
 | Flushing     | Flush the span and log processors when the server span ends. Call `sdk.shutdown()` on `SIGTERM` and keep `node` as PID 1. Cloud Run throttles the container's CPU once the response is sent: with the default batch timers, telemetry arrives 5 to 6 seconds after the request on a warm instance and about 30 seconds after a cold start. |
 | Logs         | Emit application logs over OpenTelemetry, not stdout. Each record carries the trace and span ID of its request, and nothing is stored twice.                                                                                                                                                                                               |

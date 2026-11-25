@@ -3,6 +3,7 @@ import { Effect, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
+	pageUrlVariants,
 	searchConsoleLandingPagesQuery,
 	searchConsoleOverviewQuery,
 	searchConsoleTimeseriesQuery,
@@ -78,6 +79,27 @@ describe("searchConsoleTimeseriesQuery", () => {
 	})
 })
 
+describe("pageUrlVariants", () => {
+	it("pairs the URL with its path's other trailing-slash form", () => {
+		expect(pageUrlVariants("https://acme.dev/docs")).toEqual([
+			"https://acme.dev/docs",
+			"https://acme.dev/docs/",
+		])
+		expect(pageUrlVariants("https://acme.dev/")).toEqual(["https://acme.dev/", "https://acme.dev"])
+	})
+
+	it("keeps the exact URL and leaves the query string and fragment alone", () => {
+		expect(pageUrlVariants("https://acme.dev/a?next=/")).toEqual([
+			"https://acme.dev/a?next=/",
+			"https://acme.dev/a/?next=/",
+		])
+		expect(pageUrlVariants("https://acme.dev/docs//")).toEqual([
+			"https://acme.dev/docs//",
+			"https://acme.dev/docs/",
+		])
+	})
+})
+
 describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 	it("reads only the query grain and applies the filters", () => {
 		const flat = oneLine(
@@ -95,7 +117,7 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		expect(flat).toContain("Grain = 'query'")
 		expect(flat).toContain("Country = 'deu'")
 		expect(flat).toContain("Device = 'mobile'")
-		expect(flat).toContain("Page = 'https://acme.dev/docs'")
+		expect(flat).toContain("Page IN ('https://acme.dev/docs', 'https://acme.dev/docs/')")
 		// Filters narrow the rows, never which import is newest: the day's max is taken unfiltered.
 		expect(flat).toMatch(
 			/AS ingestedAt FROM search_console_daily WHERE (?:(?!Country).)*GROUP BY date\) AS newest/,
@@ -124,7 +146,7 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		const flat = oneLine(
 			compileUnsafe(searchConsoleTopPagesQuery({ page: "https://acme.dev/docs" }), params).sql,
 		)
-		expect(flat).toContain("Page = 'https://acme.dev/docs'")
+		expect(flat).toContain("Page IN ('https://acme.dev/docs', 'https://acme.dev/docs/')")
 		expect(flat).not.toContain("Country =")
 		expect(flat).not.toContain("Device =")
 	})

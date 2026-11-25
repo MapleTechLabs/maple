@@ -7,7 +7,7 @@ navLabel: "Browser"
 sdk: "effect"
 ---
 
-The browser entry point of `@maple-dev/effect-sdk` runs in single-page apps and any other browser context. [Install the SDK](/docs/sdks/effect#install) first. Unlike the server build, it reads no environment variables: browsers have no `process.env`, so all configuration is passed to `Maple.layer()`.
+The browser entry point of `@maple-dev/effect-sdk` runs in single-page apps and any other browser context. [Install the SDK](/docs/sdks/effect#install) first. Unlike the server build, it reads no environment variables: browsers have no `process.env`, so you pass all configuration to `Maple.layer()`.
 
 ## Quick start
 
@@ -67,9 +67,9 @@ const TracerLive = Maple.layer({
 
 How it behaves:
 
-- **Sampling still yields sessions.** When replay is disabled or a session isn't sampled, the SDK still posts session metadata rows. The session shows up on the Replays page with its linked traces, just without a recording. Set `emitSessionMeta: false` to turn that off too.
+- **Sampling still yields sessions.** When replay is disabled or a session isn't sampled, the SDK still posts session metadata rows. The session shows up on the Replays page with its linked traces, without a recording. Set `emitSessionMeta: false` to turn that off too.
 - **Tab lifecycle.** Recording suspends when the tab is hidden (flushing the tail with `keepalive`) and resumes when it becomes visible again. Sessions survive reloads within a tab and rotate after 30 minutes of inactivity (24-hour hard cap).
-- **Identify users** at any point; the id is attached when the session's next metadata row is posted and stamped as `user.id` on future spans. Pass `null` or `undefined` after sign-out to make future telemetry anonymous again:
+- **Identify users** at any point. The SDK attaches the id when it posts the session's next metadata row, and stamps it as `user.id` on future spans. Pass `null` or `undefined` after sign-out to make future telemetry anonymous again:
 
 ```typescript
 import { identify } from "@maple-dev/effect-sdk/client"
@@ -78,7 +78,7 @@ identify(user.id)
 identify(null)
 ```
 
-- **Clear the identity** on logout with `clearIdentity()` (the explicit inverse of `identify()`); metadata rows and spans go back to anonymous while the session continues:
+- **Clear the identity** on logout with `clearIdentity()` (the explicit inverse of `identify()`). Metadata rows and spans go back to anonymous while the session continues:
 
 ```typescript
 import { clearIdentity } from "@maple-dev/effect-sdk/client"
@@ -132,7 +132,11 @@ Effect.runPromise(program.pipe(Effect.provide(telemetry.layer)))
 await telemetry.flush()
 ```
 
-It takes `serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `attributes`, `excludeLogSpans`, `replay`, `emitSessionMeta` and `privacy` as `Maple.layer` does, the span filters (`dropSpanNames`, `dropSpanSubtrees`, `dropSpan`, `anticipatedErrorIdentifiers`, `isAnticipatedError`, and the deprecated `anticipatedErrorTags`, which `anticipatedErrorIdentifiers` replaces with the same values), and these options of its own:
+It takes these options as `Maple.layer` does: `serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `attributes`, `excludeLogSpans`, `replay`, `emitSessionMeta` and `privacy`.
+
+It also takes the span filters: `dropSpanNames`, `dropSpanSubtrees`, `dropSpan`, `anticipatedErrorIdentifiers` and `isAnticipatedError`. The deprecated `anticipatedErrorTags` is accepted too. `anticipatedErrorIdentifiers` replaces it and takes the same values.
+
+It has these options of its own:
 
 | Option                | Default       | Description                                                                                                 |
 | --------------------- | ------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -152,7 +156,11 @@ Anything in your bundle is visible to every visitor. Use the **Public key** (`ma
 
 ## Bundle size
 
-The `/client` entry point leaves out the Node-only resource detector and platform helpers, so the base bundle ships the OTLP JSON exporter and Effect's tracer and logger primitives (about 13 kB). The replay engine, rrweb included, sits behind a dynamic import in a separate chunk (about 360 kB). It is only fetched when replay is enabled _and_ the session is sampled, so apps that set `replay: { enabled: false }` never download it. `effect` is a peer dependency; if your app already uses Effect on the client, the SDK adds only its own layer code.
+The `/client` entry point leaves out the Node-only resource detector and platform helpers, so the base bundle ships the OTLP JSON exporter and Effect's tracer and logger primitives (about 13 kB).
+
+The replay engine, rrweb included, sits behind a dynamic import in a separate chunk (about 360 kB). The browser only fetches that chunk when replay is enabled _and_ the session is sampled, so apps that set `replay: { enabled: false }` never download it.
+
+`effect` is a peer dependency. If your app already uses Effect on the client, the SDK adds only its own layer code.
 
 ## Configuration reference
 

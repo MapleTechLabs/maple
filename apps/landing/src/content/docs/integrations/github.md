@@ -10,9 +10,9 @@ The Maple GitHub App syncs your repositories and their commit history into Maple
 
 Once connected, the integration does four things:
 
-- **Commit context in telemetry.** When your services report the `vcs.ref.head.revision` resource attribute, Maple resolves the SHA against synced commits. The trace view and service pages show a commit hover card with the author, message, and a link to GitHub.
+- **Commit context in telemetry.** When your services report the `vcs.ref.head.revision` resource attribute, Maple resolves the SHA against synced commits. The trace view and service pages show a commit hover card with the author, message and a link to GitHub.
 - **CI traces.** Every finished GitHub Actions run becomes a trace under the `github-actions` service: the run is the root span, each job a child span, and each step a span inside its job. No workflow changes are needed. Each job's log comes along as logs on those spans.
-- **Audit log.** Changes to the organization's people, access, repositories and protections, force pushes and more, in categories you pick, go to the audit log in the Security section, which only organization admins can read.
+- **Audit log.** Maple writes changes to the organization's people, access, repositories and protections, force pushes and more to the audit log in the Security section, in categories you pick. Only organization admins can read the audit log.
 - **Source code for Maple's agents.** Investigations and pull request review read your repositories through the app installation, so they can go from an exception in a trace to the code that raised it. These reads are not offered to third-party assistants on the [MCP server](/docs/reference/mcp).
 
 ## Prerequisites
@@ -32,9 +32,9 @@ When the install completes, GitHub sends you back and Maple shows the account an
 
 #### If the app is already installed
 
-Click **Connect GitHub** as usual. After you authorize Maple, it lists the accounts where the app is installed and you administer them: the personal account you own, or organizations you are an owner of. Pick one to connect it to this Maple organization. Maple keeps the installation's existing repository selection; you do not need to reinstall the app. To add an account that does not have the app yet, click **Install on another GitHub account**.
+Click **Connect GitHub** as usual. After you authorize Maple, it lists the accounts that have the app installed and that you administer: the personal account you own, or organizations you are an owner of. Pick one to connect it to this Maple organization. Maple keeps the installation's existing repository selection; you do not need to reinstall the app. To add an account that does not have the app yet, click **Install on another GitHub account**.
 
-If Maple cannot confirm you own an organization, GitHub has not shared organization roles with the app yet. An owner of that organization approves the app's pending permission request (organization **Settings > GitHub Apps > Review request**), then you connect again.
+If Maple cannot confirm you own an organization, GitHub has not shared organization roles with the app yet. An owner of that organization approves the app's pending permission request (organization **Settings → GitHub Apps → Review request**), then you connect again.
 
 Maple shows **Discovering repositories** until the sync worker finishes listing them, including while GitHub asks it to wait before retrying. A completed discovery with no repositories shows that no repositories were granted. A failed discovery shows its error and lets you reconnect to retry.
 
@@ -54,12 +54,15 @@ Changing the tracked branch is destructive. Maple deletes the repository's synce
 
 Maple receives GitHub's `workflow_run` and `workflow_job` webhooks for the repositories the app can see and writes one trace per run attempt. A re-run gets its own trace.
 
-- **Spans:** the run is a `SERVER` span named `RUN <workflow>` (for example `RUN CI`), from when it started to when it finished. A job that waited a second or more for a runner spans from when it was queued to when it finished, with a `Waiting for a runner` child span for that wait; otherwise it starts when the runner picked it up, and a job that never started has no length. The wait is always on the job span as `maple.cicd.queue_duration_ms`. Each step is a span inside its job, named without the commit a pinned action points at (`Run actions/checkout`, not `Run actions/checkout@3d3c42e…`). Steps that never ran are left out.
-- **Status:** failed and timed-out runs, jobs, and steps are `Error` with `error.type` set, passing ones are `Ok`, and cancelled or skipped ones carry no status.
-- **Failure reasons:** for a failed job, Maple reads the annotations GitHub recorded on it (test failures, compiler errors). The most specific one becomes the job span's status message and `maple.cicd.failure.reason`, and up to 20 of them, failures first, are `cicd.annotation` events on the job span with `code.file.path` and `code.line.number`.
-- **Attributes:** spans follow the OpenTelemetry CI/CD conventions (`cicd.pipeline.name`, `cicd.pipeline.run.id`, `cicd.pipeline.action.name`, `cicd.pipeline.result`, `cicd.pipeline.task.name`, `cicd.pipeline.task.run.id`, `cicd.pipeline.task.run.result`, `cicd.pipeline.task.run.url.full`, `cicd.worker.name`) plus `vcs.ref.head.name`, `vcs.ref.head.revision`, and `vcs.change.id` (the pull request number). Jobs and steps are both tasks; a step's URL links to its line in the job log. The resource carries `vcs.repository.name`, `vcs.owner.name`, and `vcs.repository.url.full`, so you can filter CI traces by repository.
+- **Spans:**
+    - The run is a `SERVER` span named `RUN <workflow>` (for example `RUN CI`), from when it started to when it finished.
+    - A job that waited a second or more for a runner spans from when it was queued to when it finished, with a `Waiting for a runner` child span for that wait. Otherwise the job span starts when the runner picked the job up. A job that never started has no length. The wait is always on the job span as `maple.cicd.queue_duration_ms`.
+    - Each step is a span inside its job, named without the commit a pinned action points at (`Run actions/checkout`, not `Run actions/checkout@3d3c42e…`). Steps that never ran are left out.
+- **Status:** failed and timed-out runs, jobs and steps are `Error` with `error.type` set, passing ones are `Ok`, and cancelled or skipped ones carry no status.
+- **Failure reasons:** for a failed job, Maple reads the annotations GitHub recorded on it (test failures, compiler errors). The most specific one becomes the job span's status message and `maple.cicd.failure.reason`. Up to 20 of them, failures first, are `cicd.annotation` events on the job span with `code.file.path` and `code.line.number`.
+- **Attributes:** spans follow the OpenTelemetry CI/CD conventions (`cicd.pipeline.name`, `cicd.pipeline.run.id`, `cicd.pipeline.action.name`, `cicd.pipeline.result`, `cicd.pipeline.task.name`, `cicd.pipeline.task.run.id`, `cicd.pipeline.task.run.result`, `cicd.pipeline.task.run.url.full`, `cicd.worker.name`) plus `vcs.ref.head.name`, `vcs.ref.head.revision` and `vcs.change.id` (the pull request number). Jobs and steps are both tasks. A step's URL links to its line in the job log. The resource carries `vcs.repository.name`, `vcs.owner.name` and `vcs.repository.url.full`, so you can filter CI traces by repository.
 
-CI traces and logs are on by default. CI spans and logs are ingested like any other telemetry and count toward your usage. To stop both, an admin or engineer turns off **CI traces and logs** on the GitHub source in **Sources**; runs that finish while it is off are not recorded.
+CI traces and logs are on by default. CI spans and logs are ingested like any other telemetry and count toward your usage. To stop both, an admin or engineer turns off **CI traces and logs** on the GitHub source in **Sources**. Runs that finish while the switch is off are not recorded.
 
 ## CI logs
 
@@ -97,13 +100,19 @@ Events are grouped into categories, each with its own switch under **Audit log**
 | Deployments                       | No            | `deployment.created`, a status by its outcome (`deployment_status.failure`), environment approvals (`deployment_review.approved`)              | Deployments: Read                                                                                         |
 | Security alerts                   | No            | Secret scanning, code scanning and Dependabot alerts and repository security advisories (`secret_scanning_alert.created`, ...)                 | Secret scanning alerts, Code scanning alerts, Dependabot alerts, Repository security advisories: Read     |
 
-- **Force pushes:** a force push to the repository's default branch is `push.forced.default_branch`. One to a branch with an open pull request that someone else opened is `push.forced.non_author`, and its entry names that pull request; Maple asks GitHub for the branch's pull requests when the push arrives, and if GitHub does not answer the entry stays `push.forced`. A rebase someone does for the author with **Update branch**, or a bot that pushes to a person's pull request, counts too. Only branches in the same repository are checked: a push to a fork's branch never reaches the upstream repository's webhooks. Every other force push is `push.forced`. The **Detections** page has a template for each of the first two.
-- **Refused pushes:** a push a ruleset refuses never reaches the repository, so GitHub sends no webhook for it. Maple reads each repository's rule insights every 15 minutes instead and writes every refusal as `rule_suite.failed` with the outcome **Denied**, naming who pushed, the branch, and the rules that failed (for example `non_fast_forward` for a force push, `required_signatures` for an unsigned commit). It needs **Administration: Read**, and only rulesets are covered: a push that classic branch protection refuses leaves no record GitHub shares. GitHub keeps rule insights for public repositories, and for private ones on paid plans. The **Detections** page has a template for refused pushes.
-- **Permissions:** until an owner accepts a permission the Maple app asks for (organization **Settings > GitHub Apps > Review request**), the events that need it do not arrive. Maple never changes repository settings.
-- **Time:** GitHub's webhooks carry no event time, so an entry's time is when GitHub sent it, normally seconds before Maple receives it.
-- **Not covered:** sign-ins, Actions settings, and other events GitHub records only in its own audit log, which GitHub offers on Enterprise Cloud. Ordinary pushes, pull request activity other than merges and approvals, and CI runs stay out.
+- **Force pushes:** a force push to the repository's default branch is `push.forced.default_branch`. A force push to a branch with an open pull request that someone else opened is `push.forced.non_author`, and its entry names that pull request. Every other force push is `push.forced`. The **Detections** page has a template for each of the first two.
 
-The audit log is on by default. To stop it, an admin turns off **Audit log** on the GitHub source; to stop one category, its switch below. Events that happen while something is off are not recorded, and turning it back on does not fill the gap. Entries already in the audit log stay.
+    For `push.forced.non_author`, Maple asks GitHub for the branch's pull requests when the push arrives. If GitHub does not answer, the entry stays `push.forced`. A rebase someone does for the author with **Update branch**, or a bot that pushes to a person's pull request, counts too. Only branches in the same repository are checked: a push to a fork's branch never reaches the upstream repository's webhooks.
+
+- **Refused pushes:** a push a ruleset refuses never reaches the repository, so GitHub sends no webhook for it. Maple reads each repository's rule insights every 15 minutes instead and writes every refusal as `rule_suite.failed` with the outcome **Denied**. The entry names who pushed, the branch and the rules that failed (for example `non_fast_forward` for a force push, `required_signatures` for an unsigned commit). The **Detections** page has a template for refused pushes.
+
+    Reading rule insights needs **Administration: Read**. Only rulesets are covered: a push that classic branch protection refuses leaves no record GitHub shares. GitHub keeps rule insights for public repositories, and for private ones on paid plans.
+
+- **Permissions:** until an owner accepts a permission the Maple app asks for (organization **Settings → GitHub Apps → Review request**), the events that need it do not arrive. Maple never changes repository settings.
+- **Time:** GitHub's webhooks carry no event time, so an entry's time is when GitHub sent it, normally seconds before Maple receives it.
+- **Not covered:** sign-ins, Actions settings and other events GitHub records only in its own audit log, which GitHub offers on Enterprise Cloud. Ordinary pushes, pull request activity other than merges and approvals, and CI runs stay out.
+
+The audit log is on by default. To stop it, an admin or engineer turns off **Audit log** on the GitHub source. To stop one category, an admin or engineer turns off its switch under **Audit log**. Events that happen while a switch is off are not recorded, and turning it back on does not fill the gap. Entries already in the audit log stay.
 
 ## Verify
 

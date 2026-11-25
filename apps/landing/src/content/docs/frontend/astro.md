@@ -7,9 +7,9 @@ navLabel: "Astro"
 icon: "astro"
 ---
 
-This page sets up `@maple-dev/browser` in an Astro site. Every document load becomes a `pageload` span and, with `<ClientRouter />`, every client-side navigation a `navigate` span, both named after the page's route (`/projects/[id]`). For pages rendered on demand, the page load joins the server render's trace.
+This page sets up `@maple-dev/browser` in an Astro site. Every document load becomes a `pageload` span. With `<ClientRouter />`, every client-side navigation becomes a `navigate` span. Both are named after the page's route (`/projects/[id]`). For pages rendered on demand, the page load joins the server render's trace.
 
-It covers the browser setup, connecting your API, island errors, and the server half with the Node adapter. Checked against Astro 7.4 and `@maple-dev/browser` 0.14.
+It covers the browser setup, connecting your API, island errors and the server half with the Node adapter. Checked against Astro 7.4 and `@maple-dev/browser` 0.14.
 
 ## Quick setup with a coding agent
 
@@ -65,9 +65,9 @@ document.addEventListener("astro:page-load", endNavigation)
 
 Astro only exposes `PUBLIC_`-prefixed environment variables to browser code. The public key can only write telemetry, so it is safe to ship. For an EU organization, add `region: "eu"`.
 
-Same-origin requests always carry the `traceparent` header, so your server's spans join the browser's trace. `propagateTraceHeaderCorsUrls` adds your APIs on other origins. Each must allow the header in its CORS preflight (`Access-Control-Allow-Headers: content-type, traceparent, tracestate`), or the browser blocks the request, and needs OpenTelemetry to read it ([Instrument your application](/docs/instrumentation)). List only your own APIs.
+Same-origin requests always carry the `traceparent` header, so your server's spans join the browser's trace. `propagateTraceHeaderCorsUrls` adds your APIs on other origins. Each API must allow the header in its CORS preflight (`Access-Control-Allow-Headers: content-type, traceparent, tracestate`), or the browser blocks the request. Each also needs OpenTelemetry to read the header ([Instrument your application](/docs/instrumentation)). List only your own APIs.
 
-Import it from the base layout every page renders, and write the route template onto `<html>`:
+Import `src/maple.ts` from the base layout every page renders, and write the route template onto `<html>`:
 
 ```astro
 ---
@@ -89,9 +89,9 @@ import { ClientRouter } from "astro:transitions"
 </html>
 ```
 
-`<ClientRouter />` is optional; drop it and the same script traces a multi-page site. Keep the `<script>` without `is:inline` so Astro bundles it once per page. A page that doesn't use the layout needs the same `<script>` and `data-route`.
+`<ClientRouter />` is optional. Without it, the same script traces a multi-page site. Keep the `<script>` without `is:inline` so Astro bundles it once per page. A page that doesn't use the layout needs the same `<script>` and `data-route`.
 
-Requests islands make are their own traces, not children of the page load or navigation span. They still join your backend's trace through `traceparent`.
+Requests that islands make are their own traces, not children of the page load or navigation span. They still join your backend's trace through `traceparent`.
 
 ## Report island errors
 

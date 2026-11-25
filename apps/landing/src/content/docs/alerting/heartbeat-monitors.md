@@ -82,7 +82,7 @@ A new monitor starts as **pending** and waits for its first ping. The monitor's 
 - **Failure ping.** A ping to `/fail` puts the monitor down at once, with the error "The job reported a failure".
 - **Recovery.** The next success ping puts the monitor back up.
 
-Maple checks each heartbeat every minute. A down monitor opens an [incident](/docs/alerting/incidents) and notifies its destinations, again every 30 minutes while it stays down, and resolves it on the next check after a success ping.
+Maple checks each heartbeat every minute. A down monitor opens an [incident](/docs/alerting/incidents) and notifies its destinations, then notifies them again every 30 minutes while it stays down. Maple resolves the incident on the next check after a success ping.
 
 When the job pings at its end, the grace period has to cover how long the job runs. A job on `0 2 * * *` that runs for 40 minutes pings at 02:40, so with a 30-minute grace period the monitor goes down at 02:30 every night and recovers at 02:40. Set the grace period above the job's longest run.
 
@@ -92,19 +92,19 @@ When the job pings at its end, the grace period has to cover how long the job ru
 
 On the [MCP server](/docs/reference/mcp), `manage_uptime_monitor action=create` with `kind` set to `heartbeat` creates a monitor. It takes:
 
-- `heartbeat_interval_seconds` (at least 60), or `cron` with an optional `timezone` (default `UTC`). Pass one, not both.
+- `heartbeat_interval_seconds` (at least 60), or `cron` with an optional `time_zone` (default `UTC`). Pass one, not both.
 - `grace_seconds`: 0 to 86400. The default is 300, not the 30 minutes the app uses.
 - `destination_ids` and `service`, both optional.
 
 The result includes the ping URL (`monitor.heartbeatUrl`) and a curl line for the job (`pingCommand`).
 
-In Terraform, use [`maple_uptime_monitor`](/docs/iac/terraform-resources#maple_uptime_monitor) and set `type = "heartbeat"` inside `config`, as in the [example](/docs/iac/terraform-resources#maple_uptime_monitor). Its read-only `heartbeat_url` attribute is the ping URL. In [Pulumi](/docs/iac/pulumi) it is `maple.UptimeMonitor` and `heartbeatUrl`.
+In Terraform, use [`maple_uptime_monitor`](/docs/iac/terraform-resources#maple_uptime_monitor) and set `type = "heartbeat"` inside `config`, as in the [example](/docs/iac/terraform-resources#maple_uptime_monitor). Its read-only `heartbeat_url` attribute is the ping URL. In [Pulumi](/docs/iac/pulumi), the resource is `maple.UptimeMonitor` and the attribute is `heartbeatUrl`.
 
 ## Limits
 
 - The interval is at least 60 seconds.
 - The grace period is 0 seconds to 24 hours.
-- The token in the URL is the only credential: anyone with the URL can send pings. Only engineers and admins see it, in the app and in the API. The URL does not change when you edit the monitor. To replace a leaked URL, delete the monitor and create a new one.
+- The token in the URL is the only credential: anyone with the URL can send pings. Only engineers and admins see the URL, in the app and in the API. The URL does not change when you edit the monitor. To replace a leaked URL, delete the monitor and create a new one.
 
 ## Next steps
 

@@ -149,6 +149,10 @@ describeWithChdb("Search Console reads on chDB", () => {
 		// A filter narrows the rows, never which import is complete: markers hold '' there.
 		expect(topQueries("dropped", { country: "usa", device: "desktop" })).toEqual([["a", 6]])
 		expect(topQueries("dropped", { country: "deu" })).toEqual([])
+		// Google stores the page as crawled (`https://acme.dev/`); either spelling of it matches.
+		expect(topQueries("legacy", { page: "https://acme.dev" })).toEqual([["a", 12]])
+		expect(topQueries("legacy", { page: "https://acme.dev/" })).toEqual([["a", 12]])
+		expect(topQueries("legacy", { page: "https://acme.dev/docs" })).toEqual([])
 		// The suggested trend reads the day the way the query list does.
 		expect(trend("dropped", "a")).toEqual([[DAY, 6]])
 		expect(trend("dropped", "b")).toEqual([])

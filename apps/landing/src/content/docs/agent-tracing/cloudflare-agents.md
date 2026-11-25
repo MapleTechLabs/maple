@@ -9,7 +9,7 @@ icon: "cloudflare"
 
 Agents built with the Cloudflare Agents SDK (`AIChatAgent` or `Agent`) usually call models through the Vercel AI SDK, which emits the spans Maple reads. This guide sends those spans from the agent's Durable Object to Maple and passes the agent's instance name as the conversation id.
 
-The Workers runtime can't run the Node.js OpenTelemetry SDK, so you create a small tracer provider that exports over `fetch` and flush it at the end of every turn. It works on the Workers Free and Paid plans.
+The Workers runtime can't run the Node.js OpenTelemetry SDK, so you create a small tracer provider that exports over `fetch` and flush it at the end of every turn. This setup works on the Workers Free and Paid plans.
 
 You need `ai` 7.0.106 or newer and the `nodejs_compat` compatibility flag, which Agents SDK projects already have.
 
@@ -56,7 +56,7 @@ For `wrangler dev`, add `MAPLE_INGEST_KEY=YOUR_INGEST_KEY` to `.dev.vars`.
 
 ## Create the tracer provider
 
-Create a `telemetry.ts`. The agent code below imports `tracerProvider` from it, which also registers the AI SDK integration:
+Create a `telemetry.ts`. The agent code below imports `tracerProvider` from it, and that import also registers the AI SDK integration:
 
 ```ts
 // telemetry.ts
@@ -160,7 +160,9 @@ export class TaskAgent extends Agent<Env> {
 
 If the method returns a `streamText` stream instead, flush once the stream has been read, with `this.ctx.waitUntil(result.consumeStream().then(() => tracerProvider.forceFlush()))` before returning the response.
 
-Give each chat its own instance: on the client, pass a chat id as `name` to `useAgent({ agent: "ChatAgent", name: chatId })`. Without a `name`, every client connects to the `default` instance and all chats land in one session. `functionId` becomes the agent name in Maple, so give each agent a distinct one.
+Give each chat its own instance: on the client, pass a chat id as `name` to `useAgent({ agent: "ChatAgent", name: chatId })`. Without a `name`, every client connects to the `default` instance and all chats land in one session.
+
+`functionId` becomes the agent name in Maple, so give each agent a distinct one.
 
 To keep a call's prompts and replies out of Maple, set `recordInputs: false` and `recordOutputs: false` in its `telemetry`.
 

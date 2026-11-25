@@ -7,9 +7,9 @@ navLabel: "Java"
 sdk: "java"
 ---
 
-This guide attaches the OpenTelemetry Java agent to your application so it sends traces, logs and metrics to Maple. The agent instruments most popular libraries without code changes. A manual SDK setup is covered further down for runtimes where you cannot attach an agent.
+This guide attaches the OpenTelemetry Java agent to your application so it sends traces, logs and metrics to Maple. The agent instruments most popular libraries without code changes. For runtimes where you cannot attach an agent, see [Manual SDK setup](#manual-sdk-setup).
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -63,7 +63,7 @@ The agent instruments Spring (MVC, WebFlux, Boot), servlet containers, JDBC, gRP
 
 ## Manual SDK setup
 
-Use this when you cannot attach the agent, for example in GraalVM native images or restricted runtimes.
+Use the manual SDK setup when you cannot attach the agent, for example in GraalVM native images or restricted runtimes.
 
 ### Install dependencies
 
@@ -205,7 +205,9 @@ public void processOrder(String orderId) {
 }
 ```
 
-Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map). With the agent, `opentelemetry-api` is the only dependency this code needs.
+With the agent, `opentelemetry-api` is the only dependency this code needs.
+
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
 ## Attributes Maple uses
 
@@ -213,7 +215,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the **Recent deploys** panel on each service page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
@@ -221,7 +223,7 @@ export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme
 
 ### Databases
 
-The Java agent instruments JDBC, R2DBC, Hibernate and the Mongo and Redis clients, and sets these attributes for you. Without the agent, set them on a `Client` span:
+The Java agent instruments JDBC, R2DBC, Hibernate and the Mongo and Redis clients, and sets the `db.*` attributes for you. Without the agent, set them on a `Client` span:
 
 ```java
 Span span = tracer.spanBuilder("SELECT users")

@@ -15,20 +15,22 @@ Cloudflare AI Gateway can export a trace span for every request it proxies, with
 ## Point the gateway at Maple
 
 1. In the Cloudflare dashboard, open **AI → AI Gateway**, pick your gateway and go to **Settings**.
-2. Add an OpenTelemetry exporter and set **URL** to the full traces URL. The gateway doesn't append `/v1/traces`. EU organizations use `https://ingest.eu.maple.dev/v1/traces`.
+2. Add an OpenTelemetry exporter and set **URL** to the full traces URL:
 
     ```text
     https://ingest.maple.dev/v1/traces
     ```
 
-3. Add a header named `Authorization` with the value `Bearer YOUR_INGEST_KEY`. Your ingest key is in **Settings → Ingestion**.
+    EU organizations use `https://ingest.eu.maple.dev/v1/traces`. The gateway doesn't append `/v1/traces`.
+
+3. Add a header named `Authorization` with the value `Bearer YOUR_INGEST_KEY`. Your ingest key is in Maple under **Settings → Ingestion**.
 4. Leave **Content type** on JSON (protobuf works too) and save.
 
 Each gateway has its own exporters, so repeat this for every gateway you want in Maple.
 
 ## Send a session id with every request
 
-The gateway turns the keys in a request's metadata into span attributes. Send a `session_id` with the same value on every request of a conversation, such as your chat thread id, and a new one for each conversation. Keys starting with `gen_ai.` are dropped by the gateway, so `gen_ai.conversation.id` doesn't work here.
+The gateway turns the keys in a request's metadata into span attributes. Send a `session_id` with the same value on every request of a conversation, such as your chat thread id, and a new one for each conversation. The gateway drops keys starting with `gen_ai.`, so `gen_ai.conversation.id` doesn't work here.
 
 <LanguageTabs label="Client" tabs={[{ id: "http", label: "HTTP / OpenAI SDK" }, { id: "binding", label: "Workers AI binding" }]}>
 <LanguageTab id="http">

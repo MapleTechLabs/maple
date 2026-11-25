@@ -9,7 +9,7 @@ sdk: "kotlin"
 
 This guide instruments a Kotlin JVM application (Ktor, Spring Boot or plain JVM) so it sends traces, logs and metrics to Maple. Kotlin runs on the JVM, so the OpenTelemetry Java agent works without code changes. For Android, see the [opentelemetry-android](https://github.com/open-telemetry/opentelemetry-android) project.
 
-To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill. To check an existing setup, use [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 
@@ -63,7 +63,7 @@ The agent instruments Ktor, Spring, gRPC, JDBC, Kafka and [many more libraries](
 
 ## Manual SDK setup
 
-Use this when you cannot attach the agent, for example in native images or restricted runtimes.
+Use the manual SDK setup when you cannot attach the agent, for example in native images or restricted runtimes.
 
 ### Install dependencies
 
@@ -249,7 +249,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the **Recent deploys** panel on each service page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
@@ -257,7 +257,7 @@ export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme
 
 ### Databases
 
-The Java agent instruments JDBC, R2DBC and the Mongo and Redis clients, and sets these attributes for you. Without the agent, set them on a `Client` span:
+The Java agent instruments JDBC, R2DBC and the Mongo and Redis clients, and sets the `db.*` attributes for you. Without the agent, set them on a `Client` span:
 
 ```kotlin
 val span = tracer.spanBuilder("SELECT users")

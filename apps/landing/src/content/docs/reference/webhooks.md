@@ -92,9 +92,17 @@ The body is identical for every destination's webhook, regardless of the rule's 
 
 ### Error issue notifications
 
-A destination listed in your organization's error notification policy (set with the `update_error_notification_policy` MCP tool or the API) also receives error issue events: a new issue, a regression, a resolve, and optionally workflow changes and claims. They carry the same headers and a smaller body: `eventType`, `incidentId`, `incidentStatus`, `dedupeKey`, `rule`, `observed`, `linkUrl`, `chatUrl` and `sentAt`, without `event`, `template` or `chart`. Here `rule.id` is the issue ID, `rule.name` reads `<ExceptionType> in <service>`, and `observed.value` is the occurrence count. `dedupeKey` starts with `error:`. Both `linkUrl` and `chatUrl` open the issue.
+A destination listed in your organization's error notification policy (set with the `update_error_notification_policy` MCP tool or the API) also receives error issue events: a new issue, a regression, a resolve, and optionally workflow changes and claims.
 
-Issues escalated by triage arrive with `eventType: "escalation"` in the body and an extra `escalation` object describing the issue. The `x-maple-event-type` header on these reads `trigger`, so branch on the body's `eventType`.
+Error issue events carry the same headers and a smaller body: `eventType`, `incidentId`, `incidentStatus`, `dedupeKey`, `rule`, `observed`, `linkUrl`, `chatUrl` and `sentAt`, without `event`, `template` or `chart`. In that body:
+
+- `rule.id` is the issue ID.
+- `rule.name` reads `<ExceptionType> in <service>`.
+- `observed.value` is the occurrence count.
+- `dedupeKey` starts with `error:`.
+- Both `linkUrl` and `chatUrl` open the issue.
+
+Issues escalated by triage arrive with `eventType: "escalation"` in the body and an extra `escalation` object describing the issue. The `x-maple-event-type` header on these requests reads `trigger`, so branch on the body's `eventType`.
 
 ## Verifying the signature
 
@@ -133,7 +141,7 @@ The signature covers the body only, and the body carries no delivery timestamp y
 | `404`, `410`                                   | Fails without retrying (endpoint gone)          |
 | Any other `4xx`                                | Fails without retrying (rejected)               |
 
-Alert events are attempted up to **5 times**, about 1, 2, 4 and 8 minutes apart, with every retry carrying the same body and `x-maple-delivery-key`. **Send test** is attempted once.
+Alert events are attempted up to **5 times**, about 1, 2, 4 and 8 minutes apart. Every retry carries the same body and `x-maple-delivery-key`. **Send test** is attempted once.
 
 After **3 consecutive non-retryable failures**, the destination is disabled and the reason is shown on it under **Alerts → Routing**, in **Destinations**. Fix the endpoint and re-enable it; a successful delivery resets the count.
 

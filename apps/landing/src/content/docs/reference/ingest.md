@@ -28,7 +28,9 @@ Every signal reaches Maple through one OTLP gateway. Any OpenTelemetry SDK or Co
 | `POST /v1/sessionReplays/*` | Session replay chunks, sent by the [browser SDK](/docs/session-replay/browser-sdk) |
 | `POST /v1/sessionEvents`    | Session timeline events, sent by the browser SDK                                   |
 
-Use the ingest host of your organization's [region](/docs/reference/regions). A key from one region is rejected by the other. A standard exporter appends the signal path itself:
+Use the ingest host of your organization's [region](/docs/reference/regions). A key from one region is rejected by the other.
+
+A standard exporter appends the signal path itself:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
@@ -38,7 +40,9 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"   # or grpc
 
 ## gRPC
 
-The same host also serves the OTLP gRPC services for traces, logs and metrics (`opentelemetry.proto.collector.{trace,logs,metrics}.v1.*Service/Export`). Point a gRPC exporter at the base URL with no port, `https://ingest.maple.dev`, and it connects over TLS on port 443. Do not add port `4317`. Send the key as `authorization: Bearer maple_pk_…` metadata (or `x-maple-ingest-key`); `OTEL_EXPORTER_OTLP_HEADERS` sets it for you. Messages may be gzip-compressed.
+The same host also serves the OTLP gRPC services for traces, logs and metrics (`opentelemetry.proto.collector.{trace,logs,metrics}.v1.*Service/Export`). Point a gRPC exporter at the base URL with no port, `https://ingest.maple.dev`, and it connects over TLS on port 443. Do not add port `4317`.
+
+Send the key as `authorization: Bearer maple_pk_…` metadata (or `x-maple-ingest-key`). `OTEL_EXPORTER_OTLP_HEADERS` sets it for you. Messages may be gzip-compressed.
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
@@ -46,7 +50,16 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_pk_…"
 export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
 ```
 
-Failures come back as gRPC status codes instead of HTTP ones: an invalid key is `UNAUTHENTICATED` (16), a signal the source token does not allow is `PERMISSION_DENIED` (7), rate limits are `RESOURCE_EXHAUSTED` (8), a malformed request is `INVALID_ARGUMENT` (3), an unsupported `grpc-encoding` is `UNIMPLEMENTED` (12), and server-side failures are `UNAVAILABLE` (14), which exporters retry. The status message says what went wrong.
+Failures come back as gRPC status codes instead of HTTP ones:
+
+- An invalid key is `UNAUTHENTICATED` (16).
+- A signal the source token does not allow is `PERMISSION_DENIED` (7).
+- Rate limits are `RESOURCE_EXHAUSTED` (8).
+- A malformed request is `INVALID_ARGUMENT` (3).
+- An unsupported `grpc-encoding` is `UNIMPLEMENTED` (12).
+- Server-side failures are `UNAVAILABLE` (14), which exporters retry.
+
+The status message says what went wrong.
 
 Product events, session replays and session events are HTTP only.
 
@@ -59,7 +72,9 @@ Authorization: Bearer maple_pk_…
 x-maple-ingest-key: maple_pk_…
 ```
 
-Ingest keys can only send data, and each belongs to one organization. Use the **public** key (`maple_pk_…`) in browsers and mobile apps, where it ships to end users, and the **private** key (`maple_sk_…`) on servers. Find both under **Settings → Ingestion** in the dashboard. [Authentication](/docs/reference/authentication#ingest-keys) explains the difference. A source you connect under **Sources** can instead use its own [source token](/docs/reference/authentication#source-tokens) (`maple_src_…`), which may allow only some signals, expire, be paused or carry a rate limit.
+Ingest keys can only send data, and each belongs to one organization. Use the **public** key (`maple_pk_…`) in browsers and mobile apps, where it ships to end users, and the **private** key (`maple_sk_…`) on servers. Find both under **Settings → Ingestion** in the dashboard. [Authentication](/docs/reference/authentication#ingest-keys) explains the difference.
+
+A source you connect under **Sources** can instead use its own [source token](/docs/reference/authentication#source-tokens) (`maple_src_…`), which may allow only some signals, expire, be paused or carry a rate limit.
 
 The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is discarded. Use it in CI or example code where you want the exporter to run without sending anything.
 
@@ -142,7 +157,14 @@ OpenTelemetry SDKs and the Collector already retry `429` and `503` with backoff,
 
 A request is limited by its compressed size (20 MiB), not its span or record count. The default batch sizes of the OpenTelemetry SDKs (512 spans or log records per export) and of the Collector's `batch` processor (8,192 items) stay far below that. If you raise them and a batch reaches the limit, the gateway answers `413` and the exporter drops the whole batch.
 
-Every stored row carries its resource and scope attributes, so a batch is stored as several times its decompressed size: 3 to 13 times for typical telemetry, and up to about 200 times when a long resource attribute, such as a JVM command line, sits on many small items. The gateway builds and stores the rows in pieces, so a large batch needs no more memory than a small one. Two limits still apply to the rows, and both are checked before anything is stored. A batch whose rows would come to more than 512 times its decompressed size is refused with `413 ingest_row_expansion`; shorten the shared attributes or send fewer items per resource. A self-hosted gateway sets this ratio with `INGEST_MAX_ROW_EXPANSION` (default `512`, `0` turns it off). A batch whose rows are more than your organization's ingest queue holds (1 GiB, `INGEST_ORG_QUEUE_MAX_BYTES` when self-hosted) is refused with `413 ingest_rows_exceed_queue`; send smaller batches. A self-hosted gateway also refuses rows larger than one write-ahead log lane, `INGEST_QUEUE_MAX_BYTES` divided by twice the shard count, which can be the lower limit on a host with many CPUs.
+Every stored row carries its resource and scope attributes, so a batch is stored as several times its decompressed size: 3 to 13 times for typical telemetry, and up to about 200 times when a long resource attribute, such as a JVM command line, sits on many small items. The gateway builds and stores the rows in pieces, so a large batch needs no more memory than a small one.
+
+Two limits still apply to the rows, and both are checked before anything is stored:
+
+- A batch whose rows would come to more than 512 times its decompressed size is refused with `413 ingest_row_expansion`. Shorten the shared attributes or send fewer items per resource. A self-hosted gateway sets this ratio with `INGEST_MAX_ROW_EXPANSION` (default `512`, `0` turns it off).
+- A batch whose rows are more than your organization's ingest queue holds (1 GiB, `INGEST_ORG_QUEUE_MAX_BYTES` when self-hosted) is refused with `413 ingest_rows_exceed_queue`. Send smaller batches.
+
+A self-hosted gateway also refuses rows larger than one write-ahead log lane, `INGEST_QUEUE_MAX_BYTES` divided by twice the shard count, which can be the lower limit on a host with many CPUs.
 
 The queue room for a batch's rows is reserved before its first piece is stored, so `429` and `ingest_decode_busy` mean nothing was written. A batch stored in several pieces can still fail part way through if the durable queue fails a write or the request times out. The error then says how many pieces were already stored; those are kept, so resending the batch stores them a second time.
 

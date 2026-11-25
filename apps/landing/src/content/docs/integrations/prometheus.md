@@ -6,7 +6,7 @@ order: 1
 icon: "prometheus"
 ---
 
-Maple can scrape any endpoint that serves the Prometheus or OpenMetrics text format. You add the endpoint as a scrape target. Maple polls it at the interval you choose, converts the samples to OpenTelemetry metrics, and ingests them like your own OTLP traffic. Scraped metrics appear in the [metrics explorer](/docs/explore/metrics), dashboards, and alert rules, and each target keeps a history of its scrapes.
+Maple can scrape any endpoint that serves the Prometheus or OpenMetrics text format. You add the endpoint as a scrape target. Maple polls it at the interval you choose, converts the samples to OpenTelemetry metrics, and ingests them like your own OTLP traffic. Scraped metrics appear in the [metrics explorer](/docs/explore/metrics), dashboards and alert rules, and each target keeps a history of its scrapes.
 
 ## Prerequisites
 
@@ -16,19 +16,19 @@ Maple can scrape any endpoint that serves the Prometheus or OpenMetrics text for
 
 In Maple, open **Sources**, click **Connect source** and pick **Prometheus**. The Connect step asks for the URL and authentication, and Maple checks the endpoint as soon as you save. The Choose data step sets the name, service and interval. The fields are:
 
-| Field                     | Notes                                                                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Name                      | Display name. Used as the service name when **Service name** is empty.                                                               |
-| Service name              | Optional. Sets `service.name` on the resource and the `job` attribute on every data point.                                           |
-| Endpoint URL              | Full endpoint URL, for example `https://myapp.com:9090/metrics`. Loopback, private-range, and cloud-metadata addresses are rejected. |
-| Scrape interval (seconds) | 5 to 300. Default 15.                                                                                                                |
-| Authentication            | **None**, **Bearer token** (sent as `Authorization: Bearer …`), or **Basic auth** (**Username** and **Password**).                   |
+| Field                     | Notes                                                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Name                      | Display name. Used as the service name when **Service name** is empty.                                                              |
+| Service name              | Optional. Sets `service.name` on the resource and the `job` attribute on every data point.                                          |
+| Endpoint URL              | Full endpoint URL, for example `https://myapp.com:9090/metrics`. Loopback, private-range and cloud-metadata addresses are rejected. |
+| Scrape interval (seconds) | 5 to 300. Default 15.                                                                                                               |
+| Authentication            | **None**, **Bearer token** (sent as `Authorization: Bearer …`) or **Basic auth** (**Username** and **Password**).                   |
 
 Credentials are encrypted at rest. The scraper receives the decrypted auth header from Maple's API for each run and sends it directly to your endpoint. Requests carry the user agent `maple-prometheus-scraper`.
 
 Each request times out after the scrape interval minus one second, capped at 60 seconds.
 
-You can also manage targets through the [REST API](/docs/reference/api) under `/v2/scrape_targets`, with endpoints to create, update, delete, probe, and list checks. The API accepts one extra field, `labels_json`: a JSON object of labels added to every sample (for example `{"cluster": "prod"}`). The keys `job` and `instance`, and any key starting with `maple_` or `__`, are reserved and rejected.
+You can also manage targets through the [REST API](/docs/reference/api) under `/v2/scrape_targets`, with endpoints to create, update, delete and probe targets and to list their checks. The API accepts one extra field, `labels_json`: a JSON object of labels added to every sample (for example `{"cluster": "prod"}`). The keys `job` and `instance`, and any key starting with `maple_` or `__`, are reserved and rejected.
 
 ## How the data looks
 
@@ -53,7 +53,9 @@ remote_write:
 Use the ingest host of your organization's [region](/docs/reference/regions). To keep the key out of the config file, use `credentials_file` instead of `credentials`. Basic auth works too: put the key in `basic_auth.password` (or `password_file`), with any username. `retry_on_http_429` makes Prometheus retry a batch Maple rate limits instead of dropping it.
 
 - Maple accepts remote write 1.0, the Prometheus default. A sender configured for remote write 2.0 gets `415`.
-- Remote write 1.0 does not send a metric's type with its samples. When a request also carries metadata for the metric, that type is used: a counter becomes a cumulative monotonic sum, a gauge a gauge, and a summary's `_sum` a sum that may decrease. Prometheus usually sends metadata in requests of its own, so in practice Maple reads the type from the name: a series ending in `_total`, `_count`, `_sum` or `_bucket` becomes a cumulative monotonic sum, and everything else a gauge.
+- Remote write 1.0 does not send a metric's type with its samples. Maple finds the type in one of two ways:
+    - When a request also carries metadata for the metric, Maple uses the type in the metadata: a counter becomes a cumulative monotonic sum, a gauge a gauge, and a summary's `_sum` a sum that may decrease.
+    - Otherwise Maple reads the type from the name: a series ending in `_total`, `_count`, `_sum` or `_bucket` becomes a cumulative monotonic sum, and everything else a gauge. This is the usual case, because Prometheus sends metadata in requests of its own.
 - A remote write counts toward your metrics usage as the metric data points it is stored as, the same as those points sent over OTLP. Each stored point carries its series' labels, so usage follows the samples and their labels, not the size of the compressed request.
 - Classic histograms keep their `_bucket`, `_count` and `_sum` series, with `le` as an attribute. They are not merged into OTLP histograms.
 - `job` sets `service.name` and `instance` sets `service.instance.id` on the resource. Both stay on every data point with the series' other labels, as they do for scraped metrics.
@@ -63,13 +65,13 @@ Use the ingest host of your organization's [region](/docs/reference/regions). To
 
 1. On the target's source page, click **Sync now**. Maple runs an immediate scrape and reports success or the exact failure: HTTP status, timeout, TLS or connection error.
 2. Wait one scrape interval. The status badge changes from **No checks** to **Up**, and the row shows **Last scrape** with a relative time.
-3. Open the target to see its check history. Each run lists **Time**, **State**, **Duration**, and **Samples**.
+3. Open the target to see its check history. Each run lists **Time**, **State**, **Duration** and **Samples**.
 4. Search for one of your metric names in the [metrics explorer](/docs/explore/metrics).
 
 ## Troubleshooting
 
 - **Status is Down.** Open the target. The error message and a **How to fix** hint explain the failure. A failed scrape never advances the last successful scrape time, so the data gap stays visible next to the error.
-- **The URL is rejected.** The endpoint resolves to a loopback, private, or metadata address. Expose it through an authenticated public endpoint, or use the collector option below.
+- **The URL is rejected.** The endpoint resolves to a loopback, private or metadata address. Expose it through an authenticated public endpoint, or use remote write or a collector (see the last item in this list).
 - **401 or 403.** Check the authentication type and credentials. Basic auth sends the username and password exactly as entered.
 - **The endpoint is only reachable inside your network.** Push with [remote write](#remote-write) from a Prometheus server inside the network, or run an OpenTelemetry Collector there with a `prometheus` receiver and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest).
 

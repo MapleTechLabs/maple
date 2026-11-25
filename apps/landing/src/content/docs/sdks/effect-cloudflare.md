@@ -7,7 +7,7 @@ navLabel: "Cloudflare Workers"
 sdk: "effect"
 ---
 
-The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare Workers. [Install the SDK](/docs/sdks/effect#install) first. A Worker has no long-running process: the isolate handles a request, returns a response, and the runtime may suspend it at any moment. A background export fiber does not run reliably between invocations, so this entry point buffers telemetry inside the isolate and sends it when you call `flush(env)`, which you schedule with `ctx.waitUntil`.
+The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare Workers. [Install the SDK](/docs/sdks/effect#install) first. A Worker has no long-running process: the isolate handles a request, returns a response, and the runtime may suspend it at any moment. A background export fiber does not run reliably between invocations, so this entry point buffers telemetry inside the isolate. It sends the buffer when you call `flush(env)`, which you schedule with `ctx.waitUntil`.
 
 ## Why Workers are different
 
@@ -36,9 +36,9 @@ export default {
 }
 ```
 
-`telemetry.layer` must be merged into the same Effect runtime that runs your routes, because the tracer has to be in scope when spans are created. A separate per-request runtime does not work.
+Merge `telemetry.layer` into the same Effect runtime that runs your routes, because the tracer has to be in scope when spans are created. A separate per-request runtime does not work.
 
-Runtimes that own a per-request scope can use `telemetry.requestLayer` instead of calling `flush` themselves. It is the same layer plus a flush when the scope closes, and it reads `env` from the `WorkerEnvironment` service exported by this entry point.
+Runtimes that own a per-request scope can use `telemetry.requestLayer` instead of calling `flush` themselves. `requestLayer` is the same layer plus a flush when the scope closes, and it reads `env` from the `WorkerEnvironment` service exported by this entry point.
 
 ## No-op mode
 
@@ -48,7 +48,11 @@ Against any other endpoint, such as a local `maple start` or your own collector,
 
 ## Failure handling
 
-A flush fails when the request throws (for example a network error) or the ingest answers with any non-2xx status, including `401` and `429`. The failed batch goes back into the buffer ahead of newer telemetry, and that signal enters a 60-second cooldown. During the cooldown, flushes for that signal skip the request and log a warning. Traces, logs and metrics each have their own cooldown. Errors are logged to `console.error` and never reach your handler.
+A flush fails when the request throws (for example a network error) or the ingest answers with any non-2xx status, including `401` and `429`.
+
+The failed batch goes back into the buffer ahead of newer telemetry, and that signal enters a 60-second cooldown. During the cooldown, flushes for that signal skip the request and log a warning. Traces, logs and metrics each have their own cooldown.
+
+Errors are logged to `console.error` and never reach your handler.
 
 ## Cloudflare-specific config
 
@@ -60,7 +64,7 @@ A flush fails when the request throws (for example a network error) or the inges
 | `logsPath`    | `string` | `/v1/logs`    | OTLP logs path appended to `endpoint`    |
 | `metricsPath` | `string` | `/v1/metrics` | OTLP metrics path appended to `endpoint` |
 
-An error that crossed an HTTP boundary is a decoded body rather than the class that raised it, so a failure shaped `{ error: { _tag } }` (the envelope convention many APIs use) is matched on the body's `_tag`. Client-side spans classify the same as the server-side ones they mirror, with no separate identifiers to configure.
+`anticipatedErrorIdentifiers` also matches an error that crossed an HTTP boundary. Such an error is a decoded body rather than the class that raised it, so a failure shaped `{ error: { _tag } }` (the envelope convention many APIs use) is matched on the body's `_tag`. Client-side spans are classified the same as the server-side spans they mirror, with no separate identifiers to configure.
 
 `dropSpanNames` suppresses protocol-level chatter. For example, `["McpServer/Notifications."]` drops MCP notification spans without dropping handler spans. Use `dropSpanSubtrees` instead when the children should go too.
 
@@ -74,7 +78,9 @@ The endpoint is the first of:
 4. The ingest for `config.region`, then for `env.MAPLE_REGION`: `https://ingest.maple.dev` for `us`, `https://ingest.eu.maple.dev` for `eu`
 5. `https://ingest.maple.dev`
 
-Any explicit endpoint beats any region. On hosted Maple, a `MAPLE_INGEST_KEY` secret is usually all you need, plus `MAPLE_REGION=eu` for an EU organization. Other variables read from `env`: `OTEL_SERVICE_NAME`, `MAPLE_ENVIRONMENT`, `MAPLE_REPOSITORY_URL`, `OTEL_RESOURCE_ATTRIBUTES`, and the commit SHA variables listed on the [server page](/docs/sdks/effect-server#environment-variables).
+Any explicit endpoint beats any region. On hosted Maple, a `MAPLE_INGEST_KEY` secret is usually all you need, plus `MAPLE_REGION=eu` for an EU organization.
+
+The SDK also reads these variables from `env`: `OTEL_SERVICE_NAME`, `MAPLE_ENVIRONMENT`, `MAPLE_REPOSITORY_URL`, `OTEL_RESOURCE_ATTRIBUTES`, and the commit SHA variables listed on the [server page](/docs/sdks/effect-server#environment-variables).
 
 ## Verify
 
