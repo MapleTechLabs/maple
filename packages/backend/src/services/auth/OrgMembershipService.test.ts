@@ -80,6 +80,36 @@ describe("collectMemberships", () => {
 		}),
 	)
 
+	it.effect("keeps a limited role's namespaces from the membership metadata", () =>
+		Effect.gen(function* () {
+			const result = yield* collectMemberships(() =>
+				Effect.succeed([
+					{
+						organization: { id: "org_scoped" },
+						role: "org:custom",
+						public_metadata: {
+							maple_role: {
+								id: "role_abcdefghijkl",
+								permissions: [52],
+								namespaces: ["checkout"],
+							},
+						},
+					},
+					{
+						organization: { id: "org_custom" },
+						role: "org:custom",
+						public_metadata: { maple_role: { id: "role_abcdefghijkl", permissions: [36] } },
+					},
+				]),
+			)
+
+			assert.deepStrictEqual(
+				Arr.map(result.memberships, (membership) => membership.namespaces),
+				[["checkout"], undefined],
+			)
+		}),
+	)
+
 	it.effect("a page failure is a failure, never a shorter answer", () =>
 		Effect.gen(function* () {
 			const result = yield* collectMemberships(() =>

@@ -133,12 +133,17 @@ const make = Effect.gen(function* () {
 			Effect.asVoid,
 		)
 
+	// Clerk merges nested objects too and only `null` removes a key, so a role without namespaces
+	// names them as `null`: a limit the role dropped must not stay on the membership.
 	const setMembershipCustomRole: ClerkRolesGatewayApi["setMembershipCustomRole"] = (orgId, userId, role) =>
 		withClerk(
 			Clerk.updateOrganizationMembershipMetadata({
 				organization_id: orgId,
 				user_id: userId,
-				public_metadata: { [Policy.MEMBERSHIP_ROLE_METADATA_KEY]: role },
+				public_metadata: {
+					[Policy.MEMBERSHIP_ROLE_METADATA_KEY]:
+						role === null ? null : { ...role, namespaces: role.namespaces ?? null },
+				},
 			}),
 		).pipe(Effect.asVoid)
 

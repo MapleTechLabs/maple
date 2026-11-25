@@ -619,30 +619,49 @@ export interface VerifiedOrgMembership {
 	readonly role: RoleName
 	/** What an `org:custom` membership grants (from its public metadata); empty for a built-in role. */
 	readonly customPermissions: ReadonlyArray<Policy.Permission>
+	/** The namespaces an `org:custom` membership is limited to; absent or empty when its role names none. */
+	readonly customNamespaces?: ReadonlyArray<string> | undefined
 }
 
 /** The permissions a verified membership grants. */
 export const membershipGrants = (membership: VerifiedOrgMembership): Policy.Grants =>
 	Policy.grantsOf([membership.role], membership.customPermissions)
 
+/** What a tenant acts with: its permissions, and its namespaces when they limit what it reads. */
+type TenantAuthority = Pick<TenantContext, "permissions" | "namespaces">
+
+/** Namespaces ride along only with a namespace-limited role's grants; any other tenant carries none. */
+const authorityOf = (
+	permissions: Policy.Grants,
+	namespaces: ReadonlyArray<string> | undefined,
+): TenantAuthority =>
+	Policy.isScoped(permissions) ? { permissions, namespaces: namespaces ?? [] } : { permissions }
+
+/** The permissions a verified membership grants, with the namespaces that limit them. */
+const membershipAuthority = (membership: VerifiedOrgMembership): TenantAuthority =>
+	authorityOf(membershipGrants(membership), membership.customNamespaces)
+
 /**
- * The permissions a session's own roles grant in `orgId`. An `org:custom` role's permissions live
- * on the membership, so they come from the verifier (cached, evicted by the Clerk webhook); with no
- * verifier, or no membership found, it holds nothing.
+ * What a session's own roles grant in `orgId`. An `org:custom` role's permissions and namespaces
+ * live on the membership, so they come from the verifier (cached, evicted by the Clerk webhook);
+ * with no verifier, or no membership found, it holds nothing.
  */
-const sessionGrants = Effect.fnUntraced(function* (
+const sessionAuthority = Effect.fnUntraced(function* (
 	roles: ReadonlyArray<RoleName>,
 	userId: UserId,
 	orgId: OrgId,
 	verify: VerifyOrgMembership | undefined,
-): Effect.fn.Return<Policy.Grants, AuthorizationUnavailableError> {
-	if (!Arr.some(roles, (role) => role === Policy.CUSTOM_ROLE_CLERK_KEY)) return Policy.grantsOf(roles)
-	if (!verify) return Policy.grantsOf(roles, [])
+): Effect.fn.Return<TenantAuthority, AuthorizationUnavailableError> {
+	if (!Arr.some(roles, (role) => role === Policy.CUSTOM_ROLE_CLERK_KEY)) {
+		return { permissions: Policy.grantsOf(roles) }
+	}
+	if (!verify) return { permissions: Policy.grantsOf(roles, []) }
 	const membership = yield* verify(userId, orgId)
-	return Policy.grantsOf(
-		roles,
-		Option.match(membership, { onNone: () => [], onSome: (found) => found.customPermissions }),
-	)
+	return Option.match(membership, {
+		onNone: (): TenantAuthority => ({ permissions: Policy.grantsOf(roles, []) }),
+		onSome: (found) =>
+			authorityOf(Policy.grantsOf(roles, found.customPermissions), found.customNamespaces),
+	})
 })
 
 /**
@@ -698,6 +717,10 @@ export const makeClerkMembershipDirectory = Effect.fnUntraced(function* (
 					customPermissions:
 						role === Policy.CUSTOM_ROLE_CLERK_KEY
 							? Policy.customPermissionsFromMembershipMetadata(row.public_metadata)
+							: [],
+					customNamespaces:
+						role === Policy.CUSTOM_ROLE_CLERK_KEY
+							? Policy.namespacesFromMembershipMetadata(row.public_metadata)
 							: [],
 				})),
 			)
@@ -791,11 +814,13 @@ const applyRequestedOrg = Effect.fnUntraced(function* (
 
 	// The role travels with the organization. Carrying the token's `orgRole`
 	// across would grant an admin of org A admin of org B.
+	// So do the namespaces: the ones the session held in its own organization must not follow it.
+	const { namespaces: _sessionNamespaces, ...rest } = tenant
 	return {
-		...tenant,
+		...rest,
 		orgId: membership.value.orgId,
 		roles: [membership.value.role],
-		permissions: membershipGrants(membership.value),
+		...membershipAuthority(membership.value),
 	}
 })
 
@@ -949,13 +974,13 @@ export const makeResolveTenant = (
 				// org). The role is the verified membership's; a non-member is only let
 				// in with their session's role on an explicitly opted-in development pin.
 				const pinnedSessionTenant = Effect.map(
-					sessionGrants(sessionRoles, userId, pinnedOrgId, customRoleDirectory),
-					(permissions): TenantContext =>
+					sessionAuthority(sessionRoles, userId, pinnedOrgId, customRoleDirectory),
+					(authority): TenantContext =>
 						stamp({
 							orgId: pinnedOrgId,
 							userId,
 							roles: sessionRoles,
-							permissions,
+							...authority,
 							authMode: "clerk",
 						}),
 				)
@@ -968,7 +993,7 @@ export const makeResolveTenant = (
 						orgId: pinnedOrgId,
 						userId,
 						roles: [membership.value.role],
-						permissions: membershipGrants(membership.value),
+						...membershipAuthority(membership.value),
 						authMode: "clerk",
 					})
 				}
@@ -995,7 +1020,7 @@ export const makeResolveTenant = (
 					orgId: selected.value.orgId,
 					userId,
 					roles: [selected.value.role],
-					permissions: membershipGrants(selected.value),
+					...membershipAuthority(selected.value),
 					authMode: "clerk",
 				})
 			}
@@ -1005,7 +1030,7 @@ export const makeResolveTenant = (
 				orgId: sessionOrgId,
 				userId,
 				roles: sessionRoles,
-				permissions: yield* sessionGrants(sessionRoles, userId, sessionOrgId, customRoleDirectory),
+				...(yield* sessionAuthority(sessionRoles, userId, sessionOrgId, customRoleDirectory)),
 				authMode: "clerk",
 			}
 

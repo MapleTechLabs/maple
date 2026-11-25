@@ -1644,6 +1644,99 @@ describe("custom role sessions", () => {
 		}),
 	)
 
+	it.effect("carries a namespace-limited role's namespaces beside its permissions", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: customSession,
+				verifyOrgMembership: (_userId, orgId) =>
+					Effect.succeedSome({
+						orgId,
+						role: asRoleName(Policy.CUSTOM_ROLE_CLERK_KEY),
+						customPermissions: [Policy.SCOPED_READ],
+						customNamespaces: ["checkout"],
+					}),
+			})
+
+			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
+
+			assert.deepStrictEqual(tenant.permissions, [Policy.SCOPED_READ])
+			assert.deepStrictEqual(Policy.dataScopeOf(tenant), {
+				_tag: "Namespaces",
+				namespaces: ["checkout"],
+			})
+		}),
+	)
+
+	it.effect("reads no namespace when a limited role's namespaces are missing from the membership", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: customSession,
+				verifyOrgMembership: (_userId, orgId) =>
+					Effect.succeedSome({
+						orgId,
+						role: asRoleName(Policy.CUSTOM_ROLE_CLERK_KEY),
+						customPermissions: [Policy.SCOPED_READ],
+					}),
+			})
+
+			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
+
+			assert.deepStrictEqual(Policy.dataScopeOf(tenant), { _tag: "Namespaces", namespaces: [] })
+		}),
+	)
+
+	it.effect("leaves namespaces off a custom role that reads all telemetry", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: customSession,
+				verifyOrgMembership: (_userId, orgId) =>
+					Effect.succeedSome({
+						orgId,
+						role: asRoleName(Policy.CUSTOM_ROLE_CLERK_KEY),
+						customPermissions: ["telemetry:read"],
+						customNamespaces: ["checkout"],
+					}),
+			})
+
+			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
+
+			assert.isUndefined(tenant.namespaces)
+			assert.deepStrictEqual(Policy.dataScopeOf(tenant), Policy.ALL_DATA)
+		}),
+	)
+
+	it.effect("takes the selected organization's namespaces, never the session organization's", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: customSession,
+				verifyOrgMembership: (_userId, orgId) =>
+					Effect.succeedSome(
+						orgId === "org_123"
+							? {
+									orgId,
+									role: asRoleName(Policy.CUSTOM_ROLE_CLERK_KEY),
+									customPermissions: [Policy.SCOPED_READ],
+									customNamespaces: ["checkout"],
+								}
+							: {
+									orgId,
+									role: asRoleName(Policy.CUSTOM_ROLE_CLERK_KEY),
+									customPermissions: [Policy.SCOPED_READ],
+									customNamespaces: ["search"],
+								},
+					),
+			})
+
+			const tenant = yield* resolveTenant({
+				authorization: "Bearer test-token",
+				"x-maple-org-id": "org_other",
+			})
+
+			assert.strictEqual(tenant.orgId, "org_other")
+			assert.deepStrictEqual(tenant.namespaces, ["search"])
+		}),
+	)
+
 	it.effect("gives an org:custom session nothing when no membership verifier is wired", () =>
 		Effect.gen(function* () {
 			const tenant = yield* makeResolveTenant(clerkEnv, { authenticateClerkRequest: customSession })({

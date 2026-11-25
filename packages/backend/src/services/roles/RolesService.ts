@@ -87,7 +87,7 @@ export interface RolesServiceApi {
 		tenant: RolesTenant,
 		request: CreateRoleRequest,
 	) => Effect.Effect<CustomRoleResponse, RolesUnavailableError | RoleConflictError>
-	/** Holders whose membership then carries other permissions are rewritten, then demoted. */
+	/** Holders whose membership then carries other permissions or namespaces are rewritten, then demoted. */
 	readonly update: (
 		tenant: RolesTenant,
 		roleId: Policy.CustomRoleId,
@@ -195,10 +195,16 @@ const builtInTarget = (ref: Extract<RoleRef, { _tag: "BuiltIn" }>): AssignTarget
 	grants: Policy.grantsOf([ref.clerkKey]),
 })
 
+/** What a membership on `role` carries: its codes, and its namespaces when it is limited to some. */
+const membershipMetadataOf = (role: Policy.StoredCustomRole): Policy.MembershipRoleMetadata =>
+	role.namespaces === undefined
+		? { id: role.id, permissions: role.permissions }
+		: { id: role.id, permissions: role.permissions, namespaces: role.namespaces }
+
 const customTarget = (role: Policy.StoredCustomRole) =>
 	({
 		clerkKey: Policy.CUSTOM_ROLE_CLERK_KEY,
-		metadata: { id: role.id, permissions: role.permissions },
+		metadata: membershipMetadataOf(role),
 		grants: customGrants(role.permissions),
 	}) satisfies AssignTarget
 
@@ -230,12 +236,26 @@ const previewOf = (holders: ReadonlyArray<RoleMembership>) =>
 const sameCodes = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean =>
 	a.length === b.length && Arr.every(a, (code, index) => code === b[index])
 
+const sameNamespaces = (
+	a: ReadonlyArray<string> | undefined,
+	b: ReadonlyArray<string> | undefined,
+): boolean => {
+	const left = Policy.normalizeNamespaces(a ?? [])
+	const right = Policy.normalizeNamespaces(b ?? [])
+	return left.length === right.length && Arr.every(left, (namespace, index) => namespace === right[index])
+}
+
+/** Whether a membership carries exactly what `role` now grants: its codes and its namespaces. */
+const carries = (held: Policy.MembershipRoleMetadata, role: Policy.StoredCustomRole): boolean =>
+	sameCodes(held.permissions, role.permissions) && sameNamespaces(held.namespaces, role.namespaces)
+
 const toCustomRole = (role: Policy.StoredCustomRole, memberCount: number) =>
 	new CustomRoleResponse({
 		id: role.id,
 		name: role.name,
 		description: role.description,
 		permissions: customGrants(role.permissions),
+		namespaces: role.namespaces ?? [],
 		memberCount,
 		createdAt: role.createdAt,
 		updatedAt: role.updatedAt,
@@ -259,6 +279,53 @@ const checkGrantable = (permissions: ReadonlyArray<Policy.Permission>) =>
 	Arr.every(permissions, Policy.grantableToCustomRoles)
 		? Effect.void
 		: Effect.fail(conflict("not_grantable", "Members, roles and the organization stay with Admin."))
+
+/**
+ * What a role stores for the permissions and namespaces a save names. A limited role holds the
+ * scoped read in place of Read telemetry: a permission that needs all telemetry refuses the save.
+ * The scoped read is only ever derived from the namespaces, so one named in a save is ignored.
+ */
+const storedAccess = (
+	requested: ReadonlyArray<Policy.Permission>,
+	namespaces: ReadonlyArray<string> | undefined,
+): Effect.Effect<Pick<Policy.StoredCustomRole, "permissions" | "namespaces">, RoleConflictError> => {
+	// A role's own permission list carries it, so an editor that echoes the list back names it.
+	const ticked = Arr.filter(requested, (permission) => permission !== Policy.SCOPED_READ)
+	const limitedTo = Policy.normalizeNamespaces(namespaces ?? [])
+	if (limitedTo.length === 0) {
+		return Effect.succeed({ permissions: Policy.encodePermissions(Policy.withImplied(ticked)) })
+	}
+	const needsAll = Arr.filter(ticked, (permission) => !Policy.holdableWhenScoped(permission))
+	if (needsAll.length > 0) {
+		const labels = Arr.map(needsAll, (permission) => Policy.permissions[permission].label)
+		return Effect.fail(
+			conflict(
+				"needs_all_telemetry",
+				`A role limited to namespaces cannot hold ${Arr.join(labels, ", ")}: ${labels.length === 1 ? "it needs" : "they need"} telemetry from every namespace.`,
+			),
+		)
+	}
+	return Effect.succeed({
+		permissions: Policy.encodePermissions(Policy.withImplied([...ticked, Policy.SCOPED_READ])),
+		namespaces: limitedTo,
+	})
+}
+
+/** Refuses a save that grows the definitions past what Clerk's metadata holds; a shrinking one always fits. */
+const checkFits = (
+	before: ReadonlyArray<Policy.StoredCustomRole>,
+	after: ReadonlyArray<Policy.StoredCustomRole>,
+) => {
+	const size = Policy.storedRolesBytes(after)
+	return size <= Policy.MAX_STORED_ROLES_BYTES || size <= Policy.storedRolesBytes(before)
+		? Effect.void
+		: Effect.fail(
+				conflict(
+					"limit_reached",
+					"The organization's roles hold more than can be stored. Shorten a description or a namespace list.",
+				),
+			)
+}
 
 const checkName = (
 	roles: ReadonlyArray<Policy.StoredCustomRole>,
@@ -356,7 +423,12 @@ const make = Effect.gen(function* () {
 	 * with nothing on the membership, which holds nothing. Any built-in role could be more access than
 	 * the role that vanished.
 	 */
-	const reconcilePass = (orgId: OrgId, roleId: Policy.CustomRoleId, orphansTo: RoleRef | undefined) =>
+	const reconcilePass = (
+		orgId: OrgId,
+		roleId: Policy.CustomRoleId,
+		orphansTo: RoleRef | undefined,
+		redoDemotions: boolean,
+	) =>
 		Effect.gen(function* () {
 			const { roles, memberships } = yield* readState(orgId)
 			const holders = holdersOf(memberships, roleId)
@@ -364,32 +436,36 @@ const make = Effect.gen(function* () {
 			if (Option.isSome(role)) {
 				const target = customTarget(role.value)
 				const stale = Arr.filter(holders, (holder) =>
-					Option.exists(
-						heldCustomRole(holder),
-						(held) => !sameCodes(held.permissions, role.value.permissions),
-					),
+					Option.exists(heldCustomRole(holder), (held) => !carries(held, role.value)),
 				)
-				yield* Effect.annotateCurrentSpan({ "maple.role.holders_rewritten": stale.length })
+				// A holder already rewritten may still be undemoted: its demotion failed after the write.
+				// A repeated save cannot tell, so it demotes every holder again.
+				const rewritten = redoDemotions
+					? Arr.filter(holders, (holder) => !stale.includes(holder))
+					: []
+				yield* Effect.annotateCurrentSpan({
+					"maple.role.holders_rewritten": stale.length,
+					"maple.role.holders_redemoted": rewritten.length,
+				})
 				// One holder Clerk refuses must not leave the rest on the old codes: each is retried on
 				// its own, every one is tried, and only then does a failure fail the pass.
 				const results = yield* Effect.forEach(
-					stale,
-					(holder) =>
-						Effect.result(
+					[
+						...Arr.map(stale, (holder) =>
 							clerk
 								.setMembershipCustomRole(orgId, holder.userId, target.metadata)
-								.pipe(
-									Effect.andThen(demote(orgId, holder.userId, target.grants)),
-									Effect.retry(HOLDER_RETRY),
-								),
+								.pipe(Effect.andThen(demote(orgId, holder.userId, target.grants))),
 						),
+						...Arr.map(rewritten, (holder) => demote(orgId, holder.userId, target.grants)),
+					],
+					(settle) => Effect.result(settle.pipe(Effect.retry(HOLDER_RETRY))),
 					{ concurrency: 4 },
 				)
 				const failed = Arr.filter(results, Result.isFailure)
 				if (failed.length > 0) {
 					yield* Effect.annotateCurrentSpan({ "maple.role.holders_failed": failed.length })
 					return yield* new RolesUnavailableError({
-						message: `${failed.length} of ${stale.length} members still hold this role's previous permissions. Save the role again to finish.`,
+						message: `${failed.length} of ${results.length} members still hold this role's previous permissions. Save the role again to finish.`,
 						cause: failed[0]?.failure,
 					})
 				}
@@ -426,11 +502,12 @@ const make = Effect.gen(function* () {
 		orgId: OrgId,
 		roleId: Policy.CustomRoleId,
 		orphansTo: RoleRef | undefined,
+		redoDemotions?: boolean,
 	) {
 		const passes = yield* Ref.make(0)
 		const settledPass = Effect.gen(function* () {
 			yield* Ref.update(passes, (count) => count + 1)
-			const result = yield* reconcilePass(orgId, roleId, orphansTo)
+			const result = yield* reconcilePass(orgId, roleId, orphansTo, redoDemotions === true)
 			const { roles } = yield* clerk.customRoles(orgId)
 			const now = Arr.findFirst(roles, (candidate) => candidate.id === roleId)
 			return sameStoredRole(now, result.role) ? result : yield* concurrentEdit
@@ -516,11 +593,13 @@ const make = Effect.gen(function* () {
 					id: yield* newRoleId,
 					name: request.name,
 					description: request.description ?? "",
-					permissions: Policy.encodePermissions(Policy.withImplied(request.permissions)),
+					...(yield* storedAccess(request.permissions, request.namespaces)),
 					createdAt: now,
 					updatedAt: now,
 				}
-				return { next: [...roles, role], result: role }
+				const next = [...roles, role]
+				yield* checkFits(roles, next)
+				return { next, result: role }
 			}),
 		)
 		yield* Effect.annotateCurrentSpan({ "maple.role.id": role.id })
@@ -537,31 +616,38 @@ const make = Effect.gen(function* () {
 		const { before, after } = yield* editRoles(tenant.orgId, (roles) =>
 			Effect.gen(function* () {
 				const current = yield* findRole(roles, roleId)
-				const permissions = Policy.encodePermissions(Policy.withImplied(request.permissions))
+				// A save that says nothing about namespaces keeps the role's limit.
+				const access = yield* storedAccess(
+					request.permissions,
+					request.namespaces ?? current.namespaces,
+				)
 				// A save repeated after its holders failed to update finds its own definition stored:
 				// it writes nothing and goes on to finish the holders.
 				const alreadySaved =
 					current.name === request.name &&
 					current.description === request.description &&
-					sameCodes(current.permissions, permissions)
+					sameCodes(current.permissions, access.permissions) &&
+					sameNamespaces(current.namespaces, access.namespaces)
 				if (alreadySaved) return { next: roles, result: { before: current, after: current } }
 				if (current.updatedAt !== request.expectedUpdatedAt) return yield* staleEdit
 				yield* checkName(roles, request.name, roleId)
+				// Rebuilt without the old namespaces: a save that names none lifts the limit.
 				const next: Policy.StoredCustomRole = {
-					...current,
+					id: current.id,
 					name: request.name,
 					description: request.description,
-					permissions,
+					...access,
+					createdAt: current.createdAt,
 					updatedAt: yield* Clock.currentTimeMillis,
 				}
-				return {
-					next: Arr.map(roles, (role) => (role.id === roleId ? next : role)),
-					result: { before: current, after: next },
-				}
+				const all = Arr.map(roles, (role) => (role.id === roleId ? next : role))
+				yield* checkFits(roles, all)
+				return { next: all, result: { before: current, after: next } }
 			}),
 		)
 		// After the definition, so a member put on the role meanwhile with its old codes is caught.
-		const { holders } = yield* reconcileHolders(tenant.orgId, roleId, undefined)
+		// `before === after` is the same save sent again: the last one may have left a demotion undone.
+		const { holders } = yield* reconcileHolders(tenant.orgId, roleId, undefined, before === after)
 		return { before: toCustomRole(before, holders), role: toCustomRole(after, holders) }
 	})
 
@@ -666,7 +752,7 @@ const make = Effect.gen(function* () {
 			yield* clerk.setMembershipCustomRole(orgId, userId, null)
 			return []
 		}
-		if (!sameCodes(held.permissions, role.value.permissions)) {
+		if (!carries(held, role.value)) {
 			yield* Effect.annotateCurrentSpan({ "maple.role.settled": "rewritten" })
 			yield* clerk.setMembershipCustomRole(orgId, userId, customTarget(role.value).metadata)
 		}

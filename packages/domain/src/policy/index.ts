@@ -39,15 +39,35 @@ export {
 	encodePermissions,
 	grantableToCustomRoles,
 	MAX_CUSTOM_ROLES,
+	MAX_STORED_ROLES_BYTES,
 	MEMBERSHIP_ROLE_METADATA_KEY,
 	MembershipRoleMetadata,
 	membershipRoleFromMetadata,
+	namespacesFromMembershipMetadata,
 	ORG_ROLES_METADATA_KEY,
 	StoredCustomRole,
 	StoredCustomRoles,
+	storedRolesBytes,
 	type VersionedCustomRoles,
 	versionedCustomRolesFromOrgMetadata,
 } from "./custom-roles"
+
+export {
+	ALL_DATA,
+	type DataScope,
+	dataScopeKey,
+	dataScopeOf,
+	holdableWhenScoped,
+	isScoped,
+	isScopeValue,
+	MAX_ROLE_NAMESPACES,
+	narrowDataScope,
+	normalizeNamespaces,
+	ROLE_NAMESPACE_MAX,
+	RoleNamespace,
+	RoleNamespaces,
+	SCOPED_READ,
+} from "./data-scope"
 
 export const allPermissions: ReadonlyArray<Permission> = Rec.keys(permissions)
 

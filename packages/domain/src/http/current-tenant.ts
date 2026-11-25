@@ -117,6 +117,11 @@ export interface TenantContext {
 	readonly roles: ReadonlyArray<RoleName>
 	/** What this request may do. Every authorization check reads these (`Policy.can`). */
 	readonly permissions: ReadonlyArray<Permission>
+	/**
+	 * The `service.namespace` values a namespace-limited role may read (`Policy.dataScopeOf`). Set
+	 * only beside `telemetry:read_scoped`; a tenant that holds that permission without them reads none.
+	 */
+	readonly namespaces?: ReadonlyArray<string> | undefined
 	readonly authMode: AuthMode
 	/** A scoped API key's scopes. Unset for unscoped keys, OAuth tokens and sessions. */
 	readonly scopes?: ReadonlyArray<string> | undefined
@@ -159,6 +164,8 @@ export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	userId: UserId,
 	roles: Schema.Array(RoleName),
 	permissions: Schema.Array(PermissionName),
+	// A namespace-limited role's namespaces; absent for every other caller.
+	namespaces: Schema.optional(Schema.Array(Schema.String)),
 	authMode: AuthMode,
 	// Present only for API-key auth with restricted scopes (v2). Undefined for
 	// session tokens and legacy full-access keys — those bypass scope checks.

@@ -1,4 +1,5 @@
 import { Array as Arr, Option, Order, Predicate, Record as Rec, Schema } from "effect"
+import { holdableWhenScoped, SCOPED_READ } from "./data-scope"
 import { type Permission, permissions, withImplied } from "./permissions"
 
 /**
@@ -53,16 +54,25 @@ export const encodePermissions = (list: ReadonlyArray<Permission>): ReadonlyArra
  * existed gains it). A code this build does not know is dropped (a newer deploy wrote it), and so is
  * anything a custom role may not hold: stored data never widens access past the catalog.
  */
-export const decodeCustomPermissions = (codes: ReadonlyArray<number>): ReadonlyArray<Permission> =>
-	withImplied(
-		Arr.filter(
-			Arr.flatMap(codes, (code) => {
-				const permission = permissionByCode.get(code)
-				return permission === undefined ? [] : [permission]
-			}),
-			grantableToCustomRoles,
-		),
+export const decodeCustomPermissions = (codes: ReadonlyArray<number>): ReadonlyArray<Permission> => {
+	const stored = Arr.filter(
+		Arr.flatMap(codes, (code) => {
+			const permission = permissionByCode.get(code)
+			return permission === undefined ? [] : [permission]
+		}),
+		grantableToCustomRoles,
 	)
+	// The scoped read wins: beside it, whatever would bring Read telemetry back is dropped.
+	return withImplied(
+		Arr.contains(stored, SCOPED_READ)
+			? Arr.filter(stored, (permission) => permission === SCOPED_READ || holdableWhenScoped(permission))
+			: stored,
+	)
+}
+
+// Clerk caps an organization's metadata at 8 KB, shared with the region and rollout flags: a save
+// that grows the definitions past this is refused here rather than failing in Clerk.
+export const MAX_STORED_ROLES_BYTES = 6500
 
 /** One custom role as the organization's metadata stores it. */
 export const StoredCustomRole = Schema.Struct({
@@ -70,6 +80,9 @@ export const StoredCustomRole = Schema.Struct({
 	name: Schema.String,
 	description: Schema.String,
 	permissions: Schema.Array(Schema.Int),
+	// The namespaces the role is limited to, sorted; absent when not limited. Stored loosely, like
+	// the name: the API checks them on the way in and the warehouse filter drops what it cannot write.
+	namespaces: Schema.optionalKey(Schema.Array(Schema.String)),
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 })
@@ -87,8 +100,19 @@ export type VersionedCustomRoles = Required<StoredCustomRoles>
 export const MembershipRoleMetadata = Schema.Struct({
 	id: CustomRoleId,
 	permissions: Schema.Array(Schema.Int),
+	/** A copy of the role's namespaces, when it is limited to some. */
+	namespaces: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 export type MembershipRoleMetadata = typeof MembershipRoleMetadata.Type
+
+const encodeStoredRoles = Schema.encodeOption(Schema.fromJsonString(StoredCustomRoles))
+
+/** The size of a definition list as Clerk stores it, in UTF-8 bytes; infinite if it cannot be written. */
+export const storedRolesBytes = (roles: ReadonlyArray<StoredCustomRole>): number =>
+	Option.match(encodeStoredRoles({ version: 0, roles }), {
+		onNone: () => Number.POSITIVE_INFINITY,
+		onSome: (json) => new TextEncoder().encode(json).length,
+	})
 
 // Each reads only its own key: the rest of the metadata (region, feature flags) is ignored.
 const decodeStoredRoles = Schema.decodeUnknownOption(
@@ -120,6 +144,13 @@ export const customRolesFromOrgMetadata = (metadata: unknown): ReadonlyArray<Sto
 /** The custom role a membership's public metadata names, if it names one that decodes. */
 export const membershipRoleFromMetadata = (metadata: unknown): Option.Option<MembershipRoleMetadata> =>
 	Option.map(decodeMembershipRole(metadata), (decoded) => decoded[MEMBERSHIP_ROLE_METADATA_KEY])
+
+/** The namespaces a membership's public metadata limits an `org:custom` member to; none when not limited. */
+export const namespacesFromMembershipMetadata = (metadata: unknown): ReadonlyArray<string> =>
+	Option.match(membershipRoleFromMetadata(metadata), {
+		onNone: () => [],
+		onSome: (role) => role.namespaces ?? [],
+	})
 
 /** The permissions a membership's public metadata grants an `org:custom` member. */
 export const customPermissionsFromMembershipMetadata = (metadata: unknown): ReadonlyArray<Permission> =>
