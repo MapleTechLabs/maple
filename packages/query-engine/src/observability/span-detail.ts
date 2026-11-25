@@ -19,6 +19,11 @@ export interface SpanDetailInput {
 	readonly timestampHint?: Date
 	/** Half-width of the time window when `timestampHint` is set. Defaults to 1h. */
 	readonly rangeHours?: number
+	/**
+	 * How far back `trace_index` is searched when there is no hint: the org's traces
+	 * retention where the caller knows it. Defaults to 30 days.
+	 */
+	readonly lookbackHours?: number
 }
 
 export interface SpanDetailResult {
@@ -51,11 +56,11 @@ export interface SpanDetailSpan {
 /** Slack around the located trace bounds: span starts are rounded to the second in the window. */
 const PROBE_PAD_MS = 1_000
 
-const probedTraceRange = Effect.fnUntraced(function* (traceId: string) {
+const probedTraceRange = Effect.fnUntraced(function* (traceId: string, lookbackHours: number) {
 	const nowMs = yield* Clock.currentTimeMillis
 	const found = yield* locateTrace(traceId, {
 		nowMs,
-		oldestMs: nowMs - TRACE_RETENTION_HOURS * 60 * 60 * 1000,
+		oldestMs: nowMs - lookbackHours * 60 * 60 * 1000,
 	})
 	return Option.match(found, {
 		onNone: () => undefined,
@@ -90,7 +95,8 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 	// Without a hint, the trace's own bounds from `trace_index`, newest days first: an unbounded
 	// probe seeks every retained partition and ran past its 5s limit on large orgs.
 	const probed = hintedRange === undefined
-	const range = hintedRange ?? (yield* probedTraceRange(input.traceId))
+	const range =
+		hintedRange ?? (yield* probedTraceRange(input.traceId, input.lookbackHours ?? TRACE_RETENTION_HOURS))
 	yield* Effect.annotateCurrentSpan("maple.query.trace_probed", probed)
 	if (range === undefined) {
 		return {

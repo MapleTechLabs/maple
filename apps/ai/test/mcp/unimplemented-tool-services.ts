@@ -1,6 +1,6 @@
 // Every MCP tool runtime service a test does not exercise: unimplemented mocks that die when
 // used, plus the real layers of the four services whose sync members a mock cannot stub.
-import { Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -54,6 +54,7 @@ import { SecurityAuditStore } from "@maple/backend/services/security-audit/Secur
 import { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
+import { DEFAULT_READ_HORIZON, RetentionService } from "@maple/backend/services/retention/RetentionService"
 import type { McpToolRuntimeRequirements } from "../../src/mcp/tools/runtime-services"
 
 export const unimplementedMcpToolServices = Layer.mergeAll(
@@ -103,6 +104,8 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(StatusPageCustomDomainsService)({}),
 	Layer.mock(OrganizationFeatureFlagsService)({}),
 	Layer.mock(RepoSandboxService)({}),
+	// Tools read the horizon to size a lookup: an org that set nothing, with no database behind it.
+	Layer.mock(RetentionService)({ readHorizon: () => Effect.succeed(DEFAULT_READ_HORIZON) }),
 	Layer.mock(QueryEngineService)({}),
 	Layer.mock(PromqlQueryService)({}),
 	SecurityAuditStore.layer,

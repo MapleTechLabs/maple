@@ -18,8 +18,6 @@ export const MCP_SEARCH_MAX_HOURS = MAX_LIST_RANGE_SECONDS / 3600
 export const MCP_DISCOVERY_MAX_HOURS = MAX_DISCOVERY_RANGE_SECONDS / 3600
 /** Product-event tools (events, funnels, paths): a quarter, as the engine allows a breakdown over them. */
 export const MCP_PRODUCT_EVENTS_MAX_HOURS = MAX_PRODUCT_EVENTS_BREAKDOWN_RANGE_SECONDS / 3600
-/** `session_replays` keeps this long; a session dimension read further back finds nothing. */
-export const SESSION_RETENTION_HOURS = 30 * 24
 /** Log-pattern clustering — scans raw message bodies. */
 export const MCP_LOG_PATTERN_MAX_HOURS = MAX_LOG_PATTERN_RANGE_SECONDS / 3600
 
