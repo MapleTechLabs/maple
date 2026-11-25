@@ -100,7 +100,7 @@ These permissions can't be given to a custom role. Only members with the Admin r
 | Manage single sign-on     | SCIM group mappings can assign the Admin role              |
 | Manage the data warehouse | It decides where all your telemetry is stored and read     |
 
-Duplicating the Admin role gives you every other permission. Some permissions that no built-in role below Admin holds can go in a custom role, such as **Manage billing**, **Read the audit log** and **Manage model provider keys**.
+Duplicating the Admin role gives you every other permission. Some permissions that no built-in role below Admin holds can go in a custom role, such as **Manage billing**, **Manage retention**, **Read the audit log** and **Manage model provider keys**.
 
 ## Assign a role to a member
 

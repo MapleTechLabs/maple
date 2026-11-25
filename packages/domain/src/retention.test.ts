@@ -110,9 +110,9 @@ describe("retention time columns", () => {
 
 describe("retention stamp", () => {
 	it("stores a period under the shortest ladder period that covers it", () => {
-		expect(Arr.map([1, 3, 4, 30, 31, 45, 366, 551, MAX_RETENTION_DAYS, 800], retentionStampDays)).toEqual([
-			3, 3, 7, 30, 60, 60, 730, 730, 730, 730,
-		])
+		expect(Arr.map([1, 3, 4, 30, 31, 45, 366, 551, MAX_RETENTION_DAYS, 800], retentionStampDays)).toEqual(
+			[3, 3, 7, 30, 60, 60, 730, 730, 730, 730],
+		)
 	})
 
 	it("stores every default under its own days, so an untouched org keeps nothing longer", () => {
