@@ -1,5 +1,5 @@
 import { Array as Arr, DateTime, Effect, Option } from "effect"
-import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
+import { MAX_RETENTION_DAYS } from "@maple/domain/retention"
 import * as CH from "../ch"
 import { formatWarehouseDateTime } from "../datetime"
 import { WarehouseExecutor, type WarehouseExecutorError } from "./WarehouseExecutor"
@@ -7,10 +7,10 @@ import { WarehouseExecutor, type WarehouseExecutorError } from "./WarehouseExecu
 const HOUR_MS = 60 * 60 * 1000
 
 /**
- * How far back a trace lookup reaches when its caller does not know the org's own traces
- * retention: what the raw table keeps for an org that set nothing.
+ * How far back a trace lookup reaches when its caller does not know the org's traces read
+ * horizon: the longest any source can keep traces. A miss still costs one wide probe.
  */
-export const TRACE_RETENTION_HOURS = DEFAULT_RETENTION_DAYS.traces * 24
+export const TRACE_LOOKUP_MAX_HOURS = MAX_RETENTION_DAYS * 24
 
 /** Probe tier edges, newest first: most lookups land in the last day or week. */
 const PROBE_TIER_HOURS = [24, 7 * 24] as const
