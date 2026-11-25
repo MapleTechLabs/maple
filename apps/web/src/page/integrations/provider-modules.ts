@@ -1,6 +1,6 @@
 import type { GithubInstallationSelection } from "@maple/domain/http"
 import { Array as Arr, Option } from "effect"
-import { Command as FoldkitCommand } from "foldkit"
+import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -18,6 +18,7 @@ import { CHAT } from "./chat-provider"
 import { FLEET } from "./fleet/fleet-provider"
 import { GITHUB } from "./github-provider"
 import { PROMETHEUS } from "./prometheus-provider"
+import { AWS } from "../infra-integrations/aws/integration/aws-provider"
 import { ReadClock, TrackConnected, TrackDisconnected } from "./command"
 import type { FlowContext, FlowSpec, FlowStage } from "./flow"
 import { Message } from "./message"
@@ -27,7 +28,7 @@ import type {
 	HubRequest,
 	ProviderEnv,
 	ProviderModule,
-	ProviderReturn,
+	ProviderUpdate,
 	StatusAnswer,
 	StatusContext,
 } from "./provider"
@@ -161,7 +162,7 @@ const run = <K extends keyof Statuses, S, M, Msg>(
 	mount: Mount<K, S, M, Msg>,
 	model: Model,
 	context: PageContext,
-	step: (sub: M, env: ProviderEnv<S>) => ProviderReturn<M, Msg>,
+	step: (sub: M, env: ProviderEnv<S>) => ProviderUpdate<M, Msg, S>,
 ): Return => {
 	const env: ProviderEnv<S> = {
 		status: mount.slot(model.statuses),
@@ -173,9 +174,22 @@ const run = <K extends keyof Statuses, S, M, Msg>(
 		context,
 	}
 	const result = step(mount.get(model), env)
+	// An unchanged sub-model keeps the Model, as a no-op update did before.
+	const stepped = result.model === mount.get(model) ? model : mount.set(model, result.model)
+	const patch = result.status
+	const slot = env.status
+	const patched: Model =
+		patch === undefined
+			? stepped
+			: {
+					...stepped,
+					statuses: {
+						...stepped.statuses,
+						[mount.statusName]: { ...slot, data: AsyncData.map(slot.data, patch) },
+					},
+				}
 	const requested = chain(
-		// An unchanged sub-model keeps the Model, as a no-op update did before.
-		result.model === mount.get(model) ? model : mount.set(model, result.model),
+		patched,
 		Arr.map(result.requests ?? [], (request) => applyRequest(mount.statusName, context, request)),
 	)
 	return {
@@ -198,7 +212,7 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 } => {
 	const { module } = spec
 	const hook =
-		(step: ((sub: M, env: ProviderEnv<S>) => ProviderReturn<M, Msg>) | undefined) =>
+		(step: ((sub: M, env: ProviderEnv<S>) => ProviderUpdate<M, Msg, S>) | undefined) =>
 		(model: Model, context: PageContext): Return =>
 			step === undefined ? { model } : run(spec, model, context, step)
 	const isDisconnecting = module.isDisconnecting
@@ -373,6 +387,15 @@ export const PROMETHEUS_PROVIDER = mount({
 	toHub: (message) => Message.GotPrometheusMessage({ message }),
 })
 
+export const AWS_PROVIDER = mount({
+	module: AWS,
+	statusName: "aws",
+	slot: (statuses) => statuses.aws,
+	get: (model) => model.awsCard,
+	set: (model, awsCard) => ({ ...model, awsCard }),
+	toHub: (message) => Message.GotAwsMessage({ message }),
+})
+
 /** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
 export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	RAILWAY_PROVIDER,
@@ -386,6 +409,7 @@ export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	FLEET_PROVIDER,
 	GITHUB_PROVIDER,
 	PROMETHEUS_PROVIDER,
+	AWS_PROVIDER,
 ]
 
 export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>

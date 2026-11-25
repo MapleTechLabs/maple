@@ -6,7 +6,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { codeBlock } from "../../../kit/code-block"
-import type { AwsSetupMethod, AwsSetupPart } from "./aws"
+import { AwsMessage, type AwsSetupMethod, type AwsSetupPart } from "./aws"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { externalLink } from "../../gcp/integration/view-gcp-configure-parts"
@@ -16,6 +16,9 @@ import { Array as Arr, String as Str } from "effect"
 // The AWS stack's setup, by method: shared by the connected card and the connect flow.
 
 type H = HtmlBuilder<Message>
+
+/** An AWS module message, as the hub carries it. */
+export const toHub = (message: AwsMessage): Message => Message.GotAwsMessage({ message })
 
 // The stack's region (`stack_region`, always us-east-1): the console opens where the scripts deploy.
 export const CLOUDSHELL_URL = "https://us-east-1.console.aws.amazon.com/cloudshell/home?region=us-east-1"
@@ -30,7 +33,7 @@ export const fileBlock = (h: H, model: Model, id: string, name: string, text: st
 		language: name,
 		bodyClassName: "max-h-72 overflow-y-auto",
 		copy: model.awsCard.copies[id] ?? CopyButton.init(),
-		toCopyMessage: (message) => Message.GotAwsCopyMessage({ id, message }),
+		toCopyMessage: (message) => toHub(AwsMessage.GotAwsCopyMessage({ id, message })),
 	})
 
 const ROLE_METHODS: ReadonlyArray<Readonly<{ value: AwsSetupMethod; label: string }>> = [
@@ -49,7 +52,7 @@ export const methodSelect = (h: H, model: Model, part: SetupPart): Html =>
 	segmentedSelect(h, {
 		options: part === "role" ? ROLE_METHODS : STREAM_METHODS,
 		value: methodOf(model, part),
-		onChange: (method) => Message.ClickedAwsSetupMethod({ part, method }),
+		onChange: (method) => toHub(AwsMessage.ClickedAwsSetupMethod({ part, method })),
 		size: "sm",
 		ariaLabel: "Setup method",
 	})
@@ -161,7 +164,7 @@ export const setupBody = (
 			errorState(h, {
 				failure,
 				title: "Couldn't load the setup",
-				onRetry: Message.ClickedAwsSetup({ id: connection.id }),
+				onRetry: toHub(AwsMessage.ClickedAwsSetup({ id: connection.id })),
 			}),
 		],
 		onStale: ({ data }) => body(data),

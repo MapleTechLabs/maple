@@ -15,7 +15,6 @@ import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
 import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
-import { awsCard } from "../infra-integrations/aws/integration/view-aws"
 import { integrationHeader } from "./view-header"
 import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
 import { providerModuleOf } from "./provider-modules"
@@ -58,8 +57,6 @@ export const cardView = (
 	switch (integration) {
 		case "gcp":
 			return [gcpCard(h, model, timeZone, focusId)]
-		case "aws":
-			return [awsCard(h, model, timeZone, focusId)]
 		default:
 			return []
 	}
