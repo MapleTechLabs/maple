@@ -6,7 +6,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 import { inject } from "vitest"
 
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
-import { Database } from "../platform/DatabaseLive"
+import { Database, DatabaseError, type DatabaseApi } from "../platform/DatabaseLive"
 import { makeDatabaseFromInstance } from "./DatabasePgliteLive"
 
 declare module "vitest" {
@@ -109,6 +109,26 @@ export const createTestDb = (track?: TestDb[], startParams: ReadonlyArray<string
 	}
 	track?.push(db)
 	return db
+}
+
+/**
+ * A `Database` over `db` that counts its calls and fails them while `down` is set, for a
+ * service that must answer from a cache or outlive a failed read.
+ */
+export const makeSwitchableDatabase = (db: TestDb) => {
+	const state = { down: false, calls: 0 }
+	const layer = Layer.effect(
+		Database,
+		Effect.map(Database, (real): DatabaseApi => ({
+			execute: (fn) => {
+				state.calls += 1
+				return state.down
+					? Effect.fail(new DatabaseError({ message: "database unavailable", cause: "test" }))
+					: real.execute(fn)
+			},
+		})),
+	).pipe(Layer.provide(db.layer))
+	return { layer, state }
 }
 
 const decodeQueryText = Schema.decodeUnknownSync(Schema.String)

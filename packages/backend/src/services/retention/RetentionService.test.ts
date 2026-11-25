@@ -1,15 +1,23 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect, Layer, Result, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { OrgId, SourceId, UserId } from "@maple/domain/http"
 import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
 import {
 	cleanupTestDbs,
 	createTestDb,
 	insertTestSource,
+	makeSwitchableDatabase,
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
-import { RetentionService } from "./RetentionService"
+import {
+	DEFAULT_READ_HORIZON,
+	READ_HORIZON_CACHE_MAX_ENTRIES,
+	READ_HORIZON_RETRY_MS,
+	READ_HORIZON_TTL_MS,
+	RetentionService,
+} from "./RetentionService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -23,6 +31,24 @@ const withDb = <A, E>(run: (db: TestDb) => Effect.Effect<A, E, RetentionService>
 	const db = createTestDb(trackedDbs)
 	return run(db).pipe(Effect.provide(RetentionService.layer.pipe(Layer.provide(db.layer))))
 }
+
+/** The service over a database that counts its calls and can be switched off. */
+const withSwitchableDb = <A, E>(
+	run: (
+		database: ReturnType<typeof makeSwitchableDatabase>["state"],
+		db: TestDb,
+	) => Effect.Effect<A, E, RetentionService>,
+) => {
+	const db = createTestDb(trackedDbs)
+	const database = makeSwitchableDatabase(db)
+	return run(database.state, db).pipe(
+		Effect.provide(RetentionService.layer.pipe(Layer.provide(database.layer))),
+	)
+}
+
+/** A write from elsewhere: another instance over the same database, as another isolate is. */
+const fromAnotherIsolate = <A, E>(db: TestDb, effect: Effect.Effect<A, E, RetentionService>) =>
+	effect.pipe(Effect.provide(Layer.fresh(RetentionService.layer).pipe(Layer.provide(db.layer))))
 
 const source = (db: TestDb, orgId: OrgId, platform: string) =>
 	Effect.map(
@@ -159,6 +185,139 @@ describe("RetentionService", () => {
 					Arr.map(rows.rows, (row) => row.updated_by),
 					[ANA],
 				)
+			}),
+		),
+	)
+})
+
+describe("RetentionService.readHorizon", () => {
+	it.effect("an organization that set nothing reads the defaults, with no signal bounded", () =>
+		withDb(() =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), DEFAULT_READ_HORIZON)
+			}),
+		),
+	)
+
+	it.effect("names the signals the organization or one of its sources set, and no others", () =>
+		withDb((db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const debug = yield* source(db, ORG, "nodejs")
+				yield* retention.setOrganization(ORG, ANA, { logs: 7 })
+				yield* retention.setSource(ORG, ANA, debug, { traces: 90, profiles: 3 })
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
+					// A source that keeps profiles for less does not pull the read in.
+					days: { ...DEFAULT_RETENTION_DAYS, logs: 7, traces: 90 },
+					configured: ["traces", "logs", "profiles"],
+				})
+				assert.deepStrictEqual(yield* retention.readHorizon(OTHER_ORG), DEFAULT_READ_HORIZON)
+			}),
+		),
+	)
+
+	it.effect("answers from its cache instead of reading the policy again", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const first = yield* retention.readHorizon(ORG)
+				const reads = database.calls
+				yield* TestClock.adjust(READ_HORIZON_TTL_MS - 1)
+				assert.strictEqual(yield* retention.readHorizon(ORG), first)
+				assert.strictEqual(database.calls, reads)
+			}),
+		),
+	)
+
+	it.effect("picks up a period set from elsewhere once the cached horizon has aged out", () =>
+		withSwitchableDb((_database, db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				yield* retention.readHorizon(ORG)
+				yield* fromAnotherIsolate(
+					db,
+					RetentionService.use((other) => other.setOrganization(ORG, ANA, { traces: 7 })),
+				)
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), DEFAULT_READ_HORIZON)
+				yield* TestClock.adjust(READ_HORIZON_TTL_MS)
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
+					days: { ...DEFAULT_RETENTION_DAYS, traces: 7 },
+					configured: ["traces"],
+				})
+			}),
+		),
+	)
+
+	it.effect("reads a period set through this instance at once", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				yield* retention.readHorizon(ORG)
+				yield* retention.setOrganization(ORG, ANA, { traces: 7 })
+				const reads = database.calls
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, ["traces"])
+				assert.strictEqual(database.calls, reads)
+			}),
+		),
+	)
+
+	it.effect("serves the defaults when the policy cannot be read and none is known", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				database.down = true
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), DEFAULT_READ_HORIZON)
+			}),
+		),
+	)
+
+	it.effect("serves the last known horizon when the policy cannot be read, then recovers", () =>
+		withSwitchableDb((database, db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const known = yield* retention.setOrganization(ORG, ANA, { traces: 7 })
+				yield* fromAnotherIsolate(
+					db,
+					RetentionService.use((other) => other.setOrganization(ORG, ANA, { traces: 3 })),
+				)
+				database.down = true
+				yield* TestClock.adjust(READ_HORIZON_TTL_MS)
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).days, known.readHorizonDays)
+
+				// A failed read is not repeated on every call, and the next attempt is not a TTL away.
+				const attempts = database.calls
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).days, known.readHorizonDays)
+				assert.strictEqual(database.calls, attempts)
+				database.down = false
+				yield* TestClock.adjust(READ_HORIZON_RETRY_MS)
+				assert.strictEqual((yield* retention.readHorizon(ORG)).days.traces, 3)
+			}),
+		),
+	)
+
+	it.effect("forgets the organization read longest ago once the cache is full", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const decodeOrgId = Schema.decodeSync(OrgId)
+				// Unreadable policies are cached like any other and cost no query to fill with.
+				database.down = true
+				yield* retention.readHorizon(ORG)
+				yield* retention.readHorizon(OTHER_ORG)
+				yield* Effect.forEach(
+					Arr.makeBy(READ_HORIZON_CACHE_MAX_ENTRIES - 2, (index) => decodeOrgId(`org_${index}`)),
+					(orgId) => retention.readHorizon(orgId),
+					{ discard: true },
+				)
+				// Reading ORG again makes OTHER_ORG the oldest, so one more organization evicts it.
+				yield* retention.readHorizon(ORG)
+				yield* retention.readHorizon(decodeOrgId("org_one_more"))
+				const attempts = database.calls
+				yield* retention.readHorizon(ORG)
+				assert.strictEqual(database.calls, attempts)
+				yield* retention.readHorizon(OTHER_ORG)
+				assert.isAbove(database.calls, attempts)
 			}),
 		),
 	)
