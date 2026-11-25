@@ -26,6 +26,7 @@ import {
 	RUNTIMES_POINTS,
 	RUNTIMES_RELEASES,
 	RUNTIMES_SERVICE,
+	RUNTIMES_SOURCE_MAPS,
 	RUNTIMES_USAGE,
 	RUNTIMES_WORKLOADS,
 	RUNTIMES_RUNTIMES,
@@ -150,6 +151,10 @@ const ANSWERS: ReadonlyArray<Answer> = [
 				result: Result.succeed([]),
 				grants: Policy.allPermissions,
 			}),
+	),
+	slot(
+		(model) => model.sourceMaps,
+		(key) => PageMessage.CompletedFetchSourceMaps({ key, result: Result.succeed(RUNTIMES_SOURCE_MAPS) }),
 	),
 	(model) =>
 		Arr.flatMap(Rec.toEntries(model.commits), ([sha, data]) => {

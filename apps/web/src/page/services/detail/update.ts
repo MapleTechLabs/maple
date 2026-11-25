@@ -7,6 +7,7 @@ import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import * as Policy from "@maple/domain/policy"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
+import { SERVICE_SOURCE_MAPS_LIMIT } from "../../kit/source-maps"
 import { ENDPOINTS_LIMIT } from "./service-endpoints"
 import { buildServiceOpenIssuesQuery } from "../../../data/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
@@ -42,6 +43,7 @@ import {
 	FetchProfile,
 	FetchRefinement,
 	FetchUptimeMonitors,
+	FetchSourceMaps,
 	FetchUsage,
 	FetchWorkloads,
 	FetchRuntimes,
@@ -330,6 +332,17 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 			mode,
 			(uptimeMonitors) => ({ uptimeMonitors }),
 			(key) => FetchUptimeMonitors({ key }),
+		),
+	// Not windowed either: uploads come with deploys, not with the time range.
+	(model) =>
+		keyed(
+			model.sourceMaps,
+			requestKey(context.orgId, "sourceMaps.list", {
+				query: { service: model.serviceName, limit: SERVICE_SOURCE_MAPS_LIMIT },
+			}),
+			mode,
+			(sourceMaps) => ({ sourceMaps }),
+			(key) => FetchSourceMaps({ key, serviceName: model.serviceName }),
 		),
 ]
 
@@ -661,6 +674,7 @@ export const init = (
 		usage: Keyed.idle(),
 		uptimeMonitors: Keyed.idle(),
 		canCreateUptimeMonitors: false,
+		sourceMaps: Keyed.idle(),
 		workloads: Keyed.idle(),
 		runtimes: Keyed.idle(),
 		dependencies: Keyed.idle(),
@@ -952,6 +966,9 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				uptimeMonitors: Keyed.accept(model.uptimeMonitors, key, result),
 				canCreateUptimeMonitors: Policy.can(grants, "uptime_monitors:manage"),
 			},
+		}),
+		CompletedFetchSourceMaps: ({ key, result }) => ({
+			model: { ...model, sourceMaps: Keyed.accept(model.sourceMaps, key, result) },
 		}),
 		CompletedFetchRuntimes: ({ key, result }) => ({
 			model: { ...model, runtimes: Keyed.accept(model.runtimes, key, result) },

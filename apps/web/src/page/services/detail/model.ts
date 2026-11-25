@@ -1,6 +1,6 @@
 import * as HoverCard from "@maple/views/ui/hover-card"
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
-import { V2UptimeMonitor } from "@maple/domain/http/v2"
+import { V2SourceMap, V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
@@ -117,6 +117,8 @@ export const Model = Schema.Struct({
 	uptimeMonitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
 	/** Whether the reader may create monitors (org admins); read with the monitors. */
 	canCreateUptimeMonitors: Schema.Boolean,
+	/** `sourceMaps.list` for this service, newest first: the Source maps card. */
+	sourceMaps: KeyedSchema(Schema.Array(V2SourceMap), LoadFailure),
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),
 	runtimes: KeyedSchema(Schema.Array(ServiceRuntime), LoadFailure),
 	dependencies: KeyedSchema(DependencyBundle, LoadFailure),
