@@ -2299,8 +2299,9 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 		],
 	},
 	{
-		// Metadata-only: each default is the period the table keeps today and nothing reads the
-		// column yet. product_events is left out until it is rebuilt. Nothing is backfilled.
+		// Metadata-only: each default is the bundled period and nothing reads the column yet.
+		// A store's raised retention floor lives in its TTLs, not here: whatever makes a local
+		// TTL read this column must keep the floor above it. product_events is left out.
 		slug: "retention-days",
 		description: "Add RetentionDays to the raw tables, defaulted to the period each keeps today",
 		clonedBefore: "any DDL runs",
@@ -2320,7 +2321,7 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				classification: "authoritative",
 				disposition: "preserve-exact",
 				guarantee:
-					"One column is added as a metadata-only default; no part is rewritten, the row counts are verified unchanged, and every existing row reads back the period its table keeps today. No TTL changes.",
+					"One column is added as a metadata-only default; no part is rewritten and the row counts are verified unchanged. No TTL changes: a store with a raised retention floor still keeps its rows for the floor, which the TTL holds, while the column reads the bundled default.",
 			},
 		],
 	},
