@@ -165,7 +165,6 @@ const RETENTION_DAYS_DEFAULTS = [
 	["session_replays", 30],
 	["session_replay_events", 30],
 	["session_events", 30],
-	["product_events", 365],
 	["profiles", 14],
 ] as const
 
@@ -2286,7 +2285,8 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				"Recreate service_platforms_hourly_mv so new rows carry the service-identity columns",
 			],
 		],
-		verifies: "Verify the v66 physical schema, retained raw telemetry counts, and the platforms rollup row count",
+		verifies:
+			"Verify the v66 physical schema, retained raw telemetry counts, and the platforms rollup row count",
 		dispositions: [
 			{
 				name: "service_platforms_hourly",
@@ -2300,33 +2300,20 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 	},
 	{
 		// Metadata-only: each default is the period the table keeps today and nothing reads the
-		// column yet. Both product_events views are recreated to write it. Nothing is backfilled.
+		// column yet. product_events is left out until it is rebuilt. Nothing is backfilled.
 		slug: "retention-days",
 		description: "Add RetentionDays to the raw tables, defaulted to the period each keeps today",
 		clonedBefore: "any DDL runs",
-		beforeBootstrap: [
-			...Arr.map(RETENTION_DAYS_DEFAULTS, ([table, days]) =>
-				addColumns(table, [["RetentionDays", `UInt16 DEFAULT ${days}`]]),
-			),
-			dropViews("product_events_mv", "product_events_traces_mv"),
-		],
-		counts: {
-			group: "productEventRows",
-			measure: [["productEvents", "SELECT toString(count()) AS count FROM product_events"]],
-			checks: [unchangedRowCount("productEvents")],
-		},
+		beforeBootstrap: Arr.map(RETENTION_DAYS_DEFAULTS, ([table, days]) =>
+			addColumns(table, [["RetentionDays", `UInt16 DEFAULT ${days}`]]),
+		),
 		plan: [
 			[
 				"add-retention-days-columns",
-				"Add RetentionDays to the eleven raw tables, each defaulted to the period the table keeps today",
-			],
-			[
-				"recreate-product-event-views",
-				"Recreate product_events_mv and product_events_traces_mv so the rows they write carry RetentionDays",
+				"Add RetentionDays to ten raw tables, each defaulted to the period the table keeps today",
 			],
 		],
-		verifies:
-			"Verify the v67 physical schema, retained raw telemetry counts, and the product_events row count",
+		verifies: "Verify the v67 physical schema and retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "raw telemetry tables (traces, logs, metrics, session replays and events, profiles)",
@@ -2334,13 +2321,6 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				disposition: "preserve-exact",
 				guarantee:
 					"One column is added as a metadata-only default; no part is rewritten, the row counts are verified unchanged, and every existing row reads back the period its table keeps today. No TTL changes.",
-			},
-			{
-				name: "product_events",
-				classification: "derived",
-				disposition: "preserve-exact",
-				guarantee:
-					"One column is added as a metadata-only default and the two views that write the table are recreated; the row count is verified unchanged and every existing row reads back 365.",
 			},
 		],
 	},

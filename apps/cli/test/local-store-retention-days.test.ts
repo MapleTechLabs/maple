@@ -14,6 +14,8 @@ const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(
 
 const decodeDays = decodeJsonEachRow(Schema.Struct({ name: Schema.String, days: Schema.String }))
 
+const decodeNames = decodeJsonEachRow(Schema.Struct({ name: Schema.String }))
+
 /** Each row's stored period, by a column that names the row. */
 const retentionDays = (db: Chdb, table: string, nameColumn: string) =>
 	decodeDays(
@@ -75,7 +77,6 @@ describeWithChdb("v66 -> v67 RetentionDays on the raw tables", () => {
 				sessionEvents: retentionDays(db, "session_events", "SessionId"),
 				metrics: retentionDays(db, "metrics_sum", "MetricName"),
 				profiles: retentionDays(db, "profiles", "ServiceName"),
-				productEvents: retentionDays(db, "product_events", "EventName"),
 			}),
 			{ schemaSql: localSchemaSnapshot(67).sql, bootstrapSchema: false },
 		)
@@ -83,14 +84,9 @@ describeWithChdb("v66 -> v67 RetentionDays on the raw tables", () => {
 		expect(stored.sessionEvents).toEqual([{ name: "before", days: "30" }])
 		expect(stored.metrics).toEqual([{ name: "before_metric", days: "90" }])
 		expect(stored.profiles).toEqual([{ name: "before_profile", days: "14" }])
-		expect(stored.productEvents).toEqual([
-			{ name: "$pageview", days: "365" },
-			{ name: "before_server", days: "365" },
-			{ name: "before_span", days: "365" },
-		])
 	})
 
-	test("the recreated views write a year, and a stamped row keeps its own period", async () => {
+	test("a stamped row keeps its own period, and the views still fill product_events", async () => {
 		const stored = await openStore(
 			targetDataDir,
 			(db) => {
@@ -101,10 +97,10 @@ describeWithChdb("v66 -> v67 RetentionDays on the raw tables", () => {
 				)
 				return {
 					traces: retentionDays(db, "traces", "SpanName"),
-					productEvents: retentionDays(
-						db,
-						"product_events",
-						"concat(Source, ':', SessionId, TraceId)",
+					productEvents: decodeNames(
+						db.query(
+							"SELECT concat(Source, ':', SessionId, TraceId) AS name FROM product_events WHERE OrgId = 'local' ORDER BY name",
+						),
 					),
 				}
 			},
@@ -116,11 +112,11 @@ describeWithChdb("v66 -> v67 RetentionDays on the raw tables", () => {
 			{ name: "stamped", days: "7" },
 		])
 		expect(stored.productEvents).toEqual([
-			{ name: "browser:after", days: "365" },
-			{ name: "browser:before", days: "365" },
-			{ name: "server:", days: "365" },
-			{ name: "trace:after_span-trace", days: "365" },
-			{ name: "trace:before_span-trace", days: "365" },
+			{ name: "browser:after" },
+			{ name: "browser:before" },
+			{ name: "server:" },
+			{ name: "trace:after_span-trace" },
+			{ name: "trace:before_span-trace" },
 		])
 	})
 })

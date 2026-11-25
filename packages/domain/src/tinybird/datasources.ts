@@ -3103,11 +3103,14 @@ export const productEvents = defineDatasource("product_events", {
 		TraceId: t.string().default(""),
 		/** The annotated span within {@link TraceId}. `''` on non-trace rows. */
 		SpanId: t.string().default(""),
-		RetentionDays: retentionDaysColumn("events"),
+		// No `RetentionDays` yet: the two views that fill this table would have to select it, and
+		// a forward query makes any column change a copy. It arrives with the table's rebuild.
 	},
-	// No forward query while RetentionDays ships: with one Tinybird copies the table, without one the
-	// column is an ALTER (both views deploy with `alter`). Restore `forwardQuery: "SELECT *"` in the
-	// next deploy: it stops a rebuild from the 30-day sources dropping history and `/v1/events` rows.
+	// REQUIRED: without it Tinybird REBUILDS this table from its 30-day sources,
+	// dropping history past 30 days and every `/v1/events` row at any age (they
+	// have no source). `SELECT *` since the TraceId/SpanId columns shipped: the
+	// one-shot that defaulted them would now wipe them on every copy.
+	forwardQuery: "SELECT *",
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "VisitorId", "SessionId", "Seq"],

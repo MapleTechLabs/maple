@@ -314,7 +314,6 @@ describe("current local schema identity", () => {
 			// every projection into this table has to match that order.
 			"TraceId",
 			"SpanId",
-			"RetentionDays",
 		])
 		const productEventsView = Option.getOrUndefined(
 			Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === "product_events_mv"),

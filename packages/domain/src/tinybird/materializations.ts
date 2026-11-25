@@ -1,6 +1,5 @@
 import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import { AWS_METRIC_PREFIX } from "../aws-infra"
-import { DEFAULT_RETENTION_DAYS } from "../retention"
 import {
 	chPattern,
 	chRedactChain,
@@ -2605,15 +2604,12 @@ export const productEventsMv = defineMaterializedView("product_events_mv", {
           '' AS ServiceName,
           Attributes,
           '' AS TraceId,
-          '' AS SpanId,
-          toUInt16(${DEFAULT_RETENTION_DAYS.events}) AS RetentionDays
+          '' AS SpanId
         FROM session_events
         WHERE Type IN ('navigation', 'custom')
       `,
 		}),
 	],
-	// Without `alter` a changed view makes Tinybird rebuild its 365-day target from 30-day sources.
-	deploymentMethod: "alter",
 })
 
 /**
@@ -2638,7 +2634,6 @@ export const productEventsTracesMv = defineMaterializedView("product_events_trac
       `,
 		}),
 	],
-	deploymentMethod: "alter",
 })
 
 /**

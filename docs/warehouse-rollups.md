@@ -28,10 +28,11 @@ edge grain wrong double-counts every span in the first and last partial bucket, 
 still looks reasonable. See the comment on `edgeGrain` in
 `packages/query-engine/src/ch/queries/traces.ts`.
 
-Every raw table (`RETENTION_SIGNAL_DATASOURCES` in `packages/domain/src/retention.ts`) carries a
+The raw tables (`RETENTION_SIGNAL_DATASOURCES` in `packages/domain/src/retention.ts`) carry a
 `RetentionDays` column: the days the row is stored for, stamped by the ingest gateway. Nothing reads
-it yet. Its default is the period the table keeps today and the gateway does not write it, so the
-TTLs above still decide when a row expires.
+it yet and its default is the period the table keeps today, so the TTLs above still decide when a
+row expires. `product_events` does not have it yet: views fill that table and a forward query
+guards it, so it gets the column when it is rebuilt.
 
 ---
 
@@ -225,10 +226,6 @@ like a real alert rule as well as a dashboard query.
 8. A one-shot `forwardQuery` (a re-key copy, a defaulted new column) is removed in the
    PR right after its deploy goes live. Left in, the next rebuild of that table runs it
    again.
-9. A column added to a raw table that views also fill (`product_events`) must be selected by
-   those views, or Tinybird refuses the deploy. Give them `deploymentMethod: "alter"` and deploy
-   the table with no `forwardQuery`: with one Tinybird copies the table instead of altering it.
-   Run `tb --local deploy --check` on a scratch copy and read the plan before pushing.
 
 Steps 5 and 6 are expensive, so **batch removals into one migration** instead of shipping
 them one at a time. Migration `0019_mv_sweep` is the worked example.
