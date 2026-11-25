@@ -9,6 +9,7 @@ import {
 	insertTestSource,
 	makeSwitchableDatabase,
 	queryFirstRow,
+	testEdgeCache,
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
 import {
@@ -29,7 +30,9 @@ const decodeSourceId = Schema.decodeSync(SourceId)
 
 const withDb = <A, E>(run: (db: TestDb) => Effect.Effect<A, E, RetentionService>) => {
 	const db = createTestDb(trackedDbs)
-	return run(db).pipe(Effect.provide(RetentionService.layer.pipe(Layer.provide(db.layer))))
+	return run(db).pipe(
+		Effect.provide(RetentionService.layer.pipe(Layer.provide(Layer.merge(db.layer, testEdgeCache(db))))),
+	)
 }
 
 /** The service over a database that counts its calls and can be switched off. */
@@ -42,13 +45,19 @@ const withSwitchableDb = <A, E>(
 	const db = createTestDb(trackedDbs)
 	const database = makeSwitchableDatabase(db)
 	return run(database.state, db).pipe(
-		Effect.provide(RetentionService.layer.pipe(Layer.provide(database.layer))),
+		Effect.provide(
+			RetentionService.layer.pipe(Layer.provide(Layer.merge(database.layer, testEdgeCache(db)))),
+		),
 	)
 }
 
 /** A write from elsewhere: another instance over the same database, as another isolate is. */
 const fromAnotherIsolate = <A, E>(db: TestDb, effect: Effect.Effect<A, E, RetentionService>) =>
-	effect.pipe(Effect.provide(Layer.fresh(RetentionService.layer).pipe(Layer.provide(db.layer))))
+	effect.pipe(
+		Effect.provide(
+			Layer.fresh(RetentionService.layer).pipe(Layer.provide(Layer.merge(db.layer, testEdgeCache(db)))),
+		),
+	)
 
 const source = (db: TestDb, orgId: OrgId, platform: string) =>
 	Effect.map(
@@ -319,6 +328,46 @@ describe("RetentionService.readHorizon", () => {
 			}),
 		),
 	)
+
+	/** Instances over one database and one shared cache, each as a new isolate would build it. */
+	const isolates = () => {
+		const db = createTestDb(trackedDbs)
+		const database = makeSwitchableDatabase(db)
+		const on = <A, E>(effect: Effect.Effect<A, E, RetentionService>) =>
+			effect.pipe(
+				Effect.provide(
+					Layer.fresh(RetentionService.layer).pipe(
+						Layer.provide(Layer.merge(database.layer, testEdgeCache(db))),
+					),
+				),
+			)
+		return { on, database: database.state }
+	}
+	const readHorizon = RetentionService.use((retention) => retention.readHorizon(ORG))
+
+	it.effect("a fresh instance takes the horizon from the shared cache, without the policy read", () => {
+		const { on, database } = isolates()
+		return Effect.gen(function* () {
+			yield* on(RetentionService.use((retention) => retention.setOrganization(ORG, ANA, { traces: 7 })))
+			const first = yield* on(readHorizon)
+			// With Postgres gone, only the shared cache can still answer 7.
+			database.down = true
+			const second = yield* on(readHorizon)
+			assert.strictEqual(first.days.traces, 7)
+			assert.deepStrictEqual(second, first)
+		})
+	})
+
+	it.effect("a write drops the shared horizon, so the next fresh instance reads the new period", () => {
+		const { on } = isolates()
+		return Effect.gen(function* () {
+			const before = yield* on(readHorizon)
+			yield* on(RetentionService.use((retention) => retention.setOrganization(ORG, ANA, { traces: 7 })))
+			const after = yield* on(readHorizon)
+			assert.strictEqual(before.days.traces, DEFAULT_RETENTION_DAYS.traces)
+			assert.strictEqual(after.days.traces, 7)
+		})
+	})
 
 	it.effect("forgets the organization read longest ago once the cache is full", () =>
 		withSwitchableDb((database) =>

@@ -25,7 +25,12 @@ import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	type TestDb,
+	TestEdgeCacheLive,
+} from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { NotificationDispatcher } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
@@ -173,7 +178,9 @@ const makeTickLayer = (database: string) => {
 	const orgChSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
-	const retentionLive = RetentionService.layer.pipe(Layer.provide(databaseLive))
+	const retentionLive = RetentionService.layer.pipe(
+		Layer.provide(Layer.merge(databaseLive, TestEdgeCacheLive)),
+	)
 	const warehouseLive = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(

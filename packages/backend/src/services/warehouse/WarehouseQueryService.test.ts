@@ -56,6 +56,8 @@ import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
 	createTestDb,
+	TestEdgeCacheLive,
+	testEdgeCache,
 	makeSwitchableDatabase,
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
@@ -106,8 +108,9 @@ const makeConfig = (extra: Record<string, string> = {}, includeTinybirdSigning =
 const tokenLayers = <E>(
 	envLive: Layer.Layer<Env, E>,
 	databaseLive: Layer.Layer<Database> = createTestDb(trackedDbs).layer,
+	edgeCacheLive: Layer.Layer<EdgeCacheService> = TestEdgeCacheLive,
 ) => {
-	const retentionLive = RetentionService.layer.pipe(Layer.provide(databaseLive))
+	const retentionLive = RetentionService.layer.pipe(Layer.provide(Layer.merge(databaseLive, edgeCacheLive)))
 	return Layer.mergeAll(
 		retentionLive,
 		TinybirdOrgTokenService.layerWithoutDependencies.pipe(
@@ -124,7 +127,7 @@ const buildLayer = (testDb: TestDb, extra: Record<string, string> = {}, includeT
 	const orgSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
-	const tinybirdTokenLive = tokenLayers(envLive, databaseLive)
+	const tinybirdTokenLive = tokenLayers(envLive, databaseLive, testEdgeCache(testDb))
 	return warehouseServiceLayer.pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(envLive, orgSettingsLive, tinybirdTokenLive)),
@@ -601,7 +604,13 @@ describe("WarehouseQueryService org-scoped reads", () => {
 	const setRetention = (testDb: TestDb, overrides: { readonly traces?: number; readonly logs?: number }) =>
 		RetentionService.use((retention) =>
 			retention.setOrganization(asOrgId("org_test"), asUserId("user_test"), overrides),
-		).pipe(Effect.provide(Layer.fresh(RetentionService.layer).pipe(Layer.provide(testDb.layer))))
+		).pipe(
+			Effect.provide(
+				Layer.fresh(RetentionService.layer).pipe(
+					Layer.provide(Layer.merge(testDb.layer, testEdgeCache(testDb))),
+				),
+			),
+		)
 
 	it.effect("stops a compiled read and raw SQL alike at the org's retention period", () => {
 		const used = recordCredentials()
