@@ -283,21 +283,19 @@ const checkGrantable = (permissions: ReadonlyArray<Policy.Permission>) =>
 /**
  * What a role stores for the permissions and namespaces a save names. A limited role holds the
  * scoped read in place of Read telemetry: a permission that needs all telemetry refuses the save.
+ * The scoped read is only ever derived from the namespaces, so one named in a save is ignored.
  */
 const storedAccess = (
 	requested: ReadonlyArray<Policy.Permission>,
 	namespaces: ReadonlyArray<string> | undefined,
 ): Effect.Effect<Pick<Policy.StoredCustomRole, "permissions" | "namespaces">, RoleConflictError> => {
-	if (Arr.contains(requested, Policy.SCOPED_READ)) {
-		return Effect.fail(
-			conflict("not_grantable", "Limit a role to namespaces by naming them, not by this permission."),
-		)
-	}
+	// A role's own permission list carries it, so an editor that echoes the list back names it.
+	const ticked = Arr.filter(requested, (permission) => permission !== Policy.SCOPED_READ)
 	const limitedTo = Policy.normalizeNamespaces(namespaces ?? [])
 	if (limitedTo.length === 0) {
-		return Effect.succeed({ permissions: Policy.encodePermissions(Policy.withImplied(requested)) })
+		return Effect.succeed({ permissions: Policy.encodePermissions(Policy.withImplied(ticked)) })
 	}
-	const needsAll = Arr.filter(requested, (permission) => !Policy.holdableWhenScoped(permission))
+	const needsAll = Arr.filter(ticked, (permission) => !Policy.holdableWhenScoped(permission))
 	if (needsAll.length > 0) {
 		const labels = Arr.map(needsAll, (permission) => Policy.permissions[permission].label)
 		return Effect.fail(
@@ -308,7 +306,7 @@ const storedAccess = (
 		)
 	}
 	return Effect.succeed({
-		permissions: Policy.encodePermissions(Policy.withImplied([...requested, Policy.SCOPED_READ])),
+		permissions: Policy.encodePermissions(Policy.withImplied([...ticked, Policy.SCOPED_READ])),
 		namespaces: limitedTo,
 	})
 }
