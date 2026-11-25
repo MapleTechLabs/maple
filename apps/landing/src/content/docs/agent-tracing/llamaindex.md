@@ -144,7 +144,7 @@ Only the `agent.run()` call needs to be inside the `with`. Consume the stream ou
 
 Keep one `Context` per conversation. A new UUID per request gives you one session per message.
 
-For multi-agent workflows, run the whole workflow inside `using_session(conversation_id)` and wrap each sub-agent's `run()` in its own `instrument_tags({"gen_ai.agent.name": agent.name})` to give each agent its own lane. `AgentWorkflow` handoffs show as a single agent.
+For multi-agent workflows, run the whole workflow inside `using_session(conversation_id)`. Wrap each sub-agent's `run()` in its own `instrument_tags({"gen_ai.agent.name": agent.name})` to give each agent its own lane. `AgentWorkflow` handoffs show as a single agent.
 
 ## Get tokens on streamed calls
 
@@ -166,11 +166,11 @@ Long-running servers need nothing. In serverless handlers, notebooks and task wo
 
 Send two or three messages with the same conversation id, one of them using a tool, then open **Agent sessions**. Within a minute you should see one session labeled **LlamaIndex**, with one turn per `agent.run()`, a transcript, one model call per request with tokens, and `FunctionTool.acall` tool calls.
 
-Cost shows as **unpriced** and streamed model calls last about 1 ms. Both are expected.
+Cost shows as unpriced and streamed model calls last about 1 ms. Both are expected.
 
 ## Troubleshooting
 
-- **No spans at all.** Import `tracing` before the first `agent.run()`, check the logs for `DependencyConflict` (upgrade llama-index-core) and exporter errors.
+- **No spans at all.** Import `tracing` before the first `agent.run()`. Check the logs for `DependencyConflict` (upgrade `llama-index-core`) and for exporter errors.
 - **One session per message.** `agent.run()` isn't inside `using_session(...)`, or the id changes per request.
 - **Each model or tool call counted two or three times.** The exporter was added directly. Add it through `LlamaIndexForMaple`.
 - **No tokens on streamed calls.** Add `stream_options={"include_usage": True}` through `additional_kwargs`.

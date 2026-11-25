@@ -35,7 +35,7 @@ The same event can be two steps with different filters, for example `plan_starte
 
 ### Match a group of pages
 
-A `*` in a page step's path stands for any run of characters. `/dashboards/*` is every dashboard, `/orders/*/edit` the edit page of any order. A path without one is matched exactly.
+A `*` in a page step's path stands for any run of characters. `/dashboards/*` is every dashboard, `/orders/*/edit` the edit page of any order. A path without a `*` is matched exactly.
 
 ### Repeat a step
 
@@ -75,7 +75,7 @@ A person can try more than once. If their first try runs out of time and a later
 - an event property your events carry, such as `method`;
 - a [user or account property](/docs/product-events/overview#user-and-account-properties), such as the user's `plan` or the account's `tier`, at its current value.
 
-A person is counted under the first value seen for them in the range. People with no value are grouped as `(none)`. The table lists up to 20 groups, the ones most people entered first.
+A person is counted under the first value seen for them in the range. People with no value are grouped as **Not set**, or as **Direct** when the breakdown is by referrer. The table lists up to 20 groups: the ones that the most people entered.
 
 To look at one group only, use the filters on the left. They narrow the whole funnel to people with a matching session.
 

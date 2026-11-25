@@ -13,7 +13,7 @@ The SDK has no Angular-specific entry, so you add two small files that connect `
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide.
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this page.
 
 ```text
 Set up Maple frontend tracing in this project.
@@ -61,7 +61,9 @@ import { appConfig } from "./app/app.config"
 bootstrapApplication(App, appConfig).catch((err) => console.error(err))
 ```
 
-`init()` instruments `fetch` and `XMLHttpRequest`, so `HttpClient` is traced with its default fetch backend and with `withXhr()`. It also records uncaught errors and starts session replay. For an EU organization add `region: "eu"`. With `@angular/ssr`, `main.ts` is the browser entry only. Every option is in the [Browser SDK reference](/docs/session-replay/browser-sdk).
+`init()` instruments `fetch` and `XMLHttpRequest`, so `HttpClient` is traced with its default fetch backend and with `withXhr()`. It also records uncaught errors and starts session replay.
+
+For an EU organization, add `region: "eu"`. With `@angular/ssr`, `main.ts` is the browser entry only. Every option is in the [Browser SDK reference](/docs/session-replay/browser-sdk).
 
 ## Connect browser traces to your API
 
@@ -71,7 +73,7 @@ Requests to the page's own origin carry a W3C `traceparent` header, so your back
 Access-Control-Allow-Headers: content-type, traceparent
 ```
 
-Only list your own APIs: third parties would receive your trace ids, and many reject the preflight. The backend needs an OpenTelemetry HTTP server instrumentation to read the header; see [Instrument your application](/docs/instrumentation).
+List only your own APIs: third parties would receive your trace ids, and many reject the preflight. The backend needs an OpenTelemetry HTTP server instrumentation to read the header; see [Instrument your application](/docs/instrumentation).
 
 ## Router navigations
 
@@ -186,7 +188,7 @@ export const projectResolver: ResolveFn<[Project, Member[]]> = (route) => {
 
 The resolver span is a child of the navigation span, and both `HttpClient` requests are its children: `firstValueFrom` subscribes at once, and `HttpClient` starts the request during the subscribe. A resolver that throws marks its span `Error` with the exception, once.
 
-The browser has no async context, so only requests started before the first `await` nest under the span; a later one starts a trace of its own. For a request that depends on an earlier one, keep the context and run it inside:
+The browser has no async context, so only requests started before the first `await` nest under the span. A later request starts a trace of its own. For a request that needs an earlier result, save the context before the first `await` and run the request inside it:
 
 ```ts
 // src/app/projects/project.resolver.ts
@@ -248,7 +250,7 @@ The resolver span stays `Ok`, and the navigation span is `navigate /not-found` w
 
 ## Errors Angular catches
 
-Angular catches errors from templates, lifecycle hooks and event listeners and hands them to `ErrorHandler`, so they never reach the SDK's global handlers. Report them from your own:
+Angular catches errors from templates, lifecycle hooks and event listeners and hands them to `ErrorHandler`, so they never reach the SDK's global handlers. Report them from your own `ErrorHandler`:
 
 ```ts
 // src/app/maple-error-handler.ts
@@ -279,7 +281,7 @@ If your app already has an `ErrorHandler`, add these lines to it instead. Each e
 
 ## Server-side rendering
 
-With `@angular/ssr`, the first page load starts on your Node server. Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), keeping its `register()` call since the server build is an ES module, and preload it:
+With `@angular/ssr`, the first page load starts on your Node server. Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs). Keep the guide's `register()` call, since the server build is an ES module. Then preload the SDK file:
 
 ```bash
 node --import ./tracing.mjs dist/acme-web/server/server.mjs
@@ -329,9 +331,9 @@ export const projectResolver: ResolveFn<Project> = (route) => {
 }
 ```
 
-- **Why:** the SDK sends spans in batches, on a 2-second timer. Started inside Angular's zone, that timer makes Angular treat the app as busy (`ApplicationRef.isStable` is false) for about 2 seconds after each navigation. Anything that waits for a stable app waits too, such as end-to-end tests and service worker registration.
-- `provideMapleTracing()` already does this for navigation spans.
-- The router still resumes inside Angular's zone, so change detection works as before.
+The SDK sends spans in batches, on a 2-second timer. Started inside Angular's zone, that timer makes Angular treat the app as busy (`ApplicationRef.isStable` is false) for about 2 seconds after each navigation. Anything that waits for a stable app waits too, such as end-to-end tests and service worker registration.
+
+`provideMapleTracing()` already runs outside the zone for navigation spans. The router still resumes inside Angular's zone, so change detection works as before.
 
 ## Next steps
 

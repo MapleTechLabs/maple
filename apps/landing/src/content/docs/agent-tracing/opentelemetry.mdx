@@ -56,7 +56,7 @@ Set `gen_ai.operation.name` on every span. Agent Sessions ignores spans without 
 |                             | `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens`, `gen_ai.usage.reasoning.output_tokens` | int, optional                                                            |
 |                             | `gen_ai.usage.cost`                                                                                                     | double in USD, optional                                                  |
 |                             | `gen_ai.system_instructions`, `gen_ai.input.messages`, `gen_ai.output.messages`                                         | JSON string                                                              |
-|                             | `gen_ai.response.finish_reasons`                                                                                        | string array, e.g. `["stop"]`                                            |
+|                             | `gen_ai.response.finish_reasons`                                                                                        | string array, such as `["stop"]`                                         |
 |                             | `gen_ai.response.time_to_first_chunk`                                                                                   | double, in **seconds**, streamed calls                                   |
 | `execute_tool` (`INTERNAL`) | `gen_ai.operation.name`                                                                                                 | `execute_tool`                                                           |
 |                             | `gen_ai.tool.name`                                                                                                      | `get_weather`                                                            |
@@ -66,7 +66,16 @@ Set `gen_ai.operation.name` on every span. Agent Sessions ignores spans without 
 
 Mark a failed span with status `ERROR` and an `error.type` attribute, even when you return a tool's error to the model as its result.
 
-Put token usage on `chat` spans only. Input tokens include cached tokens and output tokens include reasoning: for Anthropic, add the cache reads and writes to `input_tokens`; for Gemini, add `thoughtsTokenCount` to `candidatesTokenCount`. On OpenAI's streaming API, set `stream_options: { include_usage: true }`, or streamed calls report no tokens. Maple doesn't price tokens, so a session without `gen_ai.usage.cost` shows as unpriced. OpenRouter returns the cost in `usage.cost`.
+Put token usage on `chat` spans only.
+
+Input tokens include cached tokens and output tokens include reasoning:
+
+- For Anthropic, add the cache reads and writes to `input_tokens`.
+- For Gemini, add `thoughtsTokenCount` to `candidatesTokenCount`.
+
+On OpenAI's streaming API, set `stream_options: { include_usage: true }`, or streamed calls report no tokens.
+
+Maple doesn't price tokens, so a session without `gen_ai.usage.cost` shows as unpriced. OpenRouter returns the cost in `usage.cost`.
 
 ### The message format
 

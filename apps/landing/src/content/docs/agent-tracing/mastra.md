@@ -121,7 +121,9 @@ export const mastra = new Mastra({
 
 Set `MAPLE_INGEST_KEY` to your ingest key from **Settings → Ingestion**. For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
 
-Set the endpoint, protocol and key in code, since this exporter ignores the `OTEL_EXPORTER_OTLP_*` variables. `observability` must be an `Observability` instance; a plain object silently traces nothing.
+Set the endpoint, protocol and key in code, since this exporter ignores the `OTEL_EXPORTER_OTLP_*` variables.
+
+`observability` must be an `Observability` instance. A plain object silently traces nothing.
 
 Only agents and workflows registered on this `Mastra` instance are traced. Get them with `mastra.getAgent()` or `mastra.getWorkflow()`.
 
@@ -140,7 +142,9 @@ export async function handleMessage(chatId: string, userId: string, text: string
 }
 ```
 
-Use the chat id your app already has. It must stay the same for the whole conversation and differ between conversations. `agent.stream()` takes the same option; read the stream to the end, since the spans are exported when it finishes.
+Use the chat id your app already has. It must stay the same for the whole conversation and differ between conversations.
+
+`agent.stream()` takes the same option. Read the stream to the end, since the spans are exported when the stream finishes.
 
 Workflow runs, and agents called without `memory`, have no thread. Put the id in the root span's metadata instead:
 
@@ -152,7 +156,9 @@ const result = await run.start({
 })
 ```
 
-Give every `Agent` a distinct `name`, or sub-agents share one lane. When a workflow step calls an agent, pass it the step's `tracingContext` (`agent.generate(prompt, { tracingContext })`) so the agent joins the workflow's trace.
+Give every `Agent` a distinct `name`, or sub-agents share one lane.
+
+When a workflow step calls an agent, pass it the step's `tracingContext` (`agent.generate(prompt, { tracingContext })`) so the agent joins the workflow's trace.
 
 ## Flush in scripts and serverless functions
 
@@ -162,7 +168,9 @@ A short-lived process can exit before its spans are sent. In a script, call `awa
 
 Run a conversation with two messages and a tool call, then open **Agent sessions** in Maple. You should see one session named after your thread id with framework **Mastra**, one turn per `generate()` or `stream()` call, and a transcript with the prompts, replies and tool calls.
 
-Cost shows as unpriced because Mastra doesn't report it. If nothing arrives, set `logLevel: "debug"` on `OtelExporter` to log each export as `Export completed` or `Export FAILED` with the reason.
+Cost shows as unpriced because Mastra doesn't report it.
+
+If nothing arrives, set `logLevel: "debug"` on `OtelExporter` to log each export as `Export completed` or `Export FAILED` with the reason.
 
 ## Troubleshooting
 

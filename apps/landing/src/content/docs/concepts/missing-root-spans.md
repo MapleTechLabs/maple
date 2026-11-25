@@ -16,14 +16,13 @@ The root span is the one span in a trace with no parent. When it never reaches M
 
 **Settings → Setup health** runs the check **Traces have a root span** (`TRC-02`). It takes every trace whose first span started between 75 and 15 minutes ago and counts the ones whose root span never arrived. A span is exported when it ends, and the root usually ends last, so the 15 minutes give it time to arrive.
 
-| Traces without a root span | Result   |
-| -------------------------- | -------- |
-| None or one                | Passes   |
-| Two or more, up to 0.1%    | Info     |
-| More than 0.1%             | Warning  |
-| More than 1%               | Critical |
+| Traces without a root span | Result  |
+| -------------------------- | ------- |
+| None or one                | Passes  |
+| Two or more, up to 0.1%    | Info    |
+| More than 0.1%             | Warning |
 
-Warning and critical need at least 50 traces in the window. Traces whose root was dropped by sampling don't count, such as those with a `th:` value in `tracestate`.
+A warning needs at least 50 traces in the window. Traces whose root was dropped by sampling don't count, such as those with a `th:` value in `tracestate`.
 
 The finding lists the services where these traces start, each with its own share. The `audit_setup` [MCP tool](/docs/reference/mcp) returns the same result.
 
@@ -40,7 +39,7 @@ The earliest span that did arrive points at the cause. The [agent prompt](#inves
 
 ## Flush before the process stops
 
-The OpenTelemetry SDK exports spans in batches. Whatever is still in the batch when the process exits or the runtime freezes it is lost, and the root span, which ends last, is usually among them.
+The OpenTelemetry SDK exports spans in batches. Spans still in the batch when the process exits, or when the runtime freezes the process, are lost. The root span ends last, so it is usually among them.
 
 - In serverless functions, flush the tracer provider at the end of every invocation with `await provider.forceFlush()`.
 - In CLI commands, scripts and jobs, call `await sdk.shutdown()` before the process exits, on the error path too.
@@ -50,12 +49,12 @@ The [instrumentation guides](/docs/instrumentation) show the setup for each lang
 
 ## Context from upstream
 
-When a proxy, gateway or load balancer adds or forwards `traceparent` without exporting a span of its own, your first service continues a trace whose root lives in that proxy. Then nearly every trace that passes through it has no root.
+When a proxy, gateway or load balancer adds or forwards `traceparent` without exporting a span of its own, your first service continues a trace whose root lives in that proxy. Then nearly every trace that passes through the proxy has no root.
 
 - If the proxy can export OpenTelemetry, send its spans to Maple, and it becomes the root.
 - Otherwise, remove the incoming `traceparent` and `tracestate` headers at the proxy, so the first service starts the trace itself.
 
-Cloud Run rewrites `traceparent` on every request it forwards: the parent becomes a span inside Google's infrastructure that Maple never receives, so traces that enter a Cloud Run service have no root. [Instrument a Cloud Run service](/docs/integrations/gcp-opentelemetry#instrument-a-cloud-run-service) covers the setup and this limit.
+Cloud Run rewrites `traceparent` on every request it forwards. The parent becomes a span inside Google's infrastructure that Maple never receives, so traces that enter a Cloud Run service have no root. [Instrument a Cloud Run service](/docs/integrations/gcp-opentelemetry#instrument-a-cloud-run-service) covers the setup and this limit.
 
 ## Long-running root spans
 

@@ -175,7 +175,7 @@ runner = Runner(
 
 If your app already sets up OpenTelemetry (Logfire, Sentry, a platform agent), add the `SkipDuplicateToolSpans(OTLPSpanExporter())` processor to that provider instead.
 
-`adk web` and `adk api_server` create the provider themselves. There, skip it and register the plugin on your `App`: `App(name="support", root_agent=agent, plugins=[ToolCallAttributes()])`.
+`adk web` and `adk api_server` create the provider themselves. With those commands, skip the provider lines and register the plugin on your `App`: `App(name="support", root_agent=agent, plugins=[ToolCallAttributes()])`.
 
 </LanguageTab>
 <LanguageTab id="typescript">

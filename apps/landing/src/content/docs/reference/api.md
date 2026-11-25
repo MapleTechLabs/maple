@@ -28,7 +28,11 @@ curl https://api.maple.dev/v2/services \
   -H "Authorization: Bearer maple_ak_…"
 ```
 
-Keys can be **scoped** at creation. A scope is `<family>:read`, `<family>:write`, or `*`. The family is the first path segment under `/v2`, listed in the resource index below. `write` implies `read`, and a key with no scopes has full access. `GET` requests need `read`; `POST`, `PATCH`, `PUT` and `DELETE` need `write`, except the search, timeseries, breakdown and preview `POST`s, which need only `read`. A request outside a key's scopes fails with `403`, `type: "permission_error"` and `code: "insufficient_scope"`.
+Keys can be **scoped** at creation. A scope is `<family>:read`, `<family>:write`, or `*`. The family is the first path segment under `/v2`, listed in the resource index below. `write` implies `read`, and a key with no scopes has full access.
+
+`GET` requests need `read`. `POST`, `PATCH`, `PUT` and `DELETE` need `write`, except the search, timeseries, breakdown and preview `POST`s, which need only `read`.
+
+A request outside a key's scopes fails with `403`, `type: "permission_error"` and `code: "insufficient_scope"`.
 
 Keys belong to one organization. [Authentication](/docs/reference/authentication) covers every credential Maple accepts, including dashboard session tokens and the `x-maple-org-id` header.
 

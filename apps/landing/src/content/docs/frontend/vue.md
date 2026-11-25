@@ -47,9 +47,11 @@ MapleBrowser.init({
 })
 ```
 
-Import it on the first line of `src/main.ts` ([below](#report-errors-vue-catches)), so `init()` runs before the router's first navigation. EU organizations add `region: "eu"`. `init()` also traces `fetch` and `XMLHttpRequest` calls, reports uncaught errors and records the session replay; the [Browser SDK reference](/docs/session-replay/browser-sdk) lists every option.
+Import it on the first line of `src/main.ts` ([below](#report-errors-vue-catches)), so `init()` runs before the router's first navigation. EU organizations add `region: "eu"`.
 
-`propagateTraceHeaderCorsUrls` makes requests to your API send `traceparent`, so its spans join the browser's trace. The API must run OpenTelemetry and allow the header in CORS (`Access-Control-Allow-Headers: traceparent, tracestate`), or the browser blocks the request. List only your own APIs.
+`init()` also traces `fetch` and `XMLHttpRequest` calls, reports uncaught errors and records the session replay. The [Browser SDK reference](/docs/session-replay/browser-sdk) lists every option.
+
+`propagateTraceHeaderCorsUrls` makes requests to your API send `traceparent`, so its spans join the browser's trace. The API must allow the header in CORS (`Access-Control-Allow-Headers: traceparent, tracestate`), or the browser blocks the request. The API also needs OpenTelemetry to read the header. List only your own APIs.
 
 ## Trace Vue Router navigations
 
@@ -161,7 +163,7 @@ await MapleBrowser.traced("loader /projects/:id", async () => {
 
 ## Report errors Vue catches
 
-Vue catches errors thrown in components, watchers, lifecycle hooks and event handlers, and production builds only log them, so the SDK's global handlers never see them. Report them from `app.config.errorHandler`:
+Vue catches errors thrown in components, watchers, lifecycle hooks and event handlers. Production builds only log them, so the SDK's global handlers never see them. Report them from `app.config.errorHandler`:
 
 ```ts
 // src/main.ts
@@ -190,7 +192,7 @@ Nuxt runs on Vue Router: copy `src/trace-router.ts` from [above](#trace-vue-rout
 
 ### Client plugin
 
-Nuxt has no `main.ts`; initialize the SDK and trace the router in a client-only plugin:
+Nuxt has no `main.ts`, so initialize the SDK and trace the router in a client-only plugin:
 
 ```ts
 // app/plugins/maple.client.ts
@@ -244,7 +246,11 @@ const { data: project, error } = await useAsyncData(`project-${route.params.id}`
 
 ### Join the page load to the server render
 
-The browser's `pageload` span joins the server's trace when the page has a `<meta name="traceparent">` tag or a `Server-Timing: traceparent;desc="…"` header. The SDK doesn't write either: the Nuxt server must run OpenTelemetry and add one. This step is optional: without it, each page load is still traced, as a trace of its own. Install:
+The browser's `pageload` span joins the server's trace when the page has a `<meta name="traceparent">` tag or a `Server-Timing: traceparent;desc="…"` header. The SDK doesn't write either: the Nuxt server must run OpenTelemetry and add one.
+
+This step is optional: without it, each page load is still traced, as a trace of its own.
+
+Install OpenTelemetry for the server:
 
 ```bash
 npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node @opentelemetry/exporter-trace-otlp-http import-in-the-middle

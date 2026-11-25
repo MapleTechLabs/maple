@@ -7,7 +7,7 @@ navLabel: "Server"
 sdk: "effect"
 ---
 
-The server entry point of `@maple-dev/effect-sdk` runs on Node.js, Bun, and Deno. [Install the SDK](/docs/sdks/effect#install) first. It uses Effect's `Otlp.layerJson` exporter with a background fiber that batches and ships telemetry to Maple's ingest endpoint, and reads its configuration from environment variables when it is not passed in code.
+The server entry point of `@maple-dev/effect-sdk` runs on Node.js, Bun and Deno. [Install the SDK](/docs/sdks/effect#install) first. It uses Effect's `Otlp.layerJson` exporter with a background fiber that batches and ships telemetry to Maple's ingest endpoint. It reads its configuration from environment variables when you do not pass it in code.
 
 ## Quick start
 
@@ -34,7 +34,9 @@ import { Maple } from "@maple-dev/effect-sdk/server"
 
 Set `MAPLE_INGEST_KEY` to an ingest key from **Settings → Ingestion** (use the private key, `maple_sk_…`) and the SDK picks it up. With nothing else set, telemetry goes to the US ingest, `https://ingest.maple.dev`. For an EU organization, set `MAPLE_REGION=eu` or pass `region: "eu"`, and it goes to `https://ingest.eu.maple.dev`.
 
-The server layer always exports; there is no disable switch. A missing ingest key does not turn export off, so a keyless app pointed at [Maple Local](/docs/local-mode) or your own OTLP collector still sends telemetry. Keyless against Maple's hosted ingest cannot work: every request is rejected with `401`, and the SDK logs a one-time warning. For local development that exports nothing, point `MAPLE_ENDPOINT` at a sink you control, or use `MapleFlush.make`, which does nothing without a key.
+The server layer always exports. There is no disable switch. A missing ingest key does not turn export off, so a keyless app pointed at [Maple Local](/docs/local-mode) or your own OTLP collector still sends telemetry.
+
+A keyless app cannot send to Maple's hosted ingest: every request is rejected with `401`, and the SDK logs a one-time warning. For local development that exports nothing, point `MAPLE_ENDPOINT` at a sink you control, or use `MapleFlush.make`, which does nothing without a key.
 
 ## Environment variables
 
@@ -68,11 +70,11 @@ The server layer reads these variables when the matching config option is not se
 3. `DEPLOYMENT_ENV`
 4. Falls back to `"development"`
 
-`VERCEL_ENV` and `NODE_ENV` are **not** read. On any platform outside that list, set `MAPLE_ENVIRONMENT` explicitly or your telemetry lands under `development`.
+`VERCEL_ENV` and `NODE_ENV` are **not** read. On a platform that sets none of the three variables in the list, set `MAPLE_ENVIRONMENT` explicitly, or your telemetry lands under `development`.
 
 **Repository URL:** `MAPLE_REPOSITORY_URL`, then `GITHUB_SERVER_URL` + `GITHUB_REPOSITORY` (GitHub Actions), then `VERCEL_GIT_REPO_OWNER` + `VERCEL_GIT_REPO_SLUG`.
 
-The SDK also detects the **runtime** (Node.js, Bun, Deno) and **cloud provider** (Railway, Vercel, Cloudflare, Render) and adds them as `maple.runtime` and `maple.provider` resource attributes, along with `process.runtime.name` and `process.runtime.version` (for example `22.11.0` on Node.js). Cloudflare Workers and edge runtimes report no `process.runtime.version`.
+The SDK also detects the **runtime** (Node.js, Bun, Deno) and **cloud provider** (Railway, Vercel, Cloudflare, Render). It adds them as `maple.runtime` and `maple.provider` resource attributes, along with `process.runtime.name` and `process.runtime.version` (for example `22.11.0` on Node.js). Cloudflare Workers and edge runtimes report no `process.runtime.version`.
 
 ## Deployment platform notes
 
@@ -108,13 +110,17 @@ const onSubscriptionCreated = Effect.fn("onSubscriptionCreated")(function* (
 })
 ```
 
-`track(name, options)` buffers the event and returns immediately; batches go out every 5 seconds, at 100 events, and when the layer's scope closes. It never fails the caller: a rejected batch is dropped with a rate-limited console warning. `options` are all optional: `userId`, `groupId`, `visitorId` (the browser cookie value, if your backend has it), `sessionId`, `timestamp`, `url`, `pagePath`, and `attributes` (coerced and capped exactly like the browser `track()`).
+`track(name, options)` buffers the event and returns immediately. Batches go out every 5 seconds, at 100 events, and when the layer's scope closes. `track` never fails the caller: a rejected batch is dropped with a rate-limited console warning.
 
-The endpoint and ingest key resolve the same way as the tracer (`endpoint`/`ingestKey` in config, else `MAPLE_ENDPOINT`, `OTEL_EXPORTER_OTLP_ENDPOINT` or the region, and `MAPLE_INGEST_KEY`). Without a key, events are dropped with a one-shot warning. Outside an Effect runtime, `MapleEvents.makeHandle(config)` returns a plain `{ track, identify, groupIdentify, flush, dispose }`. Call `dispose()` on shutdown so the last batch is sent.
+Every field of `options` is optional: `userId`, `groupId`, `visitorId` (the browser cookie value, if your backend has it), `sessionId`, `timestamp`, `url`, `pagePath`, and `attributes` (coerced and capped exactly like the browser `track()`).
+
+The endpoint and ingest key resolve the same way as the tracer (`endpoint`/`ingestKey` in config, else `MAPLE_ENDPOINT`, `OTEL_EXPORTER_OTLP_ENDPOINT` or the region, and `MAPLE_INGEST_KEY`). Without a key, events are dropped with a one-shot warning.
+
+Outside an Effect runtime, `MapleEvents.makeHandle(config)` returns a plain `{ track, identify, groupIdentify, flush, dispose }`. Call `dispose()` on shutdown so the last batch is sent.
 
 ### User and account properties
 
-Properties such as a user's plan or an account's seat count ride on any event, or go on their own with `identify` and `groupIdentify`:
+You can send properties such as a user's plan or an account's seat count on any event, or on their own with `identify` and `groupIdentify`:
 
 ```typescript
 yield * events.track("plan_started", { userId, groupId: orgId, set: { plan }, groupSet: { plan } })
@@ -130,7 +136,7 @@ yield *
 yield * events.groupIdentify(orgId, { seats: 12, industry: "fintech" })
 ```
 
-`set` replaces a property, `setOnce` keeps the first value it ever had, and `unset` removes it; the `group*` forms do the same on the account. See [User and account properties](/docs/product-events/api#user-and-account-properties) for the rules.
+`set` replaces a property, `setOnce` keeps the first value it ever had, and `unset` removes it. The `group*` forms do the same on the account. See [User and account properties](/docs/product-events/api#user-and-account-properties) for the rules.
 
 ## Verify
 

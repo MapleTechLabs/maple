@@ -81,7 +81,7 @@ export default otel({
 })
 ```
 
-If the project already has an `otel()` file, add the two attributes to it instead. eve allows only one.
+If the project already has an `otel()` file, add the two attributes to it instead. eve allows only one `otel()` file.
 
 ## Show message text in production
 
@@ -142,13 +142,15 @@ Then:
 
 ## Troubleshooting
 
-- **Nothing arrives.** eve doesn't report failed exports, so check the key. The startup log must not say `MAPLE_INGEST_KEY is not set`. Then send this request with your key in place of `YOUR_INGEST_KEY`. `200` means the key works; `401` says what is wrong, including a key from the other region:
+- **Nothing arrives.** eve doesn't report failed exports, so check the key. The startup log must not say `MAPLE_INGEST_KEY is not set`. Then send this request with your key in place of `YOUR_INGEST_KEY`:
 
     ```bash
     curl -s -w "%{http_code}\n" -X POST https://ingest.maple.dev/v1/traces \
       -H "Authorization: Bearer YOUR_INGEST_KEY" \
       -H "Content-Type: application/json" -d '{"resourceSpans":[]}'
     ```
+
+    `200` means the key works. `401` says what is wrong, including a key from the other region.
 
 - **Sessions have no message text.** The conversation isn't public. [Mark the channel public](#show-message-text-in-production). Setting a `tracePolicy` in `otel()` doesn't change this.
 - **Thousands of `workflow.*`, `world.*` and `step.*` spans.** The `exportPolicy` line is missing from `maple.ts`.

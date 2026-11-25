@@ -7,7 +7,7 @@ order: 6
 
 The `maple` binary is one CLI with two backends: the local server it starts itself (`maple start`) and a hosted Maple workspace (`maple auth login`). Every query command runs against whichever backend is [resolved](#auth-and-configuration) for that invocation. Output is JSON by default, clean enough to pipe into `jq` or an agent.
 
-New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use the CLI with hosted Maple](#using-the-cli-with-hosted-maple). This page lists every command.
+If you are new to the CLI, start with the [Maple Local](/docs/local-mode) walkthrough, or [use the CLI with hosted Maple](#using-the-cli-with-hosted-maple). This page lists every command.
 
 ## Command index
 
@@ -51,7 +51,7 @@ Most **query** commands also share a set of filter flags. Which ones apply is li
 | `--start <time>`   |       |         | Absolute start, `YYYY-MM-DD HH:mm:ss` UTC or ISO-8601. Alone, the window runs to now    |
 | `--end <time>`     |       |         | Absolute end, same formats. Alone, the window is `--since` back from it                 |
 | `--service <name>` | `-s`  |         | Filter by service name                                                                  |
-| `--env <name>`     | `-e`  |         | Filter by deployment environment, e.g. `production`                                     |
+| `--env <name>`     | `-e`  |         | Filter by deployment environment, for example `production`                              |
 | `--limit <n>`      | `-n`  | `20`    | Maximum number of results                                                               |
 | `--offset <n>`     |       | `0`     | Pagination offset                                                                       |
 
@@ -120,7 +120,7 @@ If the server was started with a custom data directory, pass the same one. Witho
 
 ### `maple restore`
 
-Restore the local store from the current checkpoint. Refuses to run while a server owns the store. The existing store is moved beside the data directory as `<data-dir>.quarantine-<ids>`, never deleted; `maple schema gc` lists it and `--apply` removes it.
+Restore the local store from the current checkpoint. Refuses to run while a server owns the store. The existing store is moved beside the data directory as `<data-dir>.quarantine-<ids>`, never deleted. `maple schema gc` lists it and `--apply` removes it.
 
 | Flag                     | Default         | Description                                                |
 | ------------------------ | --------------- | ---------------------------------------------------------- |
@@ -279,7 +279,7 @@ One error group in detail: sample traces and a timeseries.
 
 ### `maple sourcemaps inject <dir>`
 
-Gives every built JS file under `<dir>` that has a source map a debug id, and writes it into the map. Run it after the build, before deploying and uploading; re-running changes nothing. Maps outside `<dir>` are never touched.
+Gives a debug id to every built JS file under `<dir>` that has a source map, and writes the id into the map. Run it after the build, before deploying and uploading; re-running changes nothing. Maps outside `<dir>` are never touched.
 
 - Flags: `--dry-run` reports what would change without writing
 
@@ -289,7 +289,7 @@ Uploads every source map under `<dir>` whose JS file is there too, so error stac
 
 - `--service`: the `service.name` the maps belong to
 - `--release`: the `service.version`; defaults to the directory's git commit when `--service` is set
-- `--url-prefix`: the path the files are served under, prepended to each file path, e.g. `assets/`
+- `--url-prefix`: the path the files are served under, prepended to each file path, for example `assets/`
 
 ## Logs
 
@@ -358,14 +358,18 @@ maple metrics show http.server.request.count --since 1h
 
 ### `maple promql '<query>'`
 
-Run a PromQL query over your metrics, in local and remote mode. Metric names are Prometheus-style, translated from OTel: `http.server.request.duration` in seconds is `http_server_request_duration_seconds`, its histogram reads as `_bucket`, `_count` and `_sum`, and `job` is the service name.
+Run a PromQL query over your metrics, in local and remote mode. Metric names are Prometheus-style, translated from OTel: `http.server.request.duration` in seconds is `http_server_request_duration_seconds`, its histogram reads as `_bucket`, `_count` and `_sum`, and `job` is the service name. The [Prometheus API](/docs/reference/prometheus) describes the name translation in full.
 
 - **`<query>`**: the PromQL expression; quote it in single quotes
 - `--since` (default `1h`) / `--start` / `--end`: the window to evaluate over, at most 7 days
 - `--step <duration>`: the range resolution (`30s`, `1m`, `1h` or seconds), default a round step giving 60 to 120 points
 - `--instant`: evaluate once at the window's end instead of over it
 
-`--format table` prints one row per series with its last value, min, average and max, its point count and a sparkline; labels every series shares are printed once above the table. JSON output is the same in both modes. The [Prometheus API](/docs/reference/prometheus) describes the name translation in full. At most 20 series (the highest peaks) and the last 200 points of each are returned; a note says when more matched. A syntax error is reported with its position before anything is sent:
+`--format table` prints one row per series with its last value, min, average and max, its point count and a sparkline. Labels that every series shares are printed once above the table. JSON output is the same in both modes.
+
+At most 20 series (the highest peaks) and the last 200 points of each are returned. A note says when more matched.
+
+A syntax error is reported with its position before anything is sent:
 
 ```text
 error: invalid PromQL at position 50: syntax error near ")"
@@ -393,7 +397,9 @@ Run a read-only ClickHouse `SELECT`, for anything the typed commands don't cover
 - **`<sql>`**: the query to run
 - Flags: `--since` / `--start` / `--end`, the window the macros use
 
-The macros `$__orgFilter`, `$__timeFilter(col)`, `$__startTime`, `$__endTime` and `$__interval_s` expand in both modes (see [SQL](/docs/reference/sql)). Locally, SQL without macros also runs as written. Remote queries must include `$__orgFilter` and return at most 100 rows. Quote the SQL in single quotes so the shell leaves `$__` alone:
+The macros `$__orgFilter`, `$__timeFilter(col)`, `$__startTime`, `$__endTime` and `$__interval_s` expand in both modes (see [SQL](/docs/reference/sql)). Locally, SQL without macros also runs as written. Remote queries must include `$__orgFilter` and return at most 100 rows.
+
+Quote the SQL in single quotes so the shell leaves `$__` alone:
 
 ```bash
 maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName ORDER BY 2 DESC"   # local
@@ -402,7 +408,7 @@ maple query 'SELECT ServiceName, count() AS spans FROM traces WHERE $__orgFilter
 
 ## Users and product events
 
-These read a workspace, so they need `maple auth login` and run in remote mode only. All three default to `--since 7d` and accept `--start` / `--end`.
+These commands read a workspace, so they need `maple auth login` and run in remote mode only. All three default to `--since 7d` and accept `--start` / `--end`.
 
 ### `maple users`
 
@@ -488,7 +494,7 @@ maple use remote                                   # optional: stop auto-detecti
 maple services --since 1h
 ```
 
-`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) that acts with your role in that organization and expires after 90 days. It appears under **Settings → Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
+`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) that acts with your role in that organization and expires after 90 days. The key appears under **Settings → Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
 
 Every query command works in remote mode, `maple query` included. The server commands (`start`, `stop`, `reset`, `checkpoint`, `restore`, `delete`, `archive`, `schema`) always act on the local store. Which region your organization is in is on [Regions](/docs/reference/regions).
 
@@ -509,7 +515,7 @@ echo "$MAPLE_TOKEN" | maple auth login --with-token
 MAPLE_HANDOFF=<code> maple auth login
 ```
 
-A handoff code works once and for an hour, and only over HTTPS. Signing in with one also reports the `connect_agent` stage of your [onboarding run](#maple-onboarding). It is meant for your coding agent to run; if you type it yourself, start the line with a space (shells with `HISTCONTROL=ignorespace` or `setopt HIST_IGNORE_SPACE` skip it) so the code stays out of your shell history.
+A handoff code works once and for an hour, and only over HTTPS. Signing in with one also reports the `connect_agent` stage of your [onboarding run](#maple-onboarding). The handoff command is meant for your coding agent to run. If you type it yourself, start the line with a space so the code stays out of your shell history. Shells with `HISTCONTROL=ignorespace` or `setopt HIST_IGNORE_SPACE` skip a line that starts with a space.
 
 ### `maple auth status`
 
@@ -531,7 +537,12 @@ Pin the default backend so commands stop auto-detecting, or `auto` to clear the 
 
 1. An explicit `--local` or `--remote` flag.
 2. The default pinned with `maple use`.
-3. Auto-detect: an explicitly set `MAPLE_LOCAL_URL` means local; otherwise a stored credential means remote; otherwise the CLI probes the local server (`GET /local/status`, falling back to `/health` for older binaries). If neither is available the CLI prints what to do next.
+3. Auto-detect, in this order:
+    - An explicitly set `MAPLE_LOCAL_URL` means local.
+    - Otherwise a stored credential means remote.
+    - Otherwise the CLI probes the local server (`GET /local/status`, falling back to `/health` for older binaries).
+
+If neither backend is available, the CLI prints what to do next.
 
 ### `maple onboarding`
 
@@ -544,9 +555,16 @@ Commands a coding agent runs while it sets Maple up for you, so the connect step
 | `maple onboarding keys`                    | Print the ingest endpoint and your organization's public ingest key. Never the private key                                                                                                                     |
 | `maple onboarding verify --service <name>` | Poll for a trace with a span from the service (last 15 minutes, every 5 seconds) and report `receive_verification`                                                                                             |
 
-`report` flags: `--note <text>` (short plain text, never file contents, paths, output or secrets), `--service <name>` (repeatable), `--trace-id <id>`, `--run-status completed|failed` to close the run. Reporting never fails the setup: a closed run prints `run is closed; stop reporting`, a missing run prints a note, and a network error prints a warning, all with exit code 0.
+`report` flags: `--note <text>` (short plain text, never file contents, paths, output or secrets), `--service <name>` (repeatable), `--trace-id <id>`, `--run-status completed|failed` to close the run.
 
-`verify` takes `--env <name>` to count only traces from that `deployment.environment.name` (pass the one you just configured, so another deployment of the same service never verifies it) and `--timeout <seconds>` (default `120`). A refused key or a bad request fails at once; network and server errors are retried until the timeout. On success it prints the trace id and its dashboard link; on timeout it reports the stage as `waiting` and exits 1 with what to check (region, key, init order, exporter errors).
+Reporting never fails the setup: a closed run prints `run is closed; stop reporting`, a missing run prints a note, and a network error prints a warning, all with exit code 0.
+
+`verify` also takes these flags:
+
+- `--env <name>` counts only traces from that `deployment.environment.name`. Pass the one you just configured, so another deployment of the same service never verifies it.
+- `--timeout <seconds>` sets how long to poll (default `120`).
+
+A refused key or a bad request fails at once. Network and server errors are retried until the timeout. On success `verify` prints the trace id and its dashboard link. On timeout it reports the stage as `waiting` and exits 1 with what to check (region, key, init order, exporter errors).
 
 ```bash
 maple onboarding report instrument_app active --note "Instrumenting 2 services"
@@ -582,6 +600,10 @@ maple onboarding report prepare_production completed --run-status completed
 - The access token signs browsers in through `/login` (a 30-day, HttpOnly session cookie; rotating the token signs everyone out) and is accepted as `Authorization: Bearer <token>` by scripts. CLI commands send it when `MAPLE_LOCAL_ACCESS_TOKEN` is set in their environment. Ten failed sign-ins within a minute lock the sign-in form for everyone until the minute passes; Bearer requests and existing sessions are unaffected.
 - With an access token set, the dashboard works on whatever hostname reaches it (a platform URL, a reverse proxy), without `--advertise-host`.
 
+The maintenance token is sent in `x-maple-maintenance-token` and the event consumer token in `x-maple-event-consumer-token`. `maple start` creates them on first run as `<data-dir>.maintenance-token` and `<data-dir>.event-consumer-token` (mode `0600`). Anyone who can read those files can call the token routes, including `/local/retention/retire`, which deletes data. The event routes are described in the [local event consumers design doc](https://github.com/MapleTechLabs/maple/blob/main/docs/local-event-consumers.md).
+
+OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The `/local/query` handler owns the output format: it strips any trailing `FORMAT <ident>`, appends `FORMAT JSONEachRow`, and wraps the rows into a JSON array, so clients POST their compiled SQL verbatim.
+
 ### Behind an authenticating proxy
 
 A server exposed through a proxy that checks its own credentials (Cloudflare Access, an auth gateway) also needs those credentials on every CLI request. Set `MAPLE_LOCAL_HEADERS` to comma-separated `name=value` pairs, the same format as `OTEL_EXPORTER_OTLP_HEADERS` (values may be percent-encoded). The CLI sends them only to the `MAPLE_LOCAL_URL` origin, and never in place of a header it already sets:
@@ -600,10 +622,6 @@ MAPLE_LOCAL_URL=https://maple.example.com maple services
 ```
 
 When `MAPLE_LOCAL_URL` is https on another host and `MAPLE_LOCAL_HEADERS` carries no Access credential, the CLI asks `cloudflared access token` for the cached token once per command and sends it as `cf-access-token`. Without `cloudflared` or a cached token it sends nothing extra. If the proxy still refuses or redirects to a sign-in page, the command says so and names both fixes.
-
-The maintenance token is sent in `x-maple-maintenance-token` and the event consumer token in `x-maple-event-consumer-token`. `maple start` creates them on first run as `<data-dir>.maintenance-token` and `<data-dir>.event-consumer-token` (mode `0600`). Anyone who can read those files can call the token routes, including `/local/retention/retire`, which deletes data. The event routes are described in the [local event consumers design doc](https://github.com/MapleTechLabs/maple/blob/main/docs/local-event-consumers.md).
-
-OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The `/local/query` handler owns the output format: it strips any trailing `FORMAT <ident>`, appends `FORMAT JSONEachRow`, and wraps the rows into a JSON array, so clients POST their compiled SQL verbatim.
 
 ## Environment variables
 

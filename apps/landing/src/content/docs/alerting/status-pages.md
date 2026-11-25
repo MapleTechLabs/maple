@@ -5,7 +5,9 @@ group: "Alerting"
 order: 5.7
 ---
 
-A status page tells your customers whether your product works. It lists components, such as API and Dashboard, with their current status and up to 90 days of daily uptime bars, and shows open incidents, planned maintenance and incidents resolved in the last 14 days. Components can follow your [uptime checks](/docs/alerting/uptime-checks), so the page shows an outage when the checks fail. Maple serves the page separately from the dashboard, so it keeps showing its last published state when the rest of Maple is unreachable.
+A status page tells your customers whether your product works. It lists components, such as API and Dashboard, with their current status and up to 90 days of daily uptime bars. It also shows open incidents, planned maintenance and incidents resolved in the last 14 days.
+
+Components can follow your [uptime checks](/docs/alerting/uptime-checks), so the page shows an outage when the checks fail. Maple serves the page separately from the dashboard, so it keeps showing its last published state when the rest of Maple is unreachable.
 
 Status page incidents are public posts for customers. They are separate from the internal [incidents](/docs/alerting/incidents) that alert rules open.
 
@@ -35,7 +37,7 @@ Click a component on the **Page** tab to edit it:
 - **Group**: components with the same group are listed under one heading.
 - **Description**: a line under the name.
 - **Driven by**: the uptime monitor behind the component, or **No monitor**.
-- **Override status**: **Automatic**, or a fixed status: **Operational**, **Degraded**, **Partial outage** or **Major outage** or **Maintenance**.
+- **Override status**: **Automatic**, or a fixed status: **Operational**, **Degraded**, **Partial outage**, **Major outage** or **Maintenance**.
 - **Show uptime bars**: the daily bars and uptime percentage. Uptime bars need a monitor.
 
 A component's status is the worst of three inputs:
@@ -48,7 +50,7 @@ A component's status is the worst of three inputs:
 
 The banner at the top of the page shows the worst component status.
 
-Each uptime bar is one UTC day of the component, coloured by what happened that day:
+Each uptime bar is one UTC day of the component, colored by what happened that day:
 
 | That day                                                                                        | Bar         |
 | ----------------------------------------------------------------------------------------------- | ----------- |
@@ -60,7 +62,10 @@ Each uptime bar is one UTC day of the component, coloured by what happened that 
 
 A day's tooltip gives the exact count of failed checks and names the incident or maintenance. Maintenance replaces what the checks say, since downtime it announced was planned. The uptime percentage is the share of checks taken while the monitor was up.
 
-When no publish has reached the page for 5 minutes, or a page with monitored components has had no new check result for 5 minutes, it shows "Live checks are delayed" with the time of the last known state, rather than looking green.
+The page shows "Live checks are delayed" with the time of the last known state, rather than looking green, in two cases:
+
+- No publish has reached the page for 5 minutes.
+- The page has monitored components and has had no new check result for 5 minutes.
 
 **Remove from page** takes a component off the page. Its monitor keeps running.
 
@@ -97,7 +102,9 @@ Under **Settings → Behaviour**, **When a linked monitor goes down** sets what 
 - **Open a draft for me to publish**: a draft incident waits under **Incidents** in the editor.
 - **Open and publish an incident**: the incident shows on the page at once.
 
-The incident is titled "<component> is down", with impact Major, status `investigating` and the update "Automated checks for <component> are failing. We are investigating.". When the monitor's alert incident resolves, Maple resolves the page incident with "Automated checks are passing again. This incident has been resolved.". A component's status follows its monitor whether or not this setting is on.
+The incident is titled "<component> is down", with impact Major, status `investigating` and the update "Automated checks for <component> are failing. We are investigating.". When the monitor's alert incident resolves, Maple resolves the page incident with "Automated checks are passing again. This incident has been resolved.".
+
+A component's status follows its monitor whether or not this setting is on.
 
 ## Appearance
 
@@ -123,7 +130,9 @@ The page name, **Address**, description, **Website URL**, **Privacy policy URL**
 | **Password-protected** | Visitors who enter the page password. No subscribe link, feeds need the password, and search engines leave it out.                     |
 | **Internal**           | Members of your organization, signed in to Maple. The page's address and custom domain answer not found; members read it inside Maple. |
 
-Set the password first, under **New password** and **Save password**: 8 to 256 characters. Visitors enter it once per browser and stay signed in for 30 days. Saving a new password signs every visitor out. An internal page cannot have a custom domain, so remove the domain before switching to internal. It has no public address, so the editor offers no break-glass token for it either.
+Set the password first, under **New password** and **Save password**: 8 to 256 characters. Visitors enter it once per browser and stay signed in for 30 days. Saving a new password signs every visitor out.
+
+An internal page cannot have a custom domain, so remove the domain before switching to internal. An internal page has no public address, so the editor offers no break-glass token for it either.
 
 ## Custom domain
 
@@ -133,22 +142,45 @@ A page can answer on a subdomain you control, such as `status.acme.com`, with a 
 2. Add both records from the **DNS records to add** table at your DNS provider:
     - A `CNAME` from your hostname to the target Maple shows. It points the domain at Maple and is always needed.
     - A `TXT` record named `_maple-challenge.<your hostname>`. It proves you own the domain, and Maple sets the domain up only after it finds this record. You can remove it once the domain is active.
-3. Wait for the badge to change from **Waiting for DNS** to **Issuing certificate** and then **Active**. Maple checks every minute for the first hour, then every ten minutes. **Check now** checks at once and retries a failed certificate. While the certificate is issued the table may list more `TXT` records: one marked optional, and records for the certificate, which you add only when they are listed.
+3. Wait for the badge to change from **Waiting for DNS** to **Issuing certificate** and then **Active**. Maple checks every minute for the first hour, then every ten minutes. **Check now** checks at once and retries a failed certificate. While the certificate is being issued, the table may list more `TXT` records: one marked optional, and records for the certificate, which you add only when they are listed.
 
-The `TXT` value is specific to your organization and this page, so the record works for no one else, and a `CNAME` that points at Maple is not enough for anyone to serve a page on your domain. If Maple says a hostname is held by another status page that has not proved it owns the domain, the message gives the `TXT` record to add: publish it, then add the domain again, and it becomes yours. Domains that were added before this record was required keep working and need no change.
+The `TXT` value is specific to your organization and this page, so the record works for no one else. A `CNAME` that points at Maple is not enough for anyone to serve a page on your domain.
 
-Once the domain is active, the page, its feeds and its JSON answer there, and feed links, the Slack command and the dashboard's links use it. **Needs attention** means the domain stopped; the panel says what went wrong. **Remove** stops serving the page on the domain within a minute; the page stays up at its Maple address.
+If Maple says a hostname is held by another status page that has not proved it owns the domain, the message gives the `TXT` record to add. Publish the record, then add the domain again, and the domain becomes yours.
 
-The hostname must be a subdomain: an apex domain such as `acme.com` cannot point at Maple. IP addresses, names under `maple.dev` and reserved names such as `localhost` are refused. A page has one custom domain, and a hostname can belong to only one page. A domain that is not active within 7 days of being added is removed, so add the DNS records soon after.
+Domains that were added before this record was required keep working and need no change.
+
+Once the domain is active, the page, its feeds and its JSON answer on the domain. Feed links, the Slack command and the dashboard's links use it too.
+
+- **Needs attention** means the domain stopped. The panel says what went wrong.
+- **Remove** stops serving the page on the domain within a minute. The page stays up at its Maple address.
+
+The rules for a custom domain:
+
+- The hostname must be a subdomain. An apex domain such as `acme.com` cannot point at Maple.
+- IP addresses, names under `maple.dev` and reserved names such as `localhost` are refused.
+- A page has one custom domain, and a hostname can belong to only one page.
+- A domain that is not active within 7 days of being added is removed, so add the DNS records soon after you add the domain.
 
 ## Post while Maple is down (break-glass)
 
-The page keeps serving its last published state even when the rest of Maple is unreachable. A break-glass token lets you post incident updates straight to the hosted page when Maple itself is down. It needs the admin role.
+The page keeps serving its last published state even when the rest of Maple is unreachable. A break-glass token lets you post incident updates straight to the hosted page when Maple itself is down. Managing the token needs the admin role.
 
 1. Open **Settings → Break-glass token** and click **Issue token**.
 2. Copy the token, which starts with `mstat_`, into your password manager. It is not shown again. The panel then shows only its last 6 characters.
 
-During an outage, open `/_manage` on the page's address, for example `https://status.acme.com/_manage`. On a password-protected page, enter the page password first. The form takes the **Break-glass token**, the **Incident** (an open one or **New incident**), a **Title** for a new incident, a **Status** and **Impact** (left at **No change**, a new incident starts as Investigating with impact Major), the **Message** and the affected components. Click **Post update** and the page shows it at once. When Maple is back, it imports these updates into the page's incidents.
+During an outage:
+
+1. Open `/_manage` on the page's address, for example `https://status.acme.com/_manage`. On a password-protected page, enter the page password first.
+2. Fill in the form:
+    - The **Break-glass token**.
+    - The **Incident**: an open one or **New incident**.
+    - A **Title** for a new incident.
+    - A **Status** and **Impact**. Left at **No change**, a new incident starts as Investigating with impact Major.
+    - The **Message** and the affected components.
+3. Click **Post update**. The page shows the update at once.
+
+When Maple is back, it imports these updates into the page's incidents.
 
 **Replace token** stops the old token at once. **Revoke** refuses every later post until you issue a new one.
 

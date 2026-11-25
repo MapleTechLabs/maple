@@ -133,7 +133,7 @@ export const load: PageLoad = ({ fetch, params, route }) =>
 	})
 ```
 
-On the server, `traced` only runs the function; SvelteKit's own tracing spans server-side loads.
+On the server, `traced` only runs the function. SvelteKit's own tracing creates the spans for server-side loads.
 
 The browser has no async context: only requests started before the function's first `await` nest under its span. Start independent requests together with `Promise.all`, as above. For a request that needs an earlier result, carry the context across the `await` (`npm install @opentelemetry/api`):
 
@@ -151,7 +151,7 @@ export const load: PageLoad = ({ fetch, params, route }) =>
 
 ## Errors
 
-Where each kind of error is recorded. None is recorded twice:
+This is where each kind of error is recorded. None is recorded twice:
 
 - A universal `load` that throws in the browser: on its `loader` span.
 - A component that throws while rendering in the browser: `handleError` reports it as `sveltekit.client_error`.
@@ -161,7 +161,7 @@ Where each kind of error is recorded. None is recorded twice:
 
 ## Join the page load to the server render
 
-SvelteKit can emit OpenTelemetry spans for the `handle` hook, `load` functions, form actions and `+server` endpoints, and reads an incoming `traceparent`. Turn it on in the options you pass to the `sveltekit()` plugin:
+SvelteKit can emit OpenTelemetry spans for the `handle` hook, `load` functions, form actions and `+server` endpoints, and reads an incoming `traceparent`. Turn this tracing on in the options you pass to the `sveltekit()` plugin:
 
 ```ts
 // vite.config.ts
@@ -224,7 +224,7 @@ export const handle: Handle = ({ event, resolve }) => {
 }
 ```
 
-The `pageload` span becomes a child of `sveltekit.handle.root`, and every reload gets a new trace, because SvelteKit computes the `ETag` after `transformPageChunk`. Don't add the tag to pages a CDN caches, or every visitor joins the same trace. Without server tracing, the placeholder becomes an empty string and the page load starts a trace of its own.
+The `pageload` span becomes a child of `sveltekit.handle.root`. Every reload gets a new trace, because SvelteKit computes the `ETag` after `transformPageChunk`. Don't add the tag to pages a CDN caches, or every visitor joins the same trace. Without server tracing, the placeholder becomes an empty string and the page load starts a trace of its own.
 
 ## Next steps
 

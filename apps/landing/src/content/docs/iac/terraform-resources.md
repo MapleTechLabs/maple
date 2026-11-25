@@ -7,7 +7,7 @@ icon: "terraform"
 navLabel: "Terraform resources"
 ---
 
-The resources the `mapletechlabs/maple` provider manages. New here? Start with the [Terraform quick start](/docs/iac/terraform).
+This page lists the resources the `mapletechlabs/maple` provider manages. If you are new to the provider, start with the [Terraform quick start](/docs/iac/terraform).
 
 | Resource                                              | Lifecycle                                                           | Import ID |
 | ----------------------------------------------------- | ------------------------------------------------------------------- | --------- |
@@ -20,7 +20,7 @@ The resources the `mapletechlabs/maple` provider manages. New here? Start with t
 | [`maple_api_key`](#maple_api_key)                     | Create, roll, revoke. Any other change replaces the key             | `key_…`   |
 | [`maple_ingest_keys`](#maple_ingest_keys)             | Data source                                                         |           |
 
-Attribute names are the API's `snake_case` wire names, as the [interactive API reference](https://api.maple.dev/v2/docs) documents the matching create endpoint. Attributes marked **default** take Maple's value when you leave them out, and keep their last value if you remove them later; every other optional attribute is cleared in Maple when you remove it.
+Attribute names are the API's `snake_case` wire names, as the [interactive API reference](https://api.maple.dev/v2/docs) documents the matching create endpoint. Attributes marked **default** take Maple's value when you leave them out, and keep their last value if you remove them later. Every other optional attribute is cleared in Maple when you remove it.
 
 ## maple_dashboard
 
@@ -180,10 +180,12 @@ resource "maple_status_page" "acme" {
 | `custom_domain`                                                         | string       | Also serve the page on this hostname. Not allowed on an `internal` page                                                         |
 
 - Components are matched to the page's existing ones by name, so their IDs, incidents and uptime history survive reordering and edits. Renaming a component recreates it; leaving one out deletes it.
-- Leave `manual_status` unset and an override a responder sets during an incident stays; an apply does not undo it. Set it to manage the override from Terraform.
+- When `manual_status` is unset, an override a responder sets during an incident stays: an apply does not undo it. Set `manual_status` to manage the override from Terraform.
 - A new page is published once it is fully configured, so a half-made page is never served.
 
-Read-only: `components[*].id` (`stc_…`, for incidents posted through the API), `custom_domain_cname_target`, and `custom_domain_dns_records`: a list of `{ type, name, value, purpose }` to create at your DNS provider. Their values exist once the page does, so on the first run apply the page with `-target` before the records that use them. Incidents are operational and are not managed by Terraform. See [Status pages](/docs/alerting/status-pages).
+Read-only: `components[*].id` (`stc_…`, for incidents posted through the API), `custom_domain_cname_target` and `custom_domain_dns_records` (a list of `{ type, name, value, purpose }` to create at your DNS provider). These read-only values exist once the page does, so on the first run apply the page with `-target` before the records that use them.
+
+Incidents are operational and are not managed by Terraform. See [Status pages](/docs/alerting/status-pages).
 
 ## maple_scrape_target
 
