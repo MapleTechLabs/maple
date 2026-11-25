@@ -1,4 +1,5 @@
 import type { AiCardGate } from "@maple/domain/billing"
+import { primaryKind } from "./update"
 import { aiCardAction, aiCardNotice } from "../../kit/billing/ai-card-gate"
 import {
 	type InvestigationStatus,
@@ -131,8 +132,8 @@ const headerActions = (
 	return detailActions(h, [
 		hstack(h, { gap: "2" }, [
 			...(handoff === null ? [] : [handoff]),
-			// "Run again" is a new AI run: while it waits on a card, the button asks for one.
-			aiCardGate !== undefined && primary.label === "Run again"
+			// Run again and Reopen start a new AI run: while it waits on a card, the button asks for one.
+			aiCardGate !== undefined && primaryKind(investigation) === "restart"
 				? aiCardAction(h, aiCardGate)
 				: button(
 						h,

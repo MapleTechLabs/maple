@@ -562,7 +562,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		onRefreshing: () => loaded(),
 	})
 	function loaded(): Html {
-		if (visible.length === 0) return hubEmpty(h, viewOf(model.search), isFiltered, canRun)
+		// While AI waits on a card, nothing on the page starts one: the copy drops that offer too.
+		if (visible.length === 0)
+			return hubEmpty(
+				h,
+				viewOf(model.search),
+				isFiltered,
+				canRun && inputs.context.aiCardGate === undefined,
+			)
 		return h.div(
 			[h.Class("contents")],
 			[
