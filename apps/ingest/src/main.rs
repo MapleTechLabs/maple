@@ -77,11 +77,10 @@ use maple_ingest::session_analytics::{
 };
 use maple_ingest::telemetry::{
     AcceptStats, AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget,
-    ClickHouseTargetProvider, DatasourceNames, ExportDestination, HttpClient, MappingOperation,
-    MappingSourceContext, PipelineError, PlannedFailure, RowBatchesError, RowSource,
-    SamplingPolicy, SourceStamps, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
+    ClickHouseTargetProvider, DatasourceNames, EventsStamps, ExportDestination, HttpClient,
+    MappingOperation, MappingSourceContext, PipelineError, PlannedFailure, RowBatchesError,
+    RowSource, SamplingPolicy, SourceStamps, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
-use maple_ingest::telemetry::EventsStamps;
 use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetrics};
 use maple_ingest::vercel_ai_gateway_drain;
 use maple_ingest::vercel_event_drains::{self, EventDrain};
@@ -24879,10 +24878,10 @@ mod tests {
                 .iter()
                 .filter(|(datasource, _)| datasource == "session_events")
                 .flat_map(|(_, rows)| rows);
-            let events_stamps: Vec<Option<u64>> = session_events
+            let events_periods: Vec<Option<u64>> = session_events
                 .map(|row| row["events_retention_days"].as_u64())
                 .collect();
-            assert_eq!(events_stamps, vec![Some(180), Some(180)]);
+            assert_eq!(events_periods, vec![Some(180), Some(180)]);
             drop(std::fs::remove_dir_all(&queue_dir));
         }
 
