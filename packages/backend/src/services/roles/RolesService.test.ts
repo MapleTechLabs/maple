@@ -12,7 +12,10 @@ import {
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, ConfigProvider, Effect, Layer, Order, Schema, Semaphore, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
+import {
+	MembershipRevocationError,
+	MembershipRevocationService,
+} from "@maple/backend/services/auth/MembershipRevocationService"
 import { ClerkRolesGateway, type RoleMembership } from "./ClerkRolesGateway"
 import { RolesService } from "./RolesService"
 import { RoleWriteLock } from "./RoleWriteLock"
@@ -129,24 +132,29 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 
 const recordingRevocation = () => {
 	const demoted: Array<{ readonly userId: string; readonly grants: Policy.Grants }> = []
+	/** Members whose demotion fails: the credential sweep could not run. */
+	const failDemotionFor = new Set<string>()
 	const layer = Layer.succeed(MembershipRevocationService, {
 		revokeMembership: () => Effect.die("unused"),
 		revokeUser: () => Effect.die("unused"),
 		demoteMembership: (_orgId, userId, grants) =>
-			Effect.sync(() => {
+			Effect.suspend(() => {
+				if (failDemotionFor.has(userId)) {
+					return Effect.fail(new MembershipRevocationError({ message: "sweep failed" }))
+				}
 				demoted.push({ userId, grants })
-				return {
+				return Effect.succeed({
 					apiKeysRevoked: 0,
 					mcpFamiliesRevoked: 0,
 					deviceCredentialsRevoked: 0,
 					dashboardSharesRevoked: 0,
 					digestSubscriptionsDisabled: 0,
 					mobileDevicesDeleted: 0,
-				}
+				})
 			}),
 		invalidateMembership: () => Effect.void,
 	})
-	return { demoted, layer }
+	return { demoted, failDemotionFor, layer }
 }
 
 /** The org lock as Postgres's advisory lock behaves within one org: one write at a time. */
@@ -1280,6 +1288,34 @@ describe("RolesService concurrent and partial writes", () => {
 			)
 		}).pipe(Effect.provide(layer))
 	})
+
+	// The membership was rewritten, then the credential sweep failed: the holder already carries
+	// the role, so only a repeated save that demotes everyone again reaches them.
+	it.live(
+		"demotes a holder whose demotion failed after their membership was rewritten, on the next save",
+		() => {
+			const { layer, revocation } = setup(
+				[stored(ON_CALL, "On-call", onCallPermissions)],
+				[onCallHolder("user_cat"), onCallHolder("user_dan")],
+			)
+			revocation.failDemotionFor.add("user_dan")
+			return Effect.gen(function* () {
+				const roles = yield* RolesService
+				const error = yield* Effect.flip(roles.update(adminTenant, ON_CALL, narrow))
+				assert.instanceOf(error, RolesUnavailableError)
+				assert.deepStrictEqual(
+					Arr.map(revocation.demoted, (entry) => entry.userId),
+					["user_cat"],
+				)
+				revocation.failDemotionFor.delete("user_dan")
+				yield* roles.update(adminTenant, ON_CALL, narrow)
+				assert.include(
+					Arr.map(revocation.demoted, (entry) => entry.userId),
+					"user_dan",
+				)
+			}).pipe(Effect.provide(layer))
+		},
+	)
 
 	it.live(
 		"finishes the holders when the same save is sent again, though the role's timestamp moved",
