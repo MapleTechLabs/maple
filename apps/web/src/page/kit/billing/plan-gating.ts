@@ -3,7 +3,6 @@ import {
 	aiCardGateOf,
 	isActivePlanSubscription,
 	isPlanSubscription,
-	OPENROUTER_BYOK_ADDON_ID,
 	TRIAL_PLAN_ID,
 } from "@maple/domain/billing"
 import type { BillingBalance, BillingCustomer, BillingSubscription, CatalogPlan } from "@maple/domain/http"
@@ -234,16 +233,12 @@ export function hasEndedNoCardTrial(customer: Customer | null | undefined): bool
 
 /**
  * Why Maple AI waits on billing, as the AI credit check refuses it: a card while the no-card trial
- * runs, a plan once none is active. Null before billing answers (the server still checks) and for
- * an org on its own OpenRouter key, which the check lets through.
+ * runs, a plan once none is active. Null before billing answers (the server still checks). The
+ * server's own-key exemption needs a configured key, which the customer does not show, so the
+ * add-on alone exempts nothing here either.
  */
 export function getAiCardGate(customer: Customer | null | undefined): AiCardGate | null {
-	if (customer == null) return null
-	const ownKey = Arr.some(
-		customer.subscriptions,
-		(sub) => sub.planId === OPENROUTER_BYOK_ADDON_ID && sub.status === "active",
-	)
-	return ownKey ? null : Option.getOrNull(aiCardGateOf(customer.subscriptions))
+	return customer == null ? null : Option.getOrNull(aiCardGateOf(customer.subscriptions))
 }
 
 /** The trial's last days, when the banner asks for a card. */

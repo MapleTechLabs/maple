@@ -478,13 +478,14 @@ describe("getAiCardGate", () => {
 		expect(getAiCardGate(buildCustomer([]))).toBe("no_plan")
 	})
 
-	it("lets a paid plan through, and an org on its own OpenRouter key even on the trial", () => {
+	it("lets a paid plan through, and asks a trial org for a card even with the OpenRouter add-on", () => {
 		expect(getAiCardGate(buildCustomer([buildSubscription({ planId: "startup" })]))).toBeNull()
+		// The add-on is not a plan; only a configured key (server-side) runs AI without one.
 		expect(
 			getAiCardGate(
 				buildCustomer([trial, buildSubscription({ planId: "openrouter_byok", addOn: true })]),
 			),
-		).toBeNull()
+		).toBe("trial")
 	})
 
 	it("says nothing before billing answers: the server still checks", () => {
