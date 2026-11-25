@@ -415,12 +415,19 @@ describe("RetentionService.readHorizon", () => {
 							bucket: READ_HORIZON_CACHE_BUCKET,
 							key: READ_HORIZON_CACHE_KEY,
 							ttlSeconds: 60,
-							schema: Schema.Struct({ orgs: Schema.Array(Schema.Unknown) }),
+							schema: Schema.Struct({
+								readAtMs: Schema.Number,
+								orgs: Schema.Array(Schema.Unknown),
+							}),
 						},
-						Effect.succeed({ orgs: [] }),
+						Effect.succeed({ readAtMs: 0, orgs: [] }),
 					),
 				).pipe(Effect.provide(testEdgeCache(db)))
-				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, ["traces"])
+				// The read starts after the write, and still must not take the older snapshot over it.
+				yield* TestClock.adjust(1)
+				const horizon = yield* retention.readHorizon(ORG)
+				assert.deepStrictEqual(horizon.configured, ["traces"])
+				assert.strictEqual(horizon.days.traces, 7)
 			}),
 		),
 	)
