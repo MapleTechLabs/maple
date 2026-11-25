@@ -1,3 +1,4 @@
+import { TRIAL_PLAN_ID } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import type { DailySpendResponse } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -413,13 +414,17 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 					h.p(
 						[h.Class("border-t px-4 py-2.5 text-2xs text-muted-foreground")],
 						[
-							"Your card is charged when the trial ends on ",
+							trial.planId === TRIAL_PLAN_ID
+								? "Your free trial ends on "
+								: "Your card is charged when the trial ends on ",
 							timestamp(h, {
 								value: trial.trialEndsAt,
 								timeZone,
 								label: formatDateInTimezone(trial.trialEndsAt, { timeZone, withYear: false }),
 							}),
-							". Cancel before then to avoid charges.",
+							trial.planId === TRIAL_PLAN_ID
+								? ". Add a card to keep ingesting after it."
+								: ". Cancel before then to avoid charges.",
 						],
 					),
 				]

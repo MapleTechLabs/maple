@@ -17,6 +17,10 @@ import { getScenario } from "./pricing-plans"
 
 export const PlansData = AsyncData.Schema(CatalogPlansResponse, LoadFailure)
 
+/** What a new plan's card offers: `Trial`, the no-card trial (a new org); `Subscribe`, a checkout. */
+export const Offer = Schema.Literals(["Trial", "Subscribe"])
+export type Offer = typeof Offer.Type
+
 export const Model = Schema.Struct({
 	plans: PlansData.schema,
 	/** The plan whose button spins; kept while the page leaves for Stripe. */

@@ -523,6 +523,7 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 					maybeOrganization: inputs.maybeOrganization,
 					memberships: inputs.memberships,
 					customer: customerOf(model.customer),
+					customerReadAtMs: model.customer.readAtMs ?? 0,
 					maybeGrants: Option.flatMap(
 						Option.fromNullishOr(model.clerkSnapshot),
 						(snapshot) => snapshot.maybeGrants,
@@ -876,9 +877,19 @@ const withSettledPlan = (step: UpdateReturn): UpdateReturn => {
 	return { ...next, commands: [...(step.commands ?? []), ...(next.commands ?? [])] }
 }
 
-const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]): UpdateReturn => {
+const settledCustomer = (
+	model: Model,
+	orgId: string,
+	data: CustomerSlot["data"],
+	readAtMs?: number,
+): UpdateReturn => {
 	if (model.customer.orgId !== orgId) return { model }
-	const next = modifyFields(model, { customer: () => ({ orgId, data }) })
+	const next = modifyFields(model, {
+		customer: (slot) => {
+			const at = readAtMs ?? slot.readAtMs
+			return at === undefined ? { orgId, data } : { orgId, data, readAtMs: at }
+		},
+	})
 	const access = accessOf(next.customer)
 	const settled = withSettledPlan(settle(next))
 	const known = sessionIdentityOf(model)
@@ -1125,8 +1136,8 @@ const foldMessage = (model: Model, message: Message) =>
 			signedOut(modifyFields(model, { clerk: () => ClerkPhase.Failed({ message }) })),
 		ChangedClerkSession: ({ snapshot }) => changedClerkSession(model, snapshot),
 		CompletedWaitForAuthSettle: () => (model.session._tag === "Resolving" ? signedOut(model) : { model }),
-		SucceededLoadCustomer: ({ orgId, customer }) =>
-			settledCustomer(model, orgId, CustomerData.Success({ data: customer })),
+		SucceededLoadCustomer: ({ orgId, customer, readAtMs }) =>
+			settledCustomer(model, orgId, CustomerData.Success({ data: customer }), readAtMs),
 		FailedLoadCustomer: ({ orgId }) =>
 			settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
 		ElapsedCustomerGrace: ({ orgId }) => elapsedCustomerGrace(model, orgId),

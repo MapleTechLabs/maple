@@ -5,6 +5,7 @@ import {
 	type TenantContext,
 } from "@maple/domain/http"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
+import { TRIAL_PLAN_ID } from "@maple/domain/billing"
 import type { OrgId } from "@maple/primitives"
 import {
 	emptyOnboardingChecklistInputs,
@@ -336,6 +337,14 @@ const make = Effect.gen(function* () {
 			yield* release
 			return yield* new OnboardingRewardNotClaimableError({
 				message: "Start a plan before claiming the reward.",
+				reason: "no_subscription",
+			})
+		}
+		// The no-card trial has no Stripe subscription to discount: the card comes first.
+		if (planId.value === TRIAL_PLAN_ID) {
+			yield* release
+			return yield* new OnboardingRewardNotClaimableError({
+				message: "Add a card to claim the reward. It comes off your first invoice.",
 				reason: "no_subscription",
 			})
 		}

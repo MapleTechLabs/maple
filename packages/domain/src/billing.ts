@@ -58,6 +58,54 @@ export const ENTERPRISE_SSO_FEATURE_ID = "enterprise_sso"
 export const ENTERPRISE_SCIM_ADDON_ID = "enterprise_scim"
 export const ENTERPRISE_SCIM_FEATURE_ID = "enterprise_scim"
 
+/**
+ * The no-card trial: Startup's allowances as hard caps (no overage price), for 14 days. Adding a card
+ * attaches Startup with the days left; never listed in a plan catalog.
+ */
+export const TRIAL_PLAN_ID = "trial"
+
+/** Days the no-card trial runs. */
+export const TRIAL_DURATION_DAYS = 14
+
+/** GB of each byte signal (logs, metrics, traces) the no-card trial includes, a hard cap. */
+export const TRIAL_SIGNAL_GB = 100
+
+/** The base plan a card buys; the no-card trial's days carry over to it. */
+export const STARTUP_PLAN_ID = "startup"
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** A subscription row as the trial helpers read it. */
+export interface TrialSubscription extends PlanGatingSubscription {
+	readonly trialEndsAt?: number | null
+}
+
+/** The org held a base plan, the trial included: the no-card trial is once per org. */
+export const hasHadPlan = (subscriptions: ReadonlyArray<TrialSubscription>): boolean =>
+	Arr.some(subscriptions, isPlanSubscription)
+
+/** When the org's no-card trial ends (or ended); none if it never had one. */
+export const trialEndOf = (subscriptions: ReadonlyArray<TrialSubscription>): Option.Option<number> => {
+	const ends = Arr.flatMap(subscriptions, (sub) =>
+		sub.planId === TRIAL_PLAN_ID && sub.trialEndsAt != null ? [sub.trialEndsAt] : [],
+	)
+	return Arr.isReadonlyArrayNonEmpty(ends) ? Option.some(Math.max(...ends)) : Option.none()
+}
+
+/**
+ * The trial a Startup attach carries: the no-card trial's days left, rounded up, so the card is
+ * first charged when that trial would have ended; `null` (bill now) once it ended; `undefined`
+ * (the plan's own terms) for an org that never trialed.
+ */
+export const startupTrialDays = (
+	subscriptions: ReadonlyArray<TrialSubscription>,
+	now: number,
+): number | null | undefined =>
+	Option.match(trialEndOf(subscriptions), {
+		onNone: () => undefined,
+		onSome: (end) => (end > now ? Math.ceil((end - now) / DAY_MS) : null),
+	})
+
 /** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
 export const AI_CREDITS_FEATURE_ID = "ai_credits"
 

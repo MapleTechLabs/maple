@@ -1,8 +1,9 @@
 import { isPricingCardFeature } from "@maple/domain/billing"
 import type { CatalogPlan } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { getTrialStatus } from "../../kit/billing/plan-gating"
-import { getPlanFeatures, sentenceCasePlanName, TRIAL_DURATION_DAYS } from "../../kit/billing/plans"
+import { getActivePlan, getTrialStatus } from "../../kit/billing/plan-gating"
+import { TRIAL_PLAN_ID } from "@maple/domain/billing"
+import { getPlanFeatures, sentenceCasePlanName } from "../../kit/billing/plans"
 import { featureUnit, type SpendModel } from "./spend"
 import { formatCount } from "../../kit/billing/usage"
 import type { BillingCustomer } from "@maple/domain/http"
@@ -34,6 +35,7 @@ const billsUsage = (spend: SpendModel) =>
 	Arr.some(spend.features, (feature) => feature.overageAllowed !== false && feature.ratePerUnit !== null)
 
 const priceLabel = (spend: SpendModel): { price: string; suffix: string } => {
+	if (spend.basePlan?.id === TRIAL_PLAN_ID) return { price: "$0", suffix: "until the trial ends" }
 	const found = Arr.findFirst(spend.charges, (charge) => charge.kind === "plan")
 	if (Option.isNone(found) || found.value.dollars === null)
 		return { price: "Custom", suffix: "negotiated pricing" }
@@ -267,10 +269,10 @@ const offerPanel = (
 	model: Model,
 	plan: CatalogPlan,
 	addOns: ReadonlyArray<CatalogPlan>,
-	options: Readonly<{ isCustom: boolean; trialText: string | null }>,
+	/** `isOnNoCardTrial`: the org is on the no-card trial, so subscribing is adding its card. */
+	options: Readonly<{ isCustom: boolean; trialText: string | null; isOnNoCardTrial: boolean }>,
 ): Html => {
 	const isActive = !options.isCustom && plan.customerEligibility?.status === "active"
-	const isTrialAvailable = plan.customerEligibility?.trialAvailable === true
 	const retention = Option.getOrUndefined(
 		Arr.findFirst(
 			getPlanFeatures(Str.toLowerCase(plan.id)),
@@ -374,15 +376,15 @@ const offerPanel = (
 									isLoading: model.attaching === plan.id,
 									attributes: [h.OnClick(Message.ClickedSubscribe({ planId: plan.id }))],
 								},
-								[
-									isTrialAvailable
-										? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-										: "Subscribe",
-								],
+								[options.isOnNoCardTrial ? "Add card" : "Subscribe"],
 							),
 							h.p(
 								[h.Class("text-center text-2xs text-muted-foreground")],
-								["$0 due today · cancel anytime"],
+								[
+									options.isOnNoCardTrial
+										? "$0 due today · billed when your trial ends"
+										: "Billed monthly · cancel anytime",
+								],
 							),
 						],
 			),
@@ -399,6 +401,7 @@ const planOffer = (
 ): ReadonlyArray<Html> => {
 	const { isTrialing, daysRemaining } = getTrialStatus(customer ?? undefined)
 	const trialText = isTrialing && daysRemaining !== null ? `Trial · ${daysRemaining}d left` : null
+	const isOnNoCardTrial = getActivePlan(customer)?.planId === TRIAL_PLAN_ID
 	return AsyncData.matchDataSplitEmpty(model.plans, {
 		onIdle: () => [
 			h.div(
@@ -425,7 +428,7 @@ const planOffer = (
 					[
 						...(isCustom && spend !== null ? [customPlanPlate(h, spend)] : []),
 						...Arr.map(offers, (plan) =>
-							offerPanel(h, model, plan, addOns, { isCustom, trialText }),
+							offerPanel(h, model, plan, addOns, { isCustom, trialText, isOnNoCardTrial }),
 						),
 						compliance(h),
 					],

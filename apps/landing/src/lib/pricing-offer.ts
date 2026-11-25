@@ -13,7 +13,7 @@
  * `label: m.pricing_logs()` freezes whichever locale rendered first and every
  * other locale inherits it.
  */
-import { PRICING_CARD_FEATURE_IDS, isAdvertisedPricingFeature } from "@maple/domain/billing"
+import { PRICING_CARD_FEATURE_IDS, TRIAL_PLAN_ID, isAdvertisedPricingFeature } from "@maple/domain/billing"
 import * as m from "../paraglide/messages.js"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
@@ -189,10 +189,10 @@ export async function getOffer(): Promise<Offer> {
 /** The offer from a plans.list response; the mirror when there is none or it has no base plan. */
 export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => {
 	const labels = dataFeatureLabels()
-	const products = Arr.filter(
-		Option.match(plans, { onNone: () => [], onSome: (r) => r.list }),
-		(p) => !p.add_on,
-	)
+	const list = Option.match(plans, { onNone: () => [], onSome: (r) => r.list })
+	// The no-card trial is a plan of its own: it sets the trial copy, never a pricing tier.
+	const trialPlan = Arr.findFirst(list, (p) => p.id === TRIAL_PLAN_ID)
+	const products = Arr.filter(list, (p) => !p.add_on && p.id !== TRIAL_PLAN_ID)
 
 	if (products.length > 1) {
 		// The layout renders one offer. A second tier must fail loudly at build
@@ -207,7 +207,10 @@ export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => 
 
 	const product = products[0]
 	if (product === undefined) return fallbackOffer(labels)
-	const freeTrial = product.free_trial ?? undefined
+	const freeTrial =
+		Option.flatMap(trialPlan, (p) => Option.fromNullishOr(p.free_trial)).pipe(Option.getOrUndefined) ??
+		product.free_trial ??
+		undefined
 	const interval = product.price?.interval
 
 	return {

@@ -1,6 +1,16 @@
 import type { BillingCustomer } from "@maple/domain/http"
 import { maximumInvoiceCents, uncappedFeatures } from "./controls"
-import { getLegacyPlanInfo, getTrialStatus } from "../../kit/billing/plan-gating"
+import {
+	getLegacyPlanInfo,
+	getNoCardTrial,
+	getTrialStatus,
+	type NoCardTrial,
+} from "../../kit/billing/plan-gating"
+import { STARTUP_PLAN_ID, TRIAL_SIGNAL_GB } from "@maple/domain/billing"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
+import { badge } from "@maple/views/ui/display"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -75,8 +85,12 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const trial = getTrialStatus(customer ?? undefined)
 	const { isLegacy } = getLegacyPlanInfo(customer ?? undefined, plans)
 	const uncapped = spend === null ? [] : uncappedFeatures(spend, customer ?? undefined)
+	const noCardTrial = getNoCardTrial(customer, inputs.nowMs)
 	return settingsSections(h, [
 		...checkoutReturnPanel(h, model),
+		...(noCardTrial === null || model.checkoutReturn !== "Idle"
+			? []
+			: [trialPanel(h, model, noCardTrial, inputs.timeZone)]),
 		...unpaidInvoicesNotice(h, model, inputs.timeZone),
 		...notice,
 		settingsSection(
@@ -160,6 +174,62 @@ const accountFailureOf = (
 	if (AsyncData.isFailure(model.usage)) return model.usage.error
 	if (AsyncData.isFailure(model.plans)) return model.plans.error
 	return null
+}
+
+/** What the card buys once the trial ends, from the catalog: "Startup is $39/month plus usage." */
+const afterTrial = (model: Model): string =>
+	Option.match(
+		Arr.findFirst(
+			AsyncData.getOrElse(model.plans, () => []),
+			(plan) => plan.id === STARTUP_PLAN_ID,
+		),
+		{
+			onNone: () => "",
+			onSome: (plan) =>
+				plan.price == null
+					? ""
+					: ` After that, ${plan.name} is $${plan.price.amount}/${plan.price.interval ?? "month"} plus usage.`,
+		},
+	)
+
+/**
+ * The no-card trial: when it ends, its caps, and "Add card", which buys Startup through Stripe with
+ * the trial's days left (the server sets them), so nothing is charged before the trial ends.
+ */
+const trialPanel = (h: H, model: Model, trial: NoCardTrial, timeZone: string): Html => {
+	const endsOn = formatDateInTimezone(trial.endsAt, { timeZone, withYear: false })
+	return panel(h, { padded: true, className: "gap-4 sm:flex-row sm:items-center sm:justify-between" }, [
+		vstack(h, { gap: "1.5", className: "max-w-xl" }, [
+			hstack(h, { gap: "2", align: "center" }, [
+				typography(h, { size: "sm", weight: "medium" }, ["Free trial"]),
+				badge(h, { variant: "secondary", size: "xs", className: "tabular-nums" }, [
+					trial.daysRemaining <= 1 ? "Ends today" : `${trial.daysRemaining} days left`,
+				]),
+			]),
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+				`Logs, traces and metrics each include ${TRIAL_SIGNAL_GB} GB until ${endsOn}; ingest for a signal pauses at its cap. Add a card to lift the caps now. You won't be charged before ${endsOn}.${afterTrial(model)}`,
+			]),
+		]),
+		vstack(h, { gap: "1.5", className: "shrink-0 sm:w-44" }, [
+			gatedControl(h, model, "billing:manage", (isDisabled) =>
+				button(
+					h,
+					{
+						size: "sm",
+						isDisabled,
+						isLoading: model.attaching === STARTUP_PLAN_ID,
+						attributes: isDisabled
+							? []
+							: [h.OnClick(Message.ClickedSubscribe({ planId: STARTUP_PLAN_ID }))],
+					},
+					["Add card"],
+				),
+			),
+			typography(h, { size: "2xs", tone: "muted", as: "p", className: "text-center" }, [
+				"$0 due today",
+			]),
+		]),
+	])
 }
 
 /** The checkout return above the tab: still confirming (as a row), or timed out. */

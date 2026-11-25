@@ -193,6 +193,27 @@ describe("AutumnClient request construction", () => {
 		})
 	})
 
+	it("attach overrides the plan's trial only when the caller sets one", async () => {
+		const { captured: carried } = await withFetch({}, (autumn) =>
+			autumn.attach(ORG, { planId: "startup", trialDays: 9 }),
+		)
+		assert.deepStrictEqual(carried?.body, {
+			customer_id: ORG,
+			plan_id: "startup",
+			redirect_mode: "if_required",
+			free_trial: { duration_length: 9, duration_type: "day", card_required: true },
+		})
+		const { captured: billNow } = await withFetch({}, (autumn) =>
+			autumn.attach(ORG, { planId: "startup", trialDays: null }),
+		)
+		assert.deepStrictEqual(billNow?.body, {
+			customer_id: ORG,
+			plan_id: "startup",
+			redirect_mode: "if_required",
+			free_trial: null,
+		})
+	})
+
 	it("previewAttach hits preview_attach with the same defaults", async () => {
 		const { captured } = await withFetch({}, (autumn) => autumn.previewAttach(ORG, { planId: "startup" }))
 		assert.strictEqual(captured?.url, "https://api.useautumn.com/v1/billing.preview_attach")

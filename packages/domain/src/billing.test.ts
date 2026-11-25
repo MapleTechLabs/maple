@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
 	cycleSpend,
+	hasHadPlan,
 	isActivePlanSubscription,
 	isPlanSubscription,
 	isPricedPlan,
@@ -8,6 +9,7 @@ import {
 	projectCycleSpend,
 	resolveSubscriptionPlan,
 	meteredUsage,
+	startupTrialDays,
 } from "./billing"
 
 // The Startup plan as it ships in apps/api/autumn.config.ts: $39/mo, 100 GB of
@@ -260,5 +262,40 @@ describe("cycleSpend with hard-capped features", () => {
 			},
 		})
 		expect(spend.partial).toBe(true)
+	})
+})
+
+describe("the no-card trial", () => {
+	const DAY = 24 * 60 * 60 * 1000
+	const NOW = 1_800_000_000_000
+	const trial = (trialEndsAt: number | null, status = "active") => ({
+		planId: "trial",
+		status,
+		trialEndsAt,
+	})
+
+	it("is once per org: any base plan, the trial included, counts as had", () => {
+		expect(hasHadPlan([])).toBe(false)
+		expect(hasHadPlan([{ planId: "bringyourowncloud", addOn: true, status: "active" }])).toBe(false)
+		expect(hasHadPlan([trial(NOW - DAY, "expired")])).toBe(true)
+		expect(hasHadPlan([{ planId: "startup", status: "expired" }])).toBe(true)
+	})
+
+	it("carries the trial's days left, rounded up, onto a Startup attach", () => {
+		expect(startupTrialDays([trial(NOW + 8.5 * DAY)], NOW)).toBe(9)
+		// The last hours still give a whole day: the first charge lands when the trial ends.
+		expect(startupTrialDays([trial(NOW + 60_000)], NOW)).toBe(1)
+	})
+
+	it("bills a Startup attach now once the trial ended, and leaves a never-trialed org to the plan", () => {
+		expect(startupTrialDays([trial(NOW - DAY, "expired")], NOW)).toBeNull()
+		expect(startupTrialDays([trial(null)], NOW)).toBeUndefined()
+		expect(
+			startupTrialDays([{ planId: "startup", status: "expired", trialEndsAt: NOW + DAY }], NOW),
+		).toBeUndefined()
+	})
+
+	it("reads the latest trial row when Autumn kept several", () => {
+		expect(startupTrialDays([trial(NOW - DAY, "expired"), trial(NOW + 2 * DAY)], NOW)).toBe(2)
 	})
 })

@@ -5,6 +5,7 @@ import {
 	AttachResult,
 	BillingAccountOrgUsage,
 	BillingAccountUsageResponse,
+	BillingConflictError,
 	BillingCustomer,
 	type BillingCustomerId,
 	BillingForbiddenError,
@@ -37,7 +38,13 @@ import {
 	aiCreditUsageOf,
 	AutumnGroupedAggregate,
 } from "@maple/backend/services/billing/ai-credit-usage"
-import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
+import {
+	AI_CREDITS_FEATURE_ID,
+	hasHadPlan,
+	STARTUP_PLAN_ID,
+	startupTrialDays,
+	TRIAL_PLAN_ID,
+} from "@maple/domain/billing"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import {
 	ensureStripeCustomerId,
@@ -137,6 +144,11 @@ const orgUsageTotals = (orgId: OrgId, spend: DailySpendResponse) =>
 		productEvents: Arr.reduce(spend.days, 0, (sum, day) => sum + (day.productEvents ?? 0)),
 	})
 
+/** Autumn's `trials_used` (expanded): the trials a customer has started, ended ones included. */
+const TrialsUsed = Schema.Struct({
+	trialsUsed: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Struct({ planId: Schema.String })))),
+})
+
 export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing", (handlers) =>
 	Effect.gen(function* () {
 		const edgeCache = yield* EdgeCacheService
@@ -199,6 +211,39 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 				Effect.catch((error) => Effect.logWarning("Failed to name Autumn customer after org", error)),
 				Effect.withSpan("HttpBilling.nameCustomerAfterOrg"),
 			)
+
+		// The trial an attach carries (`trialDays`; `undefined` keeps the plan's own), or `isHeld`
+		// for a trial already running (a double click). The no-card trial is once per org, read
+		// from Autumn's `trials_used` too, so it holds even if an ended trial's row is gone.
+		const trialTermsFor = Effect.fn("HttpBilling.trialTermsFor")(function* (
+			customerId: BillingCustomerId,
+			planId: string,
+		) {
+			const planTerms = { isHeld: false, trialDays: undefined }
+			if (planId !== TRIAL_PLAN_ID && planId !== STARTUP_PLAN_ID) return planTerms
+			const read = yield* autumn.getOrCreateCustomer(customerId, { expand: ["trials_used"] })
+			const response = yield* ensureOk(read)
+			const customer = yield* decodeUpstream(BillingCustomer, response)
+			if (planId === STARTUP_PLAN_ID) {
+				const now = yield* Clock.currentTimeMillis
+				return { isHeld: false, trialDays: startupTrialDays(customer.subscriptions, now) }
+			}
+			if (
+				Arr.some(
+					customer.subscriptions,
+					(sub) => sub.planId === TRIAL_PLAN_ID && sub.status === "active",
+				)
+			)
+				return { isHeld: true, trialDays: undefined }
+			const { trialsUsed } = yield* decodeUpstream(TrialsUsed, response)
+			const hasUsedTrial = Arr.some(trialsUsed ?? [], (trial) => trial.planId === TRIAL_PLAN_ID)
+			if (!hasUsedTrial && !hasHadPlan(customer.subscriptions)) return planTerms
+			return yield* new BillingConflictError({
+				message: "This organization has already had its free trial.",
+				code: "trial_already_used",
+				upstreamStatus: 409,
+			})
+		})
 
 		// The billing-details writes share one preamble: admins only, and a Stripe
 		// customer to write to (created through Autumn on first use).
@@ -451,10 +496,25 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						})
 						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
 						yield* nameCustomerAfterOrg(tenant.orgId, customerId)
-						const result = yield* autumn.attach(customerId, {
+						const { isHeld, trialDays } = yield* trialTermsFor(customerId, payload.planId)
+						yield* Effect.annotateCurrentSpan({
+							"maple.billing.trial_days": trialDays === undefined ? "plan" : String(trialDays),
+						})
+						if (isHeld) return new AttachResult({})
+						const attempt = yield* autumn.attach(customerId, {
 							planId: payload.planId,
 							successUrl: payload.successUrl,
+							trialDays,
 						})
+						// An Autumn env without the trial plan yet (the rollout window): the card trial.
+						const isTrialMissing = payload.planId === TRIAL_PLAN_ID && attempt.statusCode === 404
+						yield* Effect.annotateCurrentSpan({ "maple.billing.trial_missing": isTrialMissing })
+						const result = isTrialMissing
+							? yield* autumn.attach(customerId, {
+									planId: STARTUP_PLAN_ID,
+									successUrl: payload.successUrl,
+								})
+							: attempt
 						const response = yield* classifyAutumn(result).pipe(
 							Effect.catchTag(
 								"@maple/http/errors/BillingConflictError",

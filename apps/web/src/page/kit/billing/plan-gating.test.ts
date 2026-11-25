@@ -10,6 +10,10 @@ import {
 import {
 	getFeatureQuotas,
 	getLapsedPlan,
+	getNoCardTrial,
+	getTrialNotice,
+	hasEndedNoCardTrial,
+	hasPaidPlan,
 	getLegacyPlanInfo,
 	getPastDueSubscription,
 	getQuotaStatus,
@@ -395,5 +399,60 @@ describe("isLegacyPlan / getLegacyPlanInfo", () => {
 		// getOrCreateCustomer does not expand subscription.plan in practice.
 		const customer = buildCustomer([buildSubscription({ planId: "starter", plan: null })])
 		expect(getLegacyPlanInfo(customer, catalog)).toEqual({ isLegacy: true, planName: "starter" })
+	})
+})
+
+describe("the no-card trial", () => {
+	const DAY = 24 * 60 * 60 * 1000
+	const NOW = 1_800_000_000_000
+	const onTrial = (daysLeft: number, balances: Customer["balances"] = {}) =>
+		buildCustomer(
+			[buildSubscription({ planId: "trial", plan: null, trialEndsAt: NOW + daysLeft * DAY })],
+			{
+				balances,
+			},
+		)
+	const used = (usage: number) => buildBalance("logs", { granted: 100, usage, remaining: 100 - usage })
+
+	it("counts its days left and is not a paid plan", () => {
+		const customer = onTrial(8.5)
+		expect(getNoCardTrial(customer, NOW)).toEqual({ endsAt: NOW + 8.5 * DAY, daysRemaining: 9 })
+		expect(hasPaidPlan(customer)).toBe(false)
+		expect(hasSelectedPlan(customer)).toBe(true)
+	})
+
+	it("is absent on a paid plan, which ends a checkout wait", () => {
+		const customer = buildCustomer([buildSubscription({ planId: "startup", trialEndsAt: NOW + DAY })])
+		expect(getNoCardTrial(customer, NOW)).toBeNull()
+		expect(hasPaidPlan(customer)).toBe(true)
+		expect(getTrialNotice(customer, NOW)).toBeNull()
+	})
+
+	it("asks for a card for a capped signal first, naming each one at its cap", () => {
+		const notice = getTrialNotice(
+			onTrial(2, { logs: used(100), traces: used(85), metrics: used(100) }),
+			NOW,
+		)
+		expect(notice?._tag).toBe("Capped")
+		expect(notice !== null && notice._tag !== "Ending" ? notice.featureIds : []).toEqual([
+			"logs",
+			"metrics",
+		])
+	})
+
+	it("asks in the last days, before a cap only nears", () => {
+		expect(getTrialNotice(onTrial(3, { logs: used(85) }), NOW)?._tag).toBe("Ending")
+		expect(getTrialNotice(onTrial(10, { logs: used(85) }), NOW)?._tag).toBe("Approaching")
+		expect(getTrialNotice(onTrial(10, { logs: used(10) }), NOW)).toBeNull()
+	})
+
+	it("tells an ended trial from an ended subscription", () => {
+		const endedTrial = buildCustomer([
+			buildSubscription({ planId: "trial", status: "expired", trialEndsAt: NOW - DAY }),
+		])
+		const endedPlan = buildCustomer([buildSubscription({ planId: "startup", status: "expired" })])
+		expect(hasEndedNoCardTrial(endedTrial)).toBe(true)
+		expect(hasEndedNoCardTrial(endedPlan)).toBe(false)
+		expect(resolvePlanAccess({ customer: endedTrial, isLoading: false })).toBe("app")
 	})
 })

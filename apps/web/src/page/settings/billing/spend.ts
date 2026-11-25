@@ -12,6 +12,7 @@ import {
 	meteredUsage,
 	projectCycleSpend,
 	resolveSubscriptionPlan,
+	TRIAL_PLAN_ID,
 	type FeatureUsagePricing,
 	type PlanLike,
 } from "@maple/domain/billing"
@@ -360,9 +361,12 @@ export function buildSpendModel({
 			basePlan?.name ?? Option.getOrNull(Option.flatMapNullishOr(activeSub, (sub) => sub.plan?.name)),
 		basePlan,
 		addOns,
+		// The no-card trial is never in the catalog, and is not a custom plan for it.
 		isCustomPlan: Option.exists(
 			activeSub,
-			(sub) => !Arr.some(catalog, (plan) => plan.id === sub.planId && !plan.addOn),
+			(sub) =>
+				sub.planId !== TRIAL_PLAN_ID &&
+				!Arr.some(catalog, (plan) => plan.id === sub.planId && !plan.addOn),
 		),
 		charges,
 	}

@@ -18,6 +18,9 @@ import type { Model } from "./model"
 import { type SourceLink, sourceLinkButton } from "./source-link"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
+import { linkButton } from "@maple/views/ui/button"
+import type { NoCardTrial } from "../page/kit/billing/plan-gating"
+import { AppRoute, hrefOf } from "../route"
 
 // The top bar's breadcrumbs.
 
@@ -56,6 +59,22 @@ const checklistPill = (h: HtmlBuilder<Message>, model: Model): Html =>
 		toParentMessage: (message) => Message.GotChecklistMessage({ message }),
 	})
 
+/** The no-card trial's days left, linked to billing, where the card is added. */
+const trialChip = (h: HtmlBuilder<Message>, trial: NoCardTrial): Html =>
+	linkButton(
+		h,
+		{
+			href: hrefOf(AppRoute.Settings({ search: { tab: "billing" } })),
+			size: "xs",
+			variant: "outline",
+			className: "tabular-nums max-sm:hidden",
+		},
+		[
+			trial.daysRemaining <= 1 ? "Trial ends today" : `Trial · ${trial.daysRemaining}d left`,
+			" · Add card",
+		],
+	)
+
 /** The Sources list and /sources/new draw their own "Connect source", so the top bar's would repeat it. */
 export const hidesTopbarConnect = (currentPath: string): boolean => /^\/sources(\/new)?\/?$/.test(currentPath)
 
@@ -73,6 +92,8 @@ export const topbar = (
 	showsConnect = true,
 	/** Where the page's data comes from (`source-link.ts`). */
 	sourceLink: SourceLink | null = null,
+	/** Clerk: the running no-card trial, shown as a chip until a card is added. */
+	trial: NoCardTrial | null = null,
 ): Html =>
 	hstack(
 		h,
@@ -105,6 +126,7 @@ export const topbar = (
 				),
 			]),
 			hstack(h, { gap: "2", align: "center", className: "ml-auto shrink-0" }, [
+				...(trial === null ? [] : [trialChip(h, trial)]),
 				...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
 				...(showsConnect ? [connectButton(h, model)] : []),
 				...railTriggers,

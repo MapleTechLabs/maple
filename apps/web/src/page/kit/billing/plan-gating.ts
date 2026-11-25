@@ -1,4 +1,4 @@
-import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
+import { isActivePlanSubscription, isPlanSubscription, TRIAL_PLAN_ID } from "@maple/domain/billing"
 import type { BillingBalance, BillingCustomer, BillingSubscription, CatalogPlan } from "@maple/domain/http"
 import { Array as Arr, Option, String as Str } from "effect"
 
@@ -48,6 +48,7 @@ export function isLegacyPlan(
 	plans: ReadonlyArray<CatalogPlan> | null | undefined,
 ): boolean {
 	if (isLegacyFreePlan(sub)) return true
+	if (sub.planId === TRIAL_PLAN_ID) return false
 	if (sub.plan?.archived === true) return true
 	if (!plans || plans.length === 0) return false
 	return Option.match(
@@ -73,6 +74,14 @@ export function getActivePlan(customer: Customer | null | undefined): Subscripti
 
 export function hasSelectedPlan(customer: Customer | null | undefined): boolean {
 	return getActivePlan(customer) !== null
+}
+
+/** Holds something bought with a card: an active subscription (an add-on counts) but the trial. */
+export function hasPaidPlan(customer: Customer | null | undefined): boolean {
+	return (
+		isUsableCustomer(customer) &&
+		Arr.some(customer.subscriptions, (sub) => sub.status === "active" && sub.planId !== TRIAL_PLAN_ID)
+	)
 }
 
 /**
@@ -185,6 +194,57 @@ export function getTrialStatus(customer: Customer | null | undefined): TrialStat
 		planId: sub.planId,
 		planStatus: sub.status,
 	}
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Days the trial has left, ending the day it ends on: 1 on its last day, 0 once over. */
+const daysLeft = (endsAt: number, nowMs: number): number =>
+	endsAt > nowMs ? Math.ceil((endsAt - nowMs) / DAY_MS) : 0
+
+export interface NoCardTrial {
+	endsAt: number
+	daysRemaining: number
+}
+
+/** The org's running no-card trial: its active plan is the trial plan (no card, hard caps). */
+export function getNoCardTrial(customer: Customer | null | undefined, nowMs: number): NoCardTrial | null {
+	const sub = getActivePlan(customer)
+	if (sub === null || sub.planId !== TRIAL_PLAN_ID || sub.trialEndsAt == null) return null
+	return { endsAt: sub.trialEndsAt, daysRemaining: daysLeft(sub.trialEndsAt, nowMs) }
+}
+
+/** The no-card trial ended without a card: the plan the org lapsed from is the trial. */
+export function hasEndedNoCardTrial(customer: Customer | null | undefined): boolean {
+	return getLapsedPlan(customer)?.planId === TRIAL_PLAN_ID
+}
+
+/** The trial's last days, when the banner asks for a card. */
+export const TRIAL_ENDING_DAYS = 3
+
+/**
+ * What the trial banner says, most urgent first: a signal at its cap (its ingest is refused), the
+ * trial's last days, then a signal past 80% of its cap. `null` when there is nothing to ask for.
+ */
+export type TrialNotice =
+	| Readonly<{ _tag: "Capped"; featureIds: ReadonlyArray<string>; trial: NoCardTrial }>
+	| Readonly<{ _tag: "Ending"; trial: NoCardTrial }>
+	| Readonly<{ _tag: "Approaching"; featureIds: ReadonlyArray<string>; trial: NoCardTrial }>
+
+export function getTrialNotice(customer: Customer | null | undefined, nowMs: number): TrialNotice | null {
+	const trial = getNoCardTrial(customer, nowMs)
+	if (trial === null) return null
+	const quotas = getFeatureQuotas(customer)
+	const atLevel = (level: QuotaLevel) =>
+		Arr.map(
+			Arr.filter(quotas, (quota) => quota.level === level),
+			(quota) => quota.featureId,
+		)
+	const capped = atLevel("over")
+	if (capped.length > 0) return { _tag: "Capped", featureIds: capped, trial }
+	if (trial.daysRemaining <= TRIAL_ENDING_DAYS) return { _tag: "Ending", trial }
+	const approaching = atLevel("approaching")
+	return approaching.length > 0 ? { _tag: "Approaching", featureIds: approaching, trial } : null
 }
 
 export function hasBringYourOwnCloudAddOn(customer: Customer | null | undefined): boolean {

@@ -557,6 +557,24 @@ describe("OnboardingChecklistService.claim", () => {
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
+	it.effect("asks an org on the no-card trial for a card first, and gives the lease back", () => {
+		const world = freshWorld()
+		world.subscriptions = [{ planId: "trial", status: "active" }]
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* useMcpKey
+			yield* connectGithub(testDb)
+			const service = yield* OnboardingChecklistService
+			const error = yield* Effect.flip(service.claim(tenant))
+			assert.strictEqual(
+				error._tag === "@maple/http/errors/OnboardingRewardNotClaimableError" ? error.message : null,
+				"Add a card to claim the reward. It comes off your first invoice.",
+			)
+			assert.strictEqual(world.redeems.length, 0)
+			assert.strictEqual(yield* reservedAtInDb(testDb), null)
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
 	it.effect("lets exactly one of two concurrent claims reach Autumn; the other is told to retry", () => {
 		const world = freshWorld()
 		const testDb = createTestDb(trackedDbs)

@@ -131,7 +131,8 @@ export const LoadCustomer = Command.define("LoadCustomer", {
 	execute: ({ orgId, refresh }) =>
 		Effect.gen(function* () {
 			const customer = yield* (yield* BillingCustomerCache).get({ orgId, refresh })
-			return Message.SucceededLoadCustomer({ orgId, customer })
+			const readAtMs = yield* Clock.currentTimeMillis
+			return Message.SucceededLoadCustomer({ orgId, customer, readAtMs })
 		}).pipe(Effect.orElseSucceed(() => Message.FailedLoadCustomer({ orgId }))),
 })
 

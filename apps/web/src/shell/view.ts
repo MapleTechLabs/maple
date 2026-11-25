@@ -16,6 +16,7 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { typography } from "@maple/views/ui/typography"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { billingBanners } from "./billing-banners"
+import { getNoCardTrial } from "../page/kit/billing/plan-gating"
 import * as SupportChannelView from "./support-channel-view"
 import { Message } from "./message"
 import { type Model, type ShellClerk, shellAudience } from "./model"
@@ -198,6 +199,9 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 						!hidesTopbarConnect(inputs.currentPath) &&
 							shellAudience(inputs.clerk ?? null) !== "analyst",
 						inputs.sourceLink ?? null,
+						inputs.clerk === undefined || inputs.clerk === null
+							? null
+							: getNoCardTrial(inputs.clerk.customer, inputs.clerk.customerReadAtMs),
 					),
 					...(inputs.clerk === undefined || inputs.clerk === null
 						? []
@@ -205,6 +209,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 								h,
 								Option.fromNullishOr(inputs.clerk.customer),
 								model.isQuotaApproachingDismissed,
+								inputs.clerk.customerReadAtMs,
 							)),
 					page.body,
 				]),

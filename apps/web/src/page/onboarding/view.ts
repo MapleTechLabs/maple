@@ -12,6 +12,7 @@ import { clerkCard } from "./clerk-card"
 import * as ClerkSignInView from "./clerk-sign-in-view"
 import * as AccountMenu from "./account-menu"
 import { accessOf, customerOf, hasPlanOf, needsRegion } from "./plan-gate"
+import { hasLapsedPlan } from "../kit/billing/plan-gating"
 import * as SelectPlan from "./select-plan"
 import type * as QuickStart from "./quick-start"
 import { Message as QuickStartMessage } from "./quick-start"
@@ -170,6 +171,9 @@ const quickStartView = Submodel.defineView<
 						slotId: "quick-start-pricing",
 						model: model.pricing,
 						view: PricingCardsView.view,
+						viewInputs: {
+							offer: hasLapsedPlan(customerOf(inputs.customer)) ? "Subscribe" : "Trial",
+						},
 						toParentMessage: (message) => QuickStartMessage.GotPricingMessage({ message }),
 					}),
 				),

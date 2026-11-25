@@ -105,7 +105,7 @@ describe("plan gate splash on a slow customer read", () => {
 		expect(Option.isNone(Option.flatMap(planGateOf(elapsed.model), (gate) => gate.redirect))).toBe(true)
 
 		const customer = new BillingCustomer({ id: orgId, subscriptions: [] })
-		const settled = update(elapsed.model, Message.SucceededLoadCustomer({ orgId, customer }))
+		const settled = update(elapsed.model, Message.SucceededLoadCustomer({ orgId, customer, readAtMs: 0 }))
 		const redirect = Option.flatMap(planGateOf(settled.model), (gate) => gate.redirect)
 		expect(Option.map(redirect, ({ url }) => Str.startsWith("/quick-start")(url))).toEqual(
 			Option.some(true),
