@@ -137,5 +137,9 @@ export const check = <E>(
 ): Effect.Effect<void, E> =>
 	can(grants, permission) ? Effect.void : Effect.fail(onDenied(denialFor(permission)))
 
+/** What a role limited to namespaces is told where Read telemetry is asked: naming the permission would not help it. */
+export const scopedAccessMessage =
+	"Your role is limited to some namespaces, and this needs telemetry from every namespace."
+
 /** What a person is told when their role reaches no part of an endpoint at all. */
 export const limitedAccessMessage = "Your role doesn't allow this. Ask an org admin for a role that does."

@@ -9,12 +9,14 @@ import * as Policy from "@maple/domain/policy"
 import { Effect } from "effect"
 
 /** The message a refused decision carries; `undefined` when the call is allowed. */
-const refusalMessage = (decision: EndpointAccessDecision): string | undefined => {
+const refusalMessage = (decision: EndpointAccessDecision, permissions: Policy.Grants): string | undefined => {
 	switch (decision._tag) {
 		case "Allowed":
 			return undefined
 		case "Denied":
-			return Policy.denialFor(decision.permission).message
+			return decision.permission === "telemetry:read" && Policy.isScoped(permissions)
+				? Policy.scopedAccessMessage
+				: Policy.denialFor(decision.permission).message
 		case "Unmarked":
 			return Policy.limitedAccessMessage
 	}
@@ -28,7 +30,7 @@ export const checkEndpointAccess = (
 	permissions: Policy.Grants,
 	called: CalledEndpoint,
 ): Effect.Effect<void, CurrentTenant.LimitedRoleError> => {
-	const message = refusalMessage(decideEndpointAccess(permissions, called))
+	const message = refusalMessage(decideEndpointAccess(permissions, called), permissions)
 	return message === undefined ? Effect.void : Effect.fail(new CurrentTenant.LimitedRoleError({ message }))
 }
 
@@ -49,6 +51,6 @@ export const checkEndpointAccessV2 = (
 				? { _tag: "Allowed" }
 				: { _tag: "Denied", permission: "telemetry:read" }
 			: decision
-	const message = refusalMessage(effective)
+	const message = refusalMessage(effective, permissions)
 	return message === undefined ? Effect.void : Effect.fail(V2InsufficientPermissions.make(message))
 }
