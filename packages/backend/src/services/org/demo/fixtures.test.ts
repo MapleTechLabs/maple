@@ -36,6 +36,29 @@ describe("generateDemoRows metrics", () => {
 		}
 	})
 
+	// Two namespaces, so the namespace switcher and a role limited to one have something to tell apart.
+	it("reports every service under one namespace, across traces, logs and metrics", () => {
+		const seen = new Map<string, Set<string>>()
+		for (const row of [
+			...rows.traceRows,
+			...rows.logRows,
+			...rows.metricGaugeRows,
+			...rows.metricSumRows,
+		]) {
+			const namespaces = seen.get(row.service_name) ?? new Set<string>()
+			namespaces.add(String(row.resource_attributes["service.namespace"]))
+			seen.set(row.service_name, namespaces)
+		}
+		const byService = Arr.map(Arr.fromIterable(seen), ([service, namespaces]) => [
+			service,
+			[...namespaces],
+		])
+		expect(
+			Arr.every(byService, ([, namespaces]) => namespaces.length === 1 && namespaces[0] !== ""),
+		).toBe(true)
+		expect(new Set(Arr.flatMap(byService, ([, namespaces]) => namespaces)).size).toBe(2)
+	})
+
 	it("marks sums as cumulative monotonic counters with non-decreasing values per service", () => {
 		const byService = new Map<string, number[]>()
 		for (const row of rows.metricSumRows) {
