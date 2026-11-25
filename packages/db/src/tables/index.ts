@@ -69,6 +69,7 @@ import { OrgIngestRules, OrgIngestRuleSettings, OrgIngestRuleStats } from "./org
 import { OrgIngestKeys } from "./org-ingest-keys"
 import { OrgIngestSamplingPolicies } from "./org-ingest-sampling-policies"
 import { OrgRetentionPolicies } from "./org-retention-policies"
+import { IngestStorageLedger } from "./ingest-storage-ledger"
 import { Sources } from "./sources"
 import { ExternalDataSources, ExternalDataSourceCatalogEntries } from "./external-data-sources"
 import { OrgRecommendationIssues } from "./org-recommendation-issues"
@@ -180,6 +181,7 @@ export * from "./org-ingest-rules"
 export * from "./org-ingest-keys"
 export * from "./org-ingest-sampling-policies"
 export * from "./org-retention-policies"
+export * from "./ingest-storage-ledger"
 export * from "./org-recommendation-issues"
 export * from "./planetscale-connections"
 export * from "./planetscale-inventory"
@@ -288,6 +290,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
 	OrgRetentionPolicies,
+	IngestStorageLedger,
 	OpenRouterCostConnections,
 	CostConnections,
 	CookielessSalts,

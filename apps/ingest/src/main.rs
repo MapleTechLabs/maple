@@ -12,6 +12,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod autumn;
 mod rules_gateway;
+mod storage_ledger;
 mod sources;
 mod task_protection;
 
@@ -118,6 +119,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use sha2::Sha256;
 use rules_gateway::{IngestRuleResolver, IngestRuleRows, IngestRuleStatRow, IngestRuleStatsSink};
+use storage_ledger::{StorageLedgerRow, StorageLedgerSink};
 use sources::{
     OverrideMode, PauseWindow, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef,
     SourceSignal, MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
@@ -1135,6 +1137,9 @@ struct ClickHouseTargetResolver {
 /// How often per-rule ingest stats are written to `org_ingest_rule_stats`.
 const INGEST_RULE_STATS_FLUSH_INTERVAL: Duration = Duration::from_mins(1);
 
+/// How often the bytes each day keeps are written to `ingest_storage_ledger`.
+const STORAGE_LEDGER_FLUSH_INTERVAL: Duration = Duration::from_mins(1);
+
 /// How long a resolved ClickHouse target is reused.
 const CLICKHOUSE_TARGET_TTL: Duration = Duration::from_mins(1);
 /// How long "no ready ClickHouse target" is remembered. Matches the ingest-key
@@ -1236,6 +1241,9 @@ trait KeyStore: Send + Sync {
 
     /// Adds per-rule counts into `org_ingest_rule_stats`, one statement for all `rows`.
     async fn record_ingest_rule_stats(&self, rows: &[IngestRuleStatRow]) -> Result<(), String>;
+
+    /// Adds stored bytes into `ingest_storage_ledger`, one statement for all `rows`.
+    async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), String>;
 
     async fn fetch_clickhouse_target(
         &self,
@@ -1755,6 +1763,8 @@ struct AppState {
     ingest_rule_resolver: IngestRuleResolver,
     /// Per-rule counts awaiting the next flush to `org_ingest_rule_stats`.
     ingest_rule_stats: Arc<IngestRuleStatsSink>,
+    /// Billed bytes per retention stamp awaiting the next flush to `ingest_storage_ledger`.
+    storage_ledger: Arc<StorageLedgerSink>,
     cloudflare_resolver: CloudflareConnectorResolver,
     gcp_resolver: GcpConnectorResolver,
     aws_resolver: AwsConnectionResolver,
@@ -2055,6 +2065,39 @@ impl DecodedPayload {
             Self::Metrics(request) => request
                 .resource_metrics
                 .sort_by_key(|resource| stamps.of(resource.resource.as_ref())),
+        }
+    }
+
+    /// The items of each resource with the period they are stored for, to split billed bytes by.
+    fn stamp_shares(&self, stamps: SourceStamps<'_>) -> Vec<(u16, usize)> {
+        if stamps.is_uniform() {
+            return vec![(stamps.of(None), 1)];
+        }
+        match self {
+            Self::Traces(request) => request
+                .resource_spans
+                .iter()
+                .map(|resource| {
+                    let items: usize = resource.scope_spans.iter().map(|scope| scope.spans.len()).sum();
+                    (stamps.of(resource.resource.as_ref()), items)
+                })
+                .collect(),
+            Self::Logs(request) => request
+                .resource_logs
+                .iter()
+                .map(|resource| {
+                    let items: usize = resource.scope_logs.iter().map(|scope| scope.log_records.len()).sum();
+                    (stamps.of(resource.resource.as_ref()), items)
+                })
+                .collect(),
+            Self::Metrics(request) => request
+                .resource_metrics
+                .iter()
+                .map(|resource| {
+                    let items: usize = resource.scope_metrics.iter().map(|scope| scope.metrics.len()).sum();
+                    (stamps.of(resource.resource.as_ref()), items)
+                })
+                .collect(),
         }
     }
 
@@ -3419,6 +3462,17 @@ async fn main() {
     }
     let stats_store = Arc::clone(&store);
 
+    // Storage is billed from the ledger, so it is written only where ingest is billed.
+    let storage_ledger = Arc::new(StorageLedgerSink::default());
+    let storage_ledger_enabled = autumn_tracker.is_some();
+    if storage_ledger_enabled {
+        tokio::spawn(storage_ledger::run_ledger_flusher(
+            Arc::clone(&storage_ledger),
+            Arc::clone(&store),
+            STORAGE_LEDGER_FLUSH_INTERVAL,
+        ));
+    }
+
     // Same pooled client as every other outbound call; `http_client` itself is
     // moved into the state below.
     let http_client_for_blobs = http_client.clone();
@@ -3467,6 +3521,7 @@ async fn main() {
             10_000,
         ),
         ingest_rule_stats: Arc::clone(&ingest_rule_stats),
+        storage_ledger: Arc::clone(&storage_ledger),
         cloudflare_resolver: CloudflareConnectorResolver {
             store: Arc::clone(&store),
             lookup_hmac_key: config.lookup_hmac_key.clone(),
@@ -3626,6 +3681,9 @@ async fn main() {
     // Counts since the last periodic flush; best effort like the flusher itself.
     if ingest_rules_enabled {
         ingest_rule_stats.flush(stats_store.as_ref()).await;
+    }
+    if storage_ledger_enabled {
+        storage_ledger.flush(stats_store.as_ref()).await;
     }
 
     if let Some(providers) = telemetry_providers {
@@ -4223,6 +4281,8 @@ async fn accept_grpc_decoded(
                         billable_gb(decoded_bytes as u64),
                     );
                 }
+                let shares = request_stamp_shares(resolved, &claims.named_sources, &decoded);
+                record_stored_bytes(state, resolved, signal.path(), &shares, decoded_bytes as u64);
             }
             Ok(())
         }
@@ -6211,6 +6271,8 @@ async fn handle_profiles_inner(
         if let Some(tracker) = &state.autumn_tracker {
             tracker.track(&org_id, PROFILES_FEATURE_ID, billable_gb(decoded_bytes as u64));
         }
+        let shares = [(retention_days, 1_usize)];
+        record_stored_bytes(state, &resolved_key, PROFILES_FEATURE_ID, &shares, decoded_bytes as u64);
     }
     state.resolver.note_source_use(&resolved_key, false);
     Ok(accepted)
@@ -7545,6 +7607,9 @@ async fn handle_signal_inner(
         state
             .resolver
             .note_claimed_source_use(&claims.claimed_sources);
+        // The same bytes `handle_signal` bills, split by the period each resource is kept for.
+        let shares = request_stamp_shares(&resolved_key, &claims.named_sources, &decoded);
+        record_stored_bytes(state, &resolved_key, signal.path(), &shares, decoded_bytes as u64);
     }
 
     Ok((
@@ -7797,6 +7862,14 @@ async fn handle_cloudflare_logpush_inner(
                         billable_gb(metered_bytes as u64),
                     );
                 }
+                let shares = [(resolved_key.retention.get(RetentionSignal::Logs), 1_usize)];
+                record_stored_bytes(
+                    state,
+                    &resolved_key,
+                    Signal::Logs.path(),
+                    &shares,
+                    metered_bytes as u64,
+                );
             }
 
             Ok((
@@ -8214,6 +8287,8 @@ async fn handle_gcp_logpush_inner(
         if let Some(tracker) = &state.autumn_tracker {
             tracker.track(org_id, Signal::Logs.path(), billable_gb(metered_bytes as u64));
         }
+        let shares = [(resolved.key.retention.get(RetentionSignal::Logs), 1_usize)];
+        record_stored_bytes(state, &resolved.key, Signal::Logs.path(), &shares, metered_bytes as u64);
     }
 
     Ok((response, GcpPushOutcome::Accepted))
@@ -8565,6 +8640,8 @@ async fn store_delivery(
         if let Some(tracker) = &state.autumn_tracker {
             tracker.track(org_id, signal, billable_gb(metered_bytes as u64));
         }
+        let shares = [(key.retention.get(RetentionSignal::Metrics), 1_usize)];
+        record_stored_bytes(state, key, signal, &shares, metered_bytes as u64);
     }
     Ok(stored)
 }
@@ -10340,6 +10417,41 @@ fn named_source_stamps(
         .collect()
 }
 
+/// A request's items per storage period, as its resources are stamped.
+fn request_stamp_shares(
+    resolved_key: &ResolvedIngestKey,
+    named_sources: &[NamedSource],
+    decoded: &DecodedPayload,
+) -> Vec<(u16, usize)> {
+    let signal = decoded.retention_signal();
+    let named = named_source_stamps(resolved_key, named_sources, signal);
+    decoded.stamp_shares(SourceStamps::new(resolved_key.retention.get(signal), &named))
+}
+
+/// Adds billed bytes to the storage ledger, split over the periods they are kept for.
+/// Only billed ingest is recorded, and nothing an org's own ClickHouse stores.
+fn record_stored_bytes(
+    state: &AppState,
+    resolved_key: &ResolvedIngestKey,
+    feature_id: &'static str,
+    shares: &[(u16, usize)],
+    bytes: u64,
+) {
+    if state.autumn_tracker.is_none()
+        || resolved_key.org_id == SENTINEL_ORG_ID
+        || native_destination_for(resolved_key) == ExportDestination::ClickHouse
+    {
+        return;
+    }
+    state.storage_ledger.record_split(
+        &resolved_key.org_id,
+        feature_id,
+        shares,
+        bytes,
+        current_time_millis(),
+    );
+}
+
 /// Where a request's rows are written and what they are stamped with.
 #[derive(Clone, Copy)]
 struct NativeTarget<'a> {
@@ -12103,6 +12215,46 @@ impl KeyStore for PostgresKeyStore {
         Ok(())
     }
 
+    async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), String> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let numbers: Vec<(i64, i32, i64)> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.day_ms,
+                    i32::from(row.retention_days),
+                    i64::try_from(row.bytes).unwrap_or(i64::MAX),
+                )
+            })
+            .collect();
+        let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(rows.len() * 5);
+        for (row, (day_ms, retention_days, bytes)) in rows.iter().zip(&numbers) {
+            params.push(&row.org_id);
+            params.push(&row.signal);
+            params.push(day_ms);
+            params.push(retention_days);
+            params.push(bytes);
+        }
+        let client = self.client().await?;
+        client
+            .execute(
+                storage_ledger::storage_ledger_upsert_sql(rows.len()).as_str(),
+                &params,
+            )
+            .instrument(postgres_client_span(
+                "record_storage_ledger",
+                "INSERT",
+                "ingest_storage_ledger",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres record_storage_ledger failed: {error}"))?;
+        Ok(())
+    }
+
     async fn fetch_clickhouse_target(
         &self,
         org_id: &str,
@@ -12655,6 +12807,10 @@ impl KeyStore for StaticKeyStore {
     }
 
     async fn record_ingest_rule_stats(&self, _rows: &[IngestRuleStatRow]) -> Result<(), String> {
+        Ok(())
+    }
+
+    async fn record_storage_ledger(&self, _rows: &[StorageLedgerRow]) -> Result<(), String> {
         Ok(())
     }
 
@@ -14331,6 +14487,8 @@ mod tests {
         ingest_rule_errors: AtomicBool,
         /// Every row `record_ingest_rule_stats` was given.
         ingest_rule_stats: std::sync::Mutex<Vec<IngestRuleStatRow>>,
+        /// Every row `record_storage_ledger` was given.
+        storage_ledger: std::sync::Mutex<Vec<StorageLedgerRow>>,
     }
 
     impl FakeKeyStore {
@@ -14584,6 +14742,10 @@ mod tests {
             rows: &[IngestRuleStatRow],
         ) -> Result<(), String> {
             self.ingest_rule_stats.lock().unwrap().extend_from_slice(rows);
+            Ok(())
+        }
+        async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), String> {
+            self.storage_ledger.lock().unwrap().extend_from_slice(rows);
             Ok(())
         }
         async fn fetch_clickhouse_target(
@@ -14992,6 +15154,7 @@ mod tests {
                 16,
             ),
             ingest_rule_stats: Arc::new(IngestRuleStatsSink::default()),
+            storage_ledger: Arc::new(StorageLedgerSink::default()),
             cloudflare_resolver: CloudflareConnectorResolver {
                 store: Arc::clone(&key_store),
                 lookup_hmac_key: "test-hmac-key".to_owned(),
@@ -24527,6 +24690,33 @@ mod tests {
             let queue_dir = unique_main_test_dir(name);
             let (state, imports) = profiles_test_state(Arc::clone(store), queue_dir.clone()).await;
             (state, imports, queue_dir)
+        }
+
+        #[test]
+        fn billed_bytes_split_by_the_items_each_period_keeps() {
+            let resource = |source: Option<&str>, logs: usize| ResourceLogs {
+                resource: Some(Resource {
+                    attributes: source
+                        .map(|id| vec![string_attribute(SOURCE_ID_ATTRIBUTE, id)])
+                        .unwrap_or_default(),
+                    ..Resource::default()
+                }),
+                scope_logs: vec![ScopeLogs {
+                    log_records: vec![LogRecord::default(); logs],
+                    ..ScopeLogs::default()
+                }],
+                ..ResourceLogs::default()
+            };
+            let decoded = DecodedPayload::Logs(ExportLogsServiceRequest {
+                resource_logs: vec![resource(Some("src_long"), 3), resource(None, 1)],
+            });
+            let named = [("src_long".to_owned(), 90_u16)];
+            assert_eq!(
+                decoded.stamp_shares(SourceStamps::new(30, &named)),
+                vec![(90, 3), (30, 1)]
+            );
+            // One period for the whole request: no resource is read.
+            assert_eq!(decoded.stamp_shares(SourceStamps::uniform(30)), vec![(30, 1)]);
         }
 
         /// One `/v0/events` body: its datasource and rows.
