@@ -43,6 +43,7 @@ import {
 	hasHadPlan,
 	STARTUP_PLAN_ID,
 	startupTrialDays,
+	TRIAL_DURATION_DAYS,
 	TRIAL_PLAN_ID,
 } from "@maple/domain/billing"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
@@ -506,7 +507,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							successUrl: payload.successUrl,
 							trialDays,
 						})
-						// An Autumn env without the trial plan yet (the rollout window): the card trial.
+						// An Autumn env without the trial plan yet (the rollout window): a card trial of the
+						// same length, stated here rather than left to Startup's config, which drops its own.
 						const isTrialMissing = payload.planId === TRIAL_PLAN_ID && attempt.statusCode === 404
 						yield* Effect.annotateCurrentSpan({ "maple.billing.trial_missing": isTrialMissing })
 						const attachedPlanId = isTrialMissing ? STARTUP_PLAN_ID : payload.planId
@@ -514,6 +516,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							? yield* autumn.attach(customerId, {
 									planId: attachedPlanId,
 									successUrl: payload.successUrl,
+									trialDays: TRIAL_DURATION_DAYS,
 								})
 							: attempt
 						const response = yield* classifyAutumn(result).pipe(

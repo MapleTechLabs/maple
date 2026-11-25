@@ -864,7 +864,7 @@ describe("billing writes over HTTP", () => {
 			assert.deepStrictEqual(attaches, [])
 		})
 
-		it("falls back to Startup's own trial while Autumn has no trial plan yet", async () => {
+		it("falls back to a card trial on Startup while Autumn has no trial plan yet", async () => {
 			const { response, attaches } = await attachWith("trial", [], { isTrialMissing: true })
 			assert.strictEqual(response.status, 200)
 			assert.deepStrictEqual(response.body, { paymentUrl: "https://checkout.stripe.test/c" })
@@ -872,7 +872,7 @@ describe("billing writes over HTTP", () => {
 				Arr.map(attaches, (attach) => [attach.planId, attach.trialDays]),
 				[
 					["trial", undefined],
-					["startup", undefined],
+					["startup", 14],
 				],
 			)
 		})
