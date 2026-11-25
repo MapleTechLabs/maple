@@ -338,6 +338,53 @@ describe("RetentionService.readHorizon", () => {
 		),
 	)
 
+	it.effect("a write whose read-back fails does not publish its own older snapshot", () =>
+		withSwitchableDb((database, db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const first = yield* source(db, ORG, "nodejs")
+				const second = yield* source(db, ORG, "python")
+				yield* retention.readHorizon(ORG)
+				// Park the slow write between its commit and its read-back.
+				const parked = yield* Deferred.make<void>()
+				const release = yield* Deferred.make<void>()
+				const commit = database.calls + 1
+				database.afterCall = (call) =>
+					call === commit
+						? Effect.andThen(Deferred.succeed(parked, undefined), Deferred.await(release))
+						: Effect.void
+				const slow = yield* Effect.forkChild(retention.setSource(ORG, ANA, second, { logs: 400 }))
+				yield* Deferred.await(parked)
+				yield* retention.setSource(ORG, ANA, first, { traces: 90 })
+				database.down = true
+				yield* Deferred.succeed(release, undefined)
+				yield* Fiber.join(slow)
+				database.down = false
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).days, {
+					...DEFAULT_RETENTION_DAYS,
+					traces: 90,
+					logs: 400,
+				})
+			}),
+		),
+	)
+
+	it.effect("a write answers with what it committed when its read-back hangs", () =>
+		withSwitchableDb((database) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const commit = database.calls + 1
+				database.afterCall = (call) =>
+					Effect.sync(() => {
+						if (call === commit) database.stalled = true
+					})
+				const write = yield* Effect.forkChild(retention.setOrganization(ORG, ANA, { traces: 7 }))
+				yield* TestClock.adjust(READ_HORIZON_LOAD_TIMEOUT_MS)
+				assert.strictEqual((yield* Fiber.join(write)).days.traces, 7)
+			}),
+		),
+	)
+
 	it.effect("serves the defaults when the policy cannot be read and none is known", () =>
 		withSwitchableDb((database) =>
 			Effect.gen(function* () {
