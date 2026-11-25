@@ -1443,7 +1443,7 @@ const uptrace: AlternativesPage = {
 		{
 			team: "Small team on OpenTelemetry that also wants uptime checks and on-call",
 			pick: "Maple",
-			why: "Traces, logs and metrics with uptime checks, on-call schedules, SLOs, error issues and session replay in one hosted app. It costs more per GB than Uptrace Cloud.",
+			why: "Traces, logs and metrics with uptime checks, on-call schedules, error issues and session replay in one hosted app. It costs more per GB than Uptrace Cloud.",
 		},
 		{
 			team: "Self-hosting and needs SSO and roles without a license fee",
@@ -1474,15 +1474,15 @@ const uptrace: AlternativesPage = {
 			name: "Maple",
 			url: "https://maple.dev",
 			ours: true,
-			pickIf: "You want uptime checks, on-call, SLOs and session replay in the same app as your traces, and a hosted service is fine.",
+			pickIf: "You want uptime checks, on-call and session replay in the same app as your traces, and a hosted service is fine.",
 			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
 			openSource: "Source-available (FSL-1.1, Apache 2.0 after two years), not open source",
 			keyFact: "One container for one team; no alerting, dashboards or PromQL yet",
 			summary:
-				"Maple covers the same ground as Uptrace for traces, logs and metrics, all OpenTelemetry, with no per-seat or per-host fee and an MCP server for agents. What it adds is the rest of the on-call loop in the same app: uptime checks and cron heartbeats, on-call schedules with escalation, SLOs with burn-rate alerts, errors grouped into issues, and browser session replay linked to the trace behind each click. We did not find uptime checks, on-call schedules, SLOs or session replay in Uptrace's feature list. It is not the cheaper option: Uptrace's per-GB rate is a fraction of Maple's.",
+				"Maple covers the same ground as Uptrace for traces, logs and metrics, all OpenTelemetry, with no per-seat or per-host fee and an MCP server for agents. What it adds is the rest of the on-call loop in the same app: uptime checks and cron heartbeats, on-call schedules with escalation, errors grouped into issues, and browser session replay linked to the trace behind each click. We did not find uptime checks, on-call schedules or session replay in Uptrace's feature list. It is not the cheaper option: Uptrace's per-GB rate is a fraction of Maple's.",
 			pros: [
 				"Uptime checks, cron heartbeats and on-call schedules with escalation (email, Slack, Discord)",
-				"SLOs with burn-rate alerts, and errors grouped into issues with an owner and a state",
+				"Errors grouped into issues with an owner and a state",
 				"Session replay linked to traces, PromQL on Maple Cloud, and a hosted MCP server",
 				"No per-seat fee; a 14-day trial on Maple Cloud",
 			],
@@ -1694,7 +1694,7 @@ const openobserve: AlternativesPage = {
 	stayIf: [
 		"You self-host below 50 GB a day. The Enterprise edition is free there and includes SSO, RBAC, an audit trail and sensitive data redaction, Uptrace sells RBAC and SSO in paid editions, and SigNoz keeps SAML, OIDC and fine-grained RBAC under its commercial license.",
 		"You want 15 months of metric retention on a hosted plan. By default Maple keeps metrics 90 days and SigNoz one month.",
-		"You want object storage as the only data store: a single binary on one node, or a cluster writing Parquet to S3, GCS or MinIO, with no ClickHouse to run.",
+		"You want your telemetry on object storage with no ClickHouse to run: a single binary on one node, or a cluster writing Parquet to S3, GCS or MinIO (a cluster also keeps its metadata in PostgreSQL).",
 		"Your queries are SQL. Logs and traces are queried with SQL and metrics with SQL or PromQL, and that carries over to tools on ClickHouse only after rewriting to their schemas.",
 	],
 	alternatives: [
@@ -1836,7 +1836,7 @@ const openobserve: AlternativesPage = {
 		},
 		{
 			question: "OpenObserve or SigNoz: which should I pick?",
-			answer: "Both are self-hostable, OpenTelemetry-native and take PromQL. Pick OpenObserve if you want object storage as the only store, SSO and RBAC free below 50 GB a day when self-hosted, or 15 months of metrics on its cloud. Pick SigNoz if you want ClickHouse underneath, an APM built around traces, an MIT core, and a cloud with no per-query charge.",
+			answer: "Both are self-hostable, OpenTelemetry-native and take PromQL. Pick OpenObserve if you want telemetry on object storage rather than ClickHouse, SSO and RBAC free below 50 GB a day when self-hosted, or 15 months of metrics on its cloud. Pick SigNoz if you want ClickHouse underneath, an APM built around traces, an MIT core, and a cloud with no per-query charge.",
 		},
 		{
 			question: "Which OpenObserve alternatives support PromQL?",
