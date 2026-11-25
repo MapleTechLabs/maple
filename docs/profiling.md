@@ -161,8 +161,8 @@ window [AND SpanId = ?] GROUP BY Frames` → the client folds the (frames[], val
 - **spanOverlap**: the time-window fallback for the span tab: same service instance
   (`ResourceAttributes['service.instance.id']`) and `Timestamp BETWEEN span.start AND span.end`.
 
-Retention: 7 d raw / 30 d rollup by default, keyed like `logs` in
-`packages/domain/src/tinybird/ttl-override.ts` so plan-level overrides apply.
+Retention: 7 d raw / 30 d rollup by default, with `profiles` as a signal in
+`packages/domain/src/retention.ts` so per-org and per-source periods apply.
 
 Sizing sanity: the eBPF agent samples at ~20 Hz/core and pre-aggregates per stack before
 sending, so a 32-core host is on the order of a few hundred rows/s; a Node process with the SDK
@@ -261,7 +261,7 @@ If the numbers or the shape surprise us, §4 changes _before_ any of the codegen
 
 **Phase 1: MVP (~3 engineer-weeks).**
 
-1. Schema: datasource + MV + migration + insert-mapping regen + `ttl-override` (2 d).
+1. Schema: datasource + MV + migration + insert-mapping regen (2 d).
 2. Ingest: enums/routes/gRPC/decode/flatten/pipeline/billing + tests with recorded eBPF and
    SDK payloads (4–5 d).
 3. Query engine + v2 API (2–3 d).

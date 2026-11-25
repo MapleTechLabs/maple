@@ -6,4 +6,3 @@
 export * from "./datasources"
 export * from "./materializations"
 export * from "./db-query-shape-sql"
-export * from "./ttl-override"

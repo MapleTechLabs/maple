@@ -1,4 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { RetentionOverrides } from "@maple/domain/retention"
 import {
 	OrgId,
 	SourceId,
@@ -29,6 +30,11 @@ const sourcesColumns = {
 	resourceAttributes: PG.column(PG.jsonb(Schema.Array(SourceResourceAttribute)), {
 		name: "resource_attributes",
 		defaultExpr: "'[]'::jsonb",
+	}),
+	// Days per signal this source keeps instead of the org's; a signal left out inherits.
+	retentionDays: PG.column(PG.jsonb(RetentionOverrides), {
+		name: "retention_days",
+		defaultExpr: "'{}'::jsonb",
 	}),
 	expiresAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "expires_at" }),
 	// Paused sources are accepted but their data is dropped. paused_until null = until resumed.
