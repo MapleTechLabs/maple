@@ -270,7 +270,8 @@ const analystNavGroups = (): ReadonlyArray<NavGroup> => [
 	},
 ]
 
-/** The pages a role limited to namespaces can read (`scopedRoleRedirect` sends the rest to Services). */
+// The pages a role limited to namespaces can read (`scopedRoleRedirect` sends the rest to Services).
+// Not Metrics: the metric list reads a catalog that carries no namespace yet.
 const scopedNavGroups = (): ReadonlyArray<NavGroup> => [
 	{
 		id: "monitor",
@@ -288,7 +289,6 @@ const scopedNavGroups = (): ReadonlyArray<NavGroup> => [
 				subItems: [
 					{ title: "Traces", href: "/traces", icon: "PulseIcon" },
 					{ title: "Logs", href: "/logs", icon: "FileIcon" },
-					{ title: "Metrics", href: "/metrics", icon: "ChartLineIcon" },
 				],
 			},
 		],

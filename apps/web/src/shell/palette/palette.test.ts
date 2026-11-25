@@ -186,6 +186,8 @@ describe("command palette", () => {
 			)
 		expect(shown("traces")).toContain("Traces")
 		expect(shown("logs")).toContain("Logs")
+		// The metric list reads a catalog with no namespace, so the page is closed to it.
+		expect(shown("metrics")).not.toContain("Metrics")
 		expect(shown("services")).toContain("Services")
 		expect(shown("checkout")).not.toContain("Checkout health")
 		expect(shown("alerts")).not.toContain("Alerts")

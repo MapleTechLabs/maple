@@ -271,8 +271,6 @@ const isScopedRoleRoute = AppRoute.isAnyOf([
 	"Trace",
 	"Logs",
 	"Log",
-	"Metrics",
-	"Metric",
 	"Account",
 	"Settings",
 	"RoleEditor",

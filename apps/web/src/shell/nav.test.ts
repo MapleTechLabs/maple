@@ -116,7 +116,7 @@ describe("navGroups for a role limited to namespaces", () => {
 		)
 
 	test("links to the telemetry pages its reads are kept to its namespaces on, and nothing else", () => {
-		expect(hrefs(OFF)).toEqual(["/services", "/traces", "/logs", "/metrics"])
+		expect(hrefs(OFF)).toEqual(["/services", "/traces", "/logs"])
 		expect(hrefs({ cloudSecurity: true, securityAudit: true })).toEqual(hrefs(OFF))
 	})
 })
