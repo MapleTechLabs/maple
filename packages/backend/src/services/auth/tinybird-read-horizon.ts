@@ -31,11 +31,16 @@ export const TRACE_PROJECTION_TIME_COLUMNS = {
 	scanner_requests: "Timestamp",
 } as const satisfies Readonly<Record<string, string>>
 
+/** `trace_index.Bucket` is the start of a `TRACE_BUCKET_EXPR` bucket: five minutes of spans. */
+const TRACE_INDEX_BUCKET_MINUTES = 5
+
 interface ReadHorizonTable {
 	readonly datasource: string
 	/** The signal whose read horizon bounds this datasource. */
 	readonly signal: RetentionSignal
 	readonly column: string
+	/** Set where `column` is a bucket start, so a bucket the horizon cuts through is kept. */
+	readonly bucketMinutes?: number
 }
 
 /** Every datasource a read horizon bounds: each signal's raw tables, then the trace projections. */
@@ -51,6 +56,9 @@ export const READ_HORIZON_TABLES: ReadonlyArray<ReadHorizonTable> = [
 		datasource,
 		signal: "traces",
 		column,
+		// Trace detail seeks spans through the index: without the slack, spans still inside
+		// the horizon would be unreachable for the last minutes of their bucket.
+		...(datasource === "trace_index" ? { bucketMinutes: TRACE_INDEX_BUCKET_MINUTES } : undefined),
 	})),
 ]
 
@@ -72,7 +80,16 @@ export const readBoundsOf = (
 		new Map(
 			Arr.map(
 				Arr.filter(READ_HORIZON_TABLES, (table) => Arr.contains(horizon.configured, table.signal)),
-				(table) => [table.datasource, { column: table.column, days: horizon.days[table.signal] }],
+				(table) => [
+					table.datasource,
+					{
+						column: table.column,
+						days: horizon.days[table.signal],
+						...(table.bucketMinutes === undefined
+							? undefined
+							: { bucketMinutes: table.bucketMinutes }),
+					},
+				],
 			),
 		),
 	)

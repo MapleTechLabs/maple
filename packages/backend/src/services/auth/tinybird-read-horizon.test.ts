@@ -67,7 +67,7 @@ describe("readBoundsOf", () => {
 		expect(boundsOf({ days: { ...DEFAULT_RETENTION_DAYS, traces: 7 }, configured: ["traces"] })).toEqual(
 			Option.some({
 				traces: { column: "Timestamp", days: 7 },
-				trace_index: { column: "Bucket", days: 7 },
+				trace_index: { column: "Bucket", days: 7, bucketMinutes: 5 },
 				trace_list_mv: { column: "Timestamp", days: 7 },
 				service_map_spans: { column: "Timestamp", days: 7 },
 				service_map_children: { column: "Timestamp", days: 7 },

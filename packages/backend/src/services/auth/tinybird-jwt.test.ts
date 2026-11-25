@@ -87,7 +87,7 @@ describe("mintOrgReadJwt", () => {
 			datasourceNames: ["traces", "logs", "trace_index"],
 			readBounds: new Map([
 				["traces", { column: "Timestamp", days: 7 }],
-				["trace_index", { column: "Bucket", days: 7 }],
+				["trace_index", { column: "Bucket", days: 7, bucketMinutes: 5 }],
 				// Not a datasource of this token: it adds no scope.
 				["metrics_sum", { column: "TimeUnix", days: 7 }],
 			]),
@@ -107,7 +107,7 @@ describe("mintOrgReadJwt", () => {
 			{
 				type: "DATASOURCES:READ",
 				resource: "trace_index",
-				filter: "OrgId = 'org_abc' AND Bucket >= now() - INTERVAL 7 DAY",
+				filter: "OrgId = 'org_abc' AND Bucket >= now() - INTERVAL 7 DAY - INTERVAL 5 MINUTE",
 			},
 		])
 	})

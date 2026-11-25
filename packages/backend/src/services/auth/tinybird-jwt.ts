@@ -28,6 +28,11 @@ export interface TinybirdJwtScope {
 export interface ReadBound {
 	readonly column: string
 	readonly days: number
+	/**
+	 * How long a row of `column` stands for, in whole minutes, when it is a bucket start: the
+	 * bound keeps a bucket the horizon cuts through, since it still locates rows that are kept.
+	 */
+	readonly bucketMinutes?: number
 }
 
 /**
@@ -70,7 +75,9 @@ const tokenNameForOrg = (orgId: string, use: OrgReadJwtUse): string =>
 const scopeFilter = (orgLiteral: string, bound: ReadBound | undefined): string =>
 	bound === undefined
 		? orgLiteral
-		: `${orgLiteral} AND ${bound.column} >= now() - INTERVAL ${bound.days} DAY`
+		: `${orgLiteral} AND ${bound.column} >= now() - INTERVAL ${bound.days} DAY${
+				bound.bucketMinutes === undefined ? "" : ` - INTERVAL ${bound.bucketMinutes} MINUTE`
+			}`
 
 /**
  * Mint a per-org Tinybird read JWT scoped to `datasourceNames`, each filtered to

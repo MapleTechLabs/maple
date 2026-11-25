@@ -336,7 +336,8 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 				const everything = yield* tokens.getOrgReadToken(ORG_A, "trusted-read")
 				assert.deepStrictEqual(boundedIn(everything, ORG_A), {
 					traces: since(ORG_A, "Timestamp", 7),
-					trace_index: since(ORG_A, "Bucket", 7),
+					// A bucket the horizon cuts through still locates spans that are kept.
+					trace_index: `${since(ORG_A, "Bucket", 7)} - INTERVAL 5 MINUTE`,
 					trace_list_mv: since(ORG_A, "Timestamp", 7),
 					service_map_spans: since(ORG_A, "Timestamp", 7),
 					service_map_children: since(ORG_A, "Timestamp", 7),
@@ -353,7 +354,8 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 				)
 				assert.deepStrictEqual(filtersOf(one), {
 					logs: "OrgId = 'org_a'",
-					trace_index: since(ORG_A, "Bucket", 7),
+					// A bucket the horizon cuts through still locates spans that are kept.
+					trace_index: `${since(ORG_A, "Bucket", 7)} - INTERVAL 5 MINUTE`,
 				})
 			}),
 		),
