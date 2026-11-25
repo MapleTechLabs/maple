@@ -29,9 +29,10 @@ still looks reasonable. See the comment on `edgeGrain` in
 `packages/query-engine/src/ch/queries/traces.ts`.
 
 The raw tables (`RETENTION_SIGNAL_DATASOURCES` in `packages/domain/src/retention.ts`) carry a
-`RetentionDays` column: the days the row is stored for, stamped by the ingest gateway. Nothing reads
-it yet and its default is the period the table keeps today, so the TTLs above still decide when a
-row expires. `product_events` does not have it yet: views fill that table and a forward query
+`RetentionDays` column: the days the row is stored for. The ingest gateway stamps it on managed
+ingest; a row written without it (a self-managed insert, an older gateway) takes the column default,
+the period the table keeps today. Nothing reads the column yet, so the TTLs above still decide when
+a row expires. `product_events` does not have it yet: views fill that table and a forward query
 guards it, so it gets the column when it is rebuilt.
 
 ---

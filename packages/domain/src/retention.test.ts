@@ -87,6 +87,8 @@ describe("the RetentionDays column", () => {
 			),
 		)
 		expect(migrated).toEqual(expected)
+		// A table listed twice would add its column with the first default and hide behind the second.
+		expect(migration_0075_retention_days.statements).toHaveLength(Record.keys(expected).length)
 	})
 })
 
