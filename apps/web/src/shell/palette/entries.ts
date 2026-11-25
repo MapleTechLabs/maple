@@ -95,15 +95,22 @@ const navRowsOf = (groups: ReadonlyArray<NavGroup>) =>
 		]),
 	)
 
-/** What an analyst's sidebar calls each of its pages (`/alerts` is "Incidents"), plus their account. */
-const ANALYST_TITLES: ReadonlyMap<string, string> = new Map([
-	...Arr.map(navRowsOf(navGroups(EVERY_FLAG, "analyst")), (row) => [row.href, row.title] as const),
-	["/account", "Account"] as const,
-])
+/** What a narrower audience's sidebar calls each of its pages (an analyst's `/alerts` is "Incidents"), plus their account. */
+const titlesFor = (audience: Exclude<NavAudience, "operator">): ReadonlyMap<string, string> =>
+	new Map([
+		...Arr.map(navRowsOf(navGroups(EVERY_FLAG, audience)), (row) => [row.href, row.title] as const),
+		["/account", "Account"] as const,
+	])
+
+const AUDIENCE_TITLES = {
+	analyst: titlesFor("analyst"),
+	scoped: titlesFor("scoped"),
+} as const satisfies Record<Exclude<NavAudience, "operator">, ReadonlyMap<string, string>>
 
 /**
  * The entries as the viewer's palette lists them. An analyst gets their own pages under their
- * sidebar's names, dashboards and the app actions; the ids stay, so a pick resolves either way.
+ * sidebar's names, dashboards and the app actions; a role limited to namespaces its own pages and
+ * the actions, no dashboards. The ids stay, so a pick resolves either way.
  */
 export const entriesFor = (
 	entries: ReadonlyArray<PaletteEntry>,
@@ -112,9 +119,10 @@ export const entriesFor = (
 	audience === "operator"
 		? entries
 		: Arr.flatMap(entries, (entry): ReadonlyArray<PaletteEntry> => {
-				if (entry.group === "Actions" || entry.group === "Dashboards") return [entry]
+				if (entry.group === "Actions") return [entry]
+				if (entry.group === "Dashboards") return audience === "analyst" ? [entry] : []
 				if (entry.group !== "Navigation" || entry.target._tag !== "Href") return []
-				const title = ANALYST_TITLES.get(entry.target.href)
+				const title = AUDIENCE_TITLES[audience].get(entry.target.href)
 				return title === undefined
 					? []
 					: [{ ...entry, title, keywords: `${entry.keywords} ${title}` }]

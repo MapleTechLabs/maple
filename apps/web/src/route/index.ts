@@ -4,6 +4,7 @@ export {
 	flaggedRouteRedirect,
 	Redirect,
 	routeRedirect,
+	scopedRoleRedirect,
 	securityRouteRedirect,
 } from "./redirect"
 export { hrefOf, urlToAppRoute } from "./routers"

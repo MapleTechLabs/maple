@@ -124,6 +124,13 @@ export const startingPermissions = (
 		onSome: (role) => grantablePermissions(role.permissions),
 	})
 
+/** The namespaces the new role starts limited to: the template's, so a copy of a limited role stays limited. */
+export const startingNamespaces = (model: Model, entries: ReadonlyArray<RoleEntry>): ReadonlyArray<string> =>
+	Option.match(findRole(entries, model.template.value), {
+		onNone: () => [],
+		onSome: (role) => role.namespaces,
+	})
+
 const canSubmit = (model: Model): boolean =>
 	isValidRoleName(model.name) && isValidRoleDescription(model.description)
 
@@ -152,6 +159,7 @@ export const update = (model: Model, message: Message, entries: ReadonlyArray<Ro
 								name: Str.trim(model.name),
 								description: Str.trim(model.description),
 								permissions: startingPermissions(model, entries),
+								namespaces: startingNamespaces(model, entries),
 							}),
 						],
 					},

@@ -9,7 +9,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as CreateDialog from "./create-dialog"
 import { Message, type Model } from "./model"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
-import { createRole } from "./roles"
+import { createRole, PERMISSION_TOTAL } from "./roles"
 import { customRole, ON_CALL, roleId, roleList, roleMembers, STATUS_EDITOR } from "./test-roles"
 import { entriesOf, init, update } from "./update"
 import { headerActions, view as tabView } from "./view"
@@ -55,9 +55,9 @@ describe("roles list", () => {
 			{ update, view },
 			given(loaded()),
 			expectView(role("link", { name: "Admin" })).toExist(),
-			expectView(text(`All ${Policy.allPermissions.length}`)).toExist(),
-			expectView(text(`16 of ${Policy.allPermissions.length}`)).toExist(),
-			expectView(text(`${ON_CALL.permissions.length} of ${Policy.allPermissions.length}`)).toExist(),
+			expectView(text(`All ${PERMISSION_TOTAL}`)).toExist(),
+			expectView(text(`16 of ${PERMISSION_TOTAL}`)).toExist(),
+			expectView(text(`${ON_CALL.permissions.length} of ${PERMISSION_TOTAL}`)).toExist(),
 		)
 	})
 
@@ -109,6 +109,29 @@ describe("create role dialog", () => {
 			name: "Night shift",
 			description: "",
 			permissions: Arr.filter(ON_CALL.permissions, Policy.grantableToCustomRoles),
+			namespaces: [],
+		})
+	})
+
+	test("a copy of a role limited to namespaces stays limited to them", () => {
+		const limited = customRole({
+			id: roleId("checkout"),
+			name: "Checkout team",
+			permissions: [Policy.SCOPED_READ, "support:join"],
+			namespaces: ["checkout"],
+		})
+		const filled = run(init(ADMIN).model, [
+			Message.CompletedFetchRoles({ result: Result.succeed(roleList([limited])) }),
+			Message.ClickedCreate(),
+			child(CreateDialog.Message.ChangedName({ value: "Checkout contractors" })),
+			pickTemplate(limited.id),
+		])
+		expect(argsOf(update(filled, child(CreateDialog.Message.SubmittedCreate())), "CreateRole")).toEqual({
+			name: "Checkout contractors",
+			description: "",
+			// The scoped read is not a tick: the API sets it from the namespaces.
+			permissions: ["support:join"],
+			namespaces: ["checkout"],
 		})
 	})
 
@@ -135,6 +158,7 @@ describe("create role dialog", () => {
 			name: "Incident commander",
 			description: "",
 			permissions: Arr.filter(Policy.builtInRoles[2].permissions, Policy.grantableToCustomRoles),
+			namespaces: [],
 		})
 		const created = update(
 			submitted.model,
@@ -200,6 +224,7 @@ describe("create role dialog", () => {
 				name: Str.repeat(Policy.CUSTOM_ROLE_NAME_MAX + 1)("x"),
 				description: "",
 				permissions: [],
+				namespaces: [],
 			}).pipe(
 				// The decode fails first, so the API client is never reached.
 				Effect.provide(Context.makeUnsafe<MapleInternalApiClient>(new Map())),

@@ -2,6 +2,8 @@ import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Tabs from "@maple/views/ui/tabs"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
@@ -31,6 +33,164 @@ const tabsMounted = Mount.resolve(Tabs.MeasureTabIndicator, Tabs.Message.Measure
 
 const saveArgs = (step: ReturnType<typeof pageUpdate>) =>
 	Option.getOrUndefined(Arr.findFirst(step.commands ?? [], (command) => command.name === "SaveRole"))?.args
+
+const CHECKOUT = customRole({
+	id: Policy.CustomRoleId.make("role_checkout0000"),
+	name: "Checkout team",
+	permissions: [Policy.SCOPED_READ, "support:join"],
+	namespaces: ["checkout"],
+	memberCount: 2,
+})
+
+const openedLimited = (grants = Policy.grantsOf(["org:admin"])): Model =>
+	run(init({ _tag: "RoleEditor", roleId: CHECKOUT.id }, context).model, [
+		Message.CompletedFetchSession({ orgId: ORG, grants }),
+		Message.CompletedFetchRoles({ result: Result.succeed(roleList([ON_CALL, CHECKOUT])) }),
+		Message.CompletedFetchMembers({ result: Result.succeed(roleMembers([])) }),
+		Message.CompletedFetchNamespaces({
+			result: Result.succeed(["checkout", "payments", "search", "", "it's"]),
+		}),
+	])
+
+/** One click in the namespace list: adds the namespace, or removes it when already chosen. */
+const clickNamespace = (value: string) =>
+	Message.GotNamespacesMessage({ message: Combobox.Message.ClickedItem({ value }) })
+
+describe("a role limited to namespaces", () => {
+	test("turning the limit on unticks what needs every namespace, Read telemetry included", () => {
+		const limited = run(opened(ON_CALL.id), [Message.ToggledLimit()])
+		expect(limited.isLimited).toBe(true)
+		expect(limited.permissions).not.toContain("telemetry:read")
+		expect(limited.permissions).not.toContain("alerts:manage")
+		expect(Arr.every(limited.permissions, Policy.holdableWhenScoped)).toBe(true)
+		// What needs no telemetry stays ticked.
+		expect(limited.permissions).toContain("devices:connect")
+	})
+
+	test("it cannot be saved until a namespace is chosen, then sends the namespaces and no telemetry tick", () => {
+		const limited = run(opened(ON_CALL.id), [Message.ToggledLimit()])
+		expect(saveArgs(pageUpdate(limited, Message.ClickedSave()))).toBeUndefined()
+
+		const chosen = run(limited, [clickNamespace("payments"), clickNamespace("checkout")])
+		expect(saveArgs(pageUpdate(chosen, Message.ClickedSave()))).toMatchObject({
+			roleId: ON_CALL.id,
+			payload: {
+				namespaces: ["checkout", "payments"],
+				permissions: expect.not.arrayContaining(["telemetry:read", Policy.SCOPED_READ]),
+			},
+		})
+	})
+
+	test("a permission that needs every namespace cannot be ticked while the limit is on", () => {
+		const before = openedLimited()
+		const after = run(before, [
+			Message.ToggledPermission({ permission: "alerts:manage" }),
+			Message.ToggledPermission({ permission: "telemetry:read" }),
+			Message.ToggledPermission({ permission: "query:sql" }),
+		])
+		expect(after.permissions).toEqual(before.permissions)
+	})
+
+	test("opens with the limit on, its namespaces chosen and nothing unsaved", () => {
+		const model = openedLimited()
+		expect(unsavedChanges(model)).toBe(0)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			tabsMounted,
+			expectView(role("switch", { name: "Limit to namespaces" })).toBeChecked(),
+			expectView(text("checkout")).toExist(),
+			expectView(text("Replaced by the namespace limit")).toExist(),
+			expectView(text("Needs every namespace")).toExist(),
+		)
+	})
+
+	test("another namespace is one unsaved change, and saving it ends the change", () => {
+		const edited = run(openedLimited(), [clickNamespace("search")])
+		expect(unsavedChanges(edited)).toBe(1)
+		const saving = pageUpdate(edited, Message.ClickedSave())
+		expect(saveArgs(saving)).toMatchObject({ payload: { namespaces: ["checkout", "search"] } })
+		const done = pageUpdate(
+			saving.model,
+			Message.CompletedSave({
+				result: Result.succeed(customRole({ ...CHECKOUT, namespaces: ["checkout", "search"] })),
+			}),
+		)
+		expect(done.model.namespaces).toEqual(["checkout", "search"])
+		expect(done.model.isLimited).toBe(true)
+	})
+
+	test("turning the limit off ticks Read telemetry and sends no namespaces", () => {
+		const lifted = run(openedLimited(), [Message.ToggledLimit()])
+		expect(lifted.permissions).toContain("telemetry:read")
+		expect(saveArgs(pageUpdate(lifted, Message.ClickedSave()))).toMatchObject({
+			payload: {
+				namespaces: [],
+				permissions: expect.arrayContaining(["telemetry:read", "support:join"]),
+			},
+		})
+	})
+
+	test("turning the limit on and off again puts every tick back", () => {
+		const before = opened(ON_CALL.id)
+		const after = run(before, [Message.ToggledLimit(), Message.ToggledLimit()])
+		expect([...after.permissions].sort()).toEqual([...before.permissions].sort())
+		expect(unsavedChanges(after)).toBe(0)
+	})
+
+	test("Discard puts the limit back as saved", () => {
+		const discarded = run(openedLimited(), [
+			Message.ToggledLimit(),
+			Message.ToggledPermission({ permission: "alerts:manage" }),
+			Message.ClickedDiscard(),
+		])
+		expect(discarded.isLimited).toBe(true)
+		expect(discarded.namespaces).toEqual(["checkout"])
+		expect(unsavedChanges(discarded)).toBe(0)
+	})
+
+	test("offers only namespaces a role can name", () => {
+		expect(openedLimited().knownNamespaces).toEqual(["checkout", "payments", "search"])
+	})
+
+	test("refuses to save more namespaces than a role may name", () => {
+		const many = Arr.makeBy(Policy.MAX_ROLE_NAMESPACES + 1, (index) => `ns-${index}`)
+		const crowded = run(
+			{ ...openedLimited(), knownNamespaces: many },
+			Arr.map(many, (namespace) => clickNamespace(namespace)),
+		)
+		expect(saveArgs(pageUpdate(crowded, Message.ClickedSave()))).toBeUndefined()
+	})
+
+	test("says so when the namespace list could not be read, and keeps the role's own", () => {
+		const failed = pageUpdate(
+			openedLimited(),
+			Message.CompletedFetchNamespaces({ result: Result.fail(toLoadFailure(new Error("down"))) }),
+		).model
+		expect(failed.isNamespaceListFailed).toBe(true)
+		expect(failed.namespaces).toEqual(["checkout"])
+	})
+
+	test("someone who cannot manage roles reads the limit as a sentence, with no switch", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(openedLimited(Policy.grantsOf(["org:member"]))),
+			tabsMounted,
+			expectView(text("Limited to checkout")).toExist(),
+			expectView(role("switch", { name: "Limit to namespaces" })).toBeAbsent(),
+		)
+	})
+
+	test("a built-in role offers no limit", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(opened("engineer")),
+			tabsMounted,
+			expectView(role("switch", { name: "Limit to namespaces" })).toBeAbsent(),
+			expectView(text("Read telemetry in chosen namespaces")).toBeAbsent(),
+		)
+	})
+})
 
 describe("custom role editor", () => {
 	test("a permission ticked counts as an unsaved change for the role's holders", () => {

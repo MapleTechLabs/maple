@@ -13,7 +13,7 @@ import { personAvatarStack } from "@maple/views/ui/person-avatar"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import {
 	ROW_LINK_LIFT,
 	rowNameLink,
@@ -32,9 +32,9 @@ import { denialTooltipContent, gatedControl } from "../../kit/session-grants"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
 import * as CreateDialog from "./create-dialog"
 import { canManageRoles, Message, type Model } from "./model"
-import { findRole, memberCountLabel, type RoleEntry, roleHref } from "./roles"
+import { findRole, memberCountLabel, type RoleEntry, roleHref, tickedPermissions } from "./roles"
 import { entriesOf } from "./update"
-import { holderLabel, permissionMeter, roleTypeBadge } from "./view-parts"
+import { holderLabel, namespaceLimitBadge, permissionMeter, roleTypeBadge } from "./view-parts"
 
 // `/settings/roles`: every role, built-in first, with what each holds and who holds it.
 
@@ -131,13 +131,20 @@ const roleRow = (h: H, model: Model, role: RoleEntry): Html => {
 		[
 			truncatedTableCell(h, [
 				vstack(h, { gap: "0.5", shrink: true }, [
-					rowNameLink(h, { href: roleHref(role.key), name: role.name }),
+					hstack(h, { gap: "2", shrink: true }, [
+						rowNameLink(h, { href: roleHref(role.key), name: role.name }),
+						...namespaceLimitBadge(h, role),
+					]),
 					typography(h, { size: "xs", tone: "muted", truncate: true }, [role.description]),
 				]),
 			]),
 			tableCell(h, [roleTypeBadge(h, role.isBuiltIn)], COLUMN.type),
 			tableCell(h, [holdersCell(h, role)], COLUMN.members),
-			tableCell(h, [permissionMeter(h, role.permissions.length)], COLUMN.permissions),
+			tableCell(
+				h,
+				[permissionMeter(h, tickedPermissions(role.permissions).length)],
+				COLUMN.permissions,
+			),
 			tableCell(h, [
 				h.span(
 					[h.Class(ROW_LINK_LIFT)],

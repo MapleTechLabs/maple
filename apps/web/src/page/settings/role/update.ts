@@ -3,6 +3,7 @@ import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { failureMessage } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import type { AppRoute } from "../../../route"
@@ -11,15 +12,17 @@ import { acceptGrants } from "../../kit/session-grants"
 import * as CreateDialog from "../roles/create-dialog"
 import {
 	findRole,
+	isTickable,
 	isValidRoleDescription,
 	isValidRoleName,
 	type RoleDraft,
 	type RoleEntry,
 	roleHref,
+	tickedPermissions,
 } from "../roles/roles"
 import { entriesOf } from "../roles/update"
 import { canManageRoles } from "../roles/model"
-import { FetchRoleMembers, FetchRoles, FetchSession, SaveRole } from "./command"
+import { FetchNamespaces, FetchRoleMembers, FetchRoles, FetchSession, SaveRole } from "./command"
 import { Message } from "./message"
 import type { EditorTab, Model } from "./model"
 
@@ -38,15 +41,25 @@ export const isEditable = (model: Model): boolean =>
 const differs = (a: ReadonlyArray<Policy.Permission>, b: ReadonlyArray<Policy.Permission>) =>
 	Arr.filter(Policy.allPermissions, (permission) => a.includes(permission) !== b.includes(permission))
 
-/** Changes not saved yet: each permission added or removed, a new name and a new description. */
+/** The namespaces the draft limits the role to: none while the limit is off. */
+export const draftNamespaces = (model: Model): ReadonlyArray<string> =>
+	model.isLimited ? Policy.normalizeNamespaces(model.namespaces) : []
+
+const sameNamespaces = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean =>
+	a.length === b.length && Arr.every(a, (namespace, index) => namespace === b[index])
+
+/** Changes not saved yet: each permission added or removed, a new name, a new description and a new namespace limit. */
 export const unsavedChanges = (model: Model): number =>
 	model.isDraftLoaded
 		? Option.match(roleOf(model), {
 				onNone: () => 0,
 				onSome: (role) =>
-					differs(role.permissions, model.permissions).length +
+					differs(tickedPermissions(role.permissions), model.permissions).length +
 					(Str.trim(model.name) === role.name ? 0 : 1) +
-					(Str.trim(model.description) === role.description ? 0 : 1),
+					(Str.trim(model.description) === role.description ? 0 : 1) +
+					(sameNamespaces(Policy.normalizeNamespaces(role.namespaces), draftNamespaces(model))
+						? 0
+						: 1),
 			})
 		: 0
 
@@ -72,6 +85,12 @@ export const init = (route: RoleRoute, context: PageContext): Return => {
 			description: "",
 			permissions: [],
 			autoTicked: [],
+			isLimited: false,
+			namespaces: [],
+			setAside: [],
+			isNamespaceListFailed: false,
+			namespacesBox: Combobox.init("role-namespaces", "multiple"),
+			knownNamespaces: [],
 			isDraftLoaded: false,
 			tabs: Tabs.init({ idBase: 0, values: TABS, selected: "permissions" }),
 			filter: "",
@@ -84,7 +103,7 @@ export const init = (route: RoleRoute, context: PageContext): Return => {
 			isSaving: false,
 			create: CreateDialog.init("role-duplicate"),
 		},
-		commands: [FetchSession({ orgId: context.orgId }), FetchRoles(), ...members],
+		commands: [FetchSession({ orgId: context.orgId }), FetchRoles(), FetchNamespaces(), ...members],
 	}
 }
 
@@ -92,8 +111,11 @@ const withDrafts = (model: Model, role: RoleEntry): Model => ({
 	...model,
 	name: role.name,
 	description: role.description,
-	permissions: role.permissions,
+	permissions: tickedPermissions(role.permissions),
 	autoTicked: [],
+	isLimited: role.namespaces.length > 0,
+	namespaces: role.namespaces,
+	setAside: [],
 	isDraftLoaded: true,
 })
 
@@ -137,15 +159,45 @@ const toggled = (draft: PermissionDraft, permission: Policy.Permission): Permiss
 	return { permissions: next, autoTicked: Arr.filter(autoTicked, (held) => next.includes(held)) }
 }
 
-/** Whether the drafted name and description make a valid role. */
+/**
+ * Turning the limit on unticks what needs telemetry from every namespace, Read telemetry included,
+ * and sets it aside. Turning it off ticks that back; a role that was limited when it loaded has
+ * nothing aside, so it gets Read telemetry and goes on reading, now from every namespace.
+ */
+const toggledLimit = (model: Model): Model => {
+	if (!model.isLimited) {
+		return {
+			...model,
+			isLimited: true,
+			permissions: Arr.filter(model.permissions, Policy.holdableWhenScoped),
+			autoTicked: Arr.filter(model.autoTicked, Policy.holdableWhenScoped),
+			setAside: Arr.filter(model.permissions, (permission) => !Policy.holdableWhenScoped(permission)),
+		}
+	}
+	const back = model.setAside.length === 0 ? (["telemetry:read"] as const) : model.setAside
+	return {
+		...model,
+		isLimited: false,
+		permissions: Policy.withImplied([...model.permissions, ...back]),
+		setAside: [],
+	}
+}
+
+const isNamespace = Schema.is(Policy.RoleNamespace)
+const areRoleNamespaces = Schema.is(Policy.RoleNamespaces)
+
+/** Whether the drafted name, description and namespace limit make a role the API accepts. */
 export const isValidDraft = (model: Model): boolean =>
-	isValidRoleName(model.name) && isValidRoleDescription(model.description)
+	isValidRoleName(model.name) &&
+	isValidRoleDescription(model.description) &&
+	(!model.isLimited || (model.namespaces.length > 0 && areRoleNamespaces(draftNamespaces(model))))
 
 /** The drafts as one update: a rename and a permission change are the same call. */
 const savePayload = (model: Model): RoleDraft => ({
 	name: Str.trim(model.name),
 	description: Str.trim(model.description),
 	permissions: model.permissions,
+	namespaces: draftNamespaces(model),
 })
 
 const replaceSaved = (list: RoleListResponse, saved: CustomRoleResponse): RoleListResponse =>
@@ -190,10 +242,36 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedDescription: ({ value }) => whenEditable(model, () => ({ ...model, description: value })),
 		ToggledPermission: ({ permission }) =>
 			whenEditable(model, () =>
-				Policy.grantableToCustomRoles(permission)
+				isTickable(permission) && (!model.isLimited || Policy.holdableWhenScoped(permission))
 					? { ...model, ...toggled(model, permission) }
 					: model,
 			),
+		ToggledLimit: () => whenEditable(model, () => toggledLimit(model)),
+		// The chips mirror the draft: the combobox's own selection is replaced by the draft's.
+		GotNamespacesMessage: ({ message: child }) => {
+			const step = Combobox.update({ ...model.namespacesBox, selected: model.namespaces }, child)
+			const next = { ...model, namespacesBox: step.model }
+			return {
+				model:
+					isEditable(model) && step.outMessage?._tag === "ChangedSelection"
+						? { ...next, namespaces: step.outMessage.selected }
+						: next,
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotNamespacesMessage({ message: inner }),
+				),
+			}
+		},
+		// Only what a role can name is offered: not the empty "not reported" entry, nor a name the API refuses.
+		CompletedFetchNamespaces: ({ result }) => ({
+			model: Result.match(result, {
+				onSuccess: (namespaces) => ({
+					...model,
+					knownNamespaces: Arr.filter(namespaces, isNamespace),
+					isNamespaceListFailed: false,
+				}),
+				onFailure: () => ({ ...model, isNamespaceListFailed: true }),
+			}),
+		}),
 		ToggledGroup: ({ group }) => ({
 			model: {
 				...model,
@@ -270,8 +348,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						list: AsyncData.map(model.list, (list) => replaceSaved(list, saved)),
 						name: saved.name,
 						description: saved.description,
-						permissions: saved.permissions,
+						permissions: tickedPermissions(saved.permissions),
 						autoTicked: [],
+						isLimited: (saved.namespaces ?? []).length > 0,
+						namespaces: saved.namespaces ?? [],
+						setAside: [],
 					},
 					outMessage: toast("success", `${saved.name} saved`),
 				}),

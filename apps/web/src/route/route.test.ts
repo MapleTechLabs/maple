@@ -8,6 +8,7 @@ import {
 	flaggedRouteRedirect,
 	hrefOf,
 	routeRedirect,
+	scopedRoleRedirect,
 	securityRouteRedirect,
 	urlToAppRoute,
 } from "./index"
@@ -373,6 +374,43 @@ describe("routes", () => {
 			expect(securityRouteRedirect(parse(path), true)).toEqual(Option.none())
 		}
 		expect(securityRouteRedirect(parse("/services"), false)).toEqual(Option.none())
+	})
+
+	test("a role limited to namespaces opens its telemetry pages and its account, and is sent to Services from the rest", () => {
+		for (const path of [
+			"/services",
+			"/services/checkout-api",
+			"/traces",
+			"/traces/4bf92f3577b34da6a3ce929d0e0e4736",
+			"/logs",
+			"/metrics",
+			"/account",
+			"/settings",
+			"/status-pages",
+			// The plan gate sends an org without a plan here: sending it back would loop.
+			"/quick-start",
+			"/select-plan",
+		]) {
+			expect(scopedRoleRedirect(parse(path), true)).toEqual(Option.none())
+		}
+		for (const path of [
+			"/",
+			"/alerts",
+			"/errors",
+			"/dashboards",
+			"/service-map",
+			"/replays",
+			"/infra",
+			"/cost",
+			"/sources",
+			"/security",
+		]) {
+			expect(scopedRoleRedirect(parse(path), true)).toEqual(
+				Option.some({ url: "/services", isReplace: true }),
+			)
+			// Every other role opens them.
+			expect(scopedRoleRedirect(parse(path), false)).toEqual(Option.none())
+		}
 	})
 
 	test("a literal sibling wins over a param route", () => {

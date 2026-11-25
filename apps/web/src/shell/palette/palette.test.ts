@@ -177,6 +177,22 @@ describe("command palette", () => {
 		expect(operator).toContain("Traces")
 	})
 
+	test("a role limited to namespaces finds its telemetry pages, and no dashboards or other pages", () => {
+		const model = loadedWith(["storefront"])
+		const shown = (query: string) =>
+			Arr.map(
+				shownEntries(typed(model, query).model, context, ["/cost"], "scoped").entries,
+				(entry) => entry.title,
+			)
+		expect(shown("traces")).toContain("Traces")
+		expect(shown("logs")).toContain("Logs")
+		expect(shown("services")).toContain("Services")
+		expect(shown("checkout")).not.toContain("Checkout health")
+		expect(shown("alerts")).not.toContain("Alerts")
+		expect(shown("analytics")).not.toContain("Web analytics")
+		expect(shown("settings")).not.toContain("Settings")
+	})
+
 	test("Enter opens the page an analyst sees highlighted, not the full list's", () => {
 		const model = typed(loadedWith([]), "uptime").model
 		const result = update(
