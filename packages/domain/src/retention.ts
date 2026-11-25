@@ -10,13 +10,21 @@ export type RetentionSignal = SourceSignal
 
 export const RETENTION_SIGNALS: ReadonlyArray<RetentionSignal> = SourceSignal.literals
 
-export const MIN_RETENTION_DAYS = 1
-/** The longest any signal can be kept: the top of the storage ladder. */
-export const MAX_RETENTION_DAYS = 800
+/**
+ * The periods a signal can be kept for. Rows are stored under the same period, so what is
+ * set, what is billed and when rows are deleted always agree.
+ */
+export const RETENTION_PERIODS = [3, 7, 14, 30, 60, 90, 180, 365, 730] as const
 
-export const RetentionDays = Schema.Int.check(
-	Schema.isBetween({ minimum: MIN_RETENTION_DAYS, maximum: MAX_RETENTION_DAYS }),
-).annotate({ identifier: "@maple/RetentionDays", title: "Retention Days" })
+export const MIN_RETENTION_DAYS = 3
+/** The longest any signal can be kept. */
+export const MAX_RETENTION_DAYS = 730
+
+export const RetentionDays = Schema.Literals(RETENTION_PERIODS).annotate({
+	identifier: "@maple/RetentionDays",
+	title: "Retention Days",
+	description: "Days to keep a signal: one of 3, 7, 14, 30, 60, 90, 180, 365 or 730.",
+})
 export type RetentionDays = typeof RetentionDays.Type
 
 /** Days per signal. A signal left out inherits: a source from its organization, an organization from the defaults. */
@@ -31,6 +39,9 @@ export const RetentionOverrides = Schema.Struct({
 export type RetentionOverrides = typeof RetentionOverrides.Type
 
 export type RetentionDaysBySignal = Readonly<Record<RetentionSignal, number>>
+
+/** Days per signal as stored or set: an override, or a stored value the gateway rounds up. */
+export type RetentionDaysSet = { readonly [Signal in RetentionSignal]?: number }
 
 /** What an organization keeps when it has set nothing: the raw tables' own periods. */
 export const DEFAULT_RETENTION_DAYS = {
@@ -63,14 +74,14 @@ const bySignal = (days: (signal: RetentionSignal) => number): RetentionDaysBySig
 
 /** What the organization keeps for each signal from a source with no override of its own. */
 export const organizationRetentionDays = (
-	organization: RetentionOverrides,
+	organization: RetentionDaysSet,
 	defaults: RetentionDaysBySignal = DEFAULT_RETENTION_DAYS,
 ): RetentionDaysBySignal => bySignal((signal) => organization[signal] ?? defaults[signal])
 
 /** What one source keeps: its own override, else the organization's period. */
 export const sourceRetentionDays = (
-	organization: RetentionOverrides,
-	source: RetentionOverrides,
+	organization: RetentionDaysSet,
+	source: RetentionDaysSet,
 	defaults: RetentionDaysBySignal = DEFAULT_RETENTION_DAYS,
 ): RetentionDaysBySignal => {
 	const inherited = organizationRetentionDays(organization, defaults)
@@ -82,8 +93,8 @@ export const sourceRetentionDays = (
  * keeps it. A source that keeps less is cut by its own rows expiring, not by the read.
  */
 export const readHorizonDays = (
-	organization: RetentionOverrides,
-	sources: ReadonlyArray<RetentionOverrides>,
+	organization: RetentionDaysSet,
+	sources: ReadonlyArray<RetentionDaysSet>,
 	defaults: RetentionDaysBySignal = DEFAULT_RETENTION_DAYS,
 ): RetentionDaysBySignal => {
 	const inherited = organizationRetentionDays(organization, defaults)
@@ -113,15 +124,13 @@ export const RETENTION_TIME_COLUMNS = {
 } as const satisfies Readonly<Record<(typeof RETENTION_SIGNAL_DATASOURCES)[RetentionSignal][number], string>>
 
 /**
- * The periods rows are physically stored under. A policy keeps its exact days for reads; the
- * row is stamped with the next period up, so tables hold a bounded set of expiry groups.
+ * The period a row is stored under for `days`: the shortest period that covers it. A policy
+ * only holds `RETENTION_PERIODS`, so this is the identity for one; the gateway applies the
+ * same rounding to whatever it reads.
  */
-export const RETENTION_STAMP_LADDER = [3, 7, 14, 30, 60, 90, 180, 365, 550, 800] as const
-
-/** The period a row is stored under for a policy of `days`: the shortest ladder period that covers it. */
 export const retentionStampDays = (days: number): number =>
 	Option.getOrElse(
-		Arr.findFirst(RETENTION_STAMP_LADDER, (period) => period >= days),
+		Arr.findFirst(RETENTION_PERIODS, (period) => period >= days),
 		() => MAX_RETENTION_DAYS,
 	)
 

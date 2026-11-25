@@ -7,12 +7,22 @@ import { RetentionOverrides, retentionStampDays, sourceRetentionDays } from "./r
 
 const Stored = Schema.Struct({ organization: RetentionOverrides, source: RetentionOverrides })
 
+// Stored values the gateway rounds up to a period: wider than what the API stores.
+const StoredDays = Schema.Struct({
+	traces: Schema.optionalKey(Schema.Int),
+	logs: Schema.optionalKey(Schema.Int),
+	metrics: Schema.optionalKey(Schema.Int),
+	sessions: Schema.optionalKey(Schema.Int),
+	events: Schema.optionalKey(Schema.Int),
+	profiles: Schema.optionalKey(Schema.Int),
+})
+
 const Fixtures = Schema.Struct({
 	cases: Schema.Array(
 		Schema.Struct({
 			name: Schema.String,
-			organization: RetentionOverrides,
-			source: RetentionOverrides,
+			organization: StoredDays,
+			source: StoredDays,
 			expected: Schema.Record(Schema.String, Schema.Number),
 		}),
 	),

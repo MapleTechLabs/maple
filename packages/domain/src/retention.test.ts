@@ -10,7 +10,7 @@ import {
 	readHorizonDays,
 	RETENTION_SIGNAL_DATASOURCES,
 	RETENTION_SIGNALS,
-	RETENTION_STAMP_LADDER,
+	RETENTION_PERIODS,
 	RETENTION_TIME_COLUMNS,
 	retentionStampDays,
 	RetentionOverrides,
@@ -110,8 +110,8 @@ describe("retention time columns", () => {
 
 describe("retention stamp", () => {
 	it("stores a period under the shortest ladder period that covers it", () => {
-		expect(Arr.map([1, 3, 4, 30, 31, 45, 366, 551, MAX_RETENTION_DAYS], retentionStampDays)).toEqual([
-			3, 3, 7, 30, 60, 60, 550, 800, 800,
+		expect(Arr.map([1, 3, 4, 30, 31, 45, 366, 551, MAX_RETENTION_DAYS, 800], retentionStampDays)).toEqual([
+			3, 3, 7, 30, 60, 60, 730, 730, 730, 730,
 		])
 	})
 
@@ -123,8 +123,8 @@ describe("retention stamp", () => {
 		}
 	})
 
-	it("tops out at the longest period a policy can ask for", () => {
-		expect(Arr.lastNonEmpty(RETENTION_STAMP_LADDER)).toBe(MAX_RETENTION_DAYS)
+	it("stores every period a policy can hold under exactly its own days", () => {
+		for (const days of RETENTION_PERIODS) expect(retentionStampDays(days)).toBe(days)
 	})
 
 	it("never stores a period under fewer days than it asks for", () => {
@@ -136,12 +136,12 @@ describe("retention stamp", () => {
 
 describe("retention resolution", () => {
 	it("an organization overrides the default per signal", () => {
-		expect(organizationRetentionDays({ traces: 45 })).toEqual({ ...DEFAULT_RETENTION_DAYS, traces: 45 })
+		expect(organizationRetentionDays({ traces: 60 })).toEqual({ ...DEFAULT_RETENTION_DAYS, traces: 60 })
 	})
 
 	it("a source's own period wins over the organization's, shorter or longer", () => {
-		const days = sourceRetentionDays({ traces: 45, logs: 60 }, { traces: 3, logs: 400 })
-		expect(days).toEqual({ ...DEFAULT_RETENTION_DAYS, traces: 3, logs: 400 })
+		const days = sourceRetentionDays({ traces: 60, logs: 60 }, { traces: 3, logs: 365 })
+		expect(days).toEqual({ ...DEFAULT_RETENTION_DAYS, traces: 3, logs: 365 })
 	})
 
 	it("a source with no period for a signal follows the organization, not the default", () => {
@@ -149,8 +149,8 @@ describe("retention resolution", () => {
 	})
 
 	it("reads reach the longest source, and a shorter source does not pull them in", () => {
-		const horizon = readHorizonDays({ traces: 45 }, [{ traces: 3 }, { traces: 400 }, { logs: 7 }])
-		expect(horizon.traces).toBe(400)
+		const horizon = readHorizonDays({ traces: 60 }, [{ traces: 3 }, { traces: 365 }, { logs: 7 }])
+		expect(horizon.traces).toBe(365)
 		expect(horizon.logs).toBe(DEFAULT_RETENTION_DAYS.logs)
 	})
 
@@ -167,12 +167,13 @@ describe("retention resolution", () => {
 describe("RetentionOverrides", () => {
 	const decode = Schema.decodeUnknownOption(RetentionOverrides)
 
-	it("accepts whole days up to the maximum", () => {
-		expect(Option.isSome(decode({ traces: 1, logs: MAX_RETENTION_DAYS }))).toBe(true)
+	it("accepts every period", () => {
+		for (const days of RETENTION_PERIODS) expect(Option.isSome(decode({ traces: days }))).toBe(true)
 	})
 
 	it.each([
 		["zero days", { traces: 0 }],
+		["a day count between periods", { traces: 45 }],
 		["past the maximum", { traces: MAX_RETENTION_DAYS + 1 }],
 		["a fraction of a day", { traces: 1.5 }],
 		["a string", { traces: "30" }],

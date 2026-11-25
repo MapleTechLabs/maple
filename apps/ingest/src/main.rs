@@ -24586,7 +24586,7 @@ mod tests {
 
             let key = resolved(&store, KEY).await;
             // traces, logs, metrics, sessions, events, profiles
-            assert_eq!(periods(&key.retention), [60, 7, 90, 30, 550, 14]);
+            assert_eq!(periods(&key.retention), [60, 7, 90, 30, 730, 14]);
 
             // Read with the key and cached with it: a second request asks nothing more.
             let resolver = make_resolver(Arc::clone(&store));
@@ -24770,7 +24770,7 @@ mod tests {
                 .await
                 .unwrap()
                 .expect("the connection resolves");
-            assert_eq!(aws.key.retention.get(RetentionSignal::Metrics), 550);
+            assert_eq!(aws.key.retention.get(RetentionSignal::Metrics), 730);
             drop(std::fs::remove_dir_all(&queue_dir));
         }
 
