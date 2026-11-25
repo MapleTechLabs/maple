@@ -167,37 +167,6 @@ const delayedStream = (
 		Stream.flatMap(() => Stream.flatMap(whenPresent(), () => Stream.fromIterable(delayed.fire(version)))),
 	)
 
-/** A metric stream delivers about every minute. */
-const AWS_WATCH_MS = 60_000
-
-/** A setup is open for a connection whose stack Maple has not assumed yet. */
-const isAwsPending = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "aws") return false
-	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
-	const setupId = model.awsCard.setupId
-	return (
-		status !== null &&
-		setupId !== null &&
-		Arr.some(
-			status.connections,
-			(connection) => connection.id === setupId && connection.verified_at === null,
-		)
-	)
-}
-
-/** A verified connection streams metrics: its deliveries and what they stored keep moving. */
-const isAwsStreaming = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "aws") return false
-	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
-	return (
-		status !== null &&
-		Arr.some(
-			status.connections,
-			(connection) => connection.verified_at !== null && connection.metric_stream !== null,
-		)
-	)
-}
-
 const gcpRefreshInterval = (model: Model): number | null => {
 	if (integrationOfSearch(model.search.integration) !== "gcp") return null
 	const connectors = Option.match(AsyncData.getData(model.statuses.gcp.data), {
@@ -258,22 +227,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: phase === "popup"
 							? popupFlow(attempt)
 							: grace(attempt),
-			},
-		),
-		awsPending: entry(
-			{ isPending: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isPending: isAwsPending(model) }),
-				dependenciesToStream: ({ isPending }) =>
-					isPending ? every(10_000, () => Message.TickedAwsPending()) : Stream.empty,
-			},
-		),
-		awsWatch: entry(
-			{ isStreaming: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isStreaming: isAwsStreaming(model) }),
-				dependenciesToStream: ({ isStreaming }) =>
-					isStreaming ? every(AWS_WATCH_MS, () => Message.TickedAwsWatch()) : Stream.empty,
 			},
 		),
 		gcpRefresh: entry(

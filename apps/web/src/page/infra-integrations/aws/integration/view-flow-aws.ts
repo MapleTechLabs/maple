@@ -22,6 +22,7 @@ import {
 import { relativeTime } from "../../../kit/relative-time"
 import { type FeatureRow, featureList } from "../../../kit/feature-list"
 import {
+	AwsMessage,
 	decodeCreateRequest,
 	isSavingMetricsOf,
 	isSelectionSaved,
@@ -36,11 +37,11 @@ import { catalogEntry } from "../../../integrations/catalog"
 import { awsStreamOf, isoMs } from "../../../integrations/derive"
 import type { FlowStage } from "../../../integrations/flow"
 import { awsFlowConnection, awsStatusOf } from "./flow-aws"
-import { Message } from "../../../integrations/message"
+import type { Message } from "../../../integrations/message"
 import { manageLock, type Model } from "../../../integrations/model"
 import { ingestPanel, METRICS_SPEC, moduleList, moduleSpec, roleName, setupPanel } from "./view-aws"
 import { dataPicker, NAMESPACE_LABEL } from "./view-aws-choose"
-import { methodSelect, SMALL, setupBody } from "./view-aws-setup"
+import { methodSelect, SMALL, setupBody, toHub } from "./view-aws-setup"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 
@@ -122,7 +123,7 @@ const newModuleCard = (h: H, model: Model): ReadonlyArray<Html> => {
 						spec: moduleSpec(module, info),
 						isChecked: model.awsCard.newModules.includes(module),
 						isDisabled: model.awsCard.isCreating,
-						onToggle: Message.ToggledAwsNewModule({ module }),
+						onToggle: toHub(AwsMessage.ToggledAwsNewModule({ module })),
 					},
 				],
 			}),
@@ -150,7 +151,7 @@ const accountForm = (h: H, model: Model): Html => {
 	)
 	const state = Field.stateOf(card.accountId, card.createError !== null)
 	return h.form(
-		[h.Class(vstackClass({ gap: "2" })), h.OnSubmit(Message.SubmittedAwsAccount())],
+		[h.Class(vstackClass({ gap: "2" })), h.OnSubmit(toHub(AwsMessage.SubmittedAwsAccount()))],
 		[
 			Field.field(h, { className: "items-stretch gap-2", state }, [
 				Field.fieldLabel(h, { ids: ACCOUNT_IDS, state }, "AWS account ID"),
@@ -165,7 +166,7 @@ const accountForm = (h: H, model: Model): Html => {
 							h.Placeholder("123456789012"),
 							h.InputMode("numeric"),
 							...Field.controlAttributes(h, card.accountId, (message) =>
-								Message.GotAwsAccountIdMessage({ message }),
+								toHub(AwsMessage.GotAwsAccountIdMessage({ message })),
 							),
 							h.AriaLabelledBy(ACCOUNT_IDS.label),
 							...(card.createError === null ? [] : [h.AriaInvalid(true)]),
@@ -182,7 +183,7 @@ const accountForm = (h: H, model: Model): Html => {
 									{
 										variant: "outline",
 										isDisabled: card.isCreating,
-										attributes: [h.OnClick(Message.ClickedAwsAddCancel())],
+										attributes: [h.OnClick(toHub(AwsMessage.ClickedAwsAddCancel()))],
 									},
 									["Cancel"],
 								),
@@ -234,9 +235,11 @@ const accountLine = (h: H, connection: V2AwsConnection): Html =>
 		icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
 		h.span([], ["AWS account ID"]),
 		typography(h, { mono: true, numeric: true }, [connection.account_id]),
-		button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAwsAdd())] }, [
-			"Change",
-		]),
+		button(
+			h,
+			{ size: "sm", variant: "ghost", attributes: [h.OnClick(toHub(AwsMessage.ClickedAwsAdd()))] },
+			["Change"],
+		),
 	])
 
 const checkButton = (h: H, model: Model, connection: V2AwsConnection, label: string): Html =>
@@ -247,7 +250,7 @@ const checkButton = (h: H, model: Model, connection: V2AwsConnection, label: str
 			variant: "outline",
 			className: "w-fit",
 			isLoading: Arr.some(model.awsCard.checking, (entry) => entry.id === connection.id),
-			attributes: [h.OnClick(Message.ClickedAwsCheck({ id: connection.id }))],
+			attributes: [h.OnClick(toHub(AwsMessage.ClickedAwsCheck({ id: connection.id })))],
 		},
 		[label],
 	)
@@ -277,7 +280,9 @@ const waitingForRole = (
 							{
 								size: "sm",
 								className: "w-fit",
-								attributes: [h.OnClick(Message.ClickedAwsSetup({ id: connection.id }))],
+								attributes: [
+									h.OnClick(toHub(AwsMessage.ClickedAwsSetup({ id: connection.id }))),
+								],
 							},
 							["Show the role script"],
 						),
@@ -342,7 +347,7 @@ const roleDeployed = (
 					size: "sm",
 					variant: "outline",
 					className: "w-fit",
-					attributes: [h.OnClick(Message.ClickedAwsAdd())],
+					attributes: [h.OnClick(toHub(AwsMessage.ClickedAwsAdd()))],
 				},
 				["Connect another account"],
 			),
@@ -507,7 +512,7 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 				{
 					className: "w-fit",
 					isLoading: isSavingMetricsOf(card.metrics, connection.id),
-					attributes: [h.OnClick(Message.SubmittedAwsMetrics({ id: connection.id }))],
+					attributes: [h.OnClick(toHub(AwsMessage.SubmittedAwsMetrics({ id: connection.id })))],
 				},
 				["Get the stream script"],
 			),
@@ -526,7 +531,7 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 						{
 							size: "sm",
 							className: "w-fit",
-							attributes: [h.OnClick(Message.ClickedAwsSetup({ id: connection.id }))],
+							attributes: [h.OnClick(toHub(AwsMessage.ClickedAwsSetup({ id: connection.id })))],
 						},
 						["Show the stream script"],
 					),

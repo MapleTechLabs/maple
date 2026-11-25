@@ -76,6 +76,9 @@ export type ProviderReturn<M, Msg> = Readonly<{
 	requests?: ReadonlyArray<HubRequest>
 }>
 
+/** A message's update, which may also rewrite the status in place before its re-read (an answered write). */
+export type ProviderUpdate<M, Msg, S> = ProviderReturn<M, Msg> & Readonly<{ status?: (status: S) => S }>
+
 /** The status read that answered: `isCurrent` when it answers the read in flight. */
 export type StatusAnswer<S> = Readonly<{ isCurrent: boolean; previous: Keyed.Keyed<S, LoadFailure> }>
 
@@ -97,7 +100,7 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 		read: (refresh: boolean) => Effect.Effect<S, unknown, Resources>
 	}>
 	init: () => M
-	update: (model: M, message: Msg, env: ProviderEnv<S>) => ProviderReturn<M, Msg>
+	update: (model: M, message: Msg, env: ProviderEnv<S>) => ProviderUpdate<M, Msg, S>
 	/** The card mounted: the reads it shows. */
 	onEnter?: ProviderHook<S, M, Msg>
 	/** The session's grants were read: the reads only a manager may make. */

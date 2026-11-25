@@ -10,8 +10,6 @@ import { chatCallbackOf } from "./chat-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
 import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
-import { initAwsCard } from "../infra-integrations/aws/integration/aws"
-import * as Aws from "../infra-integrations/aws/integration/update-aws"
 import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
 import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
 import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
@@ -28,6 +26,7 @@ import {
 import type { OAuthReturnOutcome } from "./oauth-return"
 import { chain, requestStatus, statusNamesOf } from "./update-status"
 import {
+	AWS_PROVIDER,
 	CHAT_PROVIDER,
 	CLOUDFLARE_PROVIDER,
 	everyProvider,
@@ -166,7 +165,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		prometheusCard: PROMETHEUS_PROVIDER.initial(),
 		planetscaleCard: PLANETSCALE_PROVIDER.initial(),
 		gcpCard: initGcpCard(),
-		awsCard: initAwsCard(),
+		awsCard: AWS_PROVIDER.initial(),
 		railwayCard: RAILWAY_PROVIDER.initial(),
 		vercelCard: VERCEL_PROVIDER.initial(),
 		supabaseCard: SUPABASE_PROVIDER.initial(),
@@ -204,7 +203,6 @@ export const routeChanged = (
 /** The reads an integration's card mounts (Cloudflare's usage, PlanetScale's watch clock). */
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
-	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	return providerModuleOf(integration)?.onEnter(model, context) ?? { model }
@@ -254,10 +252,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return gcpBand(arrived, context)
 		},
 		CompletedLoadAws: ({ key, result }) =>
-			Aws.statusArrived(
+			AWS_PROVIDER.onStatus(
 				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
 				context,
-				Aws.connectionsOf(model),
+				{ isCurrent: s.aws.key === key, previous: s.aws },
 			),
 		CompletedLoadSupabase: ({ key, result }) =>
 			SUPABASE_PROVIDER.onStatus(
@@ -295,6 +293,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		GotGithubMessage: ({ message: child }) => GITHUB_PROVIDER.update(model, child, context),
 		GotPrometheusMessage: ({ message: child }) => PROMETHEUS_PROVIDER.update(model, child, context),
+		GotAwsMessage: ({ message: child }) => AWS_PROVIDER.update(model, child, context),
 		CompletedLoadSearchConsole: ({ key, result }) =>
 			SEARCH_CONSOLE_PROVIDER.onStatus(
 				accepted(model, { ...s, searchConsole: Keyed.accept(s.searchConsole, key, result) }).model,
@@ -351,42 +350,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConnect: () => Connect.clickedConnect(model, context),
 		ClickedOpenGithubInstallPage: () => Connect.clickedConnect(model, context, "install"),
-		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
-		SubmittedAwsAccount: () => Aws.submittedAccount(model),
-		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
-		FailedAwsCreate: ({ error }) => Aws.failedCreate(model, error),
-		ClickedAwsAdd: () => Aws.setAdding(model, true),
-		ClickedAwsAddCancel: () => Aws.setAdding(model, false),
-		ClickedAwsSetup: ({ id }) => Aws.openSetup(model, context, id),
-		ClickedAwsSetupClose: () => Aws.closeSetup(model),
-		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
-		CompletedLoadAwsIngest: ({ id, key, result }) => Aws.completedIngest(model, id, key, result),
-		ClickedAwsSetupMethod: ({ part, method }) => Aws.setMethod(model, part, method),
-		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
-		TickedAwsPending: () => Aws.tickedPending(model),
-		TickedAwsWatch: () => Aws.tickedWatch(model, context),
-		CompletedAwsCheck: ({ id, quiet, connection, failure }) =>
-			Aws.completedCheck(model, context, id, quiet, connection, failure),
-		GotAwsCopyMessage: ({ id, message: child }) => Aws.gotCopy(model, id, child),
-		ClickedAwsDisconnect: ({ id }) => Aws.clickedDisconnect(model, id),
-		GotAwsDisconnectDialogMessage: ({ message: child }) => Aws.gotDisconnectDialog(model, child),
-		ConfirmedAwsDisconnect: () => Aws.confirmedDisconnect(model),
-		CompletedAwsDisconnect: ({ id, removed, error }) =>
-			Aws.completedDisconnect(model, context, id, removed, error),
-		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
-		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
-		CompletedWriteAwsRemoved: () => ({ model }),
-		ClickedAwsMetrics: ({ id }) => Aws.clickedMetrics(model, id),
-		ClickedAwsMetricsCancel: () => Aws.cancelledMetrics(model),
-		ToggledAwsRegion: ({ id, region }) => Aws.toggledRegion(model, id, region),
-		ToggledAwsNamespace: ({ id, namespace }) => Aws.toggledNamespace(model, id, namespace),
-		SubmittedAwsMetrics: ({ id }) => Aws.submittedMetrics(model, id),
-		CompletedAwsMetricStream: ({ id, connection, error }) =>
-			Aws.completedMetricStream(model, context, id, connection, error),
-		ToggledAwsModule: ({ id, module }) => Aws.toggledModule(model, id, module),
-		CompletedAwsModules: ({ id, connection, error }) =>
-			Aws.completedModules(model, context, id, connection, error),
-		ToggledAwsNewModule: ({ module }) => Aws.toggledNewModule(model, module),
 		CompletedGcpLogVolume: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { logVolume: Keyed.accept(model.gcpCard.logVolume, key, result) }),
 		CompletedGcpFleet: ({ key, result }) =>

@@ -15,10 +15,7 @@ import {
 	VercelIntegrationStatus,
 } from "@maple/domain/http"
 import {
-	V2AwsConnection,
 	V2AwsIntegration,
-	V2AwsIngest,
-	V2AwsSetup,
 	V2ChatConnectorList,
 	V2DataSource,
 	V2GcpConnector,
@@ -28,13 +25,7 @@ import {
 	V2PlanetScaleIntegration,
 	V2ScrapeTarget,
 } from "@maple/domain/http/v2"
-import {
-	AwsConnectionId,
-	AwsMetricNamespace,
-	AwsModule,
-	GcpConnectorId,
-	GcpLogRuntime,
-} from "@maple/primitives"
+import { GcpConnectorId, GcpLogRuntime } from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -62,13 +53,9 @@ import { LinearMessage } from "./linear"
 import { FleetMessage } from "./fleet/fleet"
 import { GithubMessage } from "./github"
 import { PrometheusMessage } from "./prometheus"
+import { AwsMessage } from "../infra-integrations/aws/integration/aws"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
-import {
-	AwsRemovedStack,
-	AwsSetupMethod,
-	AwsSetupPart,
-} from "../infra-integrations/aws/integration/aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
@@ -168,59 +155,7 @@ export const Message = defineMessageUnion({
 	GotGithubMessage: { message: GithubMessage },
 	/** A message for the scrape-target module (Prometheus and WarpStream). */
 	GotPrometheusMessage: { message: PrometheusMessage },
-	GotAwsAccountIdMessage: { message: Field.Message },
-	SubmittedAwsAccount: {},
-	SucceededAwsCreate: { connection: V2AwsConnection },
-	FailedAwsCreate: { error: Schema.String },
-	ClickedAwsAdd: {},
-	ClickedAwsAddCancel: {},
-	ClickedAwsSetup: { id: AwsConnectionId },
-	ClickedAwsSetupClose: {},
-	CompletedLoadAwsSetup: result(V2AwsSetup),
-	CompletedLoadAwsIngest: { id: AwsConnectionId, ...result(V2AwsIngest) },
-	ClickedAwsSetupMethod: { part: AwsSetupPart, method: AwsSetupMethod },
-	ClickedAwsCheck: { id: AwsConnectionId },
-	/** The background re-check of connections still waiting for their stack. */
-	TickedAwsPending: {},
-	/** A streaming connection's status and ingest are read again. */
-	TickedAwsWatch: {},
-	CompletedAwsCheck: {
-		id: AwsConnectionId,
-		quiet: Schema.Boolean,
-		connection: Schema.NullOr(V2AwsConnection),
-		failure: Schema.NullOr(LoadFailure),
-	},
-	GotAwsCopyMessage: { id: Schema.String, message: CopyButton.Message },
-	ClickedAwsDisconnect: { id: AwsConnectionId },
-	GotAwsDisconnectDialogMessage: { message: Dialog.Message },
-	ConfirmedAwsDisconnect: {},
-	CompletedAwsDisconnect: {
-		id: AwsConnectionId,
-		removed: Schema.NullOr(AwsRemovedStack),
-		error: Schema.NullOr(Schema.String),
-	},
-	DismissedAwsRemoved: { connectionId: Schema.String },
-	CompletedReadAwsRemoved: { removed: Schema.Array(AwsRemovedStack) },
-	CompletedWriteAwsRemoved: {},
-	ClickedAwsMetrics: { id: AwsConnectionId },
-	ClickedAwsMetricsCancel: {},
-	ToggledAwsRegion: { id: AwsConnectionId, region: Schema.String },
-	ToggledAwsNamespace: { id: AwsConnectionId, namespace: AwsMetricNamespace },
-	SubmittedAwsMetrics: { id: AwsConnectionId },
-	/** `id`: the connection the save was for, which the editor may have moved on from. */
-	CompletedAwsMetricStream: {
-		id: AwsConnectionId,
-		connection: Schema.NullOr(V2AwsConnection),
-		error: Schema.NullOr(Schema.String),
-	},
-	ToggledAwsModule: { id: AwsConnectionId, module: AwsModule },
-	CompletedAwsModules: {
-		id: AwsConnectionId,
-		connection: Schema.NullOr(V2AwsConnection),
-		error: Schema.NullOr(Schema.String),
-	},
-	/** The connect flow's opt-in for a module on the account about to be connected. */
-	ToggledAwsNewModule: { module: AwsModule },
+	GotAwsMessage: { message: AwsMessage },
 	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
 	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
 	CompletedGcpInventory: result(GcpResourcesResponse),

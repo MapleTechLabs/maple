@@ -17,10 +17,79 @@ import { MapleApiV2Client } from "../../../../platform/api-clients"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
-import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
-import { Message } from "../../../integrations/message"
+import { defineMessageUnion } from "foldkit/message"
+import { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
 
 export { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
+
+const result = <A, AI>(schema: Schema.Codec<A, AI>) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
+
+/** The AWS module's messages, carried in `GotAwsMessage`. */
+export const AwsMessage = defineMessageUnion({
+	GotAwsAccountIdMessage: { message: Field.Message },
+	SubmittedAwsAccount: {},
+	SucceededAwsCreate: { connection: V2AwsConnection },
+	FailedAwsCreate: { error: Schema.String },
+	ClickedAwsAdd: {},
+	ClickedAwsAddCancel: {},
+	ClickedAwsSetup: { id: AwsConnectionId },
+	ClickedAwsSetupClose: {},
+	CompletedLoadAwsSetup: result(V2AwsSetup),
+	CompletedLoadAwsIngest: { id: AwsConnectionId, ...result(V2AwsIngest) },
+	ClickedAwsSetupMethod: { part: AwsSetupPart, method: AwsSetupMethod },
+	ClickedAwsCheck: { id: AwsConnectionId },
+	/** The background re-check of connections still waiting for their stack. */
+	TickedAwsPending: {},
+	/** A streaming connection's status and ingest are read again. */
+	TickedAwsWatch: {},
+	CompletedAwsCheck: {
+		id: AwsConnectionId,
+		quiet: Schema.Boolean,
+		connection: Schema.NullOr(V2AwsConnection),
+		failure: Schema.NullOr(LoadFailure),
+	},
+	GotAwsCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	ClickedAwsDisconnect: { id: AwsConnectionId },
+	GotAwsDisconnectDialogMessage: { message: Dialog.Message },
+	ConfirmedAwsDisconnect: {},
+	CompletedAwsDisconnect: {
+		id: AwsConnectionId,
+		removed: Schema.NullOr(AwsRemovedStack),
+		error: Schema.NullOr(Schema.String),
+	},
+	DismissedAwsRemoved: { connectionId: Schema.String },
+	CompletedReadAwsRemoved: { removed: Schema.Array(AwsRemovedStack) },
+	CompletedWriteAwsRemoved: {},
+	ClickedAwsMetrics: { id: AwsConnectionId },
+	ClickedAwsMetricsCancel: {},
+	ToggledAwsRegion: { id: AwsConnectionId, region: Schema.String },
+	ToggledAwsNamespace: { id: AwsConnectionId, namespace: AwsMetricNamespace },
+	SubmittedAwsMetrics: { id: AwsConnectionId },
+	/** `id`: the connection the save was for, which the editor may have moved on from. */
+	CompletedAwsMetricStream: {
+		id: AwsConnectionId,
+		connection: Schema.NullOr(V2AwsConnection),
+		error: Schema.NullOr(Schema.String),
+	},
+	ToggledAwsModule: { id: AwsConnectionId, module: AwsModule },
+	CompletedAwsModules: {
+		id: AwsConnectionId,
+		connection: Schema.NullOr(V2AwsConnection),
+		error: Schema.NullOr(Schema.String),
+	},
+	/** The connect flow's opt-in for a module on the account about to be connected. */
+	ToggledAwsNewModule: { module: AwsModule },
+})
+export type AwsMessage = typeof AwsMessage.Type
+
+/** The hub's AWS status read: the offer, the modules and every connection. */
+export const AWS_STATUS_READ = {
+	name: "LoadIntegrationsAwsStatus",
+	read: (_refresh: boolean) => Effect.flatMap(MapleApiV2Client, (client) => client.awsIntegration.status()),
+}
 
 /** The regions and namespaces picked for one connection's metric stream, before it is saved. */
 export const AwsSelection = Schema.Struct({
@@ -197,22 +266,24 @@ const messageOf = (error: unknown, fallback: string) => {
 
 export const CreateAwsConnection = Command.define("CreateAwsConnection", {
 	args: { request: V2AwsCreateConnectionRequest },
-	messages: [Message.SucceededAwsCreate, Message.FailedAwsCreate],
+	messages: [AwsMessage.SucceededAwsCreate, AwsMessage.FailedAwsCreate],
 	execute: ({ request }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const connection = yield* client.awsIntegration.createConnection({ payload: request })
-			return Message.SucceededAwsCreate({ connection })
+			return AwsMessage.SucceededAwsCreate({ connection })
 		}).pipe(
 			Effect.catch((error) =>
-				Effect.succeed(Message.FailedAwsCreate({ error: messageOf(error, "Couldn't connect AWS.") })),
+				Effect.succeed(
+					AwsMessage.FailedAwsCreate({ error: messageOf(error, "Couldn't connect AWS.") }),
+				),
 			),
 		),
 })
 
 export const UpdateAwsMetricStream = Command.define("UpdateAwsMetricStream", {
 	args: { id: AwsConnectionId, metricStream: AwsMetricStream },
-	messages: [Message.CompletedAwsMetricStream],
+	messages: [AwsMessage.CompletedAwsMetricStream],
 	execute: ({ id, metricStream }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -223,19 +294,20 @@ export const UpdateAwsMetricStream = Command.define("UpdateAwsMetricStream", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedAwsMetricStream({
+					AwsMessage.CompletedAwsMetricStream({
 						id,
 						connection: null,
 						error: messageOf(error, "Couldn't turn on the metric stream."),
 					}),
-				onSuccess: (connection) => Message.CompletedAwsMetricStream({ id, connection, error: null }),
+				onSuccess: (connection) =>
+					AwsMessage.CompletedAwsMetricStream({ id, connection, error: null }),
 			}),
 		),
 })
 
 export const UpdateAwsModules = Command.define("UpdateAwsModules", {
 	args: { id: AwsConnectionId, modules: Schema.Array(AwsModule) },
-	messages: [Message.CompletedAwsModules],
+	messages: [AwsMessage.CompletedAwsModules],
 	execute: ({ id, modules }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -243,40 +315,40 @@ export const UpdateAwsModules = Command.define("UpdateAwsModules", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedAwsModules({
+					AwsMessage.CompletedAwsModules({
 						id,
 						connection: null,
 						error: messageOf(error, "Couldn't change what Maple reads."),
 					}),
-				onSuccess: (connection) => Message.CompletedAwsModules({ id, connection, error: null }),
+				onSuccess: (connection) => AwsMessage.CompletedAwsModules({ id, connection, error: null }),
 			}),
 		),
 })
 
 export const LoadAwsSetup = Command.define("LoadAwsSetup", {
 	args: { key: Schema.String, id: AwsConnectionId },
-	messages: [Message.CompletedLoadAwsSetup],
+	messages: [AwsMessage.CompletedLoadAwsSetup],
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.awsIntegration.setup({ params: { id } })
-		}).pipe(settleTo((result) => Message.CompletedLoadAwsSetup({ key, result }))),
+		}).pipe(settleTo((result) => AwsMessage.CompletedLoadAwsSetup({ key, result }))),
 })
 
 export const LoadAwsIngest = Command.define("LoadAwsIngest", {
 	args: { key: Schema.String, id: AwsConnectionId },
-	messages: [Message.CompletedLoadAwsIngest],
+	messages: [AwsMessage.CompletedLoadAwsIngest],
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.awsIntegration.ingest({ params: { id } })
-		}).pipe(settleTo((result) => Message.CompletedLoadAwsIngest({ id, key, result }))),
+		}).pipe(settleTo((result) => AwsMessage.CompletedLoadAwsIngest({ id, key, result }))),
 })
 
 /** `quiet`: the background re-check while a setup is open, which raises no toast. */
 export const CheckAwsConnection = Command.define("CheckAwsConnection", {
 	args: { id: AwsConnectionId, quiet: Schema.Boolean },
-	messages: [Message.CompletedAwsCheck],
+	messages: [AwsMessage.CompletedAwsCheck],
 	execute: ({ id, quiet }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -284,16 +356,21 @@ export const CheckAwsConnection = Command.define("CheckAwsConnection", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedAwsCheck({ id, quiet, connection: null, failure: toLoadFailure(error) }),
+					AwsMessage.CompletedAwsCheck({
+						id,
+						quiet,
+						connection: null,
+						failure: toLoadFailure(error),
+					}),
 				onSuccess: (connection) =>
-					Message.CompletedAwsCheck({ id, quiet, connection, failure: null }),
+					AwsMessage.CompletedAwsCheck({ id, quiet, connection, failure: null }),
 			}),
 		),
 })
 
 export const DeleteAwsConnection = Command.define("DeleteAwsConnection", {
 	args: { id: AwsConnectionId, accountId: Schema.String },
-	messages: [Message.CompletedAwsDisconnect],
+	messages: [AwsMessage.CompletedAwsDisconnect],
 	execute: ({ id, accountId }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -301,13 +378,13 @@ export const DeleteAwsConnection = Command.define("DeleteAwsConnection", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedAwsDisconnect({
+					AwsMessage.CompletedAwsDisconnect({
 						id,
 						removed: null,
 						error: messageOf(error, "Couldn't disconnect AWS."),
 					}),
 				onSuccess: (response) =>
-					Message.CompletedAwsDisconnect({
+					AwsMessage.CompletedAwsDisconnect({
 						id,
 						removed: { connectionId: id, accountId, cleanupScript: response.cleanup_script },
 						error: null,
@@ -323,10 +400,10 @@ const encodeRemoved = Schema.encodeSync(Schema.fromJsonString(Schema.Array(AwsRe
 
 export const ReadAwsRemoved = Command.define("ReadAwsRemovedStacks", {
 	args: { orgId: Schema.String },
-	messages: [Message.CompletedReadAwsRemoved],
+	messages: [AwsMessage.CompletedReadAwsRemoved],
 	execute: ({ orgId }) =>
 		Effect.sync(() =>
-			Message.CompletedReadAwsRemoved({
+			AwsMessage.CompletedReadAwsRemoved({
 				removed: Option.getOrElse(
 					Option.flatMap(readLocalStorage(storageKey(orgId)), decodeRemoved),
 					() => [],
@@ -337,11 +414,11 @@ export const ReadAwsRemoved = Command.define("ReadAwsRemovedStacks", {
 
 export const WriteAwsRemoved = Command.define("WriteAwsRemovedStacks", {
 	args: { orgId: Schema.String, removed: Schema.Array(AwsRemovedStack) },
-	messages: [Message.CompletedWriteAwsRemoved],
+	messages: [AwsMessage.CompletedWriteAwsRemoved],
 	execute: ({ orgId, removed }) =>
 		Effect.sync(() => {
 			// Best effort: private mode and blocked site data throw here.
 			writeLocalStorage(storageKey(orgId), encodeRemoved(removed))
-			return Message.CompletedWriteAwsRemoved()
+			return AwsMessage.CompletedWriteAwsRemoved()
 		}),
 })

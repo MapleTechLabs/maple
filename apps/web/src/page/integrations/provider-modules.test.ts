@@ -9,8 +9,15 @@ import {
 	CloudflareUsageResponse,
 	GithubInstallationSelection,
 } from "@maple/domain/http"
-import { V2ChatConnectorList, V2PlanetScaleIntegration, V2ScrapeTarget } from "@maple/domain/http/v2"
-import { SupabaseProjectRef } from "@maple/primitives"
+import {
+	Timestamp,
+	type V2AwsConnection,
+	V2ChatConnectorList,
+	V2PlanetScaleIntegration,
+	V2ScrapeTarget,
+} from "@maple/domain/http/v2"
+import { AwsMetricStream } from "@maple/domain/aws"
+import { AwsAccountId, AwsConnectionId, SupabaseProjectRef } from "@maple/primitives"
 import { Array as Arr, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
@@ -24,6 +31,7 @@ import { cardStatusOf, overviewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
+	AWS_PROVIDER,
 	CHAT_PROVIDER,
 	GITHUB_PROVIDER,
 	PROMETHEUS_PROVIDER,
@@ -41,6 +49,7 @@ import { init, update } from "./update"
 import { clickedConnect, closedPopup, receivedCallback, receivedRelay } from "./update-connect"
 import { GithubMessage } from "./github"
 import { PrometheusMessage } from "./prometheus"
+import { AwsMessage } from "../infra-integrations/aws/integration/aws"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -59,6 +68,7 @@ const searchConsole = (message: SearchConsoleMessage) => Message.GotSearchConsol
 const vercel = (message: VercelMessage) => Message.GotVercelMessage({ message })
 const planetscale = (message: PlanetscaleMessage) => Message.GotPlanetscaleMessage({ message })
 const scrape = (message: PrometheusMessage) => Message.GotPrometheusMessage({ message })
+const aws = (message: AwsMessage) => Message.GotAwsMessage({ message })
 
 const planetscaleStatus = (connected: boolean) =>
 	Schema.decodeSync(V2PlanetScaleIntegration)({
@@ -396,6 +406,97 @@ describe("provider modules", () => {
 			label: "Via Prometheus",
 			variant: "outline",
 		})
+	})
+
+	test("AWS is a module: its setup and stream polls, its badges, and a module change in place", () => {
+		const id = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const connection = (overrides: Partial<V2AwsConnection>): V2AwsConnection => ({
+			id,
+			object: "aws_connection",
+			account_id: Schema.decodeSync(AwsAccountId)("123456789012"),
+			role_arn: "arn:aws:iam::123456789012:role/MapleIntegration-018f2b3c4d5e4f708192a3b4",
+			oidc_issuer: "https://api.maple.dev/oidc/aws",
+			oidc_subject: "aws-connection:018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+			modules: [],
+			granted_modules: null,
+			template_version: null,
+			setup_outdated: false,
+			verified_at: null,
+			last_checked_at: null,
+			last_check_error: null,
+			metric_stream: null,
+			metric_stream_changed_at: null,
+			metrics_last_received_at: null,
+			metrics_last_error: null,
+			created_at: Schema.decodeSync(Timestamp)("2026-09-21T12:00:00.000Z"),
+			...overrides,
+		})
+		const withAws = (model: Model, connections: ReadonlyArray<V2AwsConnection>) =>
+			pageUpdate(
+				model,
+				Message.CompletedLoadAws({
+					key: model.statuses.aws.key ?? "",
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [{ module: "cost", title: "Cost", summary: "", available: true }],
+						connections,
+					}),
+				}),
+			).model
+		expect(providerModuleOf("aws")?.id).toBe("aws")
+		const [pendingPoll, watchPoll] = AWS_PROVIDER.tickers
+		const pending = withAws(init({ search: { integration: "aws" } }, context).model, [connection({})])
+		// The setup re-check runs only while this connection's setup is open.
+		expect(pendingPoll?.isActive(pending)).toBe(false)
+		const opened = pageUpdate(pending, aws(AwsMessage.ClickedAwsSetup({ id }))).model
+		expect(pendingPoll?.isActive(opened)).toBe(true)
+		expect(names(pendingPoll === undefined ? [] : pageUpdate(opened, pendingPoll.tick).commands)).toEqual(
+			["CheckAwsConnection"],
+		)
+		expect(cardStatusOf(opened.statuses, "aws", NOW)).toEqual({ label: "Finish setup", variant: "warn" })
+		expect(overviewOf(opened.statuses, NOW, "aws")).toMatchObject({ health: "pending" })
+		// A verified, streaming connection is watched; elsewhere nothing is.
+		const streaming = connection({
+			verified_at: Schema.decodeSync(Timestamp)("2026-09-30T12:00:00.000Z"),
+			metric_stream: Schema.decodeSync(AwsMetricStream)({
+				regions: ["us-east-1"],
+				namespaces: ["AWS/ECS"],
+			}),
+			metrics_last_received_at: Schema.decodeSync(Timestamp)("2026-10-01T11:59:00.000Z"),
+		})
+		const watched = withAws(init({ search: { integration: "aws" } }, context).model, [streaming])
+		expect(watchPoll?.isActive(watched)).toBe(true)
+		expect(watchPoll?.isActive(withAws(init({ search: {} }, context).model, [streaming]))).toBe(false)
+		// Its tick re-reads the status.
+		expect(names(watchPoll === undefined ? [] : pageUpdate(watched, watchPoll.tick).commands)).toContain(
+			"LoadIntegrationsAwsStatus",
+		)
+		expect(cardStatusOf(watched.statuses, "aws", NOW)).toEqual({ label: "1 account", variant: "ok" })
+		// An answered module change shows in the status before its re-read lands.
+		const changed = pageUpdate(
+			watched,
+			aws(
+				AwsMessage.CompletedAwsModules({
+					id,
+					connection: { ...streaming, modules: ["cost"] },
+					error: null,
+				}),
+			),
+		)
+		const connections = AsyncData.getOrElse(
+			AsyncData.map(changed.model.statuses.aws.data, (status) => status.connections),
+			() => [],
+		)
+		expect(connections[0]?.modules).toEqual(["cost"])
+		expect(names(changed.commands)).toContain("LoadAwsSetup")
+		expect(changed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Cost turned on",
+				description: "Run the setup again in AWS to grant it.",
+			}),
+		)
 	})
 
 	test("a module drives the shared disconnect dialog and owns its confirm", () => {

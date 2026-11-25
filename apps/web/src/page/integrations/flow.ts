@@ -4,7 +4,6 @@ import { overviewOf } from "./derive"
 import type { Model } from "./model"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlow } from "../infra-integrations/gcp/integration/flow-gcp"
-import { awsFlow } from "../infra-integrations/aws/integration/flow-aws"
 
 // Where a source stands in `/sources/new`'s flow: Connect, Choose data, Go live.
 // Each source answers it from its own status; the page frames the steps and owns which one shows.
@@ -56,8 +55,6 @@ export const flowOf = (model: Model, integration: DataIntegration, context: Flow
 	const flow = providerModuleOf(integration)?.flow ?? null
 	if (flow !== null) return flow(model, integration, context)
 	switch (integration) {
-		case "aws":
-			return awsFlow(model)
 		case "gcp":
 			return gcpFlow(model)
 		default:

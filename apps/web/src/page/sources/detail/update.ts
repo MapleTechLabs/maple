@@ -29,6 +29,7 @@ import {
 } from "../kit/shared"
 import {
 	initEmbedded,
+	AwsMessage,
 	awsConnectionsOf,
 	gcpConnectors,
 	Message as IntegrationMessage,
@@ -369,8 +370,11 @@ const afterConnectionWrite = (
 	step: Return,
 	context: PageContext,
 ): Return => {
-	// Scrape-target writes come wrapped for their module.
-	const child = message._tag === "GotPrometheusMessage" ? message.message : message
+	// Scrape-target and AWS writes come wrapped for their module.
+	const child =
+		message._tag === "GotPrometheusMessage" || message._tag === "GotAwsMessage"
+			? message.message
+			: message
 	// An AWS check rewrites the source's health; a background one only matters once it verifies. A
 	// click during a background check makes it the user's, which only the card's model knows.
 	const isAwsCheck =
@@ -436,7 +440,9 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 			model,
 			Integrations.update(
 				model.connection,
-				IntegrationMessage.ClickedAwsDisconnect({ id: connection.id }),
+				IntegrationMessage.GotAwsMessage({
+					message: AwsMessage.ClickedAwsDisconnect({ id: connection.id }),
+				}),
 				context,
 			),
 		)

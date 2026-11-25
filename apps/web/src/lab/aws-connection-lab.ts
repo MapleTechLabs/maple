@@ -14,6 +14,7 @@ import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import {
+	AwsMessage,
 	CheckAwsConnection,
 	CreateAwsConnection,
 	LoadAwsIngest,
@@ -33,6 +34,8 @@ import type { Resources } from "../platform/resources"
 import { AppRoute } from "../route"
 import { LAB_CONTEXT } from "./gcp-host"
 import { keepLocal } from "./local-commands"
+
+const awsMsg = (message: AwsMessage) => IntegrationsMessage.GotAwsMessage({ message })
 
 // `/lab/aws-connection`: the AWS integration around its Cost module, over one synthetic account
 // (`?state=`): the connected card and the connect flow, each with and without the module offered.
@@ -272,20 +275,24 @@ const answerOf = (fixture: Fixture, command: Pending): Option.Option<Answer> => 
 			}))
 		case LoadAwsIngest.name:
 			return Option.map(keyedIdArgs(command.args), ({ key, id }) => ({
-				message: IntegrationsMessage.CompletedLoadAwsIngest({
-					id,
-					key,
-					result: Result.succeed(INGEST),
-				}),
+				message: awsMsg(
+					AwsMessage.CompletedLoadAwsIngest({
+						id,
+						key,
+						result: Result.succeed(INGEST),
+					}),
+				),
 				fixture,
 			}))
 		case LoadAwsSetup.name:
 			return Option.flatMap(keyedIdArgs(command.args), ({ key, id }) =>
 				Option.map(found(fixture, id), (connection) => ({
-					message: IntegrationsMessage.CompletedLoadAwsSetup({
-						key,
-						result: Result.succeed(setupOf(connection)),
-					}),
+					message: awsMsg(
+						AwsMessage.CompletedLoadAwsSetup({
+							key,
+							result: Result.succeed(setupOf(connection)),
+						}),
+					),
 					fixture,
 				})),
 			)
@@ -299,7 +306,7 @@ const answerOf = (fixture: Fixture, command: Pending): Option.Option<Answer> => 
 							before.granted_modules !== null && !sameModules(modules, before.granted_modules),
 					}
 					return {
-						message: IntegrationsMessage.CompletedAwsModules({ id, connection, error: null }),
+						message: awsMsg(AwsMessage.CompletedAwsModules({ id, connection, error: null })),
 						fixture: withConnection(fixture, connection),
 					}
 				}),
@@ -317,12 +324,14 @@ const answerOf = (fixture: Fixture, command: Pending): Option.Option<Answer> => 
 						last_checked_at: at(0),
 					}
 					return {
-						message: IntegrationsMessage.CompletedAwsCheck({
-							id,
-							quiet,
-							connection,
-							failure: null,
-						}),
+						message: awsMsg(
+							AwsMessage.CompletedAwsCheck({
+								id,
+								quiet,
+								connection,
+								failure: null,
+							}),
+						),
 						fixture: withConnection(fixture, connection),
 					}
 				}),
@@ -346,7 +355,7 @@ const answerOf = (fixture: Fixture, command: Pending): Option.Option<Answer> => 
 					created_at: at(0),
 				}
 				return {
-					message: IntegrationsMessage.SucceededAwsCreate({ connection }),
+					message: awsMsg(AwsMessage.SucceededAwsCreate({ connection })),
 					fixture: withConnection(fixture, connection),
 				}
 			})

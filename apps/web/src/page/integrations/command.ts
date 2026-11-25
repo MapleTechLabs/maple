@@ -20,6 +20,7 @@ import { FLEET_STATUS_READ } from "./fleet/fleet"
 import { CHAT_STATUS_READ } from "./chat"
 import { GITHUB_STATUS_READ } from "./github"
 import { SCRAPE_TARGETS_STATUS_READ } from "./prometheus"
+import { AWS_STATUS_READ } from "../infra-integrations/aws/integration/aws"
 import { VERCEL_STATUS_READ } from "../infra-integrations/vercel/integration/vercel"
 import { PLANETSCALE_STATUS_READ } from "../infra-integrations/planetscale/integration/planetscale"
 import { CLOUDFLARE_STATUS_READ } from "../infra-integrations/cloudflare/integration/cloudflare"
@@ -73,9 +74,7 @@ export const STATUS_READS = {
 		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.gcp({ refresh })),
 	),
 	supabase: statusRead(SUPABASE.statusRead.name, Message.CompletedLoadSupabase, SUPABASE.statusRead.read),
-	aws: statusRead("LoadIntegrationsAwsStatus", Message.CompletedLoadAws, () =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.awsIntegration.status()),
-	),
+	aws: statusRead(AWS_STATUS_READ.name, Message.CompletedLoadAws, AWS_STATUS_READ.read),
 	/** The poller's inventory of PlanetScale databases. */
 	planetscaleDatabases: statusRead(
 		"LoadIntegrationsPlanetscaleDatabases",
