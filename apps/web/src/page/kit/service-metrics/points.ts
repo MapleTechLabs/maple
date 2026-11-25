@@ -37,6 +37,9 @@ export const Commit = Schema.Struct({
 	authorLogin: Schema.NullOr(Schema.String),
 	authorAvatarUrl: Schema.NullOr(Schema.String),
 	committedAt: Schema.Number,
+	/** The connected repository the commit lives in, as `owner/name`. */
+	repoFullName: Schema.String,
+	htmlUrl: Schema.String,
 })
 export type Commit = typeof Commit.Type
 
