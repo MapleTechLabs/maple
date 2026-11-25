@@ -34,6 +34,7 @@ export const apiKeyScopeFamilies = [
 	{ id: "integrations", label: "Integrations", write: "integrations:manage" },
 	{ id: "query", label: "Query", read: "telemetry:read" },
 	{ id: "organization", label: "Organization", write: "organization:manage" },
+	{ id: "retention", label: "Retention", read: "telemetry:read", write: "retention:manage" },
 	{ id: "audit_log", label: "Audit log", read: "audit_log:read" },
 ] as const satisfies ReadonlyArray<{
 	readonly id: string

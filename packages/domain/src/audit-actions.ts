@@ -34,6 +34,8 @@ export const AuditResources = {
 	anomaly_incident: { prefix: PublicIdPrefixes.anomalyIncident, verbs: ["resolved"] },
 	/** Org-singleton settings, no resource id. */
 	anomaly_settings: { verbs: ["updated"] },
+	/** The organization's retention, or one source's (`source_updated`, the source id in `metadata`). */
+	retention: { verbs: ["updated", "source_updated"] },
 	/** Refused requests, recorded by the auth layers; the route is in `metadata`. */
 	api: { verbs: ["request"] },
 	api_key: { prefix: PublicIdPrefixes.apiKey, verbs: ["created", "rolled", "revoked"] },
@@ -291,6 +293,7 @@ export const AuditResourceLabels = {
 	alert_maintenance_window: "Maintenance window",
 	anomaly_incident: "Anomaly",
 	anomaly_settings: "Anomaly detection",
+	retention: "Retention",
 	api: "API",
 	api_key: "API key",
 	attribute_mapping: "Attribute mapping",
@@ -385,6 +388,8 @@ export const AuditActionLabels = {
 	"alert_maintenance_window.deleted": "Deleted maintenance window",
 	"anomaly_incident.resolved": "Resolved anomaly",
 	"anomaly_settings.updated": "Updated anomaly detection",
+	"retention.updated": "Changed retention",
+	"retention.source_updated": "Changed a source's retention",
 	"api.request": "Made API request",
 	"api_key.created": "Created API key",
 	"api_key.rolled": "Rolled API key",

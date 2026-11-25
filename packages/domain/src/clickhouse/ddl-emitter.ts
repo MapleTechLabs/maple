@@ -315,9 +315,30 @@ export interface ResourceContent {
 	readonly content: string
 }
 
+const ROW_RETENTION_PARTITION = /^\(RetentionDays, (toDate\(\w+\))\)$/
+const RETENTION_DAYS_DEFAULT = /^RetentionDays UInt16 DEFAULT (\d+)\b/
+
+/**
+ * A table partitioned by `RetentionDays` keeps one period here: self-managed inserts never stamp
+ * it (`SELF_MANAGED_INSERT_OMITTED_COLUMNS`), so every row holds the column default.
+ */
+const withSelfManagedRetention = (parsed: ParsedDatasourceSchema): ParsedDatasourceSchema => {
+	const day = Option.getOrUndefined(
+		Option.flatMapNullishOr(Str.match(ROW_RETENTION_PARTITION)(parsed.partitionKey), (m) => m[1]),
+	)
+	const days = Option.getOrUndefined(
+		Arr.findFirst(parsed.columns, (column) =>
+			Option.flatMapNullishOr(Str.match(RETENTION_DAYS_DEFAULT)(Str.trim(column)), (m) => m[1]),
+		),
+	)
+	return day === undefined || days === undefined
+		? parsed
+		: { ...parsed, partitionKey: day, ttl: `${day} + INTERVAL ${days} DAY` }
+}
+
 export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOptions): string => {
 	const opts = resolve(options)
-	const parsed = parseDatasource(datasource.content)
+	const parsed = withSelfManagedRetention(parseDatasource(datasource.content))
 
 	const ifNotExists = opts.ifNotExists ? "IF NOT EXISTS " : ""
 	const tableRef = qualified(datasource.name, opts.database)

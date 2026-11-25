@@ -72,6 +72,9 @@ const EXPECTED_TOPLEVEL_KEYS = {
 		"links_trace_state",
 		"links_attributes",
 		"retention_days",
+		// Not in the Rust list yet: the encoder omits it and the column default (365) fills it until
+		// the gateway stamps the source's events period. Both lists hold it from then on.
+		"events_retention_days",
 	]),
 	metrics_sum: new Set([...metricCommonKeys(), "value", "aggregation_temporality", "is_monotonic"]),
 	metrics_gauge: new Set([...metricCommonKeys(), "value"]),

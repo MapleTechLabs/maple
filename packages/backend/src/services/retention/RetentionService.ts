@@ -1,4 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import * as Orm from "@maple-dev/effect-orm/database"
 import { OrgRetentionPolicies, Sources } from "@maple/db/tables"
 import { RetentionInvalidError, RetentionPersistenceError, SourceNotFoundError } from "@maple/domain/http"
 import {
@@ -130,6 +131,16 @@ export class ReadHorizonMemo extends Context.Reference<ReadHorizonMemoState>(
 	{ defaultValue: () => isolateReadHorizonMemo },
 ) {}
 
+/** A retention write: what was set before it, and the policy after. */
+export interface RetentionWrite {
+	readonly before: RetentionOverrides
+	readonly policy: RetentionPolicy
+}
+
+/** Serializes an org's retention writes within their transaction. */
+const lockRetention = (db: MapleDb, orgId: OrgId) =>
+	db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('retention'))`)
+
 export interface RetentionServiceApi {
 	readonly get: (orgId: OrgId) => Effect.Effect<RetentionPolicy, RetentionPersistenceError>
 	/**
@@ -143,6 +154,25 @@ export interface RetentionServiceApi {
 		userId: UserId,
 		overrides: RetentionOverrides,
 	) => Effect.Effect<RetentionPolicy, RetentionPersistenceError | RetentionInvalidError>
+	/**
+	 * Changes what the organization set from what is stored, under a per-org lock, so two
+	 * concurrent edits of different signals both land. Returns what was set before.
+	 */
+	readonly updateOrganization: (
+		orgId: OrgId,
+		userId: UserId,
+		update: (current: RetentionOverrides) => RetentionOverrides,
+	) => Effect.Effect<RetentionWrite, RetentionPersistenceError | RetentionInvalidError>
+	/** {@link updateOrganization} for one source. */
+	readonly updateSource: (
+		orgId: OrgId,
+		userId: UserId,
+		sourceId: SourceId,
+		update: (current: RetentionOverrides) => RetentionOverrides,
+	) => Effect.Effect<
+		RetentionWrite,
+		RetentionPersistenceError | RetentionInvalidError | SourceNotFoundError
+	>
 	/** Replaces one source's overrides; an empty set makes it inherit again. */
 	readonly setSource: (
 		orgId: OrgId,
@@ -425,18 +455,26 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 					return Option.getOrElse(committed, () => written)
 				})
 
-			const setOrganization = Effect.fn("RetentionService.setOrganization")(function* (
+			const updateOrganization = Effect.fn("RetentionService.updateOrganization")(function* (
 				orgId: OrgId,
 				userId: UserId,
-				input: RetentionOverrides,
+				update: (current: RetentionOverrides) => RetentionOverrides,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
-				const overrides = yield* validOverrides(input)
 				const now = yield* Clock.currentTimeMillis
-				// The write and the policy it returns commit together: a failed read undoes the write.
-				const policy = yield* dbExecute((db) =>
+				// The read, the write and the policy it returns commit together under the org's lock.
+				const written = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							yield* lockRetention(db, orgId)
+							const stored = yield* db.run(
+								PG.from(OrgRetentionPolicies)
+									.select(($) => ({ retentionDays: $.retentionDays }))
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							)
+							const before = stored[0]?.retentionDays ?? NO_OVERRIDES
+							const overrides = yield* validOverrides(update(before))
 							yield* db.run(
 								PG.insertInto(OrgRetentionPolicies)
 									.values({
@@ -455,51 +493,84 @@ export class RetentionService extends Context.Service<RetentionService, Retentio
 										}),
 									}),
 							)
-							return yield* readPolicy(db, orgId)
+							return { before, policy: yield* readPolicy(db, orgId) }
 						}),
-						{ isolationLevel: "repeatable read" },
 					),
 				)
-				return yield* rememberPolicy(orgId, policy)
+				const policy = yield* rememberPolicy(orgId, written.policy)
+				return { before: written.before, policy } satisfies RetentionWrite
 			})
 
-			const setSource = Effect.fn("RetentionService.setSource")(function* (
+			const updateSource = Effect.fn("RetentionService.updateSource")(function* (
 				orgId: OrgId,
 				userId: UserId,
 				sourceId: SourceId,
-				input: RetentionOverrides,
+				update: (current: RetentionOverrides) => RetentionOverrides,
 			) {
 				yield* Effect.annotateCurrentSpan({
 					orgId,
 					"tenant.userId": userId,
 					"maple.source.id": sourceId,
 				})
-				const overrides = yield* validOverrides(input)
 				const now = yield* Clock.currentTimeMillis
-				const policy = yield* dbExecute((db) =>
+				const written = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const updated = yield* db.run(
-								PG.update(Sources)
-									.set({ retentionDays: overrides, updatedAt: now, updatedBy: userId })
+							yield* lockRetention(db, orgId)
+							const stored = yield* db.run(
+								PG.from(Sources)
+									.select(($) => ({ retentionDays: $.retentionDays }))
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
-									.returning(($) => ({ id: $.id })),
+									.limit(1),
 							)
-							if (updated.length === 0) {
+							const row = stored[0]
+							if (row === undefined) {
 								return yield* new SourceNotFoundError({
 									sourceId,
 									message: "Source not found",
 								})
 							}
-							return yield* readPolicy(db, orgId)
+							const overrides = yield* validOverrides(update(row.retentionDays))
+							yield* db.run(
+								PG.update(Sources)
+									.set({ retentionDays: overrides, updatedAt: now, updatedBy: userId })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)]),
+							)
+							return { before: row.retentionDays, policy: yield* readPolicy(db, orgId) }
 						}),
-						{ isolationLevel: "repeatable read" },
 					),
 				)
-				return yield* rememberPolicy(orgId, policy)
+				const policy = yield* rememberPolicy(orgId, written.policy)
+				return { before: written.before, policy } satisfies RetentionWrite
 			})
 
-			return { get, readHorizon, setOrganization, setSource } satisfies RetentionServiceApi
+			/** Replaces what the organization set. */
+			const setOrganization = (orgId: OrgId, userId: UserId, overrides: RetentionOverrides) =>
+				Effect.map(
+					updateOrganization(orgId, userId, () => overrides),
+					(written) => written.policy,
+				)
+
+			/** Replaces one source's overrides; an empty set makes it inherit again. */
+			const setSource = (
+				orgId: OrgId,
+				userId: UserId,
+				sourceId: SourceId,
+				overrides: RetentionOverrides,
+			) =>
+				Effect.map(
+					updateSource(orgId, userId, sourceId, () => overrides),
+					(written) => written.policy,
+				)
+
+			return {
+				get,
+				readHorizon,
+				setOrganization,
+				setSource,
+				updateOrganization,
+				updateSource,
+			} satisfies RetentionServiceApi
 		}),
 	},
 ) {

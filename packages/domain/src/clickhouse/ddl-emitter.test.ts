@@ -39,6 +39,21 @@ describe("ClickHouse DDL emitter", () => {
 		expect(ddl).toContain("TTL toDate(Timestamp) + INTERVAL 30 DAY")
 	})
 
+	it("keeps one period per table where the managed warehouse expires each row on its own", () => {
+		const manifest = Effect.runSync(buildTinybirdProjectManifest)
+		const productEvents = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "product_events"),
+		)
+		expect(productEvents?.content).toContain(
+			'ENGINE_TTL "toDate(Timestamp) + toIntervalDay(RetentionDays)"',
+		)
+
+		const ddl = emitCreateTable(productEvents!)
+		expect(ddl).toContain("RetentionDays UInt16 DEFAULT 365")
+		expect(ddl).toContain("PARTITION BY toDate(Timestamp)\n")
+		expect(ddl).toContain("TTL toDate(Timestamp) + INTERVAL 365 DAY")
+	})
+
 	it("emits Null-engine ingestion bridges without a sorting key", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
 		const ingress = Option.getOrUndefined(

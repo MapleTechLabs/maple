@@ -16,7 +16,8 @@ import { platformMeta } from "../kit/platforms"
 import { hasToken, pausedLabel } from "../kit/shared"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
-import { isSettingsDirty } from "./update"
+import { isTabDirty } from "./update"
+import { retentionSection } from "./view-retention"
 import type { Model, RevealedToken, SettingsForm } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -208,13 +209,14 @@ export const settingsTab = (h: H, model: Model, source: V2Source, timeZone: stri
 	const isToken = hasToken(source)
 	const isValid = Str.trim(form.name).length > 0 && (!isToken || rulesOutcome(form.rules).valid)
 	const save = saveBar(h, {
-		isDirty: isSettingsDirty(form),
-		isPending: form.isSaving,
+		isDirty: isTabDirty(model),
+		isPending: form.isSaving || model.retention?.isSaving === true,
 		isSaveDisabled: !isValid,
 		onDiscard: Message.ClickedDiscardSettings(),
 		onSave: Message.SubmittedSettings(),
 	})
-	// Token sources save the rules too; the rest save General alone.
+	const retention = retentionSection(h, model, source, { nowMs: model.nowMs ?? 0, timeZone })
+	// Token sources save the rules too; the rest save General alone. Retention saves beside either.
 	const sections: ReadonlyArray<Html> = isToken
 		? [
 				generalSection(h, form, source),
@@ -234,14 +236,15 @@ export const settingsTab = (h: H, model: Model, source: V2Source, timeZone: stri
 						}),
 					],
 				),
+				retention,
 				deleteSection(h, source),
 				...save,
 			]
 		: [
 				generalSection(h, form, source),
 				...(source.is_default
-					? [defaultRulesSection(h)]
-					: [ingestionSection(h, model, source, timeZone), deleteSection(h, source)]),
+					? [defaultRulesSection(h), retention]
+					: [ingestionSection(h, model, source, timeZone), retention, deleteSection(h, source)]),
 				...save,
 			]
 	return h.form(

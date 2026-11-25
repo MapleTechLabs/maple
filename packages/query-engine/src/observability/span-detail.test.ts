@@ -128,17 +128,30 @@ describe("spanDetail", () => {
 		}),
 	)
 
-	it.effect("reaches a trace past the default 30 days when given a longer lookback", () =>
+	it.effect("reaches a trace past 30 days unless the org's horizon is shorter", () =>
 		Effect.gen(function* () {
 			// The fixture trace is 66 days old by then.
 			const nowMs = Date.parse("2026-05-25T00:00:00Z")
-			const byDefault = yield* run([], undefined, { boundedHit: true }, { nowMs })
-			assert.isFalse(byDefault.found)
+			const within30Days = yield* run(
+				[],
+				undefined,
+				{ boundedHit: true },
+				{ nowMs, lookbackHours: 30 * 24 },
+			)
+			assert.isFalse(within30Days.found)
 			const sqls: string[] = []
 			const kept = yield* run(sqls, undefined, { boundedHit: true }, { nowMs, lookbackHours: 90 * 24 })
 			assert.isTrue(kept.found)
-			// The widest tier starts 90 days back, where the default stopped at 30.
+			// The widest tier starts 90 days back.
 			assert.include(sqls[2], "Bucket >= toStartOfFiveMinutes(toDateTime64('2026-02-24 00:00:00', 9))")
+			// Without a horizon, the longest retention: 730 days back.
+			const defaultSqls: string[] = []
+			const byDefault = yield* run(defaultSqls, undefined, { boundedHit: true }, { nowMs })
+			assert.isTrue(byDefault.found)
+			assert.include(
+				defaultSqls[2],
+				"Bucket >= toStartOfFiveMinutes(toDateTime64('2024-05-25 00:00:00', 9))",
+			)
 		}),
 	)
 

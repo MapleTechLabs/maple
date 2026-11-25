@@ -17,7 +17,7 @@ import type { InspectTraceOutput, SpanNode, TimeRange } from "./types"
 import { toLogEntry } from "./row-mappers"
 import { withKeyLogAttributes } from "./search-logs"
 import { parseProjectedAttributes } from "../row-text"
-import { TRACE_RETENTION_HOURS, locateTrace } from "./locate-trace"
+import { TRACE_LOOKUP_MAX_HOURS, locateTrace } from "./locate-trace"
 
 import { formatWarehouseDateTime } from "../datetime"
 const SKIP_ATTR_PREFIXES = ["http.request.header.", "http.response.header.", "signoz."]
@@ -61,7 +61,7 @@ export interface InspectTraceOptions {
 	/**
 	 * How far back `trace_index` is searched when there is no hint (or the hint
 	 * missed); the tree is then read from the trace's own bounds. The org's traces
-	 * retention where the caller knows it. Defaults to 30 days.
+	 * read horizon where the caller knows it, else the longest retention (730 days).
 	 */
 	readonly widenedLookbackHours?: number
 	/**
@@ -118,7 +118,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	const nowMs = yield* Clock.currentTimeMillis
 	const rangeHours = options?.rangeHours ?? DEFAULT_RANGE_HOURS
 	const hintMs = options?.timestampHint?.getTime()
-	const widenedHours = options?.widenedLookbackHours ?? TRACE_RETENTION_HOURS
+	const widenedHours = options?.widenedLookbackHours ?? TRACE_LOOKUP_MAX_HOURS
 	const oldestMs = Math.min(
 		nowMs - widenedHours * HOUR_MS,
 		hintMs === undefined ? nowMs : hintMs - HINT_LOOKBACK_SLACK_HOURS * HOUR_MS,

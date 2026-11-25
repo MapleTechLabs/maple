@@ -191,8 +191,9 @@ describe("inspectTrace", () => {
 			)
 			assert.strictEqual(result.spanCount, 1)
 			assert.lengthOf(captured.probes, 3)
-			// 30 days before NOW bounds the widest tier, which stops where the week tier began.
-			assert.include(captured.probes[2], "Timestamp >= '2026-03-11 00:00:00'")
+			// 730 days before NOW, the longest retention, bounds the widest tier, which stops
+			// where the week tier began.
+			assert.include(captured.probes[2], "Timestamp >= '2024-04-10 00:00:00'")
 			assert.include(captured.probes[2], "Timestamp < '2026-04-03 00:00:00'")
 			const [read] = hierarchyCalls(captured)
 			assert.lengthOf(hierarchyCalls(captured), 1)
@@ -201,23 +202,29 @@ describe("inspectTrace", () => {
 		}),
 	)
 
-	it.effect("reaches a trace past the default 30 days when given a longer lookback", () =>
+	it.effect("reaches a trace past 30 days unless the org's horizon is shorter", () =>
 		Effect.gen(function* () {
 			// 68 days before NOW.
 			const stored = {
 				window: { start: "2026-02-01 08:00:00", end: "2026-02-01 08:00:00" },
 				probeTimestamp: "2026-02-01 08:00:00.250000000",
 			}
-			const byDefault = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, stored))
-			assert.strictEqual(byDefault.spanCount, 0)
+			const within30Days = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, stored), {
+				widenedLookbackHours: 30 * 24,
+			})
+			assert.strictEqual(within30Days.spanCount, 0)
 
 			const captured: Captured = { pipeCalls: [], probes: [] }
 			const kept = yield* run(makeExecutor(captured, stored), { widenedLookbackHours: 90 * 24 })
 			assert.strictEqual(kept.spanCount, 1)
-			// 90 days before NOW bounds the widest tier, where the default stopped at 30.
+			// 90 days before NOW bounds the widest tier.
 			assert.include(captured.probes[2], "Timestamp >= '2026-01-10 00:00:00'")
 			const [read] = hierarchyCalls(captured)
 			assert.strictEqual(read?.params.start_time, "2026-02-01 07:00:00")
+
+			// A caller that does not know the horizon reaches it too.
+			const byDefault = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, stored))
+			assert.strictEqual(byDefault.spanCount, 1)
 		}),
 	)
 
@@ -251,7 +258,7 @@ describe("inspectTrace", () => {
 			// trace_index is written with the spans, so a miss there skips the span read.
 			assert.lengthOf(captured.pipeCalls, 0)
 			assert.deepStrictEqual(result.scanned, {
-				startTime: "2026-03-11 00:00:00",
+				startTime: "2024-04-10 00:00:00",
 				endTime: "2026-04-10 00:00:00",
 				widened: false,
 			})

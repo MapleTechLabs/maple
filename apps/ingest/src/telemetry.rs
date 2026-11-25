@@ -985,6 +985,33 @@ impl<'a> SourceStamps<'a> {
     }
 }
 
+/// The `events_retention_days` each resource's trace rows carry: its source's events
+/// period, which the `product_events` rows views derive from a span are kept for.
+/// Resolved like `SourceStamps`; a value the sender wrote is never read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventsStamps {
+    own: u16,
+    named: Vec<(String, u16)>,
+}
+
+impl EventsStamps {
+    pub fn new(own: u16, named: Vec<(String, u16)>) -> Self {
+        Self { own, named }
+    }
+
+    /// The events period of `resource`'s source.
+    pub fn of(&self, resource: Option<&Resource>) -> u16 {
+        SourceStamps::new(self.own, &self.named).of(resource)
+    }
+}
+
+/// Nothing resolved: every row at the events default.
+impl Default for EventsStamps {
+    fn default() -> Self {
+        Self::new(RetentionSignal::Events.default_stamp(), Vec::new())
+    }
+}
+
 /// A decoded request, with what its rows are built with.
 #[derive(Clone, Copy, Debug)]
 pub enum RowSource<'a> {
@@ -1065,7 +1092,7 @@ impl RowSource<'_> {
                 request,
                 policy,
                 mappings,
-                routing_key,
+                plan,
                 piece,
             ),
             Self::Logs(request) => encode_logs(datasources, org_id, request, routing_key, piece),
@@ -4838,6 +4865,7 @@ pub(crate) fn empty_row_len(kind: RowKind) -> u64 {
                 &context,
                 "",
                 Map::new(),
+                MAX_RETENTION_DAYS,
             ))),
             len(json_len(&log_row(
                 &LogRecord::default(),
@@ -5150,6 +5178,9 @@ struct TraceRow<'a> {
     duration: u64,
     events_attributes: Vec<Map<String, Value>>,
     events_name: Vec<&'a str>,
+    /// The events period of the span's source, the gateway's like `retention_days`:
+    /// what `product_events` rows the views derive from the span are kept for.
+    events_retention_days: u16,
     events_timestamp: Vec<String>,
     links_attributes: Vec<Map<String, Value>>,
     links_span_id: Vec<String>,
@@ -5180,6 +5211,7 @@ fn trace_row<'a>(
     context: &RowContext<'a>,
     trace_id: &'a str,
     span_attributes: Map<String, Value>,
+    events_retention_days: u16,
 ) -> TraceRow<'a> {
     let status = span.status.as_ref();
     TraceRow {
@@ -5196,6 +5228,7 @@ fn trace_row<'a>(
             .iter()
             .map(|event| event.name.as_str())
             .collect(),
+        events_retention_days,
         events_timestamp: span
             .events
             .iter()
@@ -5249,9 +5282,15 @@ fn encode_traces(
     request: &ExportTraceServiceRequest,
     policy: &SamplingPolicy,
     attribute_mappings: &[AttributeMappingRule],
-    routing_key: u64,
+    plan: &RowPlan,
     piece: &RowPiece,
 ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
+    let RowPlan {
+        routing_key,
+        events,
+        ..
+    } = plan;
+    let routing_key = *routing_key;
     let rows = &piece.estimate;
     let mut out = RowBuffer::with_capacity(rows.payload_bytes[RowKind::Trace.slot()]);
     let mut dropped = 0usize;
@@ -5270,6 +5309,7 @@ fn encode_traces(
             Reach::Inside => {}
         }
         let resource_attrs = resource_attr_map(resource_spans.resource.as_ref());
+        let events_retention_days = events.of(resource_spans.resource.as_ref());
 
         for scope_spans in &resource_spans.scope_spans {
             let Some(spans) = range.take(&scope_spans.spans) else {
@@ -5306,7 +5346,13 @@ fn encode_traces(
                 }
                 apply_attribute_mappings(attribute_mappings, &resource_attrs, &mut span_attrs);
 
-                out.push(&trace_row(span, &context, &trace_id, span_attrs))?;
+                out.push(&trace_row(
+                    span,
+                    &context,
+                    &trace_id,
+                    span_attrs,
+                    events_retention_days,
+                ))?;
             }
         }
     }
@@ -9109,7 +9155,8 @@ mod tests {
     // which is already covered by the `resource_attributes` map.
     //
     // `retention_days` is the gateway's stamp (`$.retention_days` -> RetentionDays),
-    // on every raw table a retention policy reaches.
+    // on every raw table a retention policy reaches; `events_retention_days` its events
+    // period on traces, for the `product_events` rows views derive from a span.
     mod schema_contract {
         pub(super) const LOGS: &[&str] = &[
             "retention_days",
@@ -9132,6 +9179,7 @@ mod tests {
 
         pub(super) const TRACES: &[&str] = &[
             "retention_days",
+            "events_retention_days",
             "start_time",
             "trace_id",
             "span_id",
@@ -11611,6 +11659,77 @@ mod tests {
             let row = &rows(&frames[0].payload)[0];
             assert_eq!(row["retention_days"], 7);
             assert_eq!(row["span_attributes"]["retention_days"], "800");
+        }
+
+        /// The populated trace request under `source_id`, a sender's own
+        /// `events_retention_days` on its resource and span.
+        fn trace_resource(source_id: &str) -> ResourceSpans {
+            let mut resource_spans = populated_trace_request().resource_spans.remove(0);
+            let resource = resource_spans.resource.get_or_insert_with(Resource::default);
+            resource.attributes.extend([
+                string_kv(SOURCE_ID_ATTRIBUTE, source_id),
+                string_kv("events_retention_days", "800"),
+            ]);
+            resource_spans.scope_spans[0].spans[0]
+                .attributes
+                .push(string_kv("events_retention_days", "800"));
+            resource_spans
+        }
+
+        #[test]
+        fn trace_rows_carry_their_sources_events_period_whatever_the_sender_sent() {
+            let request = ExportTraceServiceRequest {
+                resource_spans: vec![trace_resource(SHORT_SOURCE), trace_resource("src_unnamed")],
+            };
+            let policy = SamplingPolicy::default();
+            let source = RowSource::Traces {
+                request: &request,
+                policy: &policy,
+                mappings: &[],
+            };
+            // The short source keeps events 30 days; any other resource the key's own 365.
+            let events = EventsStamps::new(365, vec![(SHORT_SOURCE.to_owned(), 30)]);
+            let plan = source
+                .plan_stamped("org", u64::MAX, SourceStamps::uniform(7))
+                .with_events(events);
+            let stamps: Vec<(String, u64, u64)> = encode_all(source, &plan)
+                .iter()
+                .flat_map(|frame| rows(&frame.payload))
+                .map(|row| {
+                    (
+                        row["resource_attributes"][SOURCE_ID_ATTRIBUTE]
+                            .as_str()
+                            .expect("a source")
+                            .to_owned(),
+                        row["events_retention_days"].as_u64().expect("an events stamp"),
+                        row["retention_days"].as_u64().expect("a stamp"),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                stamps,
+                vec![
+                    (SHORT_SOURCE.to_owned(), 30, 7),
+                    ("src_unnamed".to_owned(), 365, 7),
+                ]
+            );
+        }
+
+        #[test]
+        fn trace_rows_planned_without_events_keep_the_events_default() {
+            let request = populated_trace_request();
+            let policy = SamplingPolicy::default();
+            let source = RowSource::Traces {
+                request: &request,
+                policy: &policy,
+                mappings: &[],
+            };
+            let frames = encode_all(source, &source.plan("org", u64::MAX));
+            let row = &rows(&frames[0].payload)[0];
+            assert_eq!(
+                row["events_retention_days"],
+                RetentionSignal::Events.default_stamp()
+            );
         }
 
         fn frame(signal: TelemetrySignal, datasource: &str, lines: &[&str]) -> EncodedFrame {

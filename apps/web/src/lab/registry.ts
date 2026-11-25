@@ -102,6 +102,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/retention",
+		title: "Retention",
+		description:
+			"Settings > Retention: periods as stored, a shorter or longer period picked with what saving does, a member who cannot edit, no source overrides, an org on its own ClickHouse, loading and a failed read (`?state=stored|shorter|longer|member|no-sources|own-warehouse|loading|error`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/domains",
 		title: "Verified domains",
 		description:

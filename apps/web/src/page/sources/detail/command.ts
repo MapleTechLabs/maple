@@ -5,7 +5,7 @@ import { Clock, DateTime, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { baseKey } from "@maple/views/data/keyed"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { V2SourceUpdateParams } from "@maple/domain/http/v2"
+import { V2SourceRetentionUpdateParams, V2SourceUpdateParams } from "@maple/domain/http/v2"
 import { readGrants } from "../../../data/session-tenant"
 import { loadSources, loadSourceUsage, resumeSource } from "../kit/data"
 import { ExpiryChoice, expiresAtOf } from "../kit/rules"
@@ -89,4 +89,21 @@ export const SaveSource = Command.define("SaveSource", {
 				payload: expiresAt === undefined ? payload : { ...payload, expires_at: expiresAt },
 			})
 		}).pipe(settleTo((result) => Message.CompletedSave({ result }))),
+})
+
+export const FetchSourceRetention = Command.define("FetchSourceRetention", {
+	messages: [Message.CompletedFetchRetention],
+	execute: Effect.flatMap(MapleApiV2Client, (client) => client.retention.retrieve()).pipe(
+		settleTo((result) => Message.CompletedFetchRetention({ result })),
+	),
+})
+
+/** `retention.updateSource`: only the changed signals, `null` to follow the organization again. */
+export const SaveSourceRetention = Command.define("SaveSourceRetention", {
+	args: { id: SourceId, payload: V2SourceRetentionUpdateParams },
+	messages: [Message.CompletedSaveRetention],
+	execute: ({ id, payload }) =>
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			client.retention.updateSource({ params: { id }, payload }),
+		).pipe(settleTo((result) => Message.CompletedSaveRetention({ result }))),
 })

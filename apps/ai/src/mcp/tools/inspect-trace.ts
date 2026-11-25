@@ -23,11 +23,11 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 		name: "inspect_trace",
 		title: "Inspect Trace",
 		description:
-			"Span tree and logs for one trace: request flow, bottlenecks, error context. Logs show their cause attributes (log.error, error.*, exception.*). Large traces are bounded to an overview (errors and longest spans first) plus a per span name rollup (count, total/max duration, errors) of every span; raise `max_spans` for more detail. `inspect_span` gives one span's full attributes. With `timestamp` the read covers ±1h around it; without one (or when it misses) the trace is located in the trace index up to 30 days back first, which costs an extra lookup.",
+			"Span tree and logs for one trace: request flow, bottlenecks, error context. Logs show their cause attributes (log.error, error.*, exception.*). Large traces are bounded to an overview (errors and longest spans first) plus a per span name rollup (count, total/max duration, errors) of every span; raise `max_spans` for more detail. `inspect_span` gives one span's full attributes. With `timestamp` the read covers ±1h around it; without one (or when it misses) the trace is located in the trace index first, as far back as the organization keeps traces, which costs an extra lookup.",
 		parameters: Schema.Struct({
 			trace_id: P.text("The trace ID to inspect"),
 			timestamp: P.optionalTimestamp(
-				"Any timestamp from the trace (e.g. a search_traces Start). Reads ±1h around it and skips the trace index lookup; required for traces older than 30 days",
+				"Any timestamp from the trace (e.g. a search_traces Start). Reads ±1h around it and skips the trace index lookup",
 			),
 			errors_only: P.optionalFlag(
 				"Render only error spans, their ancestors and the roots: the fastest way to read a large trace's failure without its healthy spans.",

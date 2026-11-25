@@ -31,6 +31,7 @@ import * as DataPlatform from "./data-platform/update"
 import * as DataSources from "./data-sources/update"
 import * as AuditLog from "./audit-log/update"
 import * as Automation from "./automation/update"
+import * as Retention from "./retention/update"
 import type * as KeysMessage from "./keys/message"
 import { Message as KeysMessageValue } from "./keys/message"
 import type * as KeysModel from "./keys/model"
@@ -97,6 +98,7 @@ const TAB_TAGS = {
 	"setup-health": "SetupHealth",
 	ai: "Ai",
 	automation: "Automation",
+	retention: "Retention",
 	"audit-log": "AuditLog",
 	"data-platform": "DataPlatform",
 	"data-sources": "DataSources",
@@ -214,6 +216,15 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
 					Message.GotAiMessage({ message }),
+				),
+			}
+		}
+		case "Retention": {
+			const step = Retention.init(grantsOf(model))
+			return {
+				model: { ...model, tab: { _tag: "Retention", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotRetentionMessage({ message }),
 				),
 			}
 		}
@@ -370,6 +381,15 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
 					Message.GotAiMessage({ message }),
+				),
+			}
+		}
+		case "Retention": {
+			const step = Retention.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Retention", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotRetentionMessage({ message }),
 				),
 			}
 		}
@@ -711,6 +731,18 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				model: putTab(model, { _tag: "Ai", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) =>
 					Message.GotAiMessage({ message: child }),
+				),
+				outMessage: step.outMessage,
+			}
+		},
+		GotRetentionMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "Retention")
+			if (tab === undefined) return { model }
+			const step = Retention.update(tab.model, inner)
+			return {
+				model: putTab(model, { _tag: "Retention", model: step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotRetentionMessage({ message: child }),
 				),
 				outMessage: step.outMessage,
 			}
