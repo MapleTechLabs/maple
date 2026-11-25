@@ -1,11 +1,11 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, ConfigProvider, Effect, Layer, Option, Order, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
 import { OrgId } from "@maple/domain/http"
 import { DATA_RATES, type StorageSignalUsage } from "@maple/domain/storage-pricing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
-import { meterStorage, runStorageMetering } from "./storage-metering"
+import { BACKFILL_DAYS, meterStorage, runStorageMetering } from "./storage-metering"
 import { DAY_MS, StorageUsageService } from "./StorageUsageService"
 
 const trackedDbs: TestDb[] = []
@@ -90,7 +90,8 @@ interface Tracked {
 	readonly body: { readonly customer_id: string; readonly feature_id: string; readonly value: number }
 }
 
-const recordingAutumn = (tracked: Array<Tracked>) =>
+/** An Autumn that records every call and answers `status(call)` to it. */
+const recordingAutumn = (tracked: Array<Tracked>, status: (call: Tracked) => number = () => 200) =>
 	Layer.mergeAll(
 		ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "am_sk_test" })),
 		Layer.succeed(
@@ -101,24 +102,33 @@ const recordingAutumn = (tracked: Array<Tracked>) =>
 						request.body._tag === "Uint8Array"
 							? new TextDecoder().decode(request.body.body)
 							: "{}"
-					tracked.push({
+					const call: Tracked = {
 						idempotencyKey: request.headers["idempotency-key"],
 						body: JSON.parse(text),
-					})
-					return HttpClientResponse.fromWeb(request, new Response(null, { status: 200 }))
+					}
+					tracked.push(call)
+					return HttpClientResponse.fromWeb(request, new Response(null, { status: status(call) }))
 				}),
 			),
 		),
 	)
 
+const keysOf = (calls: ReadonlyArray<Tracked>) =>
+	Arr.sort(
+		Arr.map(calls, (call) => call.idempotencyKey ?? ""),
+		Order.String,
+	)
+
 describe("storage metering", () => {
-	it.effect("bills each org a day's share of its GB stored, to its billing org, once per day", () =>
+	it.effect("bills each org yesterday's share of its GB stored, to its billing org, once", () =>
 		Effect.gen(function* () {
 			const db = createTestDb(trackedDbs)
 			yield* ledger(db, ORG, "logs", 2, 30, 200)
 			yield* ledger(db, ORG, "metrics", 40, 90, 100)
 			yield* ledger(db, ORG, "logs", 31, 30, 999)
-			yield* ledger(db, "org_member", "traces", 0, 30, 30)
+			// Today is not complete: bytes received today never count toward yesterday.
+			yield* ledger(db, ORG, "logs", 0, 30, 5000)
+			yield* ledger(db, "org_member", "traces", 1, 30, 30)
 			yield* Effect.promise(() =>
 				executeSql(
 					db,
@@ -131,45 +141,88 @@ describe("storage metering", () => {
 				meterStorage(nowMs).pipe(Effect.provide([db.layer, recordingAutumn(tracked)]))
 
 			yield* meter(TODAY + 60_000)
-			const byCustomer = new Map(
-				Arr.map(tracked, (call): [string, Tracked] => [call.body.customer_id, call]),
-			)
-			// 300 GB stored over a 30-day month: 10 GB-months a day.
-			assert.strictEqual(byCustomer.get("org_storage")?.body.value, 10)
-			assert.strictEqual(
-				byCustomer.get("org_storage")?.idempotencyKey,
-				"storage:org_storage:2026-11-25",
-			)
-			assert.strictEqual(byCustomer.get("org_payer")?.body.value, 1)
-			assert.strictEqual(byCustomer.get("org_payer")?.idempotencyKey, "storage:org_member:2026-11-25")
-			assert.strictEqual(byCustomer.get("org_payer")?.body.feature_id, "storage")
-
-			// A retry the same day reuses the day's key, so Autumn counts it once.
-			yield* meter(TODAY + 2 * 3_600_000)
-			const keys = (calls: ReadonlyArray<Tracked>) =>
-				Arr.sort(
-					Arr.map(calls, (call) => call.idempotencyKey ?? ""),
-					Order.String,
+			const forDay = (day: string) =>
+				new Map(
+					Arr.flatMap(tracked, (call): ReadonlyArray<[string, Tracked]> =>
+						Str.endsWith(day)(call.idempotencyKey ?? "") ? [[call.body.customer_id, call]] : [],
+					),
 				)
-			assert.deepStrictEqual(keys(tracked.slice(2)), keys(tracked.slice(0, 2)))
+			const yesterday = forDay("2026-11-24")
+			// 300 GB stored on 2026-11-24, a day of a 30-day month: 10 GB-months.
+			assert.strictEqual(yesterday.get("org_storage")?.body.value, 10)
+			assert.strictEqual(yesterday.get("org_storage")?.idempotencyKey, "storage:org_storage:2026-11-24")
+			assert.strictEqual(yesterday.get("org_payer")?.body.value, 1)
+			assert.strictEqual(yesterday.get("org_payer")?.idempotencyKey, "storage:org_member:2026-11-24")
+			assert.strictEqual(yesterday.get("org_payer")?.body.feature_id, "storage")
+			assert.isFalse(Arr.some(tracked, (call) => Str.endsWith("2026-11-25")(call.idempotencyKey ?? "")))
+
+			// A later tick finds every day billed and sends nothing.
+			const sent = tracked.length
+			yield* meter(TODAY + 2 * 3_600_000)
+			assert.strictEqual(tracked.length, sent)
+		}),
+	)
+
+	it.effect("bills a day Autumn refused again on the next tick, under the same key", () =>
+		Effect.gen(function* () {
+			const db = createTestDb(trackedDbs)
+			yield* ledger(db, ORG, "logs", 3, 30, 30)
+			const tracked: Array<Tracked> = []
+			let autumnUp = false
+			const autumn = recordingAutumn(tracked, () => (autumnUp ? 200 : 503))
+
+			yield* TestClock.setTime(TODAY + 60_000)
+			const failed = yield* runStorageMetering.pipe(Effect.provide([db.layer, autumn]), Effect.flip)
+			assert.strictEqual(failed._tag, "@maple/billing/StorageMeteringIncompleteError")
+			const refused = keysOf(tracked)
+
+			autumnUp = true
+			yield* TestClock.setTime(TODAY + 3_600_000)
+			yield* runStorageMetering.pipe(Effect.provide([db.layer, autumn]))
+			assert.deepStrictEqual(keysOf(tracked.slice(refused.length)), refused)
+			// Oldest first, from the ingest day through yesterday.
+			assert.deepStrictEqual(refused, [
+				"storage:org_storage:2026-11-22",
+				"storage:org_storage:2026-11-23",
+				"storage:org_storage:2026-11-24",
+			])
+		}),
+	)
+
+	it.effect("bills a ledger row for exactly its retention days, from the day it was received", () =>
+		Effect.gen(function* () {
+			const db = createTestDb(trackedDbs)
+			yield* ledger(db, ORG, "logs", 0, 3, 30)
+			const tracked: Array<Tracked> = []
+			yield* Effect.forEach(Arr.range(1, 10), (daysLater) =>
+				meterStorage(TODAY + daysLater * DAY_MS).pipe(
+					Effect.provide([db.layer, recordingAutumn(tracked)]),
+				),
+			)
+			assert.deepStrictEqual(keysOf(tracked), [
+				"storage:org_storage:2026-11-25",
+				"storage:org_storage:2026-11-26",
+				"storage:org_storage:2026-11-27",
+			])
 		}),
 	)
 
 	it.effect("prunes days past the longest period and bills only early in the UTC day", () =>
 		Effect.gen(function* () {
 			const db = createTestDb(trackedDbs)
-			yield* ledger(db, ORG, "events", 732, 730, 5)
+			yield* ledger(db, ORG, "events", 740, 730, 5)
 			yield* ledger(db, ORG, "logs", 729, 730, 5)
 			const tracked: Array<Tracked> = []
 			const provideAll = Effect.provide([db.layer, recordingAutumn(tracked)])
 
 			const result = yield* meterStorage(TODAY).pipe(provideAll)
 			assert.strictEqual(result.pruned, 1)
-			assert.strictEqual(tracked.length, 1)
+			// The 730-day row bills its last day, 2026-11-24, after a 7-day backfill of earlier ones.
+			assert.strictEqual(tracked.length, BACKFILL_DAYS)
 
-			yield* TestClock.setTime(TODAY + 5 * 3_600_000)
+			yield* TestClock.setTime(TODAY + DAY_MS + 5 * 3_600_000)
 			yield* runStorageMetering.pipe(provideAll)
-			assert.strictEqual(tracked.length, 1)
+			assert.strictEqual(tracked.length, BACKFILL_DAYS)
 		}),
 	)
 })

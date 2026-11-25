@@ -191,6 +191,7 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"OrgIngestRuleStats",
 	// Stored bytes are billed from it: a recreated org must not inherit the old org's storage.
 	"IngestStorageLedger",
+	"StorageBillingRuns",
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	"LiveActivities",

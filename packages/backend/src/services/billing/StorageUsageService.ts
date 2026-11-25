@@ -1,6 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { IngestStorageLedger } from "@maple/db/tables"
-import { RetentionPersistenceError } from "@maple/domain/http"
 import {
 	DATA_RATES,
 	STORAGE_SIGNALS,
@@ -8,7 +7,7 @@ import {
 	type StorageUsageSummary,
 } from "@maple/domain/storage-pricing"
 import type { OrgId } from "@maple/primitives"
-import { Array as Arr, Clock, Context, Effect, Layer } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -23,13 +22,16 @@ export const utcDayStart = (epochMs: number): number => epochMs - (epochMs % DAY
 /** Postgres sums int8 as numeric, which the driver may hand back as a string. */
 export const bytesToGb = (bytes: number | string | null): number => Number(bytes ?? 0) / BYTES_PER_GB
 
-/** A ledger row still inside its period on the UTC day starting at `todayMs`. */
+/**
+ * A ledger row still inside its period on the UTC day starting at `dayMs`: a row of ingest day
+ * `day` counts on days `day` to `day + retentionDays - 1`, never after.
+ */
 export const keptOn = (
 	ledger: { readonly day: PG.SqlTemplateValue; readonly retentionDays: PG.SqlTemplateValue },
-	todayMs: number,
+	dayMs: number,
 ) =>
 	PG.sql
-		.cond`${ledger.day} + ${ledger.retentionDays} * interval '1 day' > to_timestamp(${todayMs / 1000}::float8)`
+		.cond`${ledger.day} + ${ledger.retentionDays} * interval '1 day' > to_timestamp(${dayMs / 1000}::float8)`
 
 /** GB per signal from summed ledger rows. */
 export const gbBySignal = (
@@ -37,12 +39,21 @@ export const gbBySignal = (
 ): ReadonlyMap<string, number> =>
 	new Map(Arr.map(rows, (row): [string, number] => [row.signal, bytesToGb(row.bytes)]))
 
+/** The storage ledger could not be read. */
+export class StorageUsagePersistenceError extends Schema.TaggedError<StorageUsagePersistenceError>()(
+	"@maple/billing/StorageUsagePersistenceError",
+	{ message: Schema.String, cause: Schema.optionalKey(Schema.String) },
+) {}
+
 export interface StorageUsageServiceApi {
 	/** Per stored signal: GB kept now and the daily ingest average, with the rates. */
-	readonly summary: (orgId: OrgId) => Effect.Effect<StorageUsageSummary, RetentionPersistenceError>
+	readonly summary: (orgId: OrgId) => Effect.Effect<StorageUsageSummary, StorageUsagePersistenceError>
 }
 
-const toPersistenceError = makePersistenceErrorMapper(RetentionPersistenceError, "Storage usage read failed")
+const toPersistenceError = makePersistenceErrorMapper(
+	StorageUsagePersistenceError,
+	"Storage usage read failed",
+)
 
 export class StorageUsageService extends Context.Service<StorageUsageService, StorageUsageServiceApi>()(
 	"@maple/backend/services/billing/StorageUsageService",
