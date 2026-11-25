@@ -7,6 +7,7 @@ import {
 	SupabaseIntegrationStatus,
 	VercelIntegrationStatus,
 	CloudflareUsageResponse,
+	GithubInstallationSelection,
 } from "@maple/domain/http"
 import { V2ChatConnectorList, V2PlanetScaleIntegration, V2ScrapeTarget } from "@maple/domain/http/v2"
 import { SupabaseProjectRef } from "@maple/primitives"
@@ -24,6 +25,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import {
 	CHAT_PROVIDER,
+	GITHUB_PROVIDER,
 	providerModuleOf,
 	RAILWAY_PROVIDER,
 	SUPABASE_PROVIDER,
@@ -35,7 +37,8 @@ import { PlanetscaleMessage } from "../infra-integrations/planetscale/integratio
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import { VERCEL_STATUS } from "../../lab/vercel-infra-fixtures"
 import { init, update } from "./update"
-import { closedPopup, receivedCallback, receivedRelay } from "./update-connect"
+import { clickedConnect, closedPopup, receivedCallback, receivedRelay } from "./update-connect"
+import { GithubMessage } from "./github"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -288,8 +291,54 @@ describe("provider modules", () => {
 		expect(providerModuleOf("chat-slack")?.id).toBe("chat")
 		expect(providerModuleOf("chat-discord")?.id).toBe("chat")
 		expect(providerModuleOf("linear")?.id).toBe("linear")
-		expect(providerModuleOf("github")).toBeUndefined()
+		expect(providerModuleOf("github")?.id).toBe("github")
+		expect(providerModuleOf("gcp")).toBeUndefined()
 		expect(providerModuleOf(null)).toBeUndefined()
+	})
+
+	test("GitHub's account choice comes through its module and holds new connects until it settles", () => {
+		const selection = Schema.decodeSync(GithubInstallationSelection)({
+			state: "selection-1",
+			needsApproval: [],
+			unavailable: 0,
+			installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
+			installations: [
+				{
+					id: "202",
+					accountLogin: "acme",
+					accountType: "organization",
+					repositorySelection: "selected",
+				},
+			],
+		})
+		const model = init({ search: { integration: "github" } }, context).model
+		const chosen = receivedCallback(model, context, "github", "success", null, selection)
+		expect(chosen.model.githubCard.selection).toEqual(selection)
+		expect(chosen.outMessage).toBeUndefined()
+		const picking = pageUpdate(
+			chosen.model,
+			Message.GotGithubMessage({
+				message: GithubMessage.ClickedSelectGithubInstallation({ installationId: "202" }),
+			}),
+		)
+		expect(GITHUB_PROVIDER.blocksConnect(picking.model)).toBe(true)
+		expect(clickedConnect(picking.model, context).model).toBe(picking.model)
+	})
+
+	test("GitHub's force-poll window ends with one last read", () => {
+		const delayed = GITHUB_PROVIDER.delayed
+		const model = init({ search: { integration: "github" } }, context).model
+		expect(delayed?.versionOf(model)).toBe(null)
+		const polling = {
+			...model,
+			githubCard: { ...model.githubCard, isForcePolling: true, forcePollVersion: 2 },
+		}
+		expect(delayed?.versionOf(polling)).toBe(2)
+		const fired = delayed?.fire(2) ?? []
+		const ended = Arr.reduce(fired, polling, (next, message) => pageUpdate(next, message).model)
+		expect(ended.githubCard.isForcePolling).toBe(false)
+		// The last read is the poll's own tick.
+		expect(fired[0]).toEqual(GITHUB_PROVIDER.ticker?.tick)
 	})
 
 	test("a module drives the shared disconnect dialog and owns its confirm", () => {

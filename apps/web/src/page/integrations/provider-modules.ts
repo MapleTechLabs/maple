@@ -1,3 +1,4 @@
+import type { GithubInstallationSelection } from "@maple/domain/http"
 import { Array as Arr, Option } from "effect"
 import { Command as FoldkitCommand } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -15,7 +16,8 @@ import { PLANETSCALE } from "../infra-integrations/planetscale/integration/plane
 import { CLOUDFLARE } from "../infra-integrations/cloudflare/integration/cloudflare-provider"
 import { CHAT } from "./chat-provider"
 import { FLEET } from "./fleet/fleet-provider"
-import { ReadClock, TrackDisconnected } from "./command"
+import { GITHUB } from "./github-provider"
+import { ReadClock, TrackConnected, TrackDisconnected } from "./command"
 import type { FlowSpec, FlowStage } from "./flow"
 import { Message } from "./message"
 import { canManage, type Model, type Statuses } from "./model"
@@ -53,6 +55,12 @@ export type MountedProvider = Readonly<{
 	onSession: (model: Model, context: PageContext) => Return
 	onClock: (model: Model, context: PageContext) => Return
 	onConnectStart: (model: Model, context: PageContext) => Return
+	blocksConnect: (model: Model) => boolean
+	onConnectOpened: (model: Model, context: PageContext) => Return
+	/** `null`: the module takes no account choice. */
+	onConnectPayload:
+		| ((model: Model, context: PageContext, payload: GithubInstallationSelection) => Return)
+		| null
 	onConnected: (model: Model, context: PageContext) => Return
 	onRelayedConnect: (model: Model, context: PageContext) => Return
 	replacesConnectedRead: boolean
@@ -67,6 +75,11 @@ export type MountedProvider = Readonly<{
 		fast: Readonly<{ everyMs: number; ticks: number }> | null
 		isActive: (model: Model) => boolean
 		tick: Message
+	}> | null
+	delayed: Readonly<{
+		afterMs: number
+		versionOf: (model: Model) => number | null
+		fire: (version: number) => ReadonlyArray<Message>
 	}> | null
 	card: (
 		h: HtmlBuilder<Message>,
@@ -124,6 +137,8 @@ const applyRequest =
 				return withDisconnectDialog(model, Dialog.close(model.disconnect.dialog))
 			case "TrackDisconnected":
 				return { model, commands: [TrackDisconnected({ provider: request.provider })] }
+			case "TrackConnected":
+				return { model, commands: [TrackConnected({ provider: request.provider })] }
 		}
 	}
 
@@ -140,6 +155,7 @@ const run = <K extends keyof Statuses, S, M, Msg>(
 		isShown: isShownIn(model, mount.module),
 		canManage: canManage(model),
 		integration: integrationOfSearch(model.search.integration),
+		isConnecting: model.connect.active !== null,
 		context,
 	}
 	const result = step(mount.get(model), env)
@@ -173,6 +189,9 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 			step === undefined ? { model } : run(spec, model, context, step)
 	const subscription = module.subscription
 	const isDisconnecting = module.isDisconnecting
+	const blocksConnect = module.blocksConnect
+	const onConnectPayload = module.onConnectPayload
+	const delayed = module.delayed
 	return {
 		id: module.id,
 		owns: ownsOf(module),
@@ -183,6 +202,13 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 		onSession: hook(module.onSession),
 		onClock: hook(module.onClock),
 		onConnectStart: hook(module.onConnectStart),
+		blocksConnect: (model) => blocksConnect !== undefined && blocksConnect(spec.get(model)),
+		onConnectOpened: hook(module.onConnectOpened),
+		onConnectPayload:
+			onConnectPayload === undefined
+				? null
+				: (model, context, payload) =>
+						run(spec, model, context, (sub, env) => onConnectPayload(sub, payload, env)),
 		onConnected: hook(module.onConnected),
 		onRelayedConnect: hook(module.onRelayedConnect),
 		replacesConnectedRead: module.replacesConnectedRead === true,
@@ -210,8 +236,17 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 								isShown: isShownIn(model, module),
 								canManage: canManage(model),
 								integration: integrationOfSearch(model.search.integration),
+								isConnecting: model.connect.active !== null,
 							}),
 						tick: spec.toHub(subscription.tick),
+					},
+		delayed:
+			delayed === undefined
+				? null
+				: {
+						afterMs: delayed.afterMs,
+						versionOf: (model) => delayed.versionOf(spec.get(model)),
+						fire: (version) => Arr.map(delayed.fire(version), spec.toHub),
 					},
 		card: module.card,
 		headerActions: module.headerActions ?? null,
@@ -304,6 +339,15 @@ export const FLEET_PROVIDER = mount({
 	toHub: (message) => Message.GotFleetMessage({ message }),
 })
 
+export const GITHUB_PROVIDER = mount({
+	module: GITHUB,
+	statusName: "github",
+	slot: (statuses) => statuses.github,
+	get: (model) => model.githubCard,
+	set: (model, githubCard) => ({ ...model, githubCard }),
+	toHub: (message) => Message.GotGithubMessage({ message }),
+})
+
 /** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
 export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	RAILWAY_PROVIDER,
@@ -315,6 +359,7 @@ export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	PLANETSCALE_PROVIDER,
 	CLOUDFLARE_PROVIDER,
 	FLEET_PROVIDER,
+	GITHUB_PROVIDER,
 ]
 
 export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>

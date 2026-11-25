@@ -1,3 +1,4 @@
+import type { GithubInstallationSelection } from "@maple/domain/http"
 import type { Effect } from "effect"
 import type { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -24,6 +25,8 @@ export type ProviderEnv<S> = Readonly<{
 	canManage: boolean
 	/** The integration the page shows, if any. */
 	integration: IntegrationId | null
+	/** A connect popup attempt is out, for any provider. */
+	isConnecting: boolean
 	context: PageContext
 }>
 
@@ -36,6 +39,7 @@ export type HubRequest =
 	| Readonly<{ _tag: "OpenDisconnect" }>
 	| Readonly<{ _tag: "CloseDisconnect" }>
 	| Readonly<{ _tag: "TrackDisconnected"; provider: string }>
+	| Readonly<{ _tag: "TrackConnected"; provider: string }>
 
 export const HubRequest = {
 	/** Re-reads the provider's own status. */
@@ -61,6 +65,8 @@ export const HubRequest = {
 	closeDisconnect: (): HubRequest => ({ _tag: "CloseDisconnect" }),
 	/** `trackProduct("integration_disconnected")` for `provider`. */
 	trackDisconnected: (provider: string): HubRequest => ({ _tag: "TrackDisconnected", provider }),
+	/** `trackProduct("integration_connected")` for `provider`. */
+	trackConnected: (provider: string): HubRequest => ({ _tag: "TrackConnected", provider }),
 }
 
 /** A provider update: its sub-model, its own Commands, and the hub requests that run first. */
@@ -102,6 +108,16 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 	onStatus?: (model: M, env: ProviderEnv<S>, answer: StatusAnswer<S>) => ProviderReturn<M, Msg>
 	/** A new OAuth connect attempt starts. */
 	onConnectStart?: ProviderHook<S, M, Msg>
+	/** A step in flight that a new connect attempt, of any provider, would race. */
+	blocksConnect?: (model: M) => boolean
+	/** The connect start succeeded and its popup is out. */
+	onConnectOpened?: ProviderHook<S, M, Msg>
+	/** A successful OAuth return carried accounts to choose from (GitHub's installations). */
+	onConnectPayload?: (
+		model: M,
+		payload: GithubInstallationSelection,
+		env: ProviderEnv<S>,
+	) => ProviderReturn<M, Msg>
 	/** An OAuth connect came back successful. */
 	onConnected?: ProviderHook<S, M, Msg>
 	/** `onConnected` and `onRelayedConnect` re-read the status themselves, in place of the hub. */
@@ -122,6 +138,12 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 		fast?: Readonly<{ everyMs: number; ticks: number }>
 		isActive: (model: M, env: Omit<ProviderEnv<S>, "context">) => boolean
 		tick: Msg
+	}>
+	/** One-shot: `afterMs` after `versionOf` turns to a version, once the tab is back, `fire` sends. */
+	delayed?: Readonly<{
+		afterMs: number
+		versionOf: (model: M) => number | null
+		fire: (version: number) => ReadonlyArray<Msg>
 	}>
 	/** The source page's card, under the integration's header; `focusId`: the one source shown. */
 	card: (
