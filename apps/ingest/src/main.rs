@@ -77,9 +77,9 @@ use maple_ingest::session_analytics::{
 };
 use maple_ingest::telemetry::{
     AcceptStats, AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget,
-    ClickHouseTargetProvider, DatasourceNames, ExportDestination, HttpClient, MappingOperation,
-    MappingSourceContext, PipelineError, PlannedFailure, RowBatchesError, RowSource,
-    SamplingPolicy, SourceStamps, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
+    ClickHouseTargetProvider, DatasourceNames, EventsStamps, ExportDestination, HttpClient,
+    MappingOperation, MappingSourceContext, PipelineError, PlannedFailure, RowBatchesError,
+    RowSource, SamplingPolicy, SourceStamps, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
 use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetrics};
 use maple_ingest::vercel_ai_gateway_drain;
@@ -5259,6 +5259,15 @@ fn stamp_retention(row: &mut JsonMap<String, JsonValue>, retention_days: u16) {
     row.insert("retention_days".to_owned(), JsonValue::from(retention_days));
 }
 
+/// Sets a session event's `events_retention_days`, the period the `product_events` row a
+/// view derives from it is kept for. The gateway's too: a sender's value is overwritten.
+fn stamp_events_retention(row: &mut JsonMap<String, JsonValue>, events_retention_days: u16) {
+    row.insert(
+        "events_retention_days".to_owned(),
+        JsonValue::from(events_retention_days),
+    );
+}
+
 /// Auth shared by the replay and session endpoints. `Ok(None)` is the sentinel
 /// token or a paused key: silently dropped like the OTLP path.
 async fn resolve_replay_key(
@@ -5594,8 +5603,10 @@ async fn handle_session_events_inner(
     };
     let (allow_sessions, allow_events) =
         (allows(SourceSignal::Sessions), allows(SourceSignal::Events));
-    // Every row of this table is kept as a session row, `custom` ones included.
+    // Every row of this table is kept as a session row, `custom` ones included; the
+    // `product_events` row a `custom` one becomes keeps the events period.
     let retention_days = resolved_key.retention.get(RetentionSignal::Sessions);
+    let events_retention_days = resolved_key.retention.get(RetentionSignal::Events);
     let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
     Span::current().record(
@@ -5676,6 +5687,7 @@ async fn handle_session_events_inner(
             serde_json::Value::String(org_id.clone()),
         );
         stamp_retention(obj, retention_days);
+        stamp_events_retention(obj, events_retention_days);
         rows.push(
             serde_json::to_vec(&value)
                 .map_err(|e| ApiError::bad_request(format!("failed to re-serialize event: {e}")))?,
@@ -10267,6 +10279,11 @@ async fn process_decoded_payload(
         if !stamps.is_uniform() {
             decoded.group_by_stamp(stamps);
         }
+        // Only trace rows carry the events period.
+        let events = match &*decoded {
+            DecodedPayload::Traces(_) => events_stamps(resolved_key, named_sources),
+            DecodedPayload::Logs(_) | DecodedPayload::Metrics(_) => EventsStamps::default(),
+        };
         accept_native_decoded_payload(
             state,
             signal,
@@ -10275,6 +10292,7 @@ async fn process_decoded_payload(
                 org_id: &resolved_key.org_id,
                 destination,
                 stamps,
+                events: &events,
             },
             stage,
             &mut memory,
@@ -10340,12 +10358,23 @@ fn named_source_stamps(
         .collect()
 }
 
+/// The events period each resource of a request carries as `events_retention_days`, so
+/// the `product_events` rows views derive from its spans keep its source's period.
+fn events_stamps(resolved_key: &ResolvedIngestKey, named_sources: &[NamedSource]) -> EventsStamps {
+    EventsStamps::new(
+        resolved_key.retention.get(RetentionSignal::Events),
+        named_source_stamps(resolved_key, named_sources, RetentionSignal::Events),
+    )
+}
+
 /// Where a request's rows are written and what they are stamped with.
 #[derive(Clone, Copy)]
 struct NativeTarget<'a> {
     org_id: &'a str,
     destination: ExportDestination,
     stamps: SourceStamps<'a>,
+    /// Read by trace rows only.
+    events: &'a EventsStamps,
 }
 
 #[hotpath::measure]
@@ -10422,12 +10451,15 @@ async fn accept_row_source(
         org_id,
         destination,
         stamps,
+        events,
     } = target;
     let pipeline = state
         .telemetry_pipeline
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Telemetry pipeline is not configured"))?;
-    let plan = source.plan_stamped(org_id, state.config.row_piece_bytes, stamps);
+    let plan = source
+        .plan_stamped(org_id, state.config.row_piece_bytes, stamps)
+        .with_events(events.clone());
     Span::current().record("maple.ingest.row_pieces", plan.pieces.len());
     admit_rows(
         state,
@@ -24690,6 +24722,26 @@ mod tests {
             assert_eq!(stamp(RetentionSignal::Logs), vec![("src_named".to_owned(), 30)]);
         }
 
+        #[test]
+        fn trace_rows_take_each_named_sources_events_period_else_the_keys() {
+            let key = test_key();
+            let named = [
+                (
+                    "src_short".to_owned(),
+                    RetentionOverrides::default().with(RetentionSignal::Events, 30),
+                ),
+                ("src_plain".to_owned(), RetentionOverrides::default()),
+            ];
+            // A source that sets nothing keeps the events default, as the key's own rows do.
+            assert_eq!(
+                events_stamps(&key, &named),
+                EventsStamps::new(
+                    365,
+                    vec![("src_short".to_owned(), 30), ("src_plain".to_owned(), 365)]
+                )
+            );
+        }
+
         #[tokio::test]
         async fn a_connector_keeps_its_sources_period_else_its_orgs() {
             let store = Arc::new(FakeKeyStore::default());
@@ -24788,9 +24840,9 @@ mod tests {
                 .await
                 .expect("session metadata is accepted");
             let events = concat!(
-                r#"{"type":"click","message":"a","retention_days":800}"#,
+                r#"{"type":"click","message":"a","retention_days":800,"events_retention_days":800}"#,
                 "\n",
-                r#"{"type":"custom","message":"signup","retention_days":"800"}"#,
+                r#"{"type":"custom","message":"signup","retention_days":"800","events_retention_days":"800"}"#,
             );
             handle_session_events_inner(&state, &headers, Bytes::from_static(events.as_bytes()))
                 .await
@@ -24821,6 +24873,15 @@ mod tests {
                     stamped("session_replays", 7),
                 ])
             );
+            // A session event also carries the events period its `product_events` row keeps.
+            let session_events = bodies
+                .iter()
+                .filter(|(datasource, _)| datasource == "session_events")
+                .flat_map(|(_, rows)| rows);
+            let events_periods: Vec<Option<u64>> = session_events
+                .map(|row| row["events_retention_days"].as_u64())
+                .collect();
+            assert_eq!(events_periods, vec![Some(180), Some(180)]);
             drop(std::fs::remove_dir_all(&queue_dir));
         }
 

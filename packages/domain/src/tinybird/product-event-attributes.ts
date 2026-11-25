@@ -190,7 +190,8 @@ export const PRODUCT_EVENTS_TRACE_PROJECTION_SQL = `OrgId,
     )
   ) AS Attributes,
   TraceId,
-  SpanId`
+  SpanId,
+  EventsRetentionDays AS RetentionDays`
 
 /**
  * Maple's own spans that ARE a product event (`mcp_tool_called`,

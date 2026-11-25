@@ -1,7 +1,8 @@
 //! Rows as the gateway built them before the borrowed-struct encoders: each one a
 //! `serde_json::Value` serialized whole, one frame per datasource for the request.
-//! A frozen copy, kept so the encoders can be held to it byte for byte. The one
-//! addition since is `retention_days`, at each signal's default period.
+//! A frozen copy, kept so the encoders can be held to it byte for byte. The
+//! additions since are `retention_days`, at each signal's default period, and on
+//! traces `events_retention_days`, at the events default.
 
 #![expect(
     clippy::too_many_arguments,
@@ -153,6 +154,7 @@ pub(crate) fn encode_traces(
                     "service_name": service_name,
                     "resource_schema_url": resource_spans.schema_url,
                     "retention_days": RetentionSignal::Traces.default_stamp(),
+                    "events_retention_days": RetentionSignal::Events.default_stamp(),
                     "resource_attributes": resource_attrs,
                     "scope_schema_url": scope_spans.schema_url,
                     "scope_name": scope_name,

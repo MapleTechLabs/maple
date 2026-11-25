@@ -1,7 +1,7 @@
 import { Clock, DateTime, Effect, Option } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
-import { TRACE_RETENTION_HOURS, locateTrace } from "./locate-trace"
+import { TRACE_LOOKUP_MAX_HOURS, locateTrace } from "./locate-trace"
 
 import { formatWarehouseDateTime, formatWarehouseDateTimeMs } from "../datetime"
 import { parseProjectedAttributes } from "../row-text"
@@ -21,7 +21,7 @@ export interface SpanDetailInput {
 	readonly rangeHours?: number
 	/**
 	 * How far back `trace_index` is searched when there is no hint: the org's traces
-	 * retention where the caller knows it. Defaults to 30 days.
+	 * read horizon where the caller knows it, else the longest retention (730 days).
 	 */
 	readonly lookbackHours?: number
 }
@@ -96,7 +96,7 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 	// probe seeks every retained partition and ran past its 5s limit on large orgs.
 	const probed = hintedRange === undefined
 	const range =
-		hintedRange ?? (yield* probedTraceRange(input.traceId, input.lookbackHours ?? TRACE_RETENTION_HOURS))
+		hintedRange ?? (yield* probedTraceRange(input.traceId, input.lookbackHours ?? TRACE_LOOKUP_MAX_HOURS))
 	yield* Effect.annotateCurrentSpan("maple.query.trace_probed", probed)
 	if (range === undefined) {
 		return {

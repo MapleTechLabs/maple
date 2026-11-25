@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { Array as Arr, Option, Record, Schema } from "effect"
+import { Array as Arr, Option, Record, Schema, String as Str } from "effect"
 import { migration_0075_retention_days } from "./clickhouse/migrations/0075_retention_days"
+import { latestSnapshotStatements } from "./generated/clickhouse-schema"
 import { tinybirdProjectManifest } from "./generated/tinybird-project-manifest"
 import {
 	DEFAULT_RETENTION_DAYS,
@@ -17,53 +18,53 @@ import {
 	sourceRetentionDays,
 } from "./retention"
 
-const ttlDays = (datasource: string): number | undefined =>
+const manifestContent = (datasource: string): string | undefined =>
 	Option.getOrUndefined(
-		Option.flatMap(
-			Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === datasource),
-			(found) =>
-				Option.map(
-					Option.fromNullishOr(/ENGINE_TTL "[^"]+ \+ INTERVAL (\d+) DAY"/.exec(found.content)),
-					(match) => Number(match[1]),
-				),
+		Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === datasource),
+	)?.content
+
+const rawTables = Arr.flatMap(RETENTION_SIGNALS, (signal) =>
+	Arr.map(RETENTION_SIGNAL_DATASOURCES[signal], (datasource) => ({ signal, datasource }) as const),
+)
+
+const columnDefault = (datasource: string): number | undefined =>
+	Option.getOrUndefined(
+		Option.map(
+			Option.fromNullishOr(
+				/\bRetentionDays UInt16 [^\n]*DEFAULT (\d+)/.exec(manifestContent(datasource) ?? ""),
+			),
+			(match) => Number(match[1]),
 		),
 	)
 
-describe("retention defaults", () => {
-	it("match what every raw table of the signal keeps today", () => {
-		for (const signal of RETENTION_SIGNALS) {
-			for (const datasource of RETENTION_SIGNAL_DATASOURCES[signal]) {
-				expect(ttlDays(datasource), `${signal}: ${datasource}`).toBe(DEFAULT_RETENTION_DAYS[signal])
-			}
+describe("the RetentionDays column", () => {
+	it("defaults to the signal's default period, so an unstamped row keeps what it kept before", () => {
+		for (const { signal, datasource } of rawTables) {
+			expect(columnDefault(datasource), datasource).toBe(DEFAULT_RETENTION_DAYS[signal])
 		}
 	})
-})
 
-describe("the RetentionDays column", () => {
-	const columnDefault = (datasource: string): number | undefined =>
-		Option.getOrUndefined(
-			Option.flatMap(
-				Arr.findFirst(
-					tinybirdProjectManifest.datasources,
-					(candidate) => candidate.name === datasource,
-				),
-				(found) =>
-					Option.map(
-						Option.fromNullishOr(
-							/\bRetentionDays UInt16 [^\n]*DEFAULT (\d+)/.exec(found.content),
-						),
-						(match) => Number(match[1]),
-					),
-			),
-		)
+	it("decides when each managed raw row expires, one period per partition", () => {
+		for (const { datasource } of rawTables) {
+			const day = `toDate(${RETENTION_TIME_COLUMNS[datasource]})`
+			const content = manifestContent(datasource)
+			expect(content, datasource).toContain(`ENGINE_PARTITION_KEY "(RetentionDays, ${day})"`)
+			expect(content, datasource).toContain(`ENGINE_TTL "${day} + toIntervalDay(RetentionDays)"`)
+			expect(content, datasource).toContain(`ENGINE_SETTINGS "ttl_only_drop_parts=1"`)
+		}
+	})
 
-	it("defaults to the days each raw table keeps, so an unstamped row expires as it does today", () => {
-		for (const signal of RETENTION_SIGNALS) {
-			for (const datasource of RETENTION_SIGNAL_DATASOURCES[signal]) {
-				// `product_events` gets the column when it is rebuilt.
-				if (datasource === "product_events") continue
-				expect(columnDefault(datasource), datasource).toBe(ttlDays(datasource))
-			}
+	it("leaves a self-managed table one period, its default, since nothing stamps it there", () => {
+		for (const { signal, datasource } of rawTables) {
+			const day = `toDate(${RETENTION_TIME_COLUMNS[datasource]})`
+			const created = Arr.findFirst(latestSnapshotStatements, (statement) =>
+				Str.startsWith(`CREATE TABLE IF NOT EXISTS ${datasource} (`)(statement),
+			)
+			const statement = Option.getOrUndefined(created)
+			expect(statement, datasource).toContain(`\nPARTITION BY ${day}\n`)
+			expect(statement, datasource).toContain(
+				`\nTTL ${day} + INTERVAL ${DEFAULT_RETENTION_DAYS[signal]} DAY`,
+			)
 		}
 	})
 
@@ -77,13 +78,11 @@ describe("the RetentionDays column", () => {
 				return [match?.[1] ?? statement, Number(match?.[2])] as const
 			}),
 		)
+		// `product_events` came later, in migration 0076.
 		const expected = Record.fromEntries(
 			Arr.map(
-				Arr.filter(
-					Arr.flatMap(RETENTION_SIGNALS, (signal) => RETENTION_SIGNAL_DATASOURCES[signal]),
-					(datasource) => datasource !== "product_events",
-				),
-				(datasource) => [datasource, ttlDays(datasource)] as const,
+				Arr.filter(rawTables, ({ datasource }) => datasource !== "product_events"),
+				({ signal, datasource }) => [datasource, DEFAULT_RETENTION_DAYS[signal]] as const,
 			),
 		)
 		expect(migrated).toEqual(expected)

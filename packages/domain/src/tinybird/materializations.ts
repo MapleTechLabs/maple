@@ -1,5 +1,6 @@
 import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import { AWS_METRIC_PREFIX } from "../aws-infra"
+import { ALTER_AFTER_RETENTION_ROLLOUT } from "./retention-rollout"
 import {
 	chPattern,
 	chRedactChain,
@@ -516,7 +517,8 @@ export const serviceMapSpansMv = defineMaterializedView("service_map_spans_mv", 
           Duration,
           StatusCode,
           TraceState,
-          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          RetentionDays
         FROM traces
         WHERE SpanKind IN ('Client', 'Producer', 'Server', 'Consumer')
       `,
@@ -537,7 +539,8 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
 	datasource: serviceOverviewSpans,
 	// Migration 0037's SpanKind/IsRoot are additive and older rows may read ''/0.
 	// Without this, Tinybird rebuilds the target by replaying 30 days of `traces`.
-	deploymentMethod: "alter",
+	// Held off while the RetentionDays rollout copies `traces` (see retention-rollout.ts).
+	...ALTER_AFTER_RETENTION_ROLLOUT,
 	nodes: [
 		node({
 			name: "service_overview_spans_mv_node",
@@ -554,7 +557,8 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
           SampleRate,
           ResourceAttributes['service.namespace'] AS ServiceNamespace,
           SpanKind,
-          toUInt8(ParentSpanId = '') AS IsRoot
+          toUInt8(ParentSpanId = '') AS IsRoot,
+          RetentionDays
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
       `,
@@ -687,7 +691,8 @@ export const serviceMapChildrenMv = defineMaterializedView("service_map_children
           Duration,
           StatusCode,
           TraceState,
-          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          RetentionDays
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer')
           AND ParentSpanId != ''
@@ -1412,9 +1417,10 @@ export const traceIndexMv = defineMaterializedView("trace_index_mv", {
           ServiceName,
           ${TRACE_BUCKET_EXPR} AS Bucket,
           min(Timestamp) AS MinTimestamp,
-          max(Timestamp) AS MaxTimestamp
+          max(Timestamp) AS MaxTimestamp,
+          RetentionDays
         FROM traces
-        GROUP BY OrgId, TraceId, ServiceName, Bucket
+        GROUP BY OrgId, TraceId, ServiceName, Bucket, RetentionDays
       `,
 		}),
 	],
@@ -1457,10 +1463,11 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	datasource: aiTraceIndex,
 	// Migration 0026's columns are additive, and the rows already in the target
 	// are explicitly allowed to carry ''/0 for them (see above). Without this,
-	// Tinybird migrates the target by replaying `traces` through this pipe — the
+	// Tinybird migrates the target by replaying `traces` through this pipe: the
 	// backfill that crashed the maple_us deploy with an internal error. `alter`
-	// adds the columns at promotion with no data movement.
-	deploymentMethod: "alter",
+	// adds the columns at promotion with no data movement. Held off while the
+	// RetentionDays rollout copies `traces` (see retention-rollout.ts).
+	...ALTER_AFTER_RETENTION_ROLLOUT,
 	nodes: [
 		node({
 			name: "ai_trace_index_mv_node",
@@ -1495,7 +1502,8 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
           ${GENAI_STATUS_MESSAGE_SQL} AS StatusMessage,
           ${GENAI_TOOL_DESCRIPTION_SQL} AS ToolDescription,
           ${GENAI_FAILED_TOOL_CALL_RESULT_SQL} AS FailedToolCallResult,
-          ${GENAI_ERROR_FINGERPRINT_SQL} AS ErrorFingerprint
+          ${GENAI_ERROR_FINGERPRINT_SQL} AS ErrorFingerprint,
+          RetentionDays
         FROM traces
         WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
       `,
@@ -1588,7 +1596,8 @@ export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_m
           ${AI_CRAWLER_NAME_SQL} AS Crawler,
           ${REQUEST_HOST_SQL} AS Host,
           ${REQUEST_PATH_SQL} AS Path,
-          ${RESPONSE_STATUS_SQL} AS HttpStatus
+          ${RESPONSE_STATUS_SQL} AS HttpStatus,
+          RetentionDays
         FROM traces
         WHERE SpanKind = 'Server'
           AND ${AI_CRAWLER_INDEX_SQL} > 0
@@ -1607,7 +1616,8 @@ export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
 		"Populates scanner_requests with Server spans whose path matches a probe signature or whose user agent names a scanning tool, pre-extracting the signature, scanner, host, path, status, client address and user agent.",
 	datasource: scannerRequests,
 	// A catalog change only renames new rows; without this Tinybird replays 30 days of `traces`.
-	deploymentMethod: "alter",
+	// Held off while the RetentionDays rollout copies `traces` (see retention-rollout.ts).
+	...ALTER_AFTER_RETENTION_ROLLOUT,
 	nodes: [
 		node({
 			name: "scanner_requests_mv_node",
@@ -1623,7 +1633,8 @@ export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
           ${REQUEST_PATH_SQL} AS Path,
           ${RESPONSE_STATUS_SQL} AS HttpStatus,
           ${CLIENT_ADDRESS_SQL} AS ClientAddress,
-          ${SCANNER_USER_AGENT_SQL} AS UserAgent
+          ${SCANNER_USER_AGENT_SQL} AS UserAgent,
+          RetentionDays
         FROM traces
         WHERE SpanKind = 'Server'
           AND (${CRITICAL_PROBE_INDEX_SQL} > 0 OR ${OTHER_PROBE_INDEX_SQL} > 0 OR ${SCANNER_INDEX_SQL} > 0)
@@ -1894,7 +1905,8 @@ export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
             OR (SpanAttributes['http.response.status_code'] != '' AND toUInt16OrZero(SpanAttributes['http.response.status_code']) >= 500)
           ) AS HasError,
           TraceState,
-          ResourceAttributes['service.namespace'] AS ServiceNamespace
+          ResourceAttributes['service.namespace'] AS ServiceNamespace,
+          RetentionDays
         FROM traces
         WHERE ParentSpanId = ''
       `,
@@ -2604,7 +2616,8 @@ export const productEventsMv = defineMaterializedView("product_events_mv", {
           '' AS ServiceName,
           Attributes,
           '' AS TraceId,
-          '' AS SpanId
+          '' AS SpanId,
+          EventsRetentionDays AS RetentionDays
         FROM session_events
         WHERE Type IN ('navigation', 'custom')
       `,
