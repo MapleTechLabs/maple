@@ -16,6 +16,7 @@ import * as DataPlatform from "./data-platform/model"
 import * as DataSources from "./data-sources/model"
 import * as AuditLog from "./audit-log/model"
 import * as Automation from "./automation/model"
+import * as Retention from "./retention/model"
 import * as Ingestion from "./ingestion/model"
 import * as Keys from "./keys/model"
 import * as Mcp from "./mcp/model"
@@ -44,6 +45,7 @@ export const TabModel = Schema.Union([
 	Schema.TaggedStruct("SetupHealth", { model: SetupHealth.Model }),
 	Schema.TaggedStruct("Ai", { model: Ai.Model }),
 	Schema.TaggedStruct("Automation", { model: Automation.Model }),
+	Schema.TaggedStruct("Retention", { model: Retention.Model }),
 	Schema.TaggedStruct("AuditLog", { model: AuditLog.Model }),
 	Schema.TaggedStruct("DataPlatform", { model: DataPlatform.Model }),
 	Schema.TaggedStruct("DataSources", { model: DataSources.Model }),

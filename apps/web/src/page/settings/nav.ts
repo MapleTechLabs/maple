@@ -21,6 +21,7 @@ export const settingsTabLabels = {
 	ingestion: "Ingestion",
 	"data-platform": "Data platform",
 	"data-sources": "Data sources",
+	retention: "Retention",
 	"setup-health": "Setup health",
 	automation: "Automation",
 } as const satisfies { readonly [Tab in SettingsTab]: string }
@@ -69,6 +70,7 @@ const navSections: ReadonlyArray<NavShellSection<SettingsTab>> = [
 			tab("ingestion", "ServerIcon"),
 			tab("data-platform", "DatabaseIcon"),
 			tab("data-sources", "PlugIcon"),
+			tab("retention", "ClockIcon"),
 			tab("setup-health", "CircleCheckIcon"),
 		],
 	},
@@ -92,6 +94,8 @@ const isVisible = (id: string, visibility: Visibility): boolean => {
 	if (id === "sso") return visibility.isClerk
 	// Clerk refuses a member reading the domains, so the tab is for admins only.
 	if (id === "domains") return visibility.isClerk && Policy.can(visibility.grants, "organization:manage")
+	// Retention is set per hosted organization; self-hosted Maple keeps its own.
+	if (id === "retention") return visibility.isClerk
 	if (!visibility.isClerk) return true
 	if (id === "data-platform")
 		return visibility.canAccessDataPlatform || visibility.isDataPlatformLocked === true

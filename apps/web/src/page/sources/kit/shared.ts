@@ -70,13 +70,16 @@ export const pausedLabel = <M>(
 export const hasToken = (source: V2Source): boolean => source.key_prefix !== null
 
 /** `/sources/$sourceId` in its public id form; the overview tab drops `tab`. */
-export const sourceHref = (source: V2Source, tab: SourceTab = "overview"): string =>
+export const sourceHrefById = (id: V2Source["id"], tab: SourceTab = "overview"): string =>
 	hrefOf(
 		AppRoute.Source({
-			sourceId: toPublicSourceId(source.id),
+			sourceId: toPublicSourceId(id),
 			search: tab === "overview" ? {} : { tab },
 		}),
 	)
+
+export const sourceHref = (source: V2Source, tab: SourceTab = "overview"): string =>
+	sourceHrefById(source.id, tab)
 
 /** A source Maple collects through an integration (no token, a Connection tab instead of Setup). */
 export const integrationPlatformOf = (source: V2Source): PullSourcePlatform | null =>

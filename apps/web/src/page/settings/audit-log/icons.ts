@@ -42,6 +42,7 @@ const VERB_ICONS = {
 	identity_link_started: "LinkIcon",
 	updated: "PencilIcon",
 	settings_updated: "PencilIcon",
+	source_updated: "PencilIcon",
 	zones_updated: "PencilIcon",
 	features_updated: "PencilIcon",
 	role_changed: "ShieldIcon",
