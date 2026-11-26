@@ -38,7 +38,31 @@ const loaded = (grants = ADMIN, logs: RetentionDays | null = null) =>
 
 // 2026-11-25 12:00 UTC.
 const NOW = Date.UTC(2026, 10, 25, 12)
-const inputs = { nowMs: NOW, timeZone: "UTC" }
+const inputs = { timeZone: "UTC", canOpenDataPlatform: false }
+
+/** A period picked, with the clock read that picking it asks for. */
+const pick = (model: ReturnType<typeof loaded>, signal: "traces" | "logs", value: string) =>
+	update(update(model, Message.ChangedPeriod({ signal, value })).model, Message.ReadClock({ nowMs: NOW }))
+		.model
+
+/** An org that keeps logs for `logs` days with no source of its own: reads reach exactly that. */
+const withoutSources = (logs: RetentionDays) =>
+	Schema.decodeSync(V2RetentionPolicy)({
+		...Schema.encodeSync(V2RetentionPolicy)(policy(logs)),
+		read_horizon_days: { ...DEFAULTS, logs },
+		sources: [],
+	})
+
+const loadedWith = (stored: V2RetentionPolicy, grants = ADMIN) =>
+	update(init(grants).model, Message.CompletedFetchPolicy({ result: Result.succeed(stored) })).model
+
+const withNames = (model: ReturnType<typeof loaded>) =>
+	update(
+		model,
+		Message.CompletedFetchSources({
+			result: Result.succeed([{ id: SOURCE_UUID, name: "checkout-api" }]),
+		}),
+	).model
 
 describe("retention tab", () => {
 	test("entry reads the policy and the source names", () => {
@@ -48,13 +72,13 @@ describe("retention tab", () => {
 	})
 
 	test("a shorter period hides older data when nothing keeps it longer", () => {
-		const edited = update(loaded(), Message.ChangedPeriod({ signal: "traces", value: "7" })).model
+		const edited = pick(loaded(), "traces", "7")
 		scene(
 			{ update, view: withViewInputs(view, inputs)() },
 			given(edited),
 			expectView(
 				text(
-					"Spans older than 1 week are hidden once you save. Switch back to see them again while they are still stored.",
+					"Spans older than 7 days are hidden once you save. Switch back to see them again while they are still stored.",
 				),
 			).toExist(),
 			expectView(text("1 unsaved change")).toExist(),
@@ -62,20 +86,20 @@ describe("retention tab", () => {
 	})
 
 	test("a shorter period hides nothing while a source keeps longer", () => {
-		const edited = update(loaded(), Message.ChangedPeriod({ signal: "logs", value: "7" })).model
+		const edited = pick(loaded(), "logs", "7")
 		scene(
 			{ update, view: withViewInputs(view, inputs)() },
 			given(edited),
 			expectView(
 				text(
-					"Logs arriving from a minute after you save are kept for 1 week. Logs already stored keep the period they arrived under.",
+					"Logs arriving from a minute after you save are kept for 7 days. Logs already stored keep the period they arrived under. 1 source keeps its own period and is not affected.",
 				),
 			).toExist(),
 		)
 	})
 
 	test("a longer period applies from now on and names the day the full history is there", () => {
-		const edited = update(loaded(), Message.ChangedPeriod({ signal: "traces", value: "90" })).model
+		const edited = pick(loaded(), "traces", "90")
 		scene(
 			{ update, view: withViewInputs(view, inputs)() },
 			given(edited),
@@ -84,6 +108,79 @@ describe("retention tab", () => {
 					"Applies to spans arriving from a minute after you save. 90 days of history is there by Feb 23, 2027.",
 				),
 			).toExist(),
+		)
+	})
+
+	test("before the clock is read, a longer period names no date", () => {
+		const edited = update(loaded(), Message.ChangedPeriod({ signal: "traces", value: "90" })).model
+		expect(
+			Arr.map(
+				update(loaded(), Message.ChangedPeriod({ signal: "traces", value: "90" })).commands ?? [],
+				(command) => command.name,
+			),
+		).toEqual(["ReadRetentionClock"])
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(edited),
+			expectView(text("Applies to spans arriving from a minute after you save.")).toExist(),
+		)
+	})
+
+	test("an explicit 90 days back to the default hides logs older than the default", () => {
+		const edited = pick(loadedWith(withoutSources(90)), "logs", "30")
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(edited),
+			expectView(
+				text(
+					"Logs older than 30 days are hidden once you save. Switch back to see them again while they are still stored.",
+				),
+			).toExist(),
+		)
+	})
+
+	test("a longer period says which sources keep their own and are not affected", () => {
+		const edited = pick(loaded(), "logs", "90")
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(edited),
+			expectView(
+				text(
+					"Applies to logs arriving from a minute after you save. 90 days of history is there by Feb 23, 2027. 1 source keeps its own period and is not affected.",
+				),
+			).toExist(),
+		)
+	})
+
+	test("a longer period promises no history when every source keeps its own", () => {
+		const edited = pick(withNames(loaded()), "logs", "90")
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(edited),
+			expectView(
+				text(
+					"Every source keeps its own period for logs, so none is affected now. A source that follows the organization later keeps 90 days.",
+				),
+			).toExist(),
+		)
+	})
+
+	test("several signals changed in one save each say what they do", () => {
+		const edited = pick(pick(loadedWith(withoutSources(90)), "logs", "30"), "traces", "7")
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(edited),
+			expectView(
+				text(
+					"Logs older than 30 days are hidden once you save. Switch back to see them again while they are still stored.",
+				),
+			).toExist(),
+			expectView(
+				text(
+					"Spans older than 7 days are hidden once you save. Switch back to see them again while they are still stored.",
+				),
+			).toExist(),
+			expectView(text("2 unsaved changes")).toExist(),
 		)
 	})
 
@@ -138,7 +235,12 @@ describe("retention tab", () => {
 			{ update, view: withViewInputs(view, inputs)() },
 			given(named),
 			expectView(role("link", { name: "checkout-api" })).toExist(),
-			expectView(text("Logs 6 months")).toExist(),
+			expectView(text("Logs 180 days")).toExist(),
+			expectView(
+				text(
+					"A source can keep a signal shorter or longer than the organization, from its Settings tab. Reads reach as far back as the longest of them.",
+				),
+			).toExist(),
 		)
 		// Without Manage sources the name is not a link to a tab the viewer cannot open.
 		const retentionOnly = { ...named, grants: ["telemetry:read", "retention:manage"] as const }
@@ -147,6 +249,11 @@ describe("retention tab", () => {
 			given(retentionOnly),
 			expectView(role("link", { name: "checkout-api" })).not.toExist(),
 			expectView(text("checkout-api")).toExist(),
+			expectView(
+				text(
+					"A source can keep a signal shorter or longer than the organization. Reads reach as far back as the longest of them.",
+				),
+			).toExist(),
 		)
 	})
 
@@ -163,6 +270,26 @@ describe("retention tab", () => {
 			expectView(text("Your ClickHouse keeps its own retention")).toExist(),
 			expectView(role("combobox", { name: "Logs" })).not.toExist(),
 			expectView(text("Sources with their own period")).not.toExist(),
+			expectView(role("link", { name: "Data platform" })).not.toExist(),
+		)
+		scene(
+			{ update, view: withViewInputs(view, { ...inputs, canOpenDataPlatform: true })() },
+			given(own),
+			expectView(role("link", { name: "Data platform" })).toExist(),
+		)
+	})
+
+	test("on its own ClickHouse a member sees no note about who can change the periods", () => {
+		const own = loadedWith({ ...policy(), storage: "own_warehouse" }, MEMBER)
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(own),
+			expectView(
+				text("Only people with Manage retention can change these periods. Admin has it."),
+			).not.toExist(),
+			expectView(
+				text("How long each signal is kept is set in your organization's own ClickHouse, not here."),
+			).toExist(),
 		)
 	})
 })

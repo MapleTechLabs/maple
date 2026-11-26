@@ -215,7 +215,7 @@ export const settingsTab = (h: H, model: Model, source: V2Source, timeZone: stri
 		onDiscard: Message.ClickedDiscardSettings(),
 		onSave: Message.SubmittedSettings(),
 	})
-	const retention = retentionSection(h, model, source, { nowMs: model.nowMs ?? 0, timeZone })
+	const retention = retentionSection(h, model, source, { nowMs: model.nowMs, timeZone })
 	// Token sources save the rules too; the rest save General alone. Retention saves beside either.
 	const sections: ReadonlyArray<Html> = isToken
 		? [

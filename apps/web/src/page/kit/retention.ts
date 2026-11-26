@@ -34,25 +34,11 @@ export const SIGNAL_DESCRIPTIONS = {
 	profiles: "Continuous profiling samples.",
 } as const satisfies Record<RetentionSignal, string>
 
-/** "30 days", "1 week", "2 years". */
-export const periodLabel = (days: number): string => {
-	switch (days) {
-		case 1:
-			return "1 day"
-		case 7:
-			return "1 week"
-		case 14:
-			return "2 weeks"
-		case 180:
-			return "6 months"
-		case 365:
-			return "1 year"
-		case 730:
-			return "2 years"
-		default:
-			return `${days} days`
-	}
-}
+/** What a viewer without Manage retention reads above the periods, on the org tab and a source. */
+export const READ_ONLY_NOTE = "Only people with Manage retention can change these periods. Admin has it."
+
+/** "30 days", "180 days": in days, as the API and the docs name a period. */
+export const periodLabel = (days: number): string => (days === 1 ? "1 day" : `${days} days`)
 
 /** The options a period select offers, the default marked when there is one. */
 export const periodOptions = (defaultDays?: number) =>
@@ -80,7 +66,11 @@ export type RetentionEdit =
 	| { readonly _tag: "Organization"; readonly days: number }
 	| { readonly _tag: "Source"; readonly sourceId: string; readonly days: number | null }
 
-/** How far back reads reach for `signal` with `edit` applied: the longest any source keeps it. */
+/**
+ * How far back reads reach for `signal` with `edit` applied: the longest any source keeps it,
+ * and never less than the organization's period (the default when unset). Saving bounds every
+ * signal there, as `read_horizon_days` does.
+ */
 export const horizonWith = (
 	policy: V2RetentionPolicy,
 	signal: RetentionSignal,
@@ -101,26 +91,52 @@ export const horizonWith = (
 	return Arr.reduce([...listed, ...added], organization, Math.max)
 }
 
+/** The clock a sentence dates from: `nowMs` is `null` until it has been read. */
+export type SentenceClock = Readonly<{ nowMs: number | null; timeZone: string }>
+
+/** How many sources keep `signal` for a period of their own. */
+export const overridingSources = (policy: V2RetentionPolicy, signal: RetentionSignal): number =>
+	Arr.filter(policy.sources, (source) => source.set[signal] !== null).length
+
+/** " 2 sources keep their own period and are not affected.", or nothing. */
+const unaffectedNote = (overriding: number): string =>
+	overriding === 0
+		? ""
+		: overriding === 1
+			? " 1 source keeps its own period and is not affected."
+			: ` ${overriding} sources keep their own period and are not affected.`
+
 /**
  * The sentence under a changed row, saying what saving does. Rows keep the period in force when
  * they arrived, and reads reach as far as the longest period any source keeps: a shorter period
  * hides data only when that horizon moves in, and a longer one builds up as new data arrives.
+ * `sourceCount` is how many sources the organization has, `null` while unknown.
  */
 export const changeSentence = (
 	policy: V2RetentionPolicy,
 	signal: RetentionSignal,
 	change: Readonly<{ from: number; to: number; edit: RetentionEdit }>,
-	nowMs: number,
-	timeZone: string,
+	clock: SentenceClock,
+	sourceCount: number | null = null,
 ): string | null => {
 	const noun = SIGNAL_NOUNS[signal]
 	const lower = Str.toLowerCase(noun)
 	if (change.to === change.from) return null
-	if (change.to > change.from)
-		return `Applies to ${lower} arriving from a minute after you save. ${periodLabel(change.to)} of history is there by ${dayLabel(nowMs + change.to * DAY_MS, nowMs, timeZone)}.`
+	const isOrganization = change.edit._tag === "Organization"
+	const overriding = isOrganization ? overridingSources(policy, signal) : 0
+	if (change.to > change.from) {
+		// No source follows the organization for this signal: nothing builds up until one does.
+		if (isOrganization && sourceCount !== null && sourceCount > 0 && overriding >= sourceCount)
+			return `Every source keeps its own period for ${lower}, so none is affected now. A source that follows the organization later keeps ${periodLabel(change.to)}.`
+		const history =
+			clock.nowMs === null
+				? ""
+				: ` ${periodLabel(change.to)} of history is there by ${dayLabel(clock.nowMs + change.to * DAY_MS, clock.nowMs, clock.timeZone)}.`
+		return `Applies to ${lower} arriving from a minute after you save.${history}${unaffectedNote(overriding)}`
+	}
 	const before = policy.read_horizon_days[signal]
 	const after = horizonWith(policy, signal, change.edit)
 	return after < before
 		? `${noun} older than ${periodLabel(after)} are hidden once you save. Switch back to see them again while they are still stored.`
-		: `${noun} arriving from a minute after you save are kept for ${periodLabel(change.to)}. ${noun} already stored keep the period they arrived under.`
+		: `${noun} arriving from a minute after you save are kept for ${periodLabel(change.to)}. ${noun} already stored keep the period they arrived under.${unaffectedNote(overriding)}`
 }

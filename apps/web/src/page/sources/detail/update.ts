@@ -377,7 +377,12 @@ const save = (model: Model): Return => {
 			retention:
 				retention === null
 					? null
-					: { ...retention, isSaving: sendRetention, savedWithSource: sendSource },
+					: {
+							...retention,
+							isSaving: sendRetention,
+							savedWithSource: sendSource,
+							savedAlongside: false,
+						},
 		},
 		commands: [
 			...(sendSource
@@ -407,6 +412,8 @@ const changedPeriod = (model: Model, signal: RetentionSignal, value: string): Re
 		onNone: () => ({ model }),
 		onSome: (days) => ({
 			model: { ...model, retention: { ...retention, draft: { ...draft, [signal]: days } } },
+			// The sentence under the row dates from now, never from a clock read long ago.
+			commands: [ReadSourceClock()],
 		}),
 	})
 }
@@ -743,10 +750,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								isSaving: false,
 								policy: AsyncData.Success({ data: policy }),
 								draft: storedSet(policy, sourceId),
+								savedAlongside:
+									retention.savedWithSource && model.settings?.isSaving === true,
 							},
 						},
 					}
-					// A save that sent the source too toasts once, from the source's answer.
+					// A save that sent the source too toasts once, from the source's answer. A source
+					// that already failed reset `savedWithSource`, so this save toasts on its own.
 					return retention.savedWithSource
 						? saved
 						: { ...saved, outMessage: toast("success", "Retention saved") }
@@ -757,8 +767,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			})
 		},
-		CompletedSave: ({ result }) =>
-			settled(
+		CompletedSave: ({ result }) => {
+			const retention = model.retention
+			const retentionSaved = retention?.savedAlongside === true
+			// Retention still in flight toasts its own answer once the source has failed.
+			const retentionAfter =
+				retention === null
+					? null
+					: Result.isFailure(result) && retention.isSaving
+						? { ...retention, savedWithSource: false, savedAlongside: false }
+						: { ...retention, savedAlongside: false }
+			const step = settled(
 				// Rebuilt from the saved source, so the form is clean before the list reload lands.
 				Result.match(result, {
 					onFailure: () => withSettings(model, (form) => ({ ...form, isSaving: false })),
@@ -769,9 +788,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				result,
 				{
 					success: "Source saved. Changes reach the gateway within a minute.",
-					error: "Couldn't save source",
+					error: retentionSaved
+						? "Couldn't save source. Retention was saved."
+						: "Couldn't save source",
 				},
-			),
+			)
+			return { ...step, model: { ...step.model, retention: retentionAfter } }
+		},
 		GotTokenCopyMessage: ({ message: inner }) => {
 			const next = CopyButton.update(model.tokenCopy, inner)
 			// Only the current copy toasts.

@@ -316,7 +316,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/refused-badge.ts` `refusedBadge`: The mark on an audit entry that did not go through: a crossed circle and what happened ("Denied", "Failed").
 - `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: A timestamp as relative text.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
-- `apps/web/src/page/kit/retention.ts` `periodLabel`, `periodOptions`, `parsePeriod`, `dayLabel`, `horizonWith`, `changeSentence`: What a retention period reads as, and what changing one does, for the Retention tab and a source.
+- `apps/web/src/page/kit/retention.ts` `periodLabel`, `periodOptions`, `parsePeriod`, `dayLabel`, `horizonWith`, `overridingSources`, `changeSentence`: What a retention period reads as, and what changing one does, for the Retention tab and a source.
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
 - `apps/web/src/page/kit/row-warning.ts` `rowWarning`, `rowWarnings`: A list row's warning: a small glyph and a few words in the warning tone, under the row's name.
 - `apps/web/src/page/kit/ruled-section.ts` `ruledSection`: A section set off from the content above it by a full-width rule, its children stacked 12px apart.

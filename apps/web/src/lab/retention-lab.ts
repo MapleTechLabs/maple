@@ -125,6 +125,7 @@ export const init = (flags: Flags): Return => {
 										}),
 									]
 								: []),
+						RetentionModel.Message.ReadClock({ nowMs: flags.nowMs }),
 					]
 	return { model: { nowMs: flags.nowMs, retention: Arr.reduce(answers, start, step) } }
 }
@@ -153,7 +154,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				slotId: "lab-retention",
 				model: model.retention,
 				view: RetentionView.view,
-				viewInputs: { nowMs: model.nowMs, timeZone: "UTC" },
+				viewInputs: { timeZone: "UTC", canOpenDataPlatform: true },
 				toParentMessage: (message: RetentionModel.Message) =>
 					Message.GotRetentionMessage({ message }),
 			}),

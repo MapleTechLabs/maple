@@ -22,6 +22,8 @@ export const Model = Schema.Struct({
 	isSaving: Schema.Boolean,
 	/** The org's sources by id, `null` until they load: only names, for the overrides list. */
 	sourceNames: Schema.NullOr(Schema.Array(SourceName)),
+	/** Read when a period changes, so a "by" date never counts from an unread clock. */
+	nowMs: Schema.NullOr(Schema.Number),
 })
 export type Model = typeof Model.Type
 
@@ -36,6 +38,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchSources: done(Schema.Array(SourceName)),
 	ClickedRetry: {},
 	ChangedPeriod: { signal: RetentionSignal, value: Schema.String },
+	ReadClock: { nowMs: Schema.Number },
 	ClickedDiscard: {},
 	ClickedSave: {},
 	CompletedSave: done(V2RetentionPolicy),
