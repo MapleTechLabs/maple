@@ -4198,7 +4198,8 @@
             "object": "device_credential",
             "organization_id": "org_2abcDEF",
             "scopes": [
-              "widget_summary:read"
+              "widget_summary:read",
+              "widget_summary:write"
             ]
           }
         ],
@@ -4245,7 +4246,7 @@
             "$ref": "#/components/schemas/_maple_OrgId"
           },
           "scopes": {
-            "description": "Fixed by the server. Today, exactly `widget_summary:read`.",
+            "description": "Fixed by the server. Today `widget_summary:read` and `widget_summary:write`: the widgets' reads, and acknowledging a page from one.",
             "items": {
               "type": "string"
             },
@@ -15191,6 +15192,10 @@
     {
       "description": "The single read behind the Maple mobile Home Screen widgets. Deliberately its own scope family so a device credential can be fenced to it alone.",
       "name": "Widget Summary"
+    },
+    {
+      "description": "What the Maple mobile Pages widget reads and does. In the widget's own scope family so a device credential can acknowledge without reaching the rest of the alerts API.",
+      "name": "Widget Pages"
     },
     {
       "description": "Device-scoped, read-only credentials for the Maple mobile Home Screen widgets. Minted by a signed-in app for one installation at a time.",

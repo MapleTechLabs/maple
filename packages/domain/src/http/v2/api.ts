@@ -43,6 +43,7 @@ import { V2SupportChannelApiGroup } from "./support-channel"
 import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
 import { V2SharePublicApiGroup } from "./share"
 import { V2WidgetCredentialsApiGroup } from "./widget-credentials"
+import { V2WidgetPagesApiGroup } from "./widget-pages"
 import { V2WidgetSummaryApiGroup } from "./widget-summary"
 import {
 	V2EnvironmentsApiGroup,
@@ -157,6 +158,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2EnvironmentsApiGroup)
 	.add(V2SharePublicApiGroup)
 	.add(V2WidgetSummaryApiGroup)
+	.add(V2WidgetPagesApiGroup)
 	.add(V2WidgetCredentialsApiGroup)
 	.add(V2DeviceCredentialsApiGroup)
 	.add(V2DeviceTokensApiGroup)

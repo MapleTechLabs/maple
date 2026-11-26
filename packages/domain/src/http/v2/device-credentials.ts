@@ -93,7 +93,8 @@ export const V2DeviceCredential = Schema.Struct({
 		description: "RFC 7638 SHA-256 thumbprint of the registered key; the `cnf.jkt` of every token.",
 	}),
 	scopes: Schema.Array(Schema.String).annotate({
-		description: "Fixed by the server. Today, exactly `widget_summary:read`.",
+		description:
+			"Fixed by the server. Today `widget_summary:read` and `widget_summary:write`: the widgets' reads, and acknowledging a page from one.",
 	}),
 	attested: Schema.Boolean.annotate({
 		description: "Whether an App Attest attestation for this installation verified.",
@@ -118,7 +119,7 @@ export const V2DeviceCredential = Schema.Struct({
 			organization_id: "org_2abcDEF",
 			installation_id: "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9",
 			jkt: "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I",
-			scopes: ["widget_summary:read"],
+			scopes: ["widget_summary:read", "widget_summary:write"],
 			attested: true,
 			created_at: "2026-10-24T09:10:00.000Z",
 			expires_at: "2026-11-23T09:10:00.000Z",

@@ -391,7 +391,7 @@ describe("device credential registration", () => {
 			expect(registered.body.object).toBe("device_credential")
 			expect(registered.body.id).toMatch(/^dcred_/)
 			expect(registered.body.jkt).toBe(key.jkt)
-			expect(registered.body.scopes).toEqual(["widget_summary:read"])
+			expect(registered.body.scopes).toEqual(["widget_summary:read", "widget_summary:write"])
 			expect(registered.body.attested).toBe(false)
 			const created = Date.parse(registered.body.created_at)
 			expect(Date.parse(registered.body.expires_at) - created).toBe(30 * 24 * 60 * 60 * 1000)
@@ -468,7 +468,7 @@ describe("device token issuance", () => {
 				object: "device_token",
 				token_type: "DPoP",
 				expires_in: 3600,
-				scope: "widget_summary:read",
+				scope: "widget_summary:read widget_summary:write",
 			})
 			const [, payload] = Str.split(".")(String(issued.body.access_token))
 			const claims = JSON.parse(Buffer.from(payload ?? "", "base64url").toString("utf8"))

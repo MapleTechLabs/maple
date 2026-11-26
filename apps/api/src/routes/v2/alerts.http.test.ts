@@ -75,6 +75,7 @@ import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSch
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { HttpV2AlertDeliveriesLive } from "./alert-deliveries.http"
+import { HttpV2WidgetPagesLive } from "./widget-pages.http"
 import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "./alert-incidents.http"
 import { HttpV2EscalationChainsLive } from "./escalation-chains.http"
@@ -257,6 +258,7 @@ const makeHarness = (
 			MapleApiV2.groups.alertRules,
 			MapleApiV2.groups.alertDestinations,
 			MapleApiV2.groups.alertIncidents,
+			MapleApiV2.groups.widgetPages,
 			MapleApiV2.groups.escalationChains,
 			MapleApiV2.groups.oncallSchedules,
 			MapleApiV2.groups.alertSilences,
@@ -281,6 +283,14 @@ const makeHarness = (
 										: Layer.succeed(OrgMembersService, incidentDirectory),
 								),
 							),
+						),
+					),
+				),
+				HttpV2WidgetPagesLive.pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+							Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make),
 						),
 					),
 				),
@@ -2029,6 +2039,106 @@ describe("v2 alerts over HTTP", () => {
 		expect(toThisBuild.body.escalation.next_step_people).toEqual([])
 		const toBrowser = await harness.request("GET", `/v2/alerts/incidents/${openId}`, session)
 		expect(toBrowser.body.acknowledged_via).toBe("mobile")
+
+		await harness.dispose()
+	})
+
+	it("lists what is paging the caller for a widget, and acknowledges within the widget's own scope", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const reader = await harness.bootstrapKey(["widget_summary:read"])
+		const writer = await harness.bootstrapKey(["widget_summary:write"])
+		const cannotRespond = await harness.bootstrapKey(["widget_summary:write"], ["telemetry:read"])
+		await createWebhookAndRule(harness, key.secret)
+		const waiting = "00000000-0000-4000-8000-000000001a01"
+		const answered = "00000000-0000-4000-8000-000000001a02"
+		const notMine = "00000000-0000-4000-8000-000000001a03"
+		await insertOpenIncidents(harness, "org_alerts_e2e", [waiting, answered, notMine])
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set last_observed_value = 0.091 where org_id = 'org_alerts_e2e'`,
+		)
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = now(), acknowledged_by_user_id = 'user_dana',
+				acknowledged_by_name = 'Dana Kim', acknowledged_via = 'slack', last_triggered_at = now() + interval '1 minute'
+				where id = '${answered}'`,
+		)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_member_notifications (
+				id, org_id, incident_id, run_id, user_id, channel, status, scheduled_at, payload_json,
+				dedupe_key, created_at, updated_at
+			) values
+				('wp-1', 'org_alerts_e2e', '${waiting}', 'run-1', 'user_alerts_e2e', 'push', 'sent', now(), '{}'::jsonb, 'wp-1', now(), now()),
+				('wp-2', 'org_alerts_e2e', '${answered}', 'run-2', 'user_alerts_e2e', 'email', 'sent', now(), '{}'::jsonb, 'wp-2', now(), now()),
+				('wp-3', 'org_alerts_e2e', '${notMine}', 'run-3', 'user_someone_else', 'email', 'sent', now(), '{}'::jsonb, 'wp-3', now(), now())`,
+		)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_escalation_runs (
+				id, org_id, incident_id, chain_id, chain_name, severity, steps_json, repeat_count,
+				step_index, pass_index, next_step_at, status, payload_json, steps_sent, created_at, updated_at
+			) values ('00000000-0000-4000-8000-000000001b01', 'org_alerts_e2e', '${waiting}',
+				'00000000-0000-4000-8000-0000000000e2', 'Checkout on-call', 'critical',
+				'[{"targets":[{"type":"user","userId":"user_first"}],"waitMinutes":5},{"targets":[{"type":"user","userId":"user_next"},{"type":"user","userId":"user_other"}],"waitMinutes":5}]'::jsonb,
+				0, 1, 0, now() + interval '4 minutes', 'active', '{}'::jsonb, 1, now(), now())`,
+		)
+		const call = (method: string, path: string, token: string) => harness.request(method, path, token)
+
+		const listed = await call("GET", "/v2/widget_summary/pages", reader.secret)
+		expect(listed.status).toBe(200)
+		expect(listed.body).toMatchObject({
+			object: "widget_pages",
+			organization_id: "org_alerts_e2e",
+			has_more: false,
+		})
+		// What waits on an answer leads, though the answered one triggered more recently.
+		expect(listed.body.data).toMatchObject([
+			{
+				rule_name: "Checkout error rate",
+				severity: "critical",
+				value: "9.1%",
+				threshold: "> 5%",
+				acknowledged_by: null,
+				acknowledged_by_you: false,
+				next_page_at: expect.any(String),
+				next_page_people: "a teammate +1",
+			},
+			{
+				acknowledged_by: "Dana Kim",
+				acknowledged_by_you: false,
+				next_page_at: null,
+				next_page_people: null,
+			},
+		])
+		const waitingId: string = listed.body.data[0].incident_id
+		expect(waitingId).toMatch(/^inc_/)
+
+		// Reading is not answering, and a role that cannot respond to incidents cannot from a widget either.
+		const path = `/v2/widget_summary/pages/${waitingId}/acknowledge`
+		expect((await call("POST", path, reader.secret)).status).toBe(403)
+		expect((await call("POST", path, cannotRespond.secret)).status).toBe(403)
+
+		const acknowledged = await call("POST", path, writer.secret)
+		expect(acknowledged.status).toBe(200)
+		expect(acknowledged.body).toMatchObject({
+			incident_id: waitingId,
+			acknowledged_by_you: true,
+			next_page_at: null,
+			next_page_people: null,
+		})
+		const incident = await call("GET", `/v2/alerts/incidents/${waitingId}`, key.secret)
+		expect(incident.body).toMatchObject({
+			acknowledged_via: "mobile",
+			acknowledged_by: { user_id: "user_alerts_e2e" },
+		})
+
+		// The widget's scope is a fence: it reaches nothing else about alerts.
+		expect((await call("GET", "/v2/alerts/incidents", writer.secret)).status).toBe(403)
+		expect((await call("POST", `/v2/alerts/incidents/${waitingId}/resolve`, writer.secret)).status).toBe(
+			403,
+		)
 
 		await harness.dispose()
 	})

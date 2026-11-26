@@ -40,8 +40,11 @@ import { EcPublicJwk, importEcPublicJwk, jwkThumbprint, sha256 } from "./device/
 import type * as Policy from "@maple/domain/policy"
 import { pinAuthority, pinnedGrants } from "./pinned-authority"
 
-/** Every ceiling is the server's: a registering client names a key and nothing else. */
-export const DEVICE_CREDENTIAL_SCOPES = ["widget_summary:read"] as const
+/**
+ * Every ceiling is the server's: a registering client names a key and nothing else. `write` is
+ * acknowledging a page from the Pages widget, the one write under `/v2/widget_summary`.
+ */
+export const DEVICE_CREDENTIAL_SCOPES = ["widget_summary:read", "widget_summary:write"] as const
 const ROLLING_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const HARD_CAP_MS = 90 * 24 * 60 * 60 * 1000
 export const DEVICE_TOKEN_TTL_SECONDS = 60 * 60

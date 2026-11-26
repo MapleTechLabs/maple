@@ -5,7 +5,6 @@ import type {
 	AlertIncidentDocument,
 	AlertIncidentEscalationDocument,
 	AlertIncidentEventDocument,
-	AlertIncidentId,
 	OrgId,
 } from "@maple/domain/http"
 import { CurrentTenant, isAlertNotificationEventType } from "@maple/domain/http"
@@ -25,6 +24,7 @@ import {
 } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { CurrentAuditActor, MOBILE_CLIENT_HEADER } from "@maple/backend/services/auth/audit-actor"
+import { loadIncidentEscalations } from "./incident-escalations"
 
 /**
  * An ack pauses the run on the scheduler's next tick; until then the wire already reads it paused,
@@ -167,27 +167,12 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 		const pagesService = yield* AlertIncidentPagesService
 		const members = yield* OrgMembersService
 
-		// One escalation read for a whole page of incidents, never one per incident. Who is paged next
-		// is read only for the runs still waiting on a step: unacknowledged open incidents with a chain.
 		const incidentsOnWire = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
 			Effect.gen(function* () {
 				const client = yield* wireClient
-				const escalations = yield* readModels.listIncidentEscalations(
-					orgId,
-					Arr.map(docs, (doc): AlertIncidentId => doc.id),
-				)
-				const byIncident = new Map(Arr.map(escalations, (row) => [row.incidentId, row]))
-				const waiting = Arr.flatMap(docs, (doc): ReadonlyArray<AlertIncidentId> =>
-					doc.status === "open" &&
-					doc.acknowledgedAt === null &&
-					byIncident.get(doc.id)?.nextStepAt != null
-						? [doc.id]
-						: [],
-				)
-				const people = yield* pagesService.listNextStepPeople(orgId, waiting)
-				const peopleByIncident = new Map(Arr.map(people, (row) => [row.incidentId, row.people]))
+				const escalations = yield* loadIncidentEscalations(readModels, pagesService, orgId, docs)
 				return (doc: AlertIncidentDocument) =>
-					toV2Incident(doc, byIncident.get(doc.id), peopleByIncident.get(doc.id) ?? [], client)
+					toV2Incident(doc, escalations.runOf(doc.id), escalations.nextStepPeopleOf(doc.id), client)
 			})
 		const withEscalations = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
 			Effect.map(incidentsOnWire(orgId, docs), (toWire) => Arr.map(docs, toWire))
