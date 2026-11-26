@@ -138,6 +138,14 @@ extension IncidentResponseState.NextPage {
 		}
 	}
 
+	/// The people alone, for a surface with no room for a sentence: "Priya Shah",
+	/// "Priya Shah +1". Nil when the step names nobody.
+	public func peopleSummary(viewerUserId: String?) -> String? {
+		guard let first = people.first else { return nil }
+		let name = first.label(viewerUserId: viewerUserId)
+		return people.count == 1 ? name : "\(name) +\(people.count - 1)"
+	}
+
 	/// "Step 2 of 3", with the pass once the chain repeats.
 	public var position: String {
 		passCount > 1 ? "Step \(step) of \(stepCount), pass \(pass) of \(passCount)" : "Step \(step) of \(stepCount)"

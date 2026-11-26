@@ -44,3 +44,24 @@ public enum ThroughputWidgetKind {
 		WidgetDeepLink(target: .servicesList, organizationId: organizationId).url
 	}
 }
+
+/// The On call widget: where the owner stands, and who is on call now.
+public enum OnCallWidgetKind {
+	public static let identifier = "MapleOnCallWidget"
+
+	/// Every family opens the app's On call screen.
+	public static func onCallURL(organizationId: String?) -> URL? {
+		WidgetDeepLink(target: .onCall, organizationId: organizationId).url
+	}
+}
+
+/// The Schedule widget: one rotation's next seven days, per `SelectScheduleIntent`.
+public enum ScheduleWidgetKind {
+	public static let identifier = "MapleScheduleWidget"
+
+	/// The schedule on the widget, or the On call screen when it shows none.
+	public static func scheduleURL(id: String?, organizationId: String?) -> URL? {
+		guard let id, !id.isEmpty else { return OnCallWidgetKind.onCallURL(organizationId: organizationId) }
+		return WidgetDeepLink(target: .schedule(id: id), organizationId: organizationId).url
+	}
+}

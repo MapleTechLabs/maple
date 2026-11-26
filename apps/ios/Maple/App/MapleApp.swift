@@ -1,6 +1,7 @@
 import ClerkKit
 import Maple
 import MapleAPI
+import MapleWidgetData
 import SwiftUI
 
 @main
@@ -31,6 +32,16 @@ struct MapleApp: App {
 		_opener = State(initialValue: opener)
 		// Notification taps arrive on the app delegate, outside the view tree.
 		PushRegistrar.shared.opener = opener
+		// The Lock Screen card's Acknowledge is performed in this process with no
+		// view tree either; a launch for it finds its handler here.
+		IncidentActivityActions.acknowledge = { incidentId, organizationId in
+			let incident = await PushRegistrar.shared.acknowledgeWithoutScreen(
+				incidentId: incidentId,
+				organizationId: organizationId,
+				surface: .liveActivity
+			)
+			await LiveActivityController.shared.incidentChanged(incidentId: incidentId, to: incident)
+		}
 		// Before Clerk and the API client, so a cold launch is inside a session.
 		Self.startTelemetry()
 		// And before anything it should measure. Ends at the first frame, in

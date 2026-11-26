@@ -2,6 +2,7 @@ import { generateKeyPairSync, createHash, randomUUID } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { EdgeCacheService } from "@maple/cache"
 import { OrgId, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import {
 	ConfigProvider,
@@ -38,6 +39,7 @@ import {
 	WarehouseServiceStubLayer,
 	Phase1ResourceStubsLayer,
 	TelemetryServiceStubsLayer,
+	MobilePushServiceUnusedLayer,
 } from "./v2-test-support"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { HttpV2DeviceCredentialsLive, HttpV2DeviceTokensLive } from "./device-credentials.http"
@@ -213,7 +215,7 @@ const makeHarness = (trustAnchor?: Uint8Array, limited?: (key: string) => boolea
 				),
 				HttpV2ErrorIssuesLive,
 				HttpV2ApiKeysLive,
-				HttpV2MobileDevicesLive,
+				HttpV2MobileDevicesLive.pipe(Layer.provide(MobilePushServiceUnusedLayer)),
 			),
 		),
 		Layer.provide(V2TransportErrorBoundaryLive),
@@ -366,14 +368,14 @@ const withHarness = (body: (harness: Harness) => Promise<void>, trustAnchor?: Ui
 const isAuthorized = (status: number) => status !== 401 && status !== 403
 
 /** Register as an arbitrary member, which the self-hosted session cannot be. */
-const registerAs = (harness: Harness, userId: UserId, key: DeviceKey) =>
+const registerAs = (harness: Harness, userId: UserId, key: DeviceKey, roles: ReadonlyArray<string> = []) =>
 	harness.runtime.runPromiseExit(
 		Effect.gen(function* () {
 			const devices = yield* DeviceCredentialsService
 			const path = `/v2/device_credentials/${INSTALLATION}`
 			const dpop = yield* Effect.promise(() => proof(key, { htm: "PUT", htu: `${BASE}${path}` }))
 			return yield* devices.register(
-				{ orgId: ORG, userId, roles: [] },
+				{ orgId: ORG, userId, roles, permissions: Policy.grantsOf(roles) },
 				{ installationId: INSTALLATION, publicJwk: key.jwk },
 				{ proof: dpop, method: "PUT", path },
 			)
@@ -391,7 +393,7 @@ describe("device credential registration", () => {
 			expect(registered.body.object).toBe("device_credential")
 			expect(registered.body.id).toMatch(/^dcred_/)
 			expect(registered.body.jkt).toBe(key.jkt)
-			expect(registered.body.scopes).toEqual(["widget_summary:read"])
+			expect(registered.body.scopes).toEqual(["widget_summary:read", "widget_summary:write"])
 			expect(registered.body.attested).toBe(false)
 			const created = Date.parse(registered.body.created_at)
 			expect(Date.parse(registered.body.expires_at) - created).toBe(30 * 24 * 60 * 60 * 1000)
@@ -443,6 +445,30 @@ describe("device credential registration", () => {
 	)
 
 	it(
+		"gives a key registered before a scope existed that scope on its next refresh",
+		withHarness(async (harness) => {
+			const { secret, key } = await harness.enrolled()
+			await harness.sql(`update device_credentials set scopes = '["widget_summary:read"]'::jsonb`, [])
+			const refreshed = await harness.register(secret, key)
+			expect(refreshed.body.scopes).toEqual(["widget_summary:read", "widget_summary:write"])
+		}),
+	)
+
+	it(
+		"keeps the widget's write scope from a member who may not respond to incidents, and takes it back on a refresh",
+		withHarness(async (harness) => {
+			const key = await newDeviceKey()
+			const scopesAs = async (role: string) => {
+				const exit = await registerAs(harness, OTHER_USER, key, [role])
+				return Exit.isSuccess(exit) ? exit.value.scopes : null
+			}
+			expect(await scopesAs("org:member")).toEqual(["widget_summary:read", "widget_summary:write"])
+			// The same key again, after a move to a role that only reads.
+			expect(await scopesAs("org:analyst")).toEqual(["widget_summary:read"])
+		}),
+	)
+
+	it(
 		"rejects a key that is not on the P-256 curve",
 		withHarness(async (harness) => {
 			const secret = await harness.sessionKey()
@@ -468,7 +494,7 @@ describe("device token issuance", () => {
 				object: "device_token",
 				token_type: "DPoP",
 				expires_in: 3600,
-				scope: "widget_summary:read",
+				scope: "widget_summary:read widget_summary:write",
 			})
 			const [, payload] = Str.split(".")(String(issued.body.access_token))
 			const claims = JSON.parse(Buffer.from(payload ?? "", "base64url").toString("utf8"))

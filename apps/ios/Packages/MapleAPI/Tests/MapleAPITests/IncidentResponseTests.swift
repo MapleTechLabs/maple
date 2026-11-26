@@ -117,6 +117,9 @@ struct IncidentResponseStateTests {
 			return
 		}
 		#expect(twoNext.headline(viewerUserId: "user_me") == "Pages you and Dana Kim")
+		#expect(twoNext.peopleSummary(viewerUserId: nil) == "Me +1")
+		#expect(manyNext.peopleSummary(viewerUserId: nil) == "Priya Shah +2")
+		#expect(nobodyNext.peopleSummary(viewerUserId: nil) == nil)
 		#expect(manyNext.headline(viewerUserId: nil) == "Pages Priya Shah +2")
 		#expect(manyNext.position == "Step 2 of 3, pass 2 of 3")
 		#expect(nobodyNext.headline(viewerUserId: nil) == "Escalates to step 2 of 3")

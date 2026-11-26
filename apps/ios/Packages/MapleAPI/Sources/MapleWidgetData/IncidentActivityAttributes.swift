@@ -39,6 +39,17 @@ public struct IncidentActivityAttributes: Codable, Hashable, Sendable {
 		/// same units as `series`. The `threshold` string above is the same
 		/// number formatted for reading.
 		public var thresholdValue: Double?
+		/// Who acknowledged the incident, as a name to show. Nil while nobody has.
+		///
+		/// This and the two fields below are filled in by the app, which reads
+		/// the incident when the activity starts and after an Acknowledge. A push
+		/// from a server that does not send them leaves them nil, and the card
+		/// then reads as unacknowledged with nothing known about the next page.
+		public var acknowledgedBy: String?
+		/// When the next escalation step pages. Nil when no step is waiting.
+		public var nextPageAt: Date?
+		/// Who that step pages: "Priya Shah", "Priya Shah +1". Nil when it names nobody.
+		public var nextPagePeople: String?
 
 		public init(
 			value: String,
@@ -46,7 +57,10 @@ public struct IncidentActivityAttributes: Codable, Hashable, Sendable {
 			status: IncidentActivityStatus,
 			updatedAt: Date,
 			series: [Double] = [],
-			thresholdValue: Double? = nil
+			thresholdValue: Double? = nil,
+			acknowledgedBy: String? = nil,
+			nextPageAt: Date? = nil,
+			nextPagePeople: String? = nil
 		) {
 			self.value = value
 			self.threshold = threshold
@@ -54,6 +68,14 @@ public struct IncidentActivityAttributes: Codable, Hashable, Sendable {
 			self.updatedAt = updatedAt
 			self.series = series
 			self.thresholdValue = thresholdValue
+			self.acknowledgedBy = acknowledgedBy
+			self.nextPageAt = nextPageAt
+			self.nextPagePeople = nextPagePeople
+		}
+
+		/// Firing and nobody has it: the state that offers Acknowledge.
+		public var awaitsAcknowledgement: Bool {
+			status == .firing && acknowledgedBy == nil
 		}
 
 		private enum CodingKeys: String, CodingKey {
@@ -63,6 +85,9 @@ public struct IncidentActivityAttributes: Codable, Hashable, Sendable {
 			case updatedAt = "updated_at"
 			case series
 			case thresholdValue = "threshold_value"
+			case acknowledgedBy = "acknowledged_by"
+			case nextPageAt = "next_page_at"
+			case nextPagePeople = "next_page_people"
 		}
 
 		public init(from decoder: any Decoder) throws {
@@ -76,6 +101,10 @@ public struct IncidentActivityAttributes: Codable, Hashable, Sendable {
 			// started sending the chart yet must still produce a valid state.
 			series = try container.decodeIfPresent([Double].self, forKey: .series) ?? []
 			thresholdValue = try container.decodeIfPresent(Double.self, forKey: .thresholdValue)
+			acknowledgedBy = try container.decodeIfPresent(String.self, forKey: .acknowledgedBy)
+			nextPageAt = try container.decodeIfPresent(Double.self, forKey: .nextPageAt)
+				.map(Date.init(timeIntervalSince1970:))
+			nextPagePeople = try container.decodeIfPresent(String.self, forKey: .nextPagePeople)
 		}
 
 		public func encode(to encoder: any Encoder) throws {
@@ -86,6 +115,9 @@ public struct IncidentActivityAttributes: Codable, Hashable, Sendable {
 			try container.encode(updatedAt.timeIntervalSince1970, forKey: .updatedAt)
 			try container.encode(series, forKey: .series)
 			try container.encodeIfPresent(thresholdValue, forKey: .thresholdValue)
+			try container.encodeIfPresent(acknowledgedBy, forKey: .acknowledgedBy)
+			try container.encodeIfPresent(nextPageAt?.timeIntervalSince1970, forKey: .nextPageAt)
+			try container.encodeIfPresent(nextPagePeople, forKey: .nextPagePeople)
 		}
 	}
 
@@ -188,8 +220,18 @@ extension IncidentActivityAttributes.ContentState {
 			status: .firing,
 			updatedAt: Date(),
 			series: [0.021, 0.019, 0.024, 0.022, 0.031, 0.048, 0.052, 0.061, 0.074, 0.083, 0.088, 0.091],
-			thresholdValue: 0.05
+			thresholdValue: 0.05,
+			nextPageAt: Date().addingTimeInterval(228),
+			nextPagePeople: "Priya Shah"
 		)
+	}
+
+	public static var acknowledgedSample: Self {
+		var state = sample
+		state.acknowledgedBy = "you"
+		state.nextPageAt = nil
+		state.nextPagePeople = nil
+		return state
 	}
 
 	public static var resolvedSample: Self {

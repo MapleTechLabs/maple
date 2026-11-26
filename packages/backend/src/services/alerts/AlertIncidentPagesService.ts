@@ -60,6 +60,12 @@ export interface AlertIncidentPagesServiceApi {
 		orgId: OrgId,
 		incidentIds: ReadonlyArray<AlertIncidentId>,
 	) => Effect.Effect<ReadonlyArray<AlertIncidentPageEntry>, AlertPersistenceError>
+	/** Whether an escalation step's page for this incident reached the person. */
+	readonly wasPaged: (
+		orgId: OrgId,
+		incidentId: AlertIncidentId,
+		userId: UserId,
+	) => Effect.Effect<boolean, AlertPersistenceError>
 	/**
 	 * Who each incident's next escalation step would page if it ran now. Only incidents whose latest
 	 * run is waiting on a step are returned; an acknowledged, ended or chainless one is absent.
@@ -150,6 +156,29 @@ export class AlertIncidentPagesService extends Context.Service<
 			}))
 		})
 
+		const wasPaged = Effect.fn("AlertIncidentPagesService.wasPaged")(function* (
+			orgId: OrgId,
+			incidentId: AlertIncidentId,
+			userId: UserId,
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.incident_id": incidentId })
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(AlertMemberNotifications)
+						.select("id")
+						// As the paged filter on the incident list reads it: only a page that got through.
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.incidentId.eq(incidentId),
+							$.userId.eq(userId),
+							$.status.eq("sent"),
+						])
+						.limit(1),
+				),
+			)
+			return rows.length > 0
+		})
+
 		const listNextStepPeople = Effect.fn("AlertIncidentPagesService.listNextStepPeople")(function* (
 			orgId: OrgId,
 			incidentIds: ReadonlyArray<AlertIncidentId>,
@@ -229,7 +258,7 @@ export class AlertIncidentPagesService extends Context.Service<
 			}))
 		})
 
-		return { listPages, listNextStepPeople } satisfies AlertIncidentPagesServiceApi
+		return { listPages, wasPaged, listNextStepPeople } satisfies AlertIncidentPagesServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(OrgMembersService.layer))

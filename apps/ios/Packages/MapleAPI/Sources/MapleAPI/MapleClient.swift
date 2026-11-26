@@ -178,6 +178,10 @@ public protocol MapleAPI: Sendable {
 	func alertRuleChecks(ruleId: String, groupKey: String?, since: Date?, limit: Int) async throws -> [AlertCheck]
 	func alertDeliveries(incidentId: String, limit: Int) async throws -> [AlertDelivery]
 
+	// On call: see MapleClient+OnCall.swift
+	/// Every schedule's next 14 days and the caller's own shifts over the next 60.
+	func onCallOverview() async throws -> OnCallOverview
+
 	// Anomalies — see MapleClient+Alerts.swift
 	func anomalyIncidents(status: AnomalyIncidentStatus?, serviceName: String?, window: ResolvedTimeWindow?, limit: Int, cursor: String?)
 		async throws -> Page<AnomalyIncident>
@@ -188,6 +192,8 @@ public protocol MapleAPI: Sendable {
 	func registerDevice(_ registration: DeviceRegistration) async throws -> MobileDevice
 	func unregisterDevice(token: String) async throws
 	func myDevices() async throws -> [MobileDevice]
+	/// Sends a test page to the caller's own phones, the way a real page is delivered.
+	func sendTestPage() async throws -> TestPageResult
 	func registerLiveActivity(deviceToken: String, incidentId: String, activityId: String, pushToken: String)
 		async throws
 	func endLiveActivity(deviceToken: String, incidentId: String) async throws
