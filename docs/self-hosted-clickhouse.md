@@ -45,7 +45,7 @@ For any given query the API resolves the upstream in this order:
 Settings → "Bring your own ClickHouse" exposes:
 
 - **ClickHouse URL:** the HTTP interface (e.g. `https://your-clickhouse.example.com:8123`).
-- **User:** defaults to `default`. Applying the schema from the UI needs DDL privileges (CREATE TABLE / CREATE MATERIALIZED VIEW).
+- **User:** defaults to `default`. Applying the schema from the UI needs DDL privileges (CREATE TABLE / CREATE MATERIALIZED VIEW), and `SYSTEM MERGES` on the Maple database (migration 76 stops merges on `trace_index` while it changes the sorting key).
 - **Database:** defaults to `default`.
 - **Password:** optional; encrypted at rest. Leave it blank to keep the stored password when re-saving. Changing the URL, user or database requires re-entering it.
 

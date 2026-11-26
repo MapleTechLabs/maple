@@ -378,7 +378,10 @@ describe("migration 0076: span projections and product events carry their retent
 	const viewName = (stmt: string) => Arr.getUnsafe(Str.split(" ")(stmt), 6)
 
 	it("adds the columns, then drops each view right before creating it as the schema ships it", () => {
-		const alters = Arr.takeWhile(statements, (stmt) => Str.startsWith("ALTER TABLE")(stmt))
+		const alters = Arr.takeWhile(
+			statements,
+			(stmt) => Str.startsWith("ALTER TABLE")(stmt) || Str.startsWith("SYSTEM ")(stmt),
+		)
 		// Each view is recreated in the next statement, so its gap is one statement wide.
 		const pairs = Arr.chunksOf(Arr.drop(statements, alters.length), 2)
 		expect(
@@ -405,12 +408,16 @@ describe("migration 0076: span projections and product events carry their retent
 		expect(migrationFailureIsSkippable(migration_0068_service_usage_profiles)).toBe(true)
 	})
 	it("adds trace_index's column to its sorting key, then its default, as the schema ships it", () => {
-		const traceIndexAlters = Arr.filter(statements, (stmt) =>
-			Str.startsWith("ALTER TABLE trace_index ")(stmt),
+		const traceIndexAlters = Arr.filter(
+			statements,
+			(stmt) =>
+				Str.startsWith("ALTER TABLE trace_index ")(stmt) || Str.endsWith(" MERGES trace_index")(stmt),
 		)
 		expect(traceIndexAlters).toEqual([
+			"SYSTEM STOP MERGES trace_index",
 			"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
 			"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+			"SYSTEM START MERGES trace_index",
 		])
 		const createTraceIndex = Arr.findFirst(latestSnapshotStatements, (stmt) =>
 			Str.includes("CREATE TABLE IF NOT EXISTS trace_index ")(stmt),

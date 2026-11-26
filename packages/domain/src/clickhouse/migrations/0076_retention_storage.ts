@@ -5,7 +5,10 @@
  *
  * trace_index is aggregating, so its new column joins the sorting key in the ALTER that adds it
  * (ClickHouse 26 refuses a plain column outside it), and gets its DEFAULT after, which ClickHouse
- * refuses on a column added to the key; old parts read the DEFAULT. No TTL or partition change: self-managed inserts never stamp these columns
+ * refuses on a column added to the key; old parts read the DEFAULT. Merges on trace_index stop
+ * around the pair so none writes the column's 0 into a part first (needs the SYSTEM MERGES grant).
+ * A failure between them leaves merges stopped until a rerun or a server restart (the stop is not
+ * persisted). No TTL or partition change: self-managed inserts never stamp these columns
  * (`SELF_MANAGED_INSERT_OMITTED_COLUMNS`), so every row holds its default and each table keeps
  * one period. `requiredForIngest: false` for the same reason. Frozen v76 DDL.
  *
@@ -27,8 +30,10 @@ export const migration_0076_retention_storage = {
 		"ALTER TABLE service_map_children ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE service_overview_spans ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE trace_list_mv ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
+		"SYSTEM STOP MERGES trace_index",
 		"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
 		"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+		"SYSTEM START MERGES trace_index",
 		"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE ai_crawler_requests ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE scanner_requests ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
