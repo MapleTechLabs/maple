@@ -106,7 +106,7 @@ const KNOWN_DIFFERENCES = {
  * row-level layout to that form; returns `undefined` for any other table.
  */
 const ROW_RETENTION =
-	/PARTITION BY \(RetentionDays, (toDate\(\w+\))\) (ORDER BY .*) TTL toDate\(\w+\) \+ toIntervalDay\(RetentionDays\) SETTINGS ttl_only_drop_parts = 1$/
+	/PARTITION BY \(RetentionDays, (toDate\(\w+\))\) ((?:PRIMARY KEY \([^)]*\) )?ORDER BY .*) TTL toDate\(\w+\) \+ toIntervalDay\(RetentionDays\) SETTINGS ttl_only_drop_parts = 1$/
 const asOnePeriod = (sql: string): string | undefined =>
 	Option.getOrUndefined(
 		Option.flatMap(

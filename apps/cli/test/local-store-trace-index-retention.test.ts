@@ -20,21 +20,21 @@ const decodeColumns = decodeJsonEachRow(
 		defaultExpression: Schema.String,
 	}),
 )
-const decodeSortingKey = decodeJsonEachRow(Schema.Struct({ sortingKey: Schema.String }))
+const decodeKeys = decodeJsonEachRow(Schema.Struct({ sortingKey: Schema.String, primaryKey: Schema.String }))
 const decodeRows = decodeJsonEachRow(Schema.Struct({ traceId: Schema.String, days: Schema.String }))
 
-/** trace_index's columns, defaults and sorting key, as system tables report them. */
+/** trace_index's columns, defaults, sorting and primary key, as system tables report them. */
 const traceIndexDefinition = (db: Chdb) => ({
 	columns: decodeColumns(
 		db.query(
 			"SELECT name, type, default_kind AS defaultKind, default_expression AS defaultExpression FROM system.columns WHERE database = 'default' AND table = 'trace_index' ORDER BY position",
 		),
 	),
-	sortingKey: decodeSortingKey(
+	keys: decodeKeys(
 		db.query(
-			"SELECT sorting_key AS sortingKey FROM system.tables WHERE database = 'default' AND name = 'trace_index'",
+			"SELECT sorting_key AS sortingKey, primary_key AS primaryKey FROM system.tables WHERE database = 'default' AND name = 'trace_index'",
 		),
-	)[0]?.sortingKey,
+	)[0],
 })
 
 const storedRows = (db: Chdb) =>
@@ -96,7 +96,10 @@ describeWithChdb("v67 -> v68 trace_index sorts by RetentionDays", () => {
 			bootstrapSchema: true,
 		})
 
-		expect(migrated.definition.sortingKey).toBe("OrgId, TraceId, ServiceName, Bucket, RetentionDays")
+		expect(migrated.definition.keys).toEqual({
+			sortingKey: "OrgId, TraceId, ServiceName, Bucket, RetentionDays",
+			primaryKey: "OrgId, TraceId, ServiceName, Bucket",
+		})
 		expect(
 			Option.getOrUndefined(
 				Arr.findFirst(migrated.definition.columns, (column) => column.name === "RetentionDays"),

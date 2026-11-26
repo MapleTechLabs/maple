@@ -1332,6 +1332,9 @@ export const traceIndex = defineDatasource("trace_index", {
 		// An aggregating table must sort by every non-aggregate column. RetentionDays goes last, so
 		// trace-id reads still seek on the prefix; it is also in the partition key on managed storage.
 		sortingKey: ["OrgId", "TraceId", "ServiceName", "Bucket", "RetentionDays"],
+		// The key before RetentionDays joined it: a store upgraded by MODIFY ORDER BY keeps this
+		// primary key, so a fresh one declares it too and both index the same.
+		primaryKey: ["OrgId", "TraceId", "ServiceName", "Bucket"],
 	}),
 })
 
