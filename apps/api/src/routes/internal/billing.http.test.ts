@@ -354,6 +354,24 @@ describe("readCustomerCached", () => {
 		}),
 	)
 
+	it.effect("asks Autumn for trials_used, an ended trial's only trace, on every cached read", () =>
+		Effect.gen(function* () {
+			const requests: Array<{ customerId: string; expand: ReadonlyArray<string> }> = []
+			const autumn = {
+				getOrCreateCustomer: (customerId: string, options: { expand: ReadonlyArray<string> }) =>
+					Effect.sync(() => {
+						requests.push({ customerId, expand: options.expand })
+						return { statusCode: 200, response: noPlanResponse }
+					}),
+			}
+			yield* readCustomerCached(makeCache(), autumn, CUSTOMER)
+			assert.strictEqual(requests.length, 1)
+			assert.strictEqual(requests[0]?.customerId, ORG)
+			assert.include(requests[0]?.expand, "trials_used")
+			assert.include(requests[0]?.expand, "subscriptions.plan")
+		}),
+	)
+
 	it.effect("treats an error-shaped 200 (no subscriptions array) as unsettled → short TTL", () =>
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
