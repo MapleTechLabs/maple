@@ -117,6 +117,8 @@ enum Telemetry {
 		// change exists to fix. Drained by WidgetPublisher on the next round.
 		/// How the extension's last fetch ended: success, unauthorized, …
 		static let widgetFetchOutcome = "maple.app.widget.fetch.outcome"
+		static let widgetPagesTapOutcome = "maple.app.widget.pages.tap.outcome"
+		static let widgetPagesTapAgeSeconds = "maple.app.widget.pages.tap.age_seconds"
 		/// Seconds since the extension last fetched successfully. Absent when it
 		/// never has, which is a different statement from "a long time ago".
 		static let widgetFetchAgeSeconds = "maple.app.widget.fetch.age_seconds"

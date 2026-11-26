@@ -222,6 +222,35 @@ extension WidgetSnapshotStore where Value == PagesSnapshot {
 	}
 }
 
+/// What the widget's last Acknowledge came to. The extension reports nothing
+/// itself, so the app reads this on its next round and reports it once: a tap
+/// that did not land would otherwise leave no trace anywhere.
+public struct PagesTapRecord: Codable, Sendable, Equatable {
+	public enum Outcome: String, Codable, Sendable {
+		case acknowledged
+		case nothingToAnswer = "nothing_to_answer"
+		case needsApp = "needs_app"
+		case failed
+	}
+
+	public var outcome: Outcome
+	public var at: Date
+
+	public init(outcome: Outcome, at: Date) {
+		self.outcome = outcome
+		self.at = at
+	}
+}
+
+extension WidgetSnapshotStore where Value == PagesTapRecord {
+	public static func pagesTap(
+		organizationId: String,
+		appGroupIdentifier: String = WidgetAppGroup.identifier
+	) -> WidgetSnapshotStore<PagesTapRecord> {
+		.init(key: "pages.tap.v1.\(organizationId)", appGroupIdentifier: appGroupIdentifier)
+	}
+}
+
 /// The Pages widget's two requests, signed with the device credential the app
 /// registered. The app uses it too, to publish the same snapshot the widget
 /// would have fetched.
@@ -276,7 +305,13 @@ public actor WidgetPagesClient {
 	/// Whether the widget may offer its button for this organization.
 	public nonisolated func canAcknowledge(organizationId: String, now: Date = Date()) -> Bool {
 		guard let device = credentials.loadDevice(organizationId: organizationId) else { return false }
-		return device.canAcknowledgePages && !device.isExpired(at: now)
+		return device.canAcknowledgePages && !device.isExpired(at: now) && !isRejected(organizationId)
+	}
+
+	/// The server refused this credential and the app has not replaced it yet.
+	/// Until it does there is nothing to send: every request would be refused.
+	private nonisolated func isRejected(_ organizationId: String) -> Bool {
+		fetchStates.load(organizationId: organizationId).isCredentialRejected
 	}
 
 	/// Read what is paging the person this credential belongs to, and store it.
@@ -284,6 +319,7 @@ public actor WidgetPagesClient {
 		guard let (device, key) = signer(organizationId: organizationId, now: now) else {
 			return credentials.loadDevice(organizationId: organizationId) == nil ? .noCredential : .needsApp
 		}
+		if isRejected(organizationId) { return .needsApp }
 		let url = device.apiBaseURL.appendingPathComponent("v2/widget_summary/pages")
 		let sent = await DeviceRequest.send(
 			{ Self.request(url, method: "GET") },
@@ -312,9 +348,24 @@ public actor WidgetPagesClient {
 
 	/// Acknowledge one incident, and write the answer into the stored snapshot.
 	public func acknowledge(organizationId: String, incidentId: String, now: Date = Date()) async -> Acknowledgement {
-		guard let (device, key) = signer(organizationId: organizationId, now: now), device.canAcknowledgePages else {
-			return .needsApp
-		}
+		let answer = await sendAcknowledgement(organizationId: organizationId, incidentId: incidentId, now: now)
+		let outcome: PagesTapRecord.Outcome =
+			switch answer {
+			case .acknowledged: .acknowledged
+			case .nothingToAnswer: .nothingToAnswer
+			case .needsApp: .needsApp
+			case .failed: .failed
+			}
+		WidgetSnapshotStore<PagesTapRecord>
+			.pagesTap(organizationId: organizationId, appGroupIdentifier: appGroupIdentifier)
+			.save(PagesTapRecord(outcome: outcome, at: now))
+		return answer
+	}
+
+	private func sendAcknowledgement(organizationId: String, incidentId: String, now: Date) async -> Acknowledgement {
+		guard let (device, key) = signer(organizationId: organizationId, now: now), device.canAcknowledgePages,
+			!isRejected(organizationId)
+		else { return .needsApp }
 		let url = device.apiBaseURL
 			.appendingPathComponent("v2/widget_summary/pages")
 			.appendingPathComponent(incidentId)

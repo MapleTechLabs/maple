@@ -116,6 +116,10 @@ private struct Harness {
 		WidgetFetchStateStore(appGroupIdentifier: suite).load(organizationId: organizationId).isCredentialRejected
 	}
 
+	var lastTap: PagesTapRecord.Outcome? {
+		WidgetSnapshotStore<PagesTapRecord>.pagesTap(organizationId: organizationId, appGroupIdentifier: suite).load()?.outcome
+	}
+
 	var stored: PagesSnapshot? {
 		WidgetSnapshotStore<PagesSnapshot>.pages(organizationId: organizationId, appGroupIdentifier: suite).load()
 	}
@@ -254,6 +258,14 @@ struct WidgetPagesClientTests {
 		])
 		#expect(await harness.client(revoked).refresh(organizationId: organizationId, organizationName: nil, now: now) == .needsApp)
 		#expect(harness.isCredentialRejected)
+
+		// Until the app replaces the key nothing is sent with it, and no button is offered.
+		let silent = ScriptedTransport(["/v2/device_tokens": tokenReply, listPath: .init(status: 200, body: listJSON([pageJSON()]))])
+		let client = harness.client(silent)
+		#expect(await client.refresh(organizationId: organizationId, organizationName: nil, now: now) == .needsApp)
+		#expect(await client.acknowledge(organizationId: organizationId, incidentId: incidentId, now: now) == .needsApp)
+		#expect(!client.canAcknowledge(organizationId: organizationId, now: now))
+		#expect(await silent.requests.isEmpty)
 	}
 
 	@Test("Acknowledges with a signed POST and writes the answer into the stored snapshot")
@@ -301,6 +313,9 @@ struct WidgetPagesClientTests {
 		#expect(await outcome(409) == .nothingToAnswer)
 		#expect(await outcome(404) == .nothingToAnswer)
 		#expect(await outcome(403) == .needsApp)
+		// Each tap leaves what it came to for the app to report.
+		#expect(harness.lastTap == .needsApp)
 		#expect(await outcome(500) == .failed)
+		#expect(harness.lastTap == .failed)
 	}
 }

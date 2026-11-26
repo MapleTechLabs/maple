@@ -528,6 +528,13 @@ final class WidgetPublisher {
 	/// The active organization only: a round already carries one organization id,
 	/// and fanning these attributes across three would make them unreadable.
 	private func drainFetchState(for organizationId: String, onto span: Span?) {
+		// The Pages widget's last Acknowledge, reported once and then forgotten.
+		let taps = WidgetSnapshotStore<PagesTapRecord>.pagesTap(organizationId: organizationId)
+		if let tap = taps.load() {
+			span?.setAttribute(Telemetry.Key.widgetPagesTapOutcome, tap.outcome.rawValue)
+			span?.setAttribute(Telemetry.Key.widgetPagesTapAgeSeconds, Int(Date().timeIntervalSince(tap.at)))
+			taps.clear()
+		}
 		let state = fetchStates.load(organizationId: organizationId)
 		guard let outcome = state.lastOutcome else { return }
 		span?.setAttribute(Telemetry.Key.widgetFetchOutcome, outcome.rawValue)
