@@ -22,6 +22,7 @@ import {
 	extractColumnDefinition,
 	featureSupportedByVersion,
 	migrations as clickHouseMigrations,
+	migrationFailureIsSkippable,
 	parseEmittedStatement,
 	performanceOnlySearchColumns,
 	qualifyStatementForDatabase,
@@ -805,15 +806,18 @@ const applySchema = (fence: RunFence) =>
 						appliedSet.add(migration.version)
 						appliedVersions.push(migration.version)
 					})
-					// A performance migration that cannot be installed is skipped, never fatal.
+					// A performance migration that cannot be installed is skipped, unless it drops a
+					// view it recreates (`failureIsFatal`): that fails the run, ingest stays ready.
 					return yield* applyPerformanceMigration.pipe(
-						Effect.catchCauseIf(isSkippable, (cause) =>
-							Effect.sync(() => {
-								skippedFeatures.push({
-									id: `migration_${migration.version}`,
-									reason: causeMessage(cause),
-								})
-							}),
+						Effect.catchCauseIf(
+							(cause) => migrationFailureIsSkippable(migration) && isSkippable(cause),
+							(cause) =>
+								Effect.sync(() => {
+									skippedFeatures.push({
+										id: `migration_${migration.version}`,
+										reason: causeMessage(cause),
+									})
+								}),
 						),
 					)
 				}),

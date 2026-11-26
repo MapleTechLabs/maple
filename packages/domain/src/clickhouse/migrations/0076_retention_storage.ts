@@ -10,14 +10,18 @@
  * one period. `requiredForIngest: false` for the same reason. Frozen v76 DDL.
  *
  * A view's SELECT is frozen at creation, so each is dropped and IMMEDIATELY recreated, as in 0020
- * and 0028: a span or session event inserted in that gap never reaches that one target. Creating
- * the new view first would write the overlap twice, worse than the gap. Pause ingest to close it.
+ * and 0028: a span or session event inserted in that gap never reaches that one target, and
+ * nothing backfills it. Creating the new view first would write the overlap twice, worse than the
+ * gap. Nothing pauses ingest for it; an operator who needs the gap closed stops their own writers.
+ * `failureIsFatal`: a failed statement fails the apply rather than being skipped, so a dropped view
+ * is never left missing silently, and a rerun (DROP IF EXISTS, CREATE IF NOT EXISTS) recreates it.
  */
 export const migration_0076_retention_storage = {
 	version: 76,
 	description:
 		"Add RetentionDays to the span projections and product_events, EventsRetentionDays to traces and session_events, and recreate their views",
 	requiredForIngest: false,
+	failureIsFatal: true,
 	statements: [
 		"ALTER TABLE service_map_spans ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE service_map_children ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",

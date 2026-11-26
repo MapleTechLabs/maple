@@ -20,7 +20,7 @@ import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
 import { migration_0076_retention_storage } from "./0076_retention_storage"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
-import { migrations } from "./index"
+import { migrationFailureIsSkippable, migrations } from "./index"
 
 const indexWhere = <A>(xs: ReadonlyArray<A>, predicate: (a: A) => boolean): number =>
 	Option.getOrElse(Arr.findFirstIndex(xs, predicate), () => -1)
@@ -399,6 +399,10 @@ describe("migration 0076: span projections and product events carry their retent
 			expect(fromTraces || intoEvents, viewName(create)).toBe(true)
 		}
 		expect(migration_0076_retention_storage.requiredForIngest).toBe(false)
+	})
+	it("fails the apply when a statement fails, so a dropped view is never left missing", () => {
+		expect(migrationFailureIsSkippable(migration_0076_retention_storage)).toBe(false)
+		expect(migrationFailureIsSkippable(migration_0068_service_usage_profiles)).toBe(true)
 	})
 	it("adds trace_index's column to its sorting key, then its default, as the schema ships it", () => {
 		const traceIndexAlters = Arr.filter(statements, (stmt) =>
