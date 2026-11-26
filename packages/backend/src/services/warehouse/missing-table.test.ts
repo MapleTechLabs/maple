@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { WarehouseConfigError, WarehouseQueryError, WarehouseSchemaDriftError } from "@maple/domain/http"
+import { mapWarehouseError, WarehouseDriverError } from "@maple/query-engine/execution"
 import {
 	isMissingErrorEventsUserId,
 	isMissingReplayRetentionDays,
@@ -120,6 +121,17 @@ describe("migration 0048 degrade detectors", () => {
 			isMissingReplayRetentionDays(drift("Unknown expression identifier `RetentionDays` in scope")),
 		).toBe(true)
 		expect(isMissingReplayRetentionDays(drift("Unknown expression identifier `ChunkSeq`"))).toBe(false)
+		// Tinybird names no exception type, so the replay read's own error is classified by its text.
+		const untyped = (message: string) =>
+			mapWarehouseError("replayEvents", WarehouseDriverError.fromUnknown(new Error(message)), "maple")
+		expect(
+			isMissingReplayRetentionDays(
+				untyped("Unknown expression identifier `RetentionDays` in scope SELECT ..."),
+			),
+		).toBe(true)
+		expect(
+			isMissingReplayRetentionDays(untyped("Unknown expression identifier `ChunkSeq` in scope")),
+		).toBe(false)
 		expect(
 			isMissingReplayRetentionDays(
 				new WarehouseQueryError({ message: "RetentionDays overflowed", pipeName: "replayEvents" }),
