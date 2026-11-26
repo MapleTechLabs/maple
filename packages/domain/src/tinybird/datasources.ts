@@ -1257,6 +1257,9 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 
 export type TraceListMvRow = InferRow<typeof traceListMv>
 
+/** How long `trace_facets_hourly` keeps an hour; older hours read `trace_list_mv`. */
+export const TRACE_FACETS_HOURLY_RETENTION_DAYS = 30
+
 /**
  * Hourly rollup of `trace_list_mv` for the traces sidebar facets and duration
  * stats. Scanning `trace_list_mv` itself (~14M root spans/day for a busy org)
@@ -1297,7 +1300,7 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 			"ServiceNamespace",
 			"HasError",
 		],
-		ttl: "toDate(Hour) + INTERVAL 30 DAY",
+		ttl: `toDate(Hour) + INTERVAL ${TRACE_FACETS_HOURLY_RETENTION_DAYS} DAY`,
 	}),
 })
 

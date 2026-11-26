@@ -3,7 +3,7 @@
 // DSL-based query definitions for error aggregation and timeseries.
 
 import { finiteOrZero } from "./format"
-import { edgeCondition, utcInteriorConditions } from "./rollup-splice"
+import { edgeCondition, hourGrain, utcInteriorConditions } from "./rollup-splice"
 import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
@@ -754,6 +754,16 @@ export function canUseTraceFacetsRollup(
 	)
 }
 
+/**
+ * The first hour `trace_facets_hourly` answers: the window's first whole hour, or the oldest
+ * day the rollup's TTL surely still holds, whichever is later. Epoch arithmetic keeps it in UTC.
+ */
+const TRACE_FACETS_ROLLUP_START = `greatest(${hourGrain.firstFullBucket}, toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - ${(Datasources.TRACE_FACETS_HOURLY_RETENTION_DAYS - 1) * 86400}))`
+
+/** `trace_list_mv` rows the rollup does not answer: its expired hours and the partial end hours. */
+const traceFacetsRawEdgeCondition = (): CH.Condition =>
+	CH.rawCond(`(Timestamp < ${TRACE_FACETS_ROLLUP_START} OR Timestamp >= ${hourGrain.endFloor})`)
+
 /** `trace_list_mv` rows in the window, narrowed to the partial end hours when the rollup has the rest. */
 function traceListWindowConditions(
 	$: ColumnAccessor<typeof Datasources.traceListMv.columns>,
@@ -766,7 +776,7 @@ function traceListWindowConditions(
 		...traceFacetDimensionConditions($, opts),
 		CH.when(opts.minDurationMs, (v: number) => $.Duration.gte(v * 1000000)),
 		CH.when(opts.maxDurationMs, (v: number) => $.Duration.lte(v * 1000000)),
-		CH.whenTrue(canUseTraceFacetsRollup(opts), () => edgeCondition("Timestamp")),
+		CH.whenTrue(canUseTraceFacetsRollup(opts), traceFacetsRawEdgeCondition),
 	]
 }
 
@@ -776,7 +786,9 @@ function traceFacetsHourlyInteriorConditions(
 ) {
 	return [
 		$.OrgId.eq(orgIdParam),
-		...utcInteriorConditions($.Hour),
+		// The exact complement of `traceFacetsRawEdgeCondition`.
+		$.Hour.gte(CH.rawExpr(TRACE_FACETS_ROLLUP_START, T.dateTime)),
+		$.Hour.lt(CH.rawExpr(hourGrain.endFloor, T.dateTime)),
 		...traceFacetDimensionConditions($, opts),
 	]
 }

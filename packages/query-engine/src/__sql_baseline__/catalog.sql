@@ -1986,7 +1986,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:tracesDurationStatsQuery:rollup  [b66532bf]
+-- builder:errors:tracesDurationStatsQuery:rollup  [85d9e34b]
 SELECT
           minIf(durationMin, traceCount > 0) / 1000000 AS minDurationMs,
           maxIf(durationMax, traceCount > 0) / 1000000 AS maxDurationMs,
@@ -2003,7 +2003,7 @@ SELECT
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
 UNION ALL
 SELECT
           sum(trace_facets_hourly.TraceCount) AS traceCount,
@@ -2012,13 +2012,13 @@ SELECT
           quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS durationQuantiles
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
 ) AS duration_tiers
         FORMAT JSON
 
--- builder:errors:tracesFacetsQuery:rollup  [afb9c0ed]
+-- builder:errors:tracesFacetsQuery:rollup  [b205c149]
 SELECT
           service_tiers.name AS name,
           sum(service_tiers.count) AS count,
@@ -2032,7 +2032,7 @@ SELECT
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
         GROUP BY name
 UNION ALL
 SELECT
@@ -2040,7 +2040,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
         GROUP BY name
@@ -2062,7 +2062,7 @@ SELECT
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.SpanName != ''
         GROUP BY name
 UNION ALL
@@ -2071,7 +2071,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.SpanName != ''
@@ -2094,7 +2094,7 @@ SELECT
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HttpMethod != ''
         GROUP BY name
 UNION ALL
@@ -2103,7 +2103,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.HttpMethod != ''
@@ -2126,7 +2126,7 @@ SELECT
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HttpStatusCode != ''
         GROUP BY name
 UNION ALL
@@ -2135,7 +2135,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.HttpStatusCode != ''
@@ -2158,7 +2158,7 @@ SELECT
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.DeploymentEnv != ''
         GROUP BY name
 UNION ALL
@@ -2167,7 +2167,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv != ''
@@ -2190,7 +2190,7 @@ SELECT
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.ServiceNamespace != ''
         GROUP BY name
 UNION ALL
@@ -2199,7 +2199,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.ServiceNamespace != ''
@@ -2221,14 +2221,14 @@ SELECT
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HasError = 1
 UNION ALL
 SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.HasError = 1
@@ -10233,7 +10233,7 @@ SELECT
         ORDER BY chunkSeq ASC
         FORMAT JSON
 
--- builder:session-replays:sessionReplayEventsQuery:default  [5aed8c5e]
+-- builder:session-replays:sessionReplayEventsQuery:default  [8653956e]
 SELECT
           session_replay_events.ChunkSeq AS chunkSeq,
           session_replay_events.Timestamp AS timestamp,
@@ -10241,7 +10241,8 @@ SELECT
           session_replay_events.EventCount AS eventCount,
           session_replay_events.ByteSize AS byteSize,
           session_replay_events.Events AS events,
-          session_replay_events.IsCheckpoint AS isCheckpoint
+          session_replay_events.IsCheckpoint AS isCheckpoint,
+          session_replay_events.RetentionDays AS retentionDays
         FROM session_replay_events
         WHERE session_replay_events.OrgId = 'org_sql_catalog'
           AND session_replay_events.SessionId = 'sess_0af7651916cd43dd'
@@ -10250,7 +10251,7 @@ SELECT
         ORDER BY chunkSeq ASC
         FORMAT JSON
 
--- builder:session-replays:sessionReplayEventsQuery:ranged  [f2cb4b10]
+-- builder:session-replays:sessionReplayEventsQuery:ranged  [027a7560]
 SELECT
           session_replay_events.ChunkSeq AS chunkSeq,
           session_replay_events.Timestamp AS timestamp,
@@ -10258,7 +10259,8 @@ SELECT
           session_replay_events.EventCount AS eventCount,
           session_replay_events.ByteSize AS byteSize,
           session_replay_events.Events AS events,
-          session_replay_events.IsCheckpoint AS isCheckpoint
+          session_replay_events.IsCheckpoint AS isCheckpoint,
+          session_replay_events.RetentionDays AS retentionDays
         FROM session_replay_events
         WHERE session_replay_events.OrgId = 'org_sql_catalog'
           AND session_replay_events.SessionId = 'sess_0af7651916cd43dd'
@@ -22982,7 +22984,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- spec:traces-facets-single-dimension:baseline  [d670c94d]
+-- spec:traces-facets-single-dimension:baseline  [3729296f]
 SELECT
           spanName_tiers.name AS name,
           sum(spanName_tiers.count) AS count,
@@ -22997,7 +22999,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.SpanName != ''
         GROUP BY name
 UNION ALL
@@ -23006,7 +23008,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23018,7 +23020,7 @@ SELECT
         LIMIT 20
 FORMAT JSON
 
--- spec:traces-facets:baseline  [29a29fef]
+-- spec:traces-facets:baseline  [92e1822b]
 SELECT
           service_tiers.name AS name,
           sum(service_tiers.count) AS count,
@@ -23033,7 +23035,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
         GROUP BY name
 UNION ALL
 SELECT
@@ -23041,7 +23043,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23065,7 +23067,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.SpanName != ''
         GROUP BY name
 UNION ALL
@@ -23074,7 +23076,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23099,7 +23101,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HttpMethod != ''
         GROUP BY name
 UNION ALL
@@ -23108,7 +23110,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23133,7 +23135,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HttpStatusCode != ''
         GROUP BY name
 UNION ALL
@@ -23142,7 +23144,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23167,7 +23169,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.DeploymentEnv != ''
         GROUP BY name
 UNION ALL
@@ -23176,7 +23178,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23201,7 +23203,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.ServiceNamespace != ''
         GROUP BY name
 UNION ALL
@@ -23210,7 +23212,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23234,14 +23236,14 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HasError = 1
 UNION ALL
 SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23249,7 +23251,7 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:traces-facets:bloom  [29a29fef]
+-- spec:traces-facets:bloom  [92e1822b]
 SELECT
           service_tiers.name AS name,
           sum(service_tiers.count) AS count,
@@ -23264,7 +23266,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
         GROUP BY name
 UNION ALL
 SELECT
@@ -23272,7 +23274,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23296,7 +23298,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.SpanName != ''
         GROUP BY name
 UNION ALL
@@ -23305,7 +23307,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23330,7 +23332,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HttpMethod != ''
         GROUP BY name
 UNION ALL
@@ -23339,7 +23341,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23364,7 +23366,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HttpStatusCode != ''
         GROUP BY name
 UNION ALL
@@ -23373,7 +23375,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23398,7 +23400,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.DeploymentEnv != ''
         GROUP BY name
 UNION ALL
@@ -23407,7 +23409,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23432,7 +23434,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.ServiceNamespace != ''
         GROUP BY name
 UNION ALL
@@ -23441,7 +23443,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23465,14 +23467,14 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HasError = 1
 UNION ALL
 SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23480,7 +23482,7 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:traces-facets:text  [29a29fef]
+-- spec:traces-facets:text  [92e1822b]
 SELECT
           service_tiers.name AS name,
           sum(service_tiers.count) AS count,
@@ -23495,7 +23497,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
         GROUP BY name
 UNION ALL
 SELECT
@@ -23503,7 +23505,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23527,7 +23529,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.SpanName != ''
         GROUP BY name
 UNION ALL
@@ -23536,7 +23538,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23561,7 +23563,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HttpMethod != ''
         GROUP BY name
 UNION ALL
@@ -23570,7 +23572,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23595,7 +23597,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HttpStatusCode != ''
         GROUP BY name
 UNION ALL
@@ -23604,7 +23606,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23629,7 +23631,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.DeploymentEnv != ''
         GROUP BY name
 UNION ALL
@@ -23638,7 +23640,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23663,7 +23665,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.ServiceNamespace != ''
         GROUP BY name
 UNION ALL
@@ -23672,7 +23674,7 @@ SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -23696,14 +23698,14 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND trace_list_mv.HasError = 1
 UNION ALL
 SELECT
           sum(trace_facets_hourly.TraceCount) AS count
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
@@ -24149,7 +24151,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-stats:baseline  [fa38bf8f]
+-- spec:traces-stats:baseline  [a9950757]
 SELECT
           minIf(durationMin, traceCount > 0) / 1000000 AS minDurationMs,
           maxIf(durationMax, traceCount > 0) / 1000000 AS maxDurationMs,
@@ -24167,7 +24169,7 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND (Timestamp < greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600)) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
 UNION ALL
 SELECT
           sum(trace_facets_hourly.TraceCount) AS traceCount,
@@ -24176,7 +24178,7 @@ SELECT
           quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS durationQuantiles
         FROM trace_facets_hourly
         WHERE trace_facets_hourly.OrgId = 'org_sql_catalog'
-          AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND trace_facets_hourly.Hour >= greatest(if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR), toDateTime(intDiv(toUnixTimestamp(now()), 86400) * 86400 - 2505600))
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
