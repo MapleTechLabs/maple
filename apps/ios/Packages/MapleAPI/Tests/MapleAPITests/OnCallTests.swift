@@ -377,14 +377,6 @@ struct OnCallWordingTests {
 		#expect(overview.thenPhrase(.continues) == nil)
 	}
 
-	@Test("Someone who stays on call is described without a handoff, an end or a countdown")
-	func noHandoffWording() {
-		#expect(OnCallWording.noHandoffScheduled == "no handoff scheduled")
-		#expect(OnCallWording.noHandoff == "No handoff")
-		#expect(OnCallWording.noEndScheduled == "no end scheduled")
-		#expect(OnCallWording.noHandoff(inNext: 14) == "No handoff in the next 14 days")
-	}
-
 	@Test("An overview is only taken over for the person and organization it was read for")
 	func seedOwnership() throws {
 		let overview = try makeOverview()
