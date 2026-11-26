@@ -402,9 +402,15 @@ export const trackFeatureUsage = Effect.fn("AutumnTracker.trackFeatureUsage")(fu
 	])
 })
 
+/** What a {@link trackFeatureUsageOrFail} call came to: Autumn took it, or nothing was sent. */
+export type TrackOutcome = "accepted" | "unmetered"
+const ACCEPTED: TrackOutcome = "accepted"
+const UNMETERED: TrackOutcome = "unmetered"
+
 /**
  * {@link trackFeatureUsage} that fails when Autumn does not accept the call, for a caller that
- * records what was billed and retries the rest. Succeeds without a call where no org is metered.
+ * records what was billed and retries the rest. `"unmetered"` when no call was made (no secret key,
+ * or the default org), so the caller must not record it as billed.
  */
 export const trackFeatureUsageOrFail = Effect.fn("AutumnTracker.trackFeatureUsageOrFail")(function* ({
 	customerId,
@@ -412,9 +418,9 @@ export const trackFeatureUsageOrFail = Effect.fn("AutumnTracker.trackFeatureUsag
 	value,
 	idempotencyKey,
 }: TrackFeatureUsageOptions) {
-	if (value === 0) return
+	if (value === 0) return ACCEPTED
 	const tracker = yield* resolveTracker(customerId)
-	if (tracker === undefined) return
+	if (tracker === undefined) return UNMETERED
 	const client = yield* HttpClient.HttpClient
 	yield* sendUsage(client, tracker, {
 		path: AUTUMN_TRACK_PATH,
@@ -422,4 +428,5 @@ export const trackFeatureUsageOrFail = Effect.fn("AutumnTracker.trackFeatureUsag
 		idempotencyKey,
 		body: { customer_id: customerId, feature_id: featureId, value, idempotency_key: idempotencyKey },
 	})
+	return ACCEPTED
 })

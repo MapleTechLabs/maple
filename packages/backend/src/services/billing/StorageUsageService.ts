@@ -2,6 +2,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { IngestStorageLedger } from "@maple/db/tables"
 import {
 	DATA_RATES,
+	INGEST_RATES_PER_GB,
 	STORAGE_SIGNALS,
 	type StorageSignalUsage,
 	type StorageUsageSummary,
@@ -31,7 +32,7 @@ export const keptOn = (
 	dayMs: number,
 ) =>
 	PG.sql
-		.cond`${ledger.day} + ${ledger.retentionDays} * interval '1 day' > to_timestamp(${dayMs / 1000}::float8)`
+		.cond`${ledger.day} + ${ledger.retentionDays} * interval '24 hours' > to_timestamp(${dayMs / 1000}::float8)`
 
 /** GB per signal from summed ledger rows. */
 export const gbBySignal = (
@@ -92,12 +93,16 @@ export class StorageUsageService extends Context.Service<StorageUsageService, St
 					signal,
 					storedGb: storedGb.get(signal) ?? 0,
 					avgDailyGb: (recentGb.get(signal) ?? 0) / AVERAGE_WINDOW_DAYS,
+					ingestPerGb: INGEST_RATES_PER_GB[signal],
 				}))
 				yield* Effect.annotateCurrentSpan({
 					orgId,
 					"maple.storage.stored_gb": Arr.reduce(signals, 0, (sum, usage) => sum + usage.storedGb),
 				})
-				return { signals, rates: DATA_RATES } satisfies StorageUsageSummary
+				return {
+					signals,
+					rates: { storagePerGbMonth: DATA_RATES.storagePerGbMonth },
+				} satisfies StorageUsageSummary
 			})
 
 			return { summary } satisfies StorageUsageServiceApi

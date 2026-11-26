@@ -5,7 +5,7 @@ import { TestClock } from "effect/testing"
 import { OrgId } from "@maple/domain/http"
 import { DATA_RATES, type StorageSignalUsage } from "@maple/domain/storage-pricing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
-import { BACKFILL_DAYS, meterStorage, runStorageMetering } from "./storage-metering"
+import { BACKFILL_DAYS, meterStorage, runStorageMetering, SETTLE_MS } from "./storage-metering"
 import { DAY_MS, StorageUsageService } from "./StorageUsageService"
 
 const trackedDbs: TestDb[] = []
@@ -15,6 +15,8 @@ const ORG = Schema.decodeSync(OrgId)("org_storage")
 const GB = 1_000_000_000
 // 2026-11-25T00:00:00Z: a 30-day month.
 const TODAY = Date.UTC(2026, 10, 25)
+// The first tick that bills yesterday.
+const SETTLED = TODAY + SETTLE_MS + 60_000
 
 const ledger = (
 	db: TestDb,
@@ -57,7 +59,10 @@ describe("StorageUsageService.summary", () => {
 
 			const summary = yield* summaryAt(db, TODAY + 3_600_000)
 			assert.strictEqual(usageOf(summary.signals, "logs")?.storedGb, 11)
-			assert.deepStrictEqual(summary.rates, DATA_RATES)
+			assert.deepStrictEqual(summary.rates, { storagePerGbMonth: DATA_RATES.storagePerGbMonth })
+			// Profiles ingest is priced above the other signals.
+			assert.strictEqual(usageOf(summary.signals, "logs")?.ingestPerGb, 0.15)
+			assert.strictEqual(usageOf(summary.signals, "profiles")?.ingestPerGb, 0.6)
 			assert.deepStrictEqual(
 				Arr.map(summary.signals, (usage) => usage.signal),
 				["traces", "logs", "metrics", "profiles"],
@@ -80,6 +85,7 @@ describe("StorageUsageService.summary", () => {
 				signal: "metrics",
 				storedGb: 0,
 				avgDailyGb: 0,
+				ingestPerGb: 0.15,
 			})
 		}),
 	)
@@ -91,9 +97,13 @@ interface Tracked {
 }
 
 /** An Autumn that records every call and answers `status(call)` to it. */
-const recordingAutumn = (tracked: Array<Tracked>, status: (call: Tracked) => number = () => 200) =>
+const recordingAutumn = (
+	tracked: Array<Tracked>,
+	status: (call: Tracked) => number = () => 200,
+	env: Record<string, unknown> = { AUTUMN_SECRET_KEY: "am_sk_test" },
+) =>
 	Layer.mergeAll(
-		ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "am_sk_test" })),
+		ConfigProvider.layer(ConfigProvider.fromUnknown(env)),
 		Layer.succeed(
 			HttpClient.HttpClient,
 			HttpClient.make((request: HttpClientRequest.HttpClientRequest) =>
@@ -140,7 +150,11 @@ describe("storage metering", () => {
 			const meter = (nowMs: number) =>
 				meterStorage(nowMs).pipe(Effect.provide([db.layer, recordingAutumn(tracked)]))
 
-			yield* meter(TODAY + 60_000)
+			// The day just ended waits for the gateway's last flush.
+			yield* meter(TODAY + 30 * 60_000)
+			assert.isFalse(Arr.some(tracked, (call) => Str.endsWith("2026-11-24")(call.idempotencyKey ?? "")))
+
+			yield* meter(SETTLED)
 			const forDay = (day: string) =>
 				new Map(
 					Arr.flatMap(tracked, (call): ReadonlyArray<[string, Tracked]> =>
@@ -150,6 +164,12 @@ describe("storage metering", () => {
 			const yesterday = forDay("2026-11-24")
 			// 300 GB stored on 2026-11-24, a day of a 30-day month: 10 GB-months.
 			assert.strictEqual(yesterday.get("org_storage")?.body.value, 10)
+			// At $0.15 per GB-month, that day costs $1.50.
+			assert.closeTo(
+				(yesterday.get("org_storage")?.body.value ?? 0) * DATA_RATES.storagePerGbMonth,
+				1.5,
+				1e-9,
+			)
 			assert.strictEqual(yesterday.get("org_storage")?.idempotencyKey, "storage:org_storage:2026-11-24")
 			assert.strictEqual(yesterday.get("org_payer")?.body.value, 1)
 			assert.strictEqual(yesterday.get("org_payer")?.idempotencyKey, "storage:org_member:2026-11-24")
@@ -171,7 +191,7 @@ describe("storage metering", () => {
 			let autumnUp = false
 			const autumn = recordingAutumn(tracked, () => (autumnUp ? 200 : 503))
 
-			yield* TestClock.setTime(TODAY + 60_000)
+			yield* TestClock.setTime(SETTLED)
 			const failed = yield* runStorageMetering.pipe(Effect.provide([db.layer, autumn]), Effect.flip)
 			assert.strictEqual(failed._tag, "@maple/billing/StorageMeteringIncompleteError")
 			const refused = keysOf(tracked)
@@ -195,7 +215,7 @@ describe("storage metering", () => {
 			yield* ledger(db, ORG, "logs", 0, 3, 30)
 			const tracked: Array<Tracked> = []
 			yield* Effect.forEach(Arr.range(1, 10), (daysLater) =>
-				meterStorage(TODAY + daysLater * DAY_MS).pipe(
+				meterStorage(SETTLED + daysLater * DAY_MS).pipe(
 					Effect.provide([db.layer, recordingAutumn(tracked)]),
 				),
 			)
@@ -207,6 +227,57 @@ describe("storage metering", () => {
 		}),
 	)
 
+	it.effect("records only the orgs Autumn accepted in a mixed tick, taking a 409 as accepted", () =>
+		Effect.gen(function* () {
+			const db = createTestDb(trackedDbs)
+			yield* ledger(db, ORG, "logs", 1, 30, 30)
+			yield* ledger(db, "org_refused", "logs", 1, 30, 30)
+			yield* ledger(db, "org_counted", "logs", 1, 30, 30)
+			const tracked: Array<Tracked> = []
+			let refuse = true
+			const autumn = recordingAutumn(tracked, (call) =>
+				call.body.customer_id === "org_refused"
+					? refuse
+						? 503
+						: 200
+					: call.body.customer_id === "org_counted"
+						? 409
+						: 200,
+			)
+			const meter = (nowMs: number) => meterStorage(nowMs).pipe(Effect.provide([db.layer, autumn]))
+
+			const first = yield* meter(SETTLED)
+			assert.strictEqual(first.charges, 2)
+			assert.strictEqual(first.failed, 1)
+
+			refuse = false
+			const second = yield* meter(SETTLED + 3_600_000)
+			assert.deepStrictEqual(keysOf(tracked.slice(3)), ["storage:org_refused:2026-11-24"])
+			assert.strictEqual(second.charges, 1)
+		}),
+	)
+
+	it.effect("records nothing as billed when Autumn has no key, and bills it once a key is set", () =>
+		Effect.gen(function* () {
+			const db = createTestDb(trackedDbs)
+			yield* ledger(db, ORG, "logs", 1, 30, 30)
+			const tracked: Array<Tracked> = []
+
+			const unkeyed = yield* meterStorage(SETTLED).pipe(
+				Effect.provide([db.layer, recordingAutumn(tracked, () => 200, { AUTUMN_SECRET_KEY: " " })]),
+			)
+			assert.strictEqual(unkeyed.charges, 0)
+			assert.strictEqual(unkeyed.unmetered, 1)
+			assert.strictEqual(tracked.length, 0)
+
+			const keyed = yield* meterStorage(SETTLED + 3_600_000).pipe(
+				Effect.provide([db.layer, recordingAutumn(tracked)]),
+			)
+			assert.strictEqual(keyed.charges, 1)
+			assert.deepStrictEqual(keysOf(tracked), ["storage:org_storage:2026-11-24"])
+		}),
+	)
+
 	it.effect("prunes days past the longest period and bills only early in the UTC day", () =>
 		Effect.gen(function* () {
 			const db = createTestDb(trackedDbs)
@@ -215,12 +286,12 @@ describe("storage metering", () => {
 			const tracked: Array<Tracked> = []
 			const provideAll = Effect.provide([db.layer, recordingAutumn(tracked)])
 
-			const result = yield* meterStorage(TODAY).pipe(provideAll)
+			const result = yield* meterStorage(SETTLED).pipe(provideAll)
 			assert.strictEqual(result.pruned, 1)
 			// The 730-day row bills its last day, 2026-11-24, after a 7-day backfill of earlier ones.
 			assert.strictEqual(tracked.length, BACKFILL_DAYS)
 
-			yield* TestClock.setTime(TODAY + DAY_MS + 5 * 3_600_000)
+			yield* TestClock.setTime(TODAY + DAY_MS + SETTLE_MS + 4 * 3_600_000)
 			yield* runStorageMetering.pipe(provideAll)
 			assert.strictEqual(tracked.length, BACKFILL_DAYS)
 		}),

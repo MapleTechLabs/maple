@@ -4,7 +4,7 @@ import { BillingCustomerId } from "@maple/domain/http"
 import { MAX_RETENTION_DAYS } from "@maple/domain/retention"
 import { dailyGbMonths, STORAGE_FEATURE_ID } from "@maple/domain/storage-pricing"
 import type { OrgId } from "@maple/primitives"
-import { Array as Arr, Clock, DateTime, Effect, Result, Schema } from "effect"
+import { Array as Arr, Clock, DateTime, Effect, Record as Rec, Result, Schema, Tuple } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { trackFeatureUsageOrFail } from "@maple/backend/services/billing/autumn-tracker"
 import { bytesToGb, DAY_MS, keptOn, utcDayStart } from "@maple/backend/services/billing/StorageUsageService"
@@ -18,12 +18,16 @@ import { bytesToGb, DAY_MS, keptOn, utcDayStart } from "@maple/backend/services/
  * bills from that day for exactly that many days, even though the warehouse expires rows by event
  * time: data received late or early is billed for the period it was stored under, never longer.
  *
- * Rides the API worker's hourly cron; only the first hours of a UTC day bill. Each (org, day)
+ * Rides the API worker's hourly cron; a day bills from `SETTLE_MS` past its end, for
+ * `METERING_HOURS`, so the gateway's last flush of the day has landed. Each (org, day)
  * Autumn accepts is recorded in `storage_billing_runs`; any day of the last `BACKFILL_DAYS` without
  * one is billed again, oldest first, under its own idempotency key, so a retry bills once.
  * Orgs on their own ClickHouse have no ledger rows: the gateway records only what Maple stores.
  */
 export const METERING_HOURS = 4
+
+/** Time after midnight UTC before the day just ended bills: the gateway flushes every minute. */
+export const SETTLE_MS = 60 * 60 * 1000
 
 /** Completed days a failed bill is retried for. */
 export const BACKFILL_DAYS = 7
@@ -46,6 +50,8 @@ const usageKey = (orgId: string, dayMs: number) => `storage:${orgId}:${isoDay(da
 
 const runKey = (orgId: string, dayMs: number) => `${orgId}:${dayMs}`
 
+const daySumKey = (dayMs: number) => `bytes_${dayMs}`
+
 interface Charge {
 	readonly orgId: OrgId
 	readonly dayMs: number
@@ -59,11 +65,13 @@ interface Charge {
  */
 export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs: number) {
 	const todayMs = utcDayStart(nowMs)
-	// Oldest first, ending with yesterday: today is not complete, so it is never billed.
-	const days = Arr.makeBy(BACKFILL_DAYS, (index) => todayMs - (BACKFILL_DAYS - index) * DAY_MS)
+	// Oldest first, ending with the last day settled `SETTLE_MS` ago; today is never billed.
+	const lastDayMs = utcDayStart(nowMs - SETTLE_MS) - DAY_MS
+	const days = Arr.makeBy(BACKFILL_DAYS, (index) => lastDayMs - (BACKFILL_DAYS - 1 - index) * DAY_MS)
+	const firstDayMs = days[0] ?? lastDayMs
 	const database = yield* Database
 
-	const { stored, billed, links, pruned } = yield* database.execute((db) =>
+	const { stored, links, pruned } = yield* database.execute((db) =>
 		Effect.gen(function* () {
 			const pruned = yield* db.run(
 				PG.deleteFrom(IngestStorageLedger)
@@ -78,19 +86,37 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 			const billed = yield* db.run(
 				PG.from(StorageBillingRuns)
 					.select(($) => ({ orgId: $.orgId, day: $.day }))
-					.where(($) => [$.day.gte(todayMs - BACKFILL_DAYS * DAY_MS)]),
+					.where(($) => [$.day.gte(firstDayMs)]),
 			)
-			const stored = yield* Effect.forEach(days, (dayMs) =>
-				db
-					.run(
-						PG.from(IngestStorageLedger)
-							.select(($) => ({ orgId: $.orgId, bytes: PG.sum($.bytes) }))
-							// Only bytes received by the end of the billed day.
-							.where(($) => [$.day.lte(dayMs), keptOn($, dayMs)])
-							.groupBy("orgId"),
+			const alreadyBilled = new Set(Arr.map(billed, (run) => runKey(run.orgId, run.day)))
+			// One scan of the rows kept on any day of the window, one sum per day.
+			const sums = yield* db.run(
+				PG.from(IngestStorageLedger)
+					.select(($) =>
+						Object.assign(
+							{ orgId: $.orgId },
+							Rec.fromEntries(
+								Arr.map(days, (dayMs) =>
+									Tuple.make(
+										daySumKey(dayMs),
+										// Only bytes received by the end of the billed day.
+										PG.sumIf($.bytes, PG.and($.day.lte(dayMs), keptOn($, dayMs))),
+									),
+								),
+							),
+						),
 					)
-					.pipe(Effect.map((rows) => Arr.map(rows, (row) => ({ ...row, dayMs })))),
-			).pipe(Effect.map(Arr.flatten))
+					.where(($) => [$.day.lte(lastDayMs), keptOn($, firstDayMs)])
+					.groupBy("orgId"),
+			)
+			// Oldest day first, skipping each (org, day) already billed.
+			const stored = Arr.flatMap(days, (dayMs) =>
+				Arr.flatMap(sums, (row) =>
+					alreadyBilled.has(runKey(row.orgId, dayMs))
+						? []
+						: [{ orgId: row.orgId, dayMs, bytes: row[daySumKey(dayMs)] ?? null }],
+				),
+			)
 			const orgIds = Arr.dedupe(Arr.map(stored, (row) => row.orgId))
 			const links = Arr.isArrayNonEmpty(orgIds)
 				? yield* db.run(
@@ -99,20 +125,19 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 							.where(($) => [PG.inList($.orgId, orgIds)]),
 					)
 				: []
-			return { stored, billed, links, pruned: pruned.length }
+			return { stored, links, pruned: pruned.length }
 		}),
 	)
 
-	const alreadyBilled = new Set(Arr.map(billed, (run) => runKey(run.orgId, run.day)))
 	const billingOrgOf = new Map(Arr.map(links, (link): [string, string] => [link.orgId, link.billingOrgId]))
 	const charges = Arr.flatMap(stored, (row): ReadonlyArray<Charge> => {
 		const storedGb = bytesToGb(row.bytes)
-		return storedGb > 0 && !alreadyBilled.has(runKey(row.orgId, row.dayMs))
+		return storedGb > 0
 			? [{ orgId: row.orgId, dayMs: row.dayMs, storedGb, value: dailyGbMonths(storedGb, row.dayMs) }]
 			: []
 	})
 
-	// `stored` is oldest day first, so the backlog is sent in day order.
+	// The backlog is sent in day order.
 	const results = yield* Effect.forEach(
 		charges,
 		(charge) =>
@@ -123,7 +148,7 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 				value: charge.value,
 				idempotencyKey: usageKey(charge.orgId, charge.dayMs),
 			}).pipe(
-				Effect.as(charge),
+				Effect.map((outcome) => ({ charge, outcome })),
 				Effect.tapError((error) =>
 					Effect.logError("[billing] storage day not billed").pipe(
 						Effect.annotateLogs({
@@ -137,8 +162,16 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 			),
 		{ concurrency: 8 },
 	)
-	const accepted = Arr.flatMap(results, (result) => (Result.isSuccess(result) ? [result.success] : []))
-	const failed = results.length - accepted.length
+	const sent = Arr.flatMap(results, (result) => (Result.isSuccess(result) ? [result.success] : []))
+	const accepted = Arr.flatMap(sent, ({ charge, outcome }) => (outcome === "accepted" ? [charge] : []))
+	const failed = results.length - sent.length
+	// No Autumn key, or the default org: nothing was billed, so no run is recorded for it.
+	const unmetered = sent.length - accepted.length
+	if (unmetered > 0) {
+		yield* Effect.logError("[billing] storage not metered: no Autumn key, or the default org").pipe(
+			Effect.annotateLogs({ unmetered }),
+		)
+	}
 
 	// A run lost here is billed again next tick under the same key, which Autumn answers with 409.
 	if (Arr.isArrayNonEmpty(accepted)) {
@@ -159,20 +192,22 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 
 	const storedGbTotal = Arr.reduce(accepted, 0, (sum, charge) => sum + charge.storedGb)
 	yield* Effect.annotateCurrentSpan({
-		"maple.storage_metering.from_day": isoDay(days[0] ?? todayMs),
-		"maple.storage_metering.to_day": isoDay(todayMs - DAY_MS),
+		"maple.storage_metering.from_day": isoDay(firstDayMs),
+		"maple.storage_metering.to_day": isoDay(lastDayMs),
 		"maple.storage_metering.charges": charges.length,
 		"maple.storage_metering.failed": failed,
+		"maple.storage_metering.unmetered": unmetered,
 		"maple.storage_metering.stored_gb": storedGbTotal,
 		"maple.storage_metering.pruned_rows": pruned,
 	})
-	return { charges: accepted.length, failed, storedGb: storedGbTotal, pruned }
+	return { charges: accepted.length, failed, unmetered, storedGb: storedGbTotal, pruned }
 })
 
-/** The hourly tick: bills in the first `METERING_HOURS` of the UTC day, else does nothing. */
+/** The hourly tick: bills for `METERING_HOURS` from `SETTLE_MS` past midnight UTC, else does nothing. */
 export const runStorageMetering = Effect.gen(function* () {
 	const nowMs = yield* Clock.currentTimeMillis
-	if (nowMs - utcDayStart(nowMs) >= METERING_HOURS * 60 * 60 * 1000) {
+	const sinceMidnightMs = nowMs - utcDayStart(nowMs)
+	if (sinceMidnightMs < SETTLE_MS || sinceMidnightMs >= SETTLE_MS + METERING_HOURS * 60 * 60 * 1000) {
 		yield* Effect.annotateCurrentSpan({ "maple.storage_metering.outcome": "skipped" })
 		return
 	}
