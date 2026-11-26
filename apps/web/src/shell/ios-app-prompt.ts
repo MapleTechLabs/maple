@@ -34,7 +34,7 @@ export const iosPromptUser = (model: Model, clerk: ShellClerk | null): Option.Op
 		(userId) => !Arr.contains(model.iosPromptDismissedUsers, userId),
 	)
 
-/** The card, or nothing; the collapsed rail has no room for it. */
+/** The card, or nothing; the collapsed rail and a short window have no room for it. */
 export const iosAppPrompt = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -48,8 +48,9 @@ export const iosAppPrompt = (
 				{
 					as: "section",
 					gap: "3",
+					// The footer does not scroll: on a short window the card would push the nav out, so it steps aside.
 					className:
-						"rounded-md border border-sidebar-border bg-background p-3 group-data-[collapsible=icon]:hidden",
+						"rounded-md border border-sidebar-border bg-background p-3 group-data-[collapsible=icon]:hidden [@media(max-height:700px)]:hidden",
 					attributes: [h.AriaLabel(IOS_APP_NAME)],
 				},
 				[
