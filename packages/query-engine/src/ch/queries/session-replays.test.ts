@@ -86,6 +86,17 @@ describe("sessionReplayEventsQuery", () => {
 		expect(sql).toContain("Timestamp <= '2026-06-25 06:00:00'")
 	})
 
+	it("reads the period default on a cluster without RetentionDays", () => {
+		const stamped = compileUnsafe(sessionReplayEventsQuery(), sessionParams).sql
+		const unstamped = compileUnsafe(
+			sessionReplayEventsQuery({ unstampedPeriods: true }),
+			sessionParams,
+		).sql
+		expect(stamped).toMatch(/\bRetentionDays AS retentionDays/)
+		expect(unstamped).not.toMatch(/\bRetentionDays\b/)
+		expect(unstamped).toContain("toUInt16(30) AS retentionDays")
+	})
+
 	it("omits the time window when absent (full scan)", () => {
 		const q = sessionReplayEventsQuery()
 		const { sql } = compileUnsafe(q, sessionParams)

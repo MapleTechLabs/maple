@@ -66,7 +66,7 @@ Settings → "Bring your own ClickHouse" → Schema → **Apply schema**. The AP
 
 If the connection fails or the user lacks DDL privileges, the apply fails and the settings row shows the error.
 
-Re-applying is safe. Already-applied migrations are skipped, and every statement uses `IF NOT EXISTS` as a second line of defense. Future schema upgrades land the same way: pull a new Maple API release, then apply again to pick up new migrations.
+Re-applying is safe. Already-applied migrations are skipped, and every statement uses `IF NOT EXISTS` as a second line of defense. Future schema upgrades land the same way: pull a new Maple API release, then apply again to pick up new migrations. Between the release and the apply, reads that need a column a pending migration adds degrade instead of failing (replay chunks before migration 75 read the default retention period, for example); apply promptly to restore the full read.
 
 ### Via the standalone CLI
 
