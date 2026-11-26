@@ -152,9 +152,16 @@ export class BillingControls extends Schema.Class<BillingControls>("BillingContr
 	usageAlerts: Schema.optionalKey(Schema.Array(BillingUsageAlert)),
 }) {}
 
+/** A trial the customer started (Autumn's `trials_used`), ended ones included. */
+export class BillingTrialUse extends Schema.Class<BillingTrialUse>("BillingTrialUse")({
+	planId: Schema.String,
+}) {}
+
 export class BillingCustomer extends Schema.Class<BillingCustomer>("BillingCustomer")({
 	id: Schema.String,
 	subscriptions: Schema.Array(BillingSubscription),
+	// Expanded on every cached read: the only trace of an ended no-card trial once Autumn drops its row.
+	trialsUsed: Schema.optionalKey(Schema.NullOr(Schema.Array(BillingTrialUse))),
 	balances: Schema.optionalKey(Schema.Record(Schema.String, BillingBalance)),
 	flags: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
 	billingControls: Schema.optionalKey(Schema.NullOr(BillingControls)),

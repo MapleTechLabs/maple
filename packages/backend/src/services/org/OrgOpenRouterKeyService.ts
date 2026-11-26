@@ -130,13 +130,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		// A member org holds the add-on through the org that pays for it.
 		const entitlement = (orgId: OrgId): Effect.Effect<Entitlement> =>
 			billingCustomers.customerFor(orgId).pipe(
-				Effect.flatMap((customerId) =>
-					readCustomerCached(
-						edgeCache,
-						customerId,
-						autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
-					),
-				),
+				Effect.flatMap((customerId) => readCustomerCached(edgeCache, autumn, customerId)),
 				Effect.flatMap(({ result }) => ensureOk(result)),
 				Effect.map((customer): Entitlement =>
 					customerHasFlag(customer, OPENROUTER_BYOK_FEATURE_ID) ? "entitled" : "not_entitled",

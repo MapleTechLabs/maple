@@ -78,11 +78,7 @@ export class UptimeMonitorAllowance extends Context.Service<
 		const limit: UptimeMonitorAllowanceApi["limit"] = Effect.fn("UptimeMonitorAllowance.limit")(
 			function* (customerId) {
 				if (unmetered(customerId)) return Option.none<number>()
-				const cap = yield* readCustomerCached(
-					edgeCache,
-					customerId,
-					autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
-				).pipe(
+				const cap = yield* readCustomerCached(edgeCache, autumn, customerId).pipe(
 					Effect.flatMap(({ result }) => ensureOk(result)),
 					Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
 					// With a key configured, billing being down is an outage, not a free plan.

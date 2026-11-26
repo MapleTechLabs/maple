@@ -104,9 +104,23 @@ export const aiCardGateOf = (
 	return Option.some(isOnTrial ? "trial" : "no_plan")
 }
 
+/** A trial Autumn recorded the org starting (`trials_used`). It outlives the subscription row. */
+export interface TrialUse {
+	readonly planId: string
+}
+
 /** The org held a base plan, the trial included: the no-card trial is once per org. */
 export const hasHadPlan = (subscriptions: ReadonlyArray<TrialSubscription>): boolean =>
 	Arr.some(subscriptions, isPlanSubscription)
+
+/**
+ * The org held a plan or started a trial, whatever its state now. Autumn deletes an ended no-card
+ * trial's subscription row (seen 2026-11-26) but keeps it in `trials_used`, so both are read.
+ */
+export const hasPlanHistory = (
+	subscriptions: ReadonlyArray<TrialSubscription>,
+	trialsUsed: ReadonlyArray<TrialUse> | null | undefined,
+): boolean => hasHadPlan(subscriptions) || Arr.isReadonlyArrayNonEmpty(trialsUsed ?? [])
 
 /** When the org's no-card trial ends (or ended); none if it never had one. */
 export const trialEndOf = (subscriptions: ReadonlyArray<TrialSubscription>): Option.Option<number> => {
@@ -118,15 +132,17 @@ export const trialEndOf = (subscriptions: ReadonlyArray<TrialSubscription>): Opt
 
 /**
  * The trial a Startup attach carries: the no-card trial's days left, rounded up, so the card is
- * first charged when that trial would have ended; `null` (bill now) once it ended; `undefined`
- * (the plan's own terms) for an org that never trialed.
+ * first charged when that trial would have ended; `null` (bill now) once it ended, its row gone
+ * included; `undefined` (the plan's own terms) for an org that never trialed.
  */
 export const startupTrialDays = (
 	subscriptions: ReadonlyArray<TrialSubscription>,
+	trialsUsed: ReadonlyArray<TrialUse> | null | undefined,
 	now: number,
 ): number | null | undefined =>
 	Option.match(trialEndOf(subscriptions), {
-		onNone: () => undefined,
+		onNone: () =>
+			Arr.some(trialsUsed ?? [], (trial) => trial.planId === TRIAL_PLAN_ID) ? null : undefined,
 		onSome: (end) => (end > now ? Math.ceil((end - now) / DAY_MS) : null),
 	})
 
