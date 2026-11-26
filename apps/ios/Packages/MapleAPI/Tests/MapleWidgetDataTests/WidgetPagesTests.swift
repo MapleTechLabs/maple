@@ -18,10 +18,13 @@ private actor ScriptedTransport: WidgetHTTPTransport {
 	}
 
 	private var replies: [String: Reply]
+	/// What happens elsewhere on the phone while a request to a path is in flight.
+	private let meanwhile: [String: @Sendable () -> Void]
 	private(set) var requests: [URLRequest] = []
 
-	init(_ replies: [String: Reply]) {
+	init(_ replies: [String: Reply], meanwhile: [String: @Sendable () -> Void] = [:]) {
 		self.replies = replies
+		self.meanwhile = meanwhile
 	}
 
 	func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -32,6 +35,7 @@ private actor ScriptedTransport: WidgetHTTPTransport {
 				headerFields: ["Content-Type": "application/json"]
 			)
 		else { throw URLError(.notConnectedToInternet) }
+		meanwhile[url.path]?()
 		return (Data(reply.body.utf8), response)
 	}
 
@@ -89,13 +93,15 @@ private struct Harness {
 	}
 
 	/// A registered key and its record, as the app leaves them.
-	func register(scopes: [String]? = ["widget_summary:read", "widget_summary:write"]) throws {
+	func register(
+		scopes: [String]? = ["widget_summary:read", "widget_summary:write"], credentialId: String = "dcred_1"
+	) throws {
 		let key = try keys.generate(organizationId: organizationId)
 		try keys.save(key)
 		credentials.saveDevice(
 			DeviceCredential(
 				organizationId: organizationId,
-				credentialId: "dcred_1",
+				credentialId: credentialId,
 				jkt: key.thumbprint,
 				apiBaseURL: apiBase,
 				attested: false,
@@ -280,6 +286,69 @@ struct WidgetPagesClientTests {
 		#expect(await client.acknowledge(organizationId: organizationId, incidentId: incidentId, now: now) == .needsApp)
 		#expect(!client.canAcknowledge(organizationId: organizationId, now: now))
 		#expect(await silent.requests.isEmpty)
+	}
+
+	@Test("A read that arrives after sign-out, or after the key was replaced, stores nothing")
+	func readOutlivesCredential() async throws {
+		let harness = Harness()
+		defer { harness.cleanUp() }
+		try harness.register()
+		let answer = ScriptedTransport.Reply(status: 200, body: listJSON([pageJSON()]))
+		// Sign-out removes the credentials first and the snapshots after them.
+		let signedOut = ScriptedTransport(
+			["/v2/device_tokens": tokenReply, listPath: answer], meanwhile: [listPath: { harness.credentials.clearAll() }]
+		)
+		#expect(await harness.client(signedOut).refresh(organizationId: organizationId, organizationName: nil, now: now) == .noCredential)
+		#expect(await signedOut.requests(to: listPath).count == 1)
+		#expect(harness.stored == nil)
+		#expect(harness.lastRead == nil)
+
+		// The next account registers its own key while the last one's read is out.
+		try harness.register()
+		let replaced = ScriptedTransport(
+			["/v2/device_tokens": tokenReply, listPath: answer],
+			meanwhile: [listPath: { try? harness.register(credentialId: "dcred_2") }]
+		)
+		#expect(await harness.client(replaced).refresh(organizationId: organizationId, organizationName: nil, now: now) == .failed)
+		#expect(harness.stored == nil)
+		#expect(harness.lastRead == nil)
+		#expect(!harness.isCredentialRejected)
+	}
+
+	@Test("An acknowledgement that lands after sign-out, or after the key was replaced, touches no snapshot")
+	func acknowledgementOutlivesCredential() async throws {
+		let harness = Harness()
+		defer { harness.cleanUp() }
+		try harness.register()
+		let store = WidgetSnapshotStore<PagesSnapshot>.pages(organizationId: organizationId, appGroupIdentifier: harness.suite)
+		let replies: [String: ScriptedTransport.Reply] = [
+			"/v2/device_tokens": tokenReply,
+			listPath: .init(status: 200, body: listJSON([pageJSON()])),
+			acknowledgePath: .init(status: 200, body: pageJSON(acknowledgedBy: "Me Myself", byYou: true)),
+		]
+
+		// The next account's key and its pages are in place before the answer is.
+		_ = await harness.client(ScriptedTransport(replies)).refresh(organizationId: organizationId, organizationName: nil, now: now)
+		let before = try #require(harness.stored)
+		let replaced = ScriptedTransport(replies, meanwhile: [acknowledgePath: { try? harness.register(credentialId: "dcred_2") }])
+		#expect(await harness.client(replaced).acknowledge(organizationId: organizationId, incidentId: incidentId, now: now) == .needsApp)
+		#expect(await replaced.requests(to: acknowledgePath).count == 1)
+		#expect(harness.stored == before)
+		#expect(harness.lastTap == nil)
+
+		// Signed out mid-tap: nothing comes back into the App Group.
+		let signedOut = ScriptedTransport(
+			replies,
+			meanwhile: [
+				acknowledgePath: {
+					harness.credentials.clearAll()
+					store.clear()
+				}
+			]
+		)
+		#expect(await harness.client(signedOut).acknowledge(organizationId: organizationId, incidentId: incidentId, now: now) == .needsApp)
+		#expect(harness.stored == nil)
+		#expect(harness.lastTap == nil)
 	}
 
 	@Test("Acknowledges with a signed POST and writes the answer into the stored snapshot")

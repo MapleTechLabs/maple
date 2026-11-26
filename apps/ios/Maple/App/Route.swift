@@ -16,6 +16,11 @@ enum Route: Hashable {
 	/// A trace's waterfall, optionally opened on one span.
 	case trace(id: String, spanId: String? = nil)
 	case dashboard(id: String, name: String)
+	/// Who is on call and when the viewer is. `seed` is an overview the caller
+	/// already holds, so the screen paints without waiting on its own read.
+	case onCall(seed: OnCallOverview? = nil)
+	/// One schedule, read-only, drawn from the same overview document.
+	case schedule(id: String, seed: OnCallOverview? = nil)
 	/// The Alerts tab, opened on a specific segment. Handled by the tab
 	/// switcher rather than by push — see `AppNavigation`.
 	case alerts(AlertsSegment)
@@ -54,6 +59,10 @@ extension View {
 				TraceDetailView(traceID: id, initialSpanID: spanId)
 			case .dashboard(let id, let name):
 				DashboardDetailView(dashboardID: id, name: name)
+			case .onCall(let seed):
+				OnCallView(seed: seed)
+			case .schedule(let id, let seed):
+				ScheduleView(scheduleID: id, seed: seed)
 			case .alerts:
 				// Cross-tab: Home asks the tab bar to switch. Rendering it inline
 				// would nest a hub inside a stack.
@@ -71,6 +80,9 @@ extension View {
 final class AppNavigation {
 	var tab: AppTab = .home
 	var alertsSegment: AlertsSegment = .errors
+	/// The Overview tab's stack, owned here so the on-call screens can be opened
+	/// from outside the view tree.
+	var homePath: [Route] = []
 	/// The Alerts tab's stack. Owned here so a notification tap can push an
 	/// incident onto it from outside the view tree.
 	var alertsPath: [Route] = []
@@ -80,6 +92,30 @@ final class AppNavigation {
 	/// The Explore tab's stack and segment.
 	var explorePath: [Route] = []
 	var exploreSegment: ExploreSegment = .traces
+	/// The organization the Overview stack was built under.
+	@ObservationIgnored private var organizationId: String?
+
+	/// The session ended. Every stack held the previous account's screens, and
+	/// the next account must not be handed them.
+	func reset() {
+		tab = .home
+		alertsSegment = .errors
+		exploreSegment = .traces
+		homePath = []
+		alertsPath = []
+		servicesPath = []
+		explorePath = []
+		organizationId = nil
+	}
+
+	/// The organization on screen. Overview's stack goes with the one it was built
+	/// under: its on-call screens carry that organization's overview. The other
+	/// stacks stay, because a tapped notification switches and then pushes onto them.
+	func show(organizationId: String) {
+		guard organizationId != self.organizationId else { return }
+		if self.organizationId != nil { homePath = [] }
+		self.organizationId = organizationId
+	}
 
 	func open(_ segment: AlertsSegment) {
 		alertsSegment = segment
@@ -120,6 +156,13 @@ final class AppNavigation {
 		case .servicesList:
 			servicesPath = []
 			tab = .services
+		case .onCall:
+			homePath = [.onCall()]
+			tab = .home
+		case .schedule(let id):
+			// Under the On call screen, so back goes where a tap would have come from.
+			homePath = [.onCall(), .schedule(id: id)]
+			tab = .home
 		}
 	}
 }

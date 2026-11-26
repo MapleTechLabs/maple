@@ -164,6 +164,14 @@ public struct WidgetCredentialStore: Sendable {
 		write(credential, organizationId: credential.organizationId, prefix: "device")
 	}
 
+	/// Whether `device` is still the registration on file. Sign-out removes it
+	/// before the snapshots, so an answer to a request it signed is checked
+	/// against this before anything is stored: a stale one belongs to nobody here.
+	public func holds(_ device: DeviceCredential) -> Bool {
+		guard let stored = loadDevice(organizationId: device.organizationId) else { return false }
+		return stored.credentialId == device.credentialId && stored.jkt == device.jkt
+	}
+
 	public func clearDevice(organizationId: String) {
 		for prefix in ["device", "token"] {
 			guard let url = url(for: organizationId, prefix: prefix) else { return }
