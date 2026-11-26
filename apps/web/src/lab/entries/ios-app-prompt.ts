@@ -3,8 +3,8 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import type { ShellClerk } from "../../shell/model"
 import { defineStaticShellLab } from "../static-shell-lab"
 
-// `/lab/ios-app-prompt`: the sidebar's iPhone app card, for a signed-in user who has not closed it.
-// Dismiss writes this fixture user's key, so a reload keeps it closed until the key is removed.
+// `/lab/ios-app-prompt`: the sidebar's iPhone app row and its popover, for a signed-in user who has not dismissed it.
+// "Don't show again" writes this fixture user's key, so a reload keeps it closed until the key is removed.
 
 const LAB_CLERK: ShellClerk = {
 	maybeUserId: Option.some("user_lab"),
@@ -20,5 +20,5 @@ export const lab = defineStaticShellLab("iPhone app prompt", {
 	currentPath: "/lab/ios-app-prompt",
 	breadcrumbs: [{ label: "Lab" }, { label: "iPhone app prompt" }],
 	clerk: LAB_CLERK,
-	page: (h) => emptyMessage(h, {}, ["The card sits over the sidebar's footer rows."]),
+	page: (h) => emptyMessage(h, {}, ["The row sits with the sidebar's footer rows; it opens a popover."]),
 })

@@ -289,7 +289,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/ios-app-prompt",
 		title: "iPhone app prompt",
 		description:
-			"The sidebar's card that points a signed-in user at the iPhone app: App Store badge, a QR code on desktop, and a dismiss that sticks per user.",
+			"The sidebar footer row that points a signed-in user at the iPhone app: a popover with a QR code and the App Store badge, and a dismissal that sticks per user.",
 		kind: "lab",
 		session: "none",
 	},

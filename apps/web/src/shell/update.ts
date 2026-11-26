@@ -3,6 +3,7 @@ import { Array, Equal, Option, Record, Struct } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import * as Dialog from "@maple/views/ui/dialog"
+import * as Popover from "@maple/views/ui/popover"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import type { Resources } from "../platform/resources"
 import {
@@ -53,6 +54,7 @@ import {
 	OnCallData,
 	shellProbe,
 	SourcesData,
+	initIosPromptPopover,
 } from "./model"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
@@ -630,8 +632,19 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 			commands: [DismissQuotaBanner()],
 		}),
 		CompletedDismissQuotaBanner: () => ({ model }),
+		GotIosPromptPopoverMessage: ({ message: child }) => {
+			const next = Popover.update(model.iosPromptPopover, child)
+			return {
+				model: modifyFields(model, { iosPromptPopover: () => next.model }),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotIosPromptPopoverMessage({ message }),
+				),
+			}
+		},
+		// The row leaves with its popover, so the next user of the browser starts with it closed.
 		ClickedDismissIosPrompt: ({ userId }) => ({
 			model: modifyFields(model, {
+				iosPromptPopover: () => initIosPromptPopover(),
 				iosPromptDismissedUsers: (users) => Array.dedupe(Array.append(users, userId)),
 			}),
 			commands: [SaveIosPromptDismissed({ userId })],

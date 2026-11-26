@@ -5,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
 import { PopupPosition } from "@maple/views/ui/anchor"
 import * as Dialog from "@maple/views/ui/dialog"
+import * as Popover from "@maple/views/ui/popover"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
@@ -115,7 +116,8 @@ export const Message = defineMessageUnion({
 	FailedOpenCustomerPortal: { message: Schema.String },
 	ClickedDismissQuotaBanner: {},
 	CompletedDismissQuotaBanner: {},
-	/** The sidebar's iPhone app card, closed by the signed-in user. */
+	GotIosPromptPopoverMessage: { message: Popover.Message },
+	/** "Don't show again" in the sidebar's iPhone app popover. */
 	ClickedDismissIosPrompt: { userId: Schema.String },
 	CompletedSaveIosPromptDismissed: {},
 	/** The sidebar's Search row. */

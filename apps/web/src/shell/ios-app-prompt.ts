@@ -1,18 +1,19 @@
 import { IOS_APP_NAME, IOS_APP_STORE_URL } from "@maple/domain/mobile-app"
 import { writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { iconButton } from "@maple/views/ui/icon-button"
+import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
+import * as Popover from "@maple/views/ui/popover"
 import { qrCode } from "@maple/views/ui/qr-code"
-import { hstack, vstack } from "@maple/views/ui/stack"
-import { typography } from "@maple/views/ui/typography"
+import { sidebarMenuButton, sidebarMenuItem } from "@maple/views/ui/sidebar"
+import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./message"
-import type { Model, ShellClerk } from "./model"
+import { IOS_PROMPT_POPOVER_ID, type Model, type ShellClerk } from "./model"
 
-// The sidebar's nudge to install the iPhone app: a card over the footer rows with Apple's badge
-// and, on a desktop, a QR code to the same listing. Dismissed once per user, in this browser.
+// The sidebar's nudge to install the iPhone app: one footer row. On a desktop it opens a popover
+// with a QR code and Apple's badge; on a phone it is a link to the listing. Dismissed per user.
 
 /** `maple.ios-app-prompt.dismissed.<userId>`: that user closed the card here. */
 export const IOS_PROMPT_STORAGE_PREFIX = "maple.ios-app-prompt.dismissed."
@@ -27,14 +28,67 @@ export const SaveIosPromptDismissed = Command.define("SaveIosPromptDismissed", {
 		}),
 })
 
-/** The signed-in user the card is for: none self-hosted, before Clerk answers, or once they closed it. */
+/** The signed-in user the row is for: none self-hosted, before Clerk answers, or once they dismissed it. */
 export const iosPromptUser = (model: Model, clerk: ShellClerk | null): Option.Option<string> =>
 	Option.filter(
 		clerk === null ? Option.none() : clerk.maybeUserId,
 		(userId) => !Arr.contains(model.iosPromptDismissedUsers, userId),
 	)
 
-/** The card, or nothing; the collapsed rail and a short window have no room for it. */
+const ROW_LABEL = "Get the iPhone app"
+const STORE_LABEL = "Download on the App Store"
+
+const rowContent = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
+	icon(h, "MobileIcon", { size: 18 }),
+	h.span([], [ROW_LABEL]),
+]
+
+const storeBadge = (h: HtmlBuilder<Message>): Html =>
+	h.a(
+		[
+			h.Href(IOS_APP_STORE_URL),
+			h.Target("_blank"),
+			h.Rel("noopener noreferrer"),
+			h.AriaLabel(STORE_LABEL),
+			h.Class("rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"),
+		],
+		[
+			h.img([
+				h.Src("/app-store-badge.svg"),
+				h.Alt(""),
+				h.Attribute("width", "120"),
+				h.Attribute("height", "40"),
+				h.Class("block h-10 w-auto"),
+			]),
+		],
+	)
+
+const panel = (h: HtmlBuilder<Message>, userId: string): ReadonlyArray<Html> => [
+	vstack(h, { gap: "3", align: "center", className: "w-52 text-center" }, [
+		qrCode(h, {
+			value: IOS_APP_STORE_URL,
+			label: `QR code to ${IOS_APP_NAME} on the App Store`,
+			className: "size-36",
+		}),
+		Popover.popoverDescription(
+			h,
+			IOS_PROMPT_POPOVER_ID,
+			"Scan with your iPhone to get critical alerts on your Lock Screen.",
+		),
+		storeBadge(h),
+		button(
+			h,
+			{
+				variant: "ghost",
+				size: "sm",
+				attributes: [h.OnClick(Message.ClickedDismissIosPrompt({ userId }))],
+			},
+			["Don't show again"],
+		),
+	]),
+]
+
+/** The footer row, or nothing; the collapsed rail has no room for a nudge. */
 export const iosAppPrompt = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -43,68 +97,43 @@ export const iosAppPrompt = (
 	Option.match(iosPromptUser(model, clerk), {
 		onNone: () => [],
 		onSome: (userId) => [
-			vstack(
-				h,
-				{
-					as: "section",
-					gap: "3",
-					// The footer does not scroll: on a short window the card would push the nav out, so it steps aside.
-					className:
-						"rounded-md border border-sidebar-border bg-background p-3 group-data-[collapsible=icon]:hidden [@media(max-height:700px)]:hidden",
-					attributes: [h.AriaLabel(IOS_APP_NAME)],
-				},
-				[
-					hstack(h, { align: "start", justify: "between", gap: "2" }, [
-						vstack(h, { gap: "0.5", className: "min-w-0" }, [
-							typography(h, { size: "ui", weight: "medium" }, ["Get Maple on your iPhone"]),
-							typography(h, { size: "xs", tone: "muted" }, [
-								"Critical alerts on your Lock Screen, and the trace behind every error.",
-							]),
-						]),
-						iconButton(
+			sidebarMenuItem(h, "group-data-[collapsible=icon]:hidden", [
+				// A phone is the device: the row goes straight to the listing, with no code to scan.
+				model.isMobile
+					? sidebarMenuButton(
 							h,
 							{
-								label: "Dismiss",
-								size: "icon-2xs",
-								className: "-mt-0.5 -mr-1 shrink-0",
-								attributes: [h.OnClick(Message.ClickedDismissIosPrompt({ userId }))],
+								href: IOS_APP_STORE_URL,
+								attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
 							},
-							[icon(h, "XmarkIcon", { size: 12 })],
-						),
-					]),
-					hstack(h, { gap: "3" }, [
-						// A phone opens the listing from the badge; a code to scan is for the desktop.
-						...(model.isMobile
-							? []
-							: [
-									qrCode(h, {
-										value: IOS_APP_STORE_URL,
-										label: "QR code to Maple Companion on the App Store",
-										className: "size-16 shrink-0",
-									}),
-								]),
-						h.a(
-							[
-								h.Href(IOS_APP_STORE_URL),
-								h.Target("_blank"),
-								h.Rel("noopener noreferrer"),
-								h.AriaLabel("Download on the App Store"),
-								h.Class(
-									"rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring",
-								),
-							],
-							[
-								h.img([
-									h.Src("/app-store-badge.svg"),
-									h.Alt(""),
-									h.Attribute("width", "108"),
-									h.Attribute("height", "36"),
-									h.Class("block h-9 w-auto"),
-								]),
-							],
-						),
-					]),
-				],
-			),
+							rowContent(h),
+						)
+					: h.submodel({
+							slotId: IOS_PROMPT_POPOVER_ID,
+							model: model.iosPromptPopover,
+							view: Popover.view,
+							viewInputs: {
+								className: "w-auto",
+								toContent: () => (model.iosPromptPopover.isOpen ? panel(h, userId) : []),
+								toView: ({ trigger, withTrigger }) =>
+									h.div(
+										[],
+										withTrigger(
+											sidebarMenuButton(
+												h,
+												{
+													className:
+														"data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground",
+													slot: "popover-trigger",
+													attributes: trigger,
+												},
+												rowContent(h),
+											),
+										),
+									),
+							},
+							toParentMessage: (message) => Message.GotIosPromptPopoverMessage({ message }),
+						}),
+			]),
 		],
 	})

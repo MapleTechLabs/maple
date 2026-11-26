@@ -1,11 +1,10 @@
 ---
 /**
- * The iPhone app: three of its own App Store screenshots, each captioned with the question it
- * answers. Plain markup, no island, and Apple's own badge (black, localized) as the download link.
+ * The iPhone app: a quiet head with Apple's own badge (black, localized) under the sentence, then
+ * three App Store screenshots, each under the question it answers. Plain markup, no island.
  */
 import { IOS_APP_STORE_URL } from "@maple/domain/mobile-app";
 import * as m from "../../paraglide/messages.js";
-import LedgerHead from "./LedgerHead.astro";
 
 const locale = Astro.currentLocale ?? "en";
 
@@ -16,7 +15,7 @@ const BADGES = {
 	ko: { src: "/badges/app-store-ko.svg", ratio: 129.70071 / 40 },
 };
 const badge = locale === "ja" ? BADGES.ja : locale === "ko" ? BADGES.ko : BADGES.en;
-const BADGE_HEIGHT = 44;
+const BADGE_HEIGHT = 40;
 
 // One question the app answers per screen, in the order its tabs put them.
 const screens = [
@@ -43,7 +42,10 @@ const screens = [
 
 <section id="mobile" class="ledger">
 	<div class="shell">
-		<LedgerHead title={m.ios_title()} lede={m.ios_lede()}>
+		<header class="ledger-intro">
+			<p class="text-[10px] uppercase tracking-[0.18em] text-fg-muted">{m.ios_eyebrow()}</p>
+			<h2 class="font-display font-medium tracking-[-0.02em] text-3xl md:text-4xl">{m.ios_title()}</h2>
+			<p class="ledger-intro__lede">{m.ios_lede()}</p>
 			<a href={IOS_APP_STORE_URL} target="_blank" rel="noopener noreferrer" class="ledger-store">
 				<img
 					src={badge.src}
@@ -54,12 +56,17 @@ const screens = [
 					decoding="async"
 				/>
 			</a>
-		</LedgerHead>
+		</header>
 
+		{/* Caption first, then the phone rising from the cell's foot and running off it. */}
 		<div class="ledger-grid ledger-grid--phones" data-lightbox-group>
 			{
 				screens.map((screen) => (
 					<div class="ledger-cell">
+						<div class="ledger-cap">
+							<h3>{screen.title}</h3>
+							<p>{screen.body}</p>
+						</div>
 						<div class="ledger-phone">
 							<img
 								src={screen.src}
@@ -70,10 +77,6 @@ const screens = [
 								decoding="async"
 								data-zoomable
 							/>
-						</div>
-						<div class="ledger-cap ledger-cap--bottom">
-							<h3>{screen.title}</h3>
-							<p>{screen.body}</p>
 						</div>
 					</div>
 				))
