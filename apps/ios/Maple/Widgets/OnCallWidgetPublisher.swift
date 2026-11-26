@@ -67,7 +67,10 @@ extension OnCallSnapshot {
 		guard let generatedAt = ResolvedTimeWindow.parse(overview.generatedAt), let windowEnd = overview.windowEnd
 		else { return nil }
 		func shift(_ period: OnCallPeriod) -> Shift {
-			Shift(userId: period.userId, start: period.start, end: period.end, isOverride: period.isOverride)
+			Shift(
+				userId: period.userId, start: period.start, end: period.end, isOverride: period.isOverride,
+				continues: period.continues
+			)
 		}
 		self.init(
 			generatedAt: generatedAt,
@@ -96,7 +99,7 @@ extension OnCallSnapshot {
 			myShifts: overview.viewerShifts(now: .distantPast).map {
 				ViewerShift(
 					scheduleId: $0.scheduleId, scheduleName: $0.scheduleName, start: $0.start, end: $0.end,
-					isOverride: $0.isOverride
+					isOverride: $0.isOverride, continues: $0.continues
 				)
 			},
 			people: overview.people.map { Person(userId: $0.userId, name: $0.name) }

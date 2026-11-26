@@ -13,7 +13,7 @@ struct ScheduleWidgetView: View {
 			title: "Schedule",
 			snapshot: entry.snapshot,
 			date: entry.date,
-			isSignedOut: entry.organizationId == nil,
+			isSignedOut: entry.isSignedOut,
 			isPlaceholder: entry.isPlaceholder
 		) { snapshot in
 			if let schedule = entry.schedule(in: snapshot) {

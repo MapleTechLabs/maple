@@ -32,12 +32,23 @@ private func hm(_ hours: Int, _ minutes: Int = 0) -> String {
 	WidgetTime.clock(at("2026-11-27T00:00:00.000Z").addingTimeInterval(Double(hours * 3600 + minutes * 60)), style: utc)
 }
 
-private func shift(_ userId: String, _ startsAt: String, _ endsAt: String, override: Bool = false) -> String {
-	#"{"user_id":"\#(userId)","starts_at":"\#(startsAt)","ends_at":"\#(endsAt)","is_override":\#(override)}"#
+/// Where the 60 day window cuts `on_call_now` and `my_shifts`.
+private let cutAt = "2027-01-26T02:14:00.000Z"
+
+/// `continues` is left off unless it is given, as a server from before it does.
+private func shift(
+	_ userId: String, _ startsAt: String, _ endsAt: String, override: Bool = false, continues: Bool? = nil
+) -> String {
+	let last = continues.map { #","continues":\#($0)"# } ?? ""
+	return #"{"user_id":"\#(userId)","starts_at":"\#(startsAt)","ends_at":"\#(endsAt)","is_override":\#(override)\#(last)}"#
 }
 
-private func myShift(_ scheduleId: String, _ name: String, _ startsAt: String, _ endsAt: String) -> String {
-	#"{"schedule_id":"\#(scheduleId)","schedule_name":"\#(name)","starts_at":"\#(startsAt)","ends_at":"\#(endsAt)","is_override":false}"#
+private func myShift(
+	_ scheduleId: String, _ name: String, _ startsAt: String, _ endsAt: String, continues: Bool? = nil
+) -> String {
+	let last = continues.map { #","continues":\#($0)"# } ?? ""
+	return
+		#"{"schedule_id":"\#(scheduleId)","schedule_name":"\#(name)","starts_at":"\#(startsAt)","ends_at":"\#(endsAt)","is_override":false\#(last)}"#
 }
 
 private func schedule(
@@ -57,23 +68,34 @@ private let paymentsMine = myShift("onc_pay2", "Payments secondary", "2026-12-03
 private let platformLater = myShift("onc_platform", "Platform primary", "2026-12-14T09:00:00.000Z", "2026-12-21T09:00:00.000Z")
 
 /// The overview as the wire carries it. `platformHolder` is who has Platform
-/// primary this week, so one world can be read on call and off call.
+/// primary this week, so one world can be read on call and off call. `solo`
+/// makes Platform primary and Payments primary rotations of one: the holder
+/// and Dana Kim stay on call past both windows, and nobody takes over.
 private func overviewJSON(
 	organization: String = organizationId, platformHolder: String = "user_me",
-	myShifts: [String] = [platformMine, paymentsMine, platformLater], withPeople: Bool = true
+	myShifts: [String] = [platformMine, paymentsMine, platformLater], withPeople: Bool = true, solo: Bool = false
 ) -> String {
-	let platform = [
-		shift(platformHolder, "2026-11-23T09:00:00.000Z", "2026-11-30T09:00:00.000Z"),
-		shift("user_priya", "2026-11-30T09:00:00.000Z", "2026-12-02T10:00:00.000Z"),
-		shift("user_dana", "2026-12-02T10:00:00.000Z", "2026-12-02T22:00:00.000Z", override: true),
-		shift("user_priya", "2026-12-02T22:00:00.000Z", "2026-12-07T09:00:00.000Z"),
-		shift("user_marco", "2026-12-07T09:00:00.000Z", windowEndsAt),
-	]
-	let paymentsPrimary = [
-		shift("user_dana", "2026-11-20T18:00:00.000Z", "2026-11-27T18:00:00.000Z"),
-		shift("user_marco", "2026-11-27T18:00:00.000Z", "2026-12-04T18:00:00.000Z"),
-		shift("user_dana", "2026-12-04T18:00:00.000Z", windowEndsAt),
-	]
+	let platform =
+		solo
+		? [shift(platformHolder, "2026-11-23T09:00:00.000Z", windowEndsAt, continues: true)]
+		: [
+			shift(platformHolder, "2026-11-23T09:00:00.000Z", "2026-11-30T09:00:00.000Z"),
+			shift("user_priya", "2026-11-30T09:00:00.000Z", "2026-12-02T10:00:00.000Z"),
+			shift("user_dana", "2026-12-02T10:00:00.000Z", "2026-12-02T22:00:00.000Z", override: true),
+			shift("user_priya", "2026-12-02T22:00:00.000Z", "2026-12-07T09:00:00.000Z"),
+			shift("user_marco", "2026-12-07T09:00:00.000Z", windowEndsAt),
+		]
+	let paymentsPrimary =
+		solo
+		? [shift("user_dana", "2026-11-20T18:00:00.000Z", windowEndsAt, continues: true)]
+		: [
+			shift("user_dana", "2026-11-20T18:00:00.000Z", "2026-11-27T18:00:00.000Z"),
+			shift("user_marco", "2026-11-27T18:00:00.000Z", "2026-12-04T18:00:00.000Z"),
+			shift("user_dana", "2026-12-04T18:00:00.000Z", windowEndsAt),
+		]
+	// The whole stretch, cut where the 60 day window stops.
+	let platformNow = solo ? shift(platformHolder, "2026-11-23T09:00:00.000Z", cutAt, continues: true) : platform[0]
+	let paymentsPrimaryNow = solo ? shift("user_dana", "2026-11-20T18:00:00.000Z", cutAt, continues: true) : paymentsPrimary[0]
 	let paymentsSecondary = [
 		shift("user_marco", "2026-11-26T09:00:00.000Z", "2026-12-03T09:00:00.000Z"),
 		shift("user_me", "2026-12-03T09:00:00.000Z", "2026-12-10T09:00:00.000Z"),
@@ -91,9 +113,11 @@ private func overviewJSON(
 			"onc_pipeline", "Data pipeline", shifts: pipeline, now: nil, next: pipeline[0],
 			gaps: [(generatedAt, "2026-11-28T08:00:00.000Z"), ("2026-12-04T08:00:00.000Z", "2026-12-05T08:00:00.000Z")]
 		),
-		schedule("onc_pay1", "Payments primary", shifts: paymentsPrimary, now: paymentsPrimary[0], next: paymentsPrimary[1]),
+		schedule(
+			"onc_pay1", "Payments primary", shifts: paymentsPrimary, now: paymentsPrimaryNow, next: solo ? nil : paymentsPrimary[1]
+		),
 		schedule("onc_pay2", "Payments secondary", shifts: paymentsSecondary, now: paymentsSecondary[0], next: paymentsSecondary[1]),
-		schedule("onc_platform", "Platform primary", shifts: platform, now: platform[0], next: platform[1]),
+		schedule("onc_platform", "Platform primary", shifts: platform, now: platformNow, next: solo ? nil : platform[1]),
 	]
 	let people = """
 		,"people":[{"user_id":"user_me","name":"Alex Chen"},{"user_id":"user_priya","name":"Priya Shah"},
@@ -114,6 +138,13 @@ private func makeSnapshot(_ json: String = overviewJSON()) throws -> OnCallSnaps
 /// until Payments secondary on Thursday.
 private func offCallSnapshot() throws -> OnCallSnapshot {
 	try makeSnapshot(overviewJSON(platformHolder: "user_priya", myShifts: [paymentsMine, platformLater]))
+}
+
+/// The owner alone on Platform primary and Dana Kim alone on Payments primary,
+/// both still on call where the read stops.
+private func soloSnapshot() throws -> OnCallSnapshot {
+	let mine = myShift("onc_platform", "Platform primary", "2026-11-23T09:00:00.000Z", cutAt, continues: true)
+	return try makeSnapshot(overviewJSON(myShifts: [mine], solo: true))
 }
 
 @Suite("On-call widget snapshot")
@@ -161,11 +192,10 @@ struct OnCallSnapshotTests {
 		}
 		#expect(current.scheduleId == "onc_platform")
 		#expect(current.scheduleName == "Platform primary")
-		#expect(current.until == at("2026-11-30T09:00:00.000Z"))
-		#expect(current.then == .person(userId: "user_priya"))
+		#expect(current.end == .handoff(at: at("2026-11-30T09:00:00.000Z"), to: "user_priya"))
 		#expect(current.otherSchedules == 0)
-		#expect(snapshot.thenPhrase(current.then) == "then Priya Shah")
-		#expect(WidgetTime.span(current.until.timeIntervalSince(now)) == "3d 6h")
+		#expect(snapshot.thenPhrase(current.end) == "then Priya Shah")
+		#expect(WidgetTime.span(try #require(current.end.date).timeIntervalSince(now)) == "3d 6h")
 		#expect(snapshot.defaultSchedule(at: now)?.id == "onc_platform")
 	}
 
@@ -192,7 +222,7 @@ struct OnCallSnapshotTests {
 			return
 		}
 		#expect(current.scheduleId == "onc_pay2")
-		#expect(snapshot.thenPhrase(current.then) == "then a teammate")
+		#expect(snapshot.thenPhrase(current.end) == "then a teammate")
 	}
 
 	@Test("A shift that follows a gap, or lies past what was read, says so or says nothing")
@@ -239,9 +269,9 @@ struct OnCallSnapshotTests {
 			// The gap ends when the first shift ahead starts.
 			at("2026-11-28T08:00:00.000Z"),
 		])
-		#expect(rows.map { $0.until.map { WidgetTime.handoffTime($0, now: now, compact: true, style: utc) } }
-			== ["Mon \(hm(9))", "Fri \(hm(18))", "3 Dec", "Sat \(hm(8))"])
+		#expect(rows.map { $0.untilLabel(at: now, style: utc) } == ["Mon \(hm(9))", "Fri \(hm(18))", "3 Dec", "Sat \(hm(8))"])
 		#expect(rows.map(\.isUncovered) == [false, false, false, true])
+		#expect(rows.allSatisfy { !$0.hasNoHandoff })
 	}
 
 	@Test("The table drawn for a later entry follows the handoffs")
@@ -258,6 +288,107 @@ struct OnCallSnapshotTests {
 		let wednesday = snapshot.row(for: try #require(snapshot.schedule(id: "onc_platform")), at: at("2026-12-02T12:00:00.000Z"))
 		#expect(wednesday.whoLabel == "Dana Kim")
 		#expect(wednesday.until == at("2026-12-02T22:00:00.000Z"))
+	}
+
+	@Test("Still on call where the read stops: no handoff, no end time and no then, on every surface")
+	func continuingStretch() throws {
+		let snapshot = try soloSnapshot()
+		let platform = try #require(snapshot.schedule(id: "onc_platform"))
+		let payments = try #require(snapshot.schedule(id: "onc_pay1"))
+		#expect(snapshot.status(of: platform, at: now) == .covered(by: try #require(platform.onCallNow), end: .continues))
+		guard case .onCall(let current) = snapshot.viewerState(at: now) else {
+			Issue.record("expected the owner on call")
+			return
+		}
+		#expect(current.end == .continues)
+		#expect(current.end.date == nil)
+		#expect(snapshot.thenPhrase(current.end) == nil)
+
+		// The table: nobody's until is the 14 or 60 day cut.
+		let rows = snapshot.tableRows(at: now)
+		#expect(rows.map(\.name) == ["Platform primary", "Payments primary", "Payments secondary", "Data pipeline"])
+		#expect(rows.map(\.hasNoHandoff) == [true, true, false, false])
+		#expect(rows.prefix(2).map(\.until) == [nil, nil])
+		#expect(rows.map { $0.untilLabel(at: now, style: utc) } == ["No handoff", "No handoff", "3 Dec", "Sat \(hm(8))"])
+
+		let text = snapshot.lockScreenText(at: now, style: utc)
+		#expect([text.lead, text.detail, text.second] == ["On call", "Platform primary", "no handoff scheduled"])
+		#expect(text.inline == "On call · no handoff")
+		#expect(snapshot.pagesShiftLine(at: now, style: utc) == "Platform primary · no handoff scheduled")
+
+		let mine = snapshot.scheduleLine(for: platform, at: now, style: utc)
+		#expect(mine.who == .viewer)
+		#expect("\(mine.whoLabel) \(mine.detail)" == "You · no handoff in the next 7 days")
+		let danas = snapshot.scheduleLine(for: payments, at: now, style: utc)
+		#expect("\(danas.whoLabel) \(danas.detail)" == "Dana Kim · no handoff in the next 7 days")
+
+		// Drawn for the last entry of the timeline, a refresh later, it says the same.
+		let later = now.addingTimeInterval(OnCallSnapshot.timelineHorizon)
+		#expect(snapshot.lockScreenText(at: later, style: utc) == text)
+		#expect(snapshot.row(for: payments, at: later).hasNoHandoff)
+	}
+
+	@Test("A stretch ends where its last back-to-back shift does, and only a cut that continues has no end")
+	func stretchEnds() throws {
+		let start = at("2026-11-23T09:00:00.000Z")
+		let middle = at("2026-11-30T09:00:00.000Z")
+		let windowEnd = at(windowEndsAt)
+		func schedule(lastContinues: Bool) -> OnCallSnapshot.Schedule {
+			.init(
+				id: "onc_solo", name: "Solo",
+				shifts: [
+					.init(userId: "user_dana", start: start, end: middle),
+					.init(userId: "user_dana", start: middle, end: windowEnd, continues: lastContinues),
+				]
+			)
+		}
+		// Her own next turn is no handoff, and the cut after it is not one either.
+		let solo = schedule(lastContinues: true)
+		#expect(solo.end(of: solo.shifts[0], windowEnd: windowEnd) == .continues)
+		// A server from before `continues`: the read stops there and says no more.
+		let older = schedule(lastContinues: false)
+		#expect(older.end(of: older.shifts[0], windowEnd: windowEnd) == .unknown(at: windowEnd))
+
+		// A real end past the 14 day window keeps its date.
+		let snapshot = try makeSnapshot(
+			overviewJSON(myShifts: [myShift("onc_platform", "Platform primary", "2026-11-23T09:00:00.000Z", "2026-12-20T09:00:00.000Z")], solo: true)
+		)
+		guard case .onCall(let current) = snapshot.viewerState(at: now) else {
+			Issue.record("expected the owner on call")
+			return
+		}
+		#expect(current.end == .unknown(at: at("2026-12-20T09:00:00.000Z")))
+	}
+
+	@Test("A payload or a stored snapshot without continues reads as false")
+	func continuesAbsent() throws {
+		let snapshot = try makeSnapshot()
+		#expect(snapshot.schedules.flatMap(\.periods).allSatisfy { !$0.continues })
+		#expect(snapshot.myShifts.allSatisfy { !$0.continues })
+		// What a build from before the key left in the App Group.
+		let stored = #"{"userId":"user_me","start":"2026-11-23T09:00:00.000Z","end":"2026-11-30T09:00:00.000Z","isOverride":false}"#
+		#expect(try WidgetJSON.decoder.decode(OnCallSnapshot.Shift.self, from: Data(stored.utf8)).continues == false)
+		let mine = #"{"scheduleId":"onc_platform","scheduleName":"Platform primary","start":"2026-11-23T09:00:00.000Z","end":"2026-11-30T09:00:00.000Z","isOverride":false}"#
+		#expect(try WidgetJSON.decoder.decode(OnCallSnapshot.ViewerShift.self, from: Data(mine.utf8)).continues == false)
+		// And it survives the trip through the App Group once it is there.
+		let solo = try soloSnapshot()
+		let data = try WidgetJSON.encoder.encode(solo)
+		#expect(try WidgetJSON.decoder.decode(OnCallSnapshot.self, from: data) == solo)
+		#expect(solo.myShifts.map(\.continues) == [true])
+	}
+
+	@Test("Where a window cut a stretch nothing changes: no change date and no countdown entries")
+	func noChangeAtCut() throws {
+		let snapshot = try soloSnapshot()
+		let all = snapshot.changeDates(after: now, until: .distantFuture)
+		#expect(!all.contains(at(cutAt)))
+		// The read running out is still one, and it is the last.
+		#expect(all.last == at(windowEndsAt))
+		// With no time left to count there are no hourly entries: the one handoff
+		// on another schedule, and the midnights.
+		#expect(snapshot.timelineDates(from: now, calendar: utc.calendar) == [
+			now, at("2026-11-28T00:00:00.000Z"), at("2026-11-28T08:00:00.000Z"), at("2026-11-29T00:00:00.000Z"),
+		])
 	}
 
 	@Test("What a widget shows changes when a shift or a gap starts or ends")
@@ -442,10 +573,13 @@ private actor ScriptedTransport: WidgetHTTPTransport {
 	}
 
 	private var replies: [String: Reply]
+	/// What happens elsewhere on the phone while a request to a path is in flight.
+	private let meanwhile: [String: @Sendable () -> Void]
 	private(set) var requests: [URLRequest] = []
 
-	init(_ replies: [String: Reply]) {
+	init(_ replies: [String: Reply], meanwhile: [String: @Sendable () -> Void] = [:]) {
 		self.replies = replies
+		self.meanwhile = meanwhile
 	}
 
 	func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -456,6 +590,7 @@ private actor ScriptedTransport: WidgetHTTPTransport {
 				headerFields: ["Content-Type": "application/json"]
 			)
 		else { throw URLError(.notConnectedToInternet) }
+		meanwhile[url.path]?()
 		return (Data(reply.body.utf8), response)
 	}
 
@@ -494,13 +629,13 @@ private struct Harness {
 	}
 
 	/// A registered key and its record, as the app leaves them.
-	func register() throws {
+	func register(credentialId: String = "dcred_1") throws {
 		let key = try keys.generate(organizationId: organizationId)
 		try keys.save(key)
 		credentials.saveDevice(
 			DeviceCredential(
 				organizationId: organizationId,
-				credentialId: "dcred_1",
+				credentialId: credentialId,
 				jkt: key.thumbprint,
 				apiBaseURL: apiBase,
 				attested: false,
@@ -646,6 +781,120 @@ struct WidgetOnCallClientTests {
 		_ = await client.refresh(organizationId: organizationId, organizationName: nil, freshFor: 300, now: now.addingTimeInterval(301))
 		_ = await client.refresh(organizationId: organizationId, organizationName: nil, now: now.addingTimeInterval(302))
 		#expect(await transport.requests(to: path).count == 3)
+	}
+
+	@Test("An answer that arrives after sign-out, or after the key was replaced, stores nothing")
+	func answerOutlivesCredential() async throws {
+		let harness = Harness()
+		defer { harness.cleanUp() }
+		try harness.register()
+		let answer = ScriptedTransport.Reply(status: 200, body: overviewJSON())
+		// Sign-out removes the credentials first and the snapshots after them.
+		let signedOut = ScriptedTransport(
+			["/v2/device_tokens": tokenReply, path: answer], meanwhile: [path: { harness.credentials.clearAll() }]
+		)
+		#expect(await harness.client(signedOut).refresh(organizationId: organizationId, organizationName: nil, now: now) == .noCredential)
+		#expect(await signedOut.requests(to: path).count == 1)
+		#expect(harness.stored == nil)
+		#expect(harness.lastRead == nil)
+
+		// The next account registers its own key while the last one's read is out.
+		try harness.register()
+		let replaced = ScriptedTransport(
+			["/v2/device_tokens": tokenReply, path: answer],
+			meanwhile: [path: { try? harness.register(credentialId: "dcred_2") }]
+		)
+		#expect(await harness.client(replaced).refresh(organizationId: organizationId, organizationName: nil, now: now) == .failed)
+		#expect(harness.stored == nil)
+		#expect(harness.lastRead == nil)
+
+		// The server refusing the old key on its way out is not the new key's refusal:
+		// recording it would stop the next account's widgets before their first read.
+		let revoked = ScriptedTransport(
+			["/v2/device_tokens": .init(status: 401, body: #"{"error":{"code":"invalid_device_credential"}}"#)],
+			meanwhile: ["/v2/device_tokens": { try? harness.register(credentialId: "dcred_3") }]
+		)
+		#expect(await harness.client(revoked).refresh(organizationId: organizationId, organizationName: nil, now: now) == .failed)
+		#expect(!harness.isCredentialRejected)
+		#expect(harness.lastRead == nil)
+
+		// A read signed with the key on file is stored as ever.
+		_ = await harness.client(harness.working()).refresh(organizationId: organizationId, organizationName: nil, now: now)
+		#expect(harness.stored != nil)
+		#expect(harness.lastRead?.outcome == .fetched)
+	}
+
+	@Test("A pick's identifier carries its organization, and an older bare one still reads")
+	func pickIdentifier() {
+		let pick = SchedulePick(scheduleId: "onc_platform", organizationId: "org_2abc")
+		#expect(pick.identifier == "org_2abc/onc_platform")
+		#expect(SchedulePick(identifier: pick.identifier) == pick)
+		#expect(ScheduleEntity(pick: pick, name: nil).id == "org_2abc/onc_platform")
+
+		// Stored before picks carried an organization: the id is left as it was.
+		let bare = SchedulePick(identifier: "onc_platform")
+		#expect(bare == SchedulePick(scheduleId: "onc_platform", organizationId: nil))
+		#expect(bare.identifier == "onc_platform")
+		#expect(ScheduleEntity(pick: bare, name: nil).id == "onc_platform")
+		// Only an organization id is read as one.
+		#expect(SchedulePick(identifier: "../credentials/onc_platform").organizationId == nil)
+		#expect(SchedulePick(identifier: "org_2abc/").organizationId == nil)
+	}
+
+	@Test("A picked schedule keeps its organization through a sign-out, and nothing picked follows the app")
+	func pickedOrganization() async throws {
+		let harness = Harness()
+		defer { harness.cleanUp() }
+		try harness.register()
+		_ = await harness.client(harness.working()).refresh(organizationId: organizationId, organizationName: nil, now: now)
+		let index = WidgetOrganizationIndex(appGroupIdentifier: harness.suite)
+		index.record(memberships: [WidgetOrganization(id: "org_active", name: "Active"), WidgetOrganization(id: organizationId, name: "Other")])
+		index.record(WidgetOrganization(id: "org_active", name: "Active"), isActive: true)
+		func organization(showing pick: SchedulePick?) -> String? {
+			SchedulePick.organizationId(showing: pick, appGroupIdentifier: harness.suite)
+		}
+		let pinned = SchedulePick(scheduleId: "onc_platform", organizationId: organizationId)
+		let older = SchedulePick(identifier: "onc_platform")
+
+		#expect(organization(showing: nil) == "org_active")
+		#expect(organization(showing: pinned) == organizationId)
+		// An older pick is found in the snapshot that holds it, else it follows the app.
+		#expect(organization(showing: older) == organizationId)
+		#expect(organization(showing: SchedulePick(identifier: "onc_deleted")) == "org_active")
+		// A pick in an organization nothing was ever read for is still that organization's.
+		#expect(organization(showing: SchedulePick(scheduleId: "onc_x", organizationId: "org_unread")) == "org_unread")
+
+		let query = ScheduleEntityQuery(appGroupIdentifier: harness.suite)
+		let resolved = try await query.entities(for: [pinned.identifier, older.identifier])
+		#expect(resolved.map(\.id) == ["\(organizationId)/onc_platform", "onc_platform"])
+		#expect(resolved.map(\.name) == ["Platform primary", "Platform primary"])
+		#expect(resolved.map(\.organizationId) == [organizationId, nil])
+
+		// Sign-out: the snapshots and the index go, and the pick does not move.
+		WidgetSnapshotStore<OnCallSnapshot>.onCall(organizationId: organizationId, appGroupIdentifier: harness.suite).clear()
+		index.clear()
+		#expect(organization(showing: pinned) == organizationId)
+		#expect(organization(showing: older) == nil)
+		#expect(organization(showing: nil) == nil)
+		let after = try await query.entities(for: [pinned.identifier])
+		#expect(after.map(\.pick) == [pinned])
+		#expect(after.first?.name == nil)
+	}
+
+	@Test("The picker lists the active organization's schedules, each remembering it")
+	func suggestedSchedules() async throws {
+		let harness = Harness()
+		defer { harness.cleanUp() }
+		try harness.register()
+		_ = await harness.client(harness.working()).refresh(organizationId: organizationId, organizationName: nil, now: now)
+		let query = ScheduleEntityQuery(appGroupIdentifier: harness.suite)
+		#expect(try await query.suggestedEntities().isEmpty)
+
+		WidgetOrganizationIndex(appGroupIdentifier: harness.suite)
+			.record(WidgetOrganization(id: organizationId, name: "acme-prod"), isActive: true)
+		let suggested = try await query.suggestedEntities()
+		#expect(suggested.map(\.id) == ["onc_pipeline", "onc_pay1", "onc_pay2", "onc_platform"].map { "\(organizationId)/\($0)" })
+		#expect(suggested.allSatisfy { $0.organizationId == organizationId })
 	}
 
 	@Test("A schedule is found in whichever organization's snapshot holds it")

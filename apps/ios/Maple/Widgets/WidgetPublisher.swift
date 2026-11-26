@@ -733,8 +733,10 @@ final class WidgetPublisher {
 		_ context: Context,
 		trigger: Trigger
 	) async -> (targets: [PublishTarget], organizations: [WidgetOrganization], pinnedCount: Int) {
-		let pinned = await pinnedTargets()
-		let pinnedOrganizationIds = Set(pinned.map(\.organizationId))
+		let (pinned, scheduleOrganizationIds) = await pinnedTargets()
+		// A Schedule widget reads its own organization itself, so that one needs
+		// a live credential here and no summary published for it.
+		let pinnedOrganizationIds = Set(pinned.map(\.organizationId)).union(scheduleOrganizationIds)
 		let others = context.memberships.filter {
 			$0.id != context.active.id && pinnedOrganizationIds.contains($0.id)
 		}
@@ -778,11 +780,15 @@ final class WidgetPublisher {
 	}
 
 	/// The (organization, environment) pairs the user actually pinned a widget
-	/// to.
-	private func pinnedTargets() async -> [PublishTarget] {
-		guard let configurations = try? await WidgetCenter.shared.currentConfigurations() else { return [] }
+	/// to, and the organizations of the schedules picked in a Schedule widget.
+	private func pinnedTargets() async -> (targets: [PublishTarget], scheduleOrganizationIds: Set<String>) {
+		guard let configurations = try? await WidgetCenter.shared.currentConfigurations() else { return ([], []) }
 		var targets: [PublishTarget] = []
+		var scheduleOrganizationIds: Set<String> = []
 		for info in configurations {
+			if let id = info.widgetConfigurationIntent(of: SelectScheduleIntent.self)?.schedule?.organizationId {
+				scheduleOrganizationIds.insert(id)
+			}
 			if let intent = info.widgetConfigurationIntent(of: SelectOrganizationIntent.self),
 				let id = intent.organization?.id
 			{
@@ -794,7 +800,7 @@ final class WidgetPublisher {
 				targets.append(PublishTarget(organizationId: id, environment: intent.environment?.id))
 			}
 		}
-		return targets
+		return (targets, scheduleOrganizationIds)
 	}
 
 	/// One surface's fetch-and-publish, as a child of the refresh.

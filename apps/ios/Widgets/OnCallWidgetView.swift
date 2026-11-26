@@ -51,17 +51,32 @@ private struct SmallOnCallView: View {
 				switch snapshot.viewerState(at: entry.date) {
 				case .onCall(let current):
 					PagesHeader(title: "On call", tint: Token.success)
-					TimeLeft(until: current.until, now: entry.date)
-						.font(Typo.pageTitle)
-						.foregroundStyle(Token.foreground)
-						.lineLimit(1)
-						.minimumScaleFactor(0.7)
-						.padding(.top, 12)
-					caption("left on this shift")
-					Spacer(minLength: 4)
 					// On a second schedule too: counted, as the app's shift card counts it.
-					subject(current.scheduleName + (current.otherSchedules > 0 ? " +\(current.otherSchedules)" : ""))
-					footnote(snapshot.thenPhrase(current.then))
+					let schedule = current.scheduleName + (current.otherSchedules > 0 ? " +\(current.otherSchedules)" : "")
+					if let until = current.end.date {
+						TimeLeft(until: until, now: entry.date)
+							.font(Typo.pageTitle)
+							.foregroundStyle(Token.foreground)
+							.lineLimit(1)
+							.minimumScaleFactor(0.7)
+							.padding(.top, 12)
+						caption("left on this shift")
+						Spacer(minLength: 4)
+						subject(schedule)
+						footnote(snapshot.thenPhrase(current.end))
+					} else {
+						// Nobody takes over, so there is no time left to count:
+						// the schedule stands where the countdown would.
+						Text(schedule)
+							.font(Typo.title)
+							.foregroundStyle(Token.foreground)
+							.lineLimit(2)
+							.minimumScaleFactor(0.8)
+							.padding(.top, 12)
+						caption(WidgetOnCallWording.noHandoffScheduled)
+						Spacer(minLength: 4)
+						footnote(nil)
+					}
 				case .offCall(let next):
 					PagesHeader(title: "Next shift", tint: nil, titleTint: Token.mutedForeground)
 					Text(WidgetTime.handoffTime(next.start, now: entry.date, compact: true))
@@ -191,7 +206,7 @@ private struct OnCallRowView: View {
 				.foregroundStyle(row.isUncovered ? Token.severityWarn : Token.foreground)
 				.lineLimit(1)
 				.layoutPriority(1)
-			Text(row.until.map { WidgetTime.handoffTime($0, now: now, compact: true) } ?? "")
+			Text(row.untilLabel(at: now))
 				.font(Typo.small)
 				.tabularNumbers()
 				.foregroundStyle(Token.mutedForeground)

@@ -106,8 +106,11 @@ struct PagesProvider: AppIntentTimelineProvider {
 			.compactMap { $0.upcomingPage(at: now) }
 			.map { $0.addingTimeInterval(1) }
 		// And one where the owner's shift ends, so the quiet state stops naming it.
-		if base.shiftLine != nil, case .onCall(let current)? = base.onCall?.viewerState(at: now) {
-			due.append(current.until)
+		// A shift with no handoff scheduled has no such moment.
+		if base.shiftLine != nil, case .onCall(let current)? = base.onCall?.viewerState(at: now),
+			let until = current.end.date
+		{
+			due.append(until)
 		}
 		let entries = ([now] + due.sorted()).map { date -> PagesEntry in
 			var entry = base

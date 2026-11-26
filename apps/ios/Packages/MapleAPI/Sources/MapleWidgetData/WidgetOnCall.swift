@@ -18,18 +18,24 @@ public struct WidgetOnCallPayload: Decodable, Sendable, Equatable {
 		public var startsAt: Date
 		public var endsAt: Date
 		public var isOverride: Bool?
+		/// Still on call at `endsAt`: a window stopped there. Absent on an older
+		/// server, which reads as false.
+		public var continues: Bool?
 
 		private enum CodingKeys: String, CodingKey {
 			case userId = "user_id"
 			case startsAt = "starts_at"
 			case endsAt = "ends_at"
 			case isOverride = "is_override"
+			case continues
 		}
 
 		/// Nil for a shift that ends before it starts: drawing it would mean guessing when.
 		var shift: OnCallSnapshot.Shift? {
 			guard endsAt > startsAt else { return nil }
-			return .init(userId: userId, start: startsAt, end: endsAt, isOverride: isOverride ?? false)
+			return .init(
+				userId: userId, start: startsAt, end: endsAt, isOverride: isOverride ?? false, continues: continues ?? false
+			)
 		}
 	}
 
@@ -84,6 +90,7 @@ public struct WidgetOnCallPayload: Decodable, Sendable, Equatable {
 		public var startsAt: Date
 		public var endsAt: Date
 		public var isOverride: Bool?
+		public var continues: Bool?
 
 		private enum CodingKeys: String, CodingKey {
 			case scheduleId = "schedule_id"
@@ -91,13 +98,14 @@ public struct WidgetOnCallPayload: Decodable, Sendable, Equatable {
 			case startsAt = "starts_at"
 			case endsAt = "ends_at"
 			case isOverride = "is_override"
+			case continues
 		}
 
 		var shift: OnCallSnapshot.ViewerShift? {
 			guard endsAt > startsAt else { return nil }
 			return .init(
 				scheduleId: scheduleId, scheduleName: scheduleName, start: startsAt, end: endsAt,
-				isOverride: isOverride ?? false
+				isOverride: isOverride ?? false, continues: continues ?? false
 			)
 		}
 	}
@@ -159,14 +167,33 @@ public struct OnCallSnapshot: Codable, Sendable, Equatable {
 	public struct Shift: Codable, Sendable, Hashable {
 		public var userId: String
 		public var start: Date
+		/// Where the person hands off, or where a window cut the stretch when `continues`.
 		public var end: Date
 		public var isOverride: Bool
+		/// Still on call at `end`: a window stopped there and nobody took over.
+		/// Such an end is never a handoff.
+		public var continues: Bool
 
-		public init(userId: String, start: Date, end: Date, isOverride: Bool = false) {
+		public init(userId: String, start: Date, end: Date, isOverride: Bool = false, continues: Bool = false) {
 			self.userId = userId
 			self.start = start
 			self.end = end
 			self.isOverride = isOverride
+			self.continues = continues
+		}
+
+		private enum CodingKeys: String, CodingKey {
+			case userId, start, end, isOverride, continues
+		}
+
+		/// Hand-written so a snapshot stored before `continues` still decodes.
+		public init(from decoder: any Decoder) throws {
+			let container = try decoder.container(keyedBy: CodingKeys.self)
+			self.userId = try container.decode(String.self, forKey: .userId)
+			self.start = try container.decode(Date.self, forKey: .start)
+			self.end = try container.decode(Date.self, forKey: .end)
+			self.isOverride = try container.decode(Bool.self, forKey: .isOverride)
+			self.continues = try container.decodeIfPresent(Bool.self, forKey: .continues) ?? false
 		}
 
 		public func holds(_ date: Date) -> Bool { start <= date && date < end }
@@ -189,7 +216,8 @@ public struct OnCallSnapshot: Codable, Sendable, Equatable {
 		public var name: String
 		/// "Weekly, hands off Mon 09:00", in the schedule's own zone.
 		public var rotationSummary: String?
-		/// Carries the shift's real start, which `shifts` may have cut.
+		/// The whole stretch: its real start, which `shifts` may have cut, and an
+		/// end that is a handoff or a gap unless it `continues`.
 		public var onCallNow: Shift?
 		/// The shift after the current one, which may start past the window.
 		public var next: Shift?
@@ -216,13 +244,34 @@ public struct OnCallSnapshot: Codable, Sendable, Equatable {
 		public var start: Date
 		public var end: Date
 		public var isOverride: Bool
+		/// The shift runs past the 60 day window, so `end` is not its end.
+		public var continues: Bool
 
-		public init(scheduleId: String, scheduleName: String, start: Date, end: Date, isOverride: Bool = false) {
+		public init(
+			scheduleId: String, scheduleName: String, start: Date, end: Date, isOverride: Bool = false,
+			continues: Bool = false
+		) {
 			self.scheduleId = scheduleId
 			self.scheduleName = scheduleName
 			self.start = start
 			self.end = end
 			self.isOverride = isOverride
+			self.continues = continues
+		}
+
+		private enum CodingKeys: String, CodingKey {
+			case scheduleId, scheduleName, start, end, isOverride, continues
+		}
+
+		/// Hand-written for the same reason as `Shift`'s.
+		public init(from decoder: any Decoder) throws {
+			let container = try decoder.container(keyedBy: CodingKeys.self)
+			self.scheduleId = try container.decode(String.self, forKey: .scheduleId)
+			self.scheduleName = try container.decode(String.self, forKey: .scheduleName)
+			self.start = try container.decode(Date.self, forKey: .start)
+			self.end = try container.decode(Date.self, forKey: .end)
+			self.isOverride = try container.decode(Bool.self, forKey: .isOverride)
+			self.continues = try container.decodeIfPresent(Bool.self, forKey: .continues) ?? false
 		}
 	}
 
@@ -282,7 +331,28 @@ extension OnCallSnapshot {
 		return first.map(String.init) ?? "Teammate"
 	}
 
-	/// Who is on the other side of a handoff.
+	/// How a stretch on call ends. The app says the same in `OnCallEnd`.
+	public enum End: Hashable, Sendable {
+		/// Someone else takes over.
+		case handoff(at: Date, to: String)
+		/// Coverage stops and a gap follows.
+		case gap(at: Date)
+		/// It ends further ahead than the read names who follows.
+		case unknown(at: Date)
+		/// Still on call where the read stops. That cut is not an end, so this
+		/// carries no date to print or count down to.
+		case continues
+
+		/// When the person stops being on call. Nil while no end is scheduled.
+		public var date: Date? {
+			switch self {
+			case .handoff(let at, _), .gap(let at), .unknown(let at): at
+			case .continues: nil
+			}
+		}
+	}
+
+	/// Who holds a schedule until one of the viewer's shifts starts.
 	public enum Counterpart: Hashable, Sendable {
 		case person(userId: String)
 		/// A stretch nobody covers.
@@ -291,12 +361,13 @@ extension OnCallSnapshot {
 		case unknown
 	}
 
-	/// "then Priya Shah", "then nobody". Nil when what follows is unknown.
-	public func thenPhrase(_ counterpart: Counterpart) -> String? {
-		switch counterpart {
-		case .person(let userId): "then \(name(of: userId, midSentence: true))"
-		case .nobody: "then nobody"
-		case .unknown: nil
+	/// "then Priya Shah", "then nobody". Nil when what follows is unknown, and
+	/// when nothing does: the person stays on call.
+	public func thenPhrase(_ end: End) -> String? {
+		switch end {
+		case .handoff(_, let userId): "then \(name(of: userId, midSentence: true))"
+		case .gap: "then nobody"
+		case .unknown, .continues: nil
 		}
 	}
 
@@ -320,36 +391,40 @@ extension OnCallSnapshot.Schedule {
 		return all.sorted { $0.start < $1.start }
 	}
 
-	/// Who holds the schedule at `now`. `onCallNow` carries the shift's real
-	/// start, so it wins for as long as it still holds.
+	/// Who holds the schedule at `now`. `onCallNow` is the whole stretch, with
+	/// its real start and end, so it wins for as long as it still holds.
 	public func current(at now: Date) -> OnCallSnapshot.Shift? {
 		if let onCallNow, onCallNow.holds(now) { return onCallNow }
 		return periods.first { $0.holds(now) }
 	}
 
-	/// When the person on `period` stops being on call, and who takes over. Their
-	/// own back-to-back shifts (an override of themselves) count as one stretch.
-	public func handoff(
-		after period: OnCallSnapshot.Shift, windowEnd: Date
-	) -> (at: Date, to: OnCallSnapshot.Counterpart) {
+	/// How the person on `period` stops being on call. Their own back-to-back
+	/// shifts (an override of themselves) count as one stretch.
+	public func end(of period: OnCallSnapshot.Shift, windowEnd: Date) -> OnCallSnapshot.End {
 		let seam = OnCallSnapshot.seam
 		var end = period.end
-		for candidate in periods where candidate.start >= end - seam {
-			if candidate.start > end + seam { return (end, .nobody) }
-			guard candidate.userId == period.userId else { return (end, .person(userId: candidate.userId)) }
-			end = max(end, candidate.end)
+		var continues = period.continues
+		// A stretch that continues has nothing after it: the server cut it there.
+		for candidate in periods where !continues && candidate.start >= end - seam {
+			if candidate.start > end + seam { return .gap(at: end) }
+			guard candidate.userId == period.userId else { return .handoff(at: end, to: candidate.userId) }
+			if candidate.end > end {
+				end = candidate.end
+				continues = candidate.continues
+			}
 		}
+		if continues { return .continues }
 		// Nothing follows: a gap while the window still has room, otherwise the
-		// read simply stops here.
-		if end < windowEnd - seam { return (end, .nobody) }
-		return (end, .unknown)
+		// read does not reach far enough to say who does.
+		if end < windowEnd - seam { return .gap(at: end) }
+		return .unknown(at: end)
 	}
 }
 
 extension OnCallSnapshot {
 	/// Who holds a schedule at one moment.
 	public enum Status: Hashable, Sendable {
-		case covered(by: Shift, until: Date, then: Counterpart)
+		case covered(by: Shift, end: End)
 		/// Nobody is on call. `next` is the first shift ahead the read knows of.
 		case uncovered(next: Shift?)
 	}
@@ -358,8 +433,7 @@ extension OnCallSnapshot {
 		guard let current = schedule.current(at: now) else {
 			return .uncovered(next: schedule.periods.first { $0.start > now })
 		}
-		let handoff = schedule.handoff(after: current, windowEnd: windowEnd)
-		return .covered(by: current, until: handoff.at, then: handoff.to)
+		return .covered(by: current, end: schedule.end(of: current, windowEnd: windowEnd))
 	}
 }
 
@@ -376,9 +450,8 @@ extension OnCallSnapshot {
 		public struct Current: Hashable, Sendable {
 			public let scheduleId: String
 			public let scheduleName: String
-			/// When the viewer stops being on call on this schedule.
-			public let until: Date
-			public let then: Counterpart
+			/// How the viewer stops being on call on this schedule.
+			public let end: End
 			/// Other schedules the viewer is on call for at the same moment.
 			public let otherSchedules: Int
 		}
@@ -397,11 +470,13 @@ extension OnCallSnapshot {
 		myShifts.filter { $0.end > now }.sorted { $0.start < $1.start }
 	}
 
-	/// When one of the viewer's shifts hands off, and to whom.
-	func handoff(after shift: ViewerShift) -> (at: Date, to: Counterpart) {
-		guard let schedule = schedule(id: shift.scheduleId) else { return (shift.end, .unknown) }
+	/// How one of the viewer's shifts ends. One the 60 day window cut has no
+	/// end: the schedule is only asked who follows a real one.
+	func end(of shift: ViewerShift) -> End {
+		if shift.continues { return .continues }
+		guard let schedule = schedule(id: shift.scheduleId) else { return .unknown(at: shift.end) }
 		let period = Shift(userId: userId, start: shift.start, end: shift.end, isOverride: shift.isOverride)
-		return schedule.handoff(after: period, windowEnd: windowEnd)
+		return schedule.end(of: period, windowEnd: windowEnd)
 	}
 
 	/// Who is on call until one of the viewer's shifts starts.
@@ -419,12 +494,13 @@ extension OnCallSnapshot {
 
 	public func viewerState(at now: Date) -> ViewerState {
 		let shifts = viewerShifts(at: now)
-		let current = shifts.filter { $0.start <= now }.map { ($0, handoff(after: $0)) }
-		// On several schedules at once, the nearest handoff is the next thing to know.
-		if let (shift, handoff) = current.min(by: { $0.1.at < $1.1.at }) {
+		let current = shifts.filter { $0.start <= now }.map { ($0, end(of: $0)) }
+		// On several schedules at once, the nearest end is the next thing to know.
+		// A shift with none scheduled leads only when none of them has one.
+		if let (shift, end) = current.min(by: { ($0.1.date ?? .distantFuture) < ($1.1.date ?? .distantFuture) }) {
 			return .onCall(
 				.init(
-					scheduleId: shift.scheduleId, scheduleName: shift.scheduleName, until: handoff.at, then: handoff.to,
+					scheduleId: shift.scheduleId, scheduleName: shift.scheduleName, end: end,
 					otherSchedules: current.count - 1
 				)
 			)
@@ -466,25 +542,31 @@ extension OnCallSnapshot {
 		public let who: Who
 		/// "You", a name, "A teammate", or "Nobody".
 		public let whoLabel: String
-		/// When the person hands off, or when the gap ends. Nil when nothing
-		/// follows inside the window.
+		/// When the person stops being on call, or when the gap ends. Nil when no
+		/// shift starts inside the window, and when the person simply stays on call.
 		public let until: Date?
+		/// Whoever is on call stays on call: the until column says so, not a date.
+		public let hasNoHandoff: Bool
 
 		public var isUncovered: Bool { who == .nobody }
 	}
 
 	public func row(for schedule: Schedule, at now: Date) -> Row {
 		switch status(of: schedule, at: now) {
-		case .covered(let period, let until, _):
+		case .covered(let period, let end):
 			Row(
 				id: schedule.id,
 				name: schedule.name,
 				who: isViewer(period.userId) ? .viewer : .person(userId: period.userId),
 				whoLabel: name(of: period.userId),
-				until: until
+				until: end.date,
+				hasNoHandoff: end == .continues
 			)
 		case .uncovered(let next):
-			Row(id: schedule.id, name: schedule.name, who: .nobody, whoLabel: "Nobody", until: next?.start)
+			Row(
+				id: schedule.id, name: schedule.name, who: .nobody, whoLabel: "Nobody", until: next?.start,
+				hasNoHandoff: false
+			)
 		}
 	}
 
@@ -512,14 +594,21 @@ extension OnCallSnapshot {
 	public static let timelineHorizon: TimeInterval = 48 * 3600
 
 	/// The moments after `now`, up to `horizon`, when what a widget shows
-	/// changes hands: every shift and gap starting or ending, and the read running out.
+	/// changes hands: every shift and gap starting or ending, and the read running
+	/// out. Where a window cut a stretch that continues, nothing changes hands.
 	public func changeDates(after now: Date, until horizon: Date) -> [Date] {
 		var dates: Set<Date> = [windowEnd]
 		for schedule in schedules {
-			for period in schedule.periods { dates.formUnion([period.start, period.end]) }
+			for period in schedule.periods {
+				dates.insert(period.start)
+				if !period.continues { dates.insert(period.end) }
+			}
 			for gap in schedule.gaps { dates.formUnion([gap.start, gap.end]) }
 		}
-		for shift in myShifts { dates.formUnion([shift.start, shift.end]) }
+		for shift in myShifts {
+			dates.insert(shift.start)
+			if !shift.continues { dates.insert(shift.end) }
+		}
 		return dates.filter { $0 > now && $0 <= horizon }.sorted()
 	}
 
@@ -542,7 +631,9 @@ extension OnCallSnapshot {
 		for shift in viewerShifts(at: now) where shift.start < end {
 			// A day out, both the lead and the time left become clocks that tick on their own.
 			dates.insert(shift.start.addingTimeInterval(justPast - 86_400))
-			let lastDay = handoff(after: shift).at.addingTimeInterval(justPast - 86_400)
+			// With no end scheduled there is no time left to count down.
+			guard let until = self.end(of: shift).date else { continue }
+			let lastDay = until.addingTimeInterval(justPast - 86_400)
 			for tick in stride(from: lastDay, to: max(shift.start, now), by: -3600) where tick <= end {
 				dates.insert(tick)
 			}
@@ -635,6 +726,22 @@ extension WidgetTime {
 	}
 }
 
+/// The words for someone still on call where the read stops, as the app's
+/// `OnCallWording` has them. One set, so the widgets cannot disagree.
+public enum WidgetOnCallWording {
+	/// Where "until Mon 09:00" would be.
+	public static let noHandoffScheduled = "no handoff scheduled"
+	/// The "On call now" table's until column.
+	public static let noHandoff = "No handoff"
+	/// The Lock Screen's one line has room for this much.
+	public static let noHandoffInline = "no handoff"
+
+	/// The Schedule widget's line. Its strip is all it vouches for.
+	public static func noHandoff(inNext days: Int) -> String {
+		"no handoff in the next \(days) days"
+	}
+}
+
 extension OnCallSnapshot {
 	/// What the Lock Screen says about the viewer.
 	public struct LockScreenText: Hashable, Sendable {
@@ -652,7 +759,13 @@ extension OnCallSnapshot {
 	public func lockScreenText(at now: Date, style: WidgetTimeStyle = .device) -> LockScreenText {
 		switch viewerState(at: now) {
 		case .onCall(let current):
-			let until = "until \(WidgetTime.handoffTime(current.until, now: now, style: style))"
+			guard let end = current.end.date else {
+				return .init(
+					lead: "On call", detail: current.scheduleName, second: WidgetOnCallWording.noHandoffScheduled,
+					inline: "On call · \(WidgetOnCallWording.noHandoffInline)"
+				)
+			}
+			let until = "until \(WidgetTime.handoffTime(end, now: now, style: style))"
 			return .init(lead: "On call", detail: current.scheduleName, second: until, inline: "On call · \(until)")
 		case .offCall(let next):
 			let detail = "next \(WidgetTime.handoffTime(next.start, now: now, compact: true, style: style))"
@@ -663,14 +776,18 @@ extension OnCallSnapshot {
 	}
 
 	/// The Pages widget's line when nothing is paging: "Platform primary until
-	/// Mon 09:00". Nil off call, and once the read no longer reaches `now`.
+	/// Mon 09:00", or "Platform primary · no handoff scheduled". Nil off call, and
+	/// once the read no longer reaches `now`.
 	public func pagesShiftLine(at now: Date, style: WidgetTimeStyle = .device) -> String? {
 		guard covers(now), case .onCall(let current) = viewerState(at: now) else { return nil }
-		return "\(current.scheduleName) until \(WidgetTime.handoffTime(current.until, now: now, style: style))"
+		guard let end = current.end.date else {
+			return "\(current.scheduleName) · \(WidgetOnCallWording.noHandoffScheduled)"
+		}
+		return "\(current.scheduleName) until \(WidgetTime.handoffTime(end, now: now, style: style))"
 	}
 
 	/// The Schedule widget's line under its title: who, then "until Mon 09:00 ·
-	/// then Priya Shah".
+	/// then Priya Shah", or "· no handoff in the next 7 days".
 	public struct ScheduleLine: Hashable, Sendable {
 		public let who: Row.Who
 		public let whoLabel: String
@@ -679,8 +796,11 @@ extension OnCallSnapshot {
 
 	public func scheduleLine(for schedule: Schedule, at now: Date, style: WidgetTimeStyle = .device) -> ScheduleLine {
 		switch status(of: schedule, at: now) {
-		case .covered(let period, let until, let then):
-			let parts = ["until \(WidgetTime.handoffTime(until, now: now, style: style))", thenPhrase(then)]
+		case .covered(let period, let end):
+			let until =
+				end.date.map { "until \(WidgetTime.handoffTime($0, now: now, style: style))" }
+				?? "· \(WidgetOnCallWording.noHandoff(inNext: Strip.dayCount))"
+			let parts = [until, thenPhrase(end)]
 			return ScheduleLine(
 				who: isViewer(period.userId) ? .viewer : .person(userId: period.userId),
 				whoLabel: name(of: period.userId),
@@ -692,6 +812,15 @@ extension OnCallSnapshot {
 			}
 			return ScheduleLine(who: .nobody, whoLabel: "Nobody", detail: detail ?? "no shift ahead")
 		}
+	}
+}
+
+extension OnCallSnapshot.Row {
+	/// The until column: "Mon 09:00", "7 Dec", "No handoff" for someone who
+	/// stays on call, or nothing when no shift starts inside the window.
+	public func untilLabel(at now: Date, style: WidgetTimeStyle = .device) -> String {
+		if hasNoHandoff { return WidgetOnCallWording.noHandoff }
+		return until.map { WidgetTime.handoffTime($0, now: now, compact: true, style: style) } ?? ""
 	}
 }
 
@@ -829,8 +958,8 @@ extension WidgetSnapshotStore where Value == OnCallSnapshot {
 
 extension OnCallSnapshot {
 	/// The stored snapshot holding a schedule: the active organization's first,
-	/// then any other this phone knows. A Schedule widget keeps its rotation
-	/// when the app moves to another organization.
+	/// then any other this phone knows. Only for a pick made before picks named
+	/// their organization, which has nothing else to find it by.
 	public static func stored(
 		holding scheduleId: String, appGroupIdentifier: String = WidgetAppGroup.identifier
 	) -> OnCallSnapshot? {
@@ -938,7 +1067,10 @@ public actor WidgetOnCallClient {
 	}
 
 	private func readAndRecord(organizationId: String, organizationName: String?, now: Date) async -> Refresh {
-		let answer = await read(organizationId: organizationId, organizationName: organizationName, now: now)
+		guard let answer = await read(organizationId: organizationId, organizationName: organizationName, now: now) else {
+			// The answer was dropped, and so is its record: there is no read to report.
+			return credentials.loadDevice(organizationId: organizationId) == nil ? .noCredential : .failed
+		}
 		let outcome: OnCallReadRecord.Outcome =
 			switch answer {
 			case .fetched: .fetched
@@ -952,7 +1084,10 @@ public actor WidgetOnCallClient {
 		return answer
 	}
 
-	private func read(organizationId: String, organizationName: String?, now: Date) async -> Refresh {
+	/// Nil when the credential the request was signed with is no longer the one
+	/// on file: the account signed out, or the key was replaced, while it was in
+	/// flight. Nothing of that answer is stored.
+	private func read(organizationId: String, organizationName: String?, now: Date) async -> Refresh? {
 		guard let device = credentials.loadDevice(organizationId: organizationId) else { return .noCredential }
 		// A record without its key (a restored backup) signs nothing.
 		guard !device.isExpired(at: now), let key = keys.load(organizationId: organizationId),
@@ -972,6 +1107,7 @@ public actor WidgetOnCallClient {
 			},
 			credential: device, key: key, session: session, tokens: tokens, now: now
 		)
+		guard credentials.holds(device) else { return nil }
 		guard case .response(let response) = sent else {
 			// Revoked, say by a role change. Recorded where the app looks before
 			// deciding a key is still good, so its next foreground registers a new one.
@@ -986,7 +1122,14 @@ public actor WidgetOnCallClient {
 				payload.organizationId == organizationId
 			else { return .failed }
 			let snapshot = payload.snapshot(organizationName: organizationName)
-			store(organizationId).save(snapshot)
+			let store = store(organizationId)
+			store.save(snapshot)
+			// A sign-out that ran between the check and the write cleared the
+			// store first: take the shifts back out.
+			guard credentials.holds(device) else {
+				store.clear()
+				return nil
+			}
 			return .fetched(snapshot)
 		case 401, 403:
 			return .needsApp

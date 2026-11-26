@@ -27,8 +27,11 @@ struct ScheduleEntry: TimelineEntry {
 	var snapshot: OnCallSnapshot?
 	/// The schedule picked in the configuration, or nil for the default.
 	var pickedId: String?
-	/// The organization whose snapshot is on screen, carried into the deep link.
+	/// The organization the widget reads, carried into the deep link: the
+	/// picked schedule's own, or the one the app is in when nothing is picked.
 	var organizationId: String?
+	/// Nobody is signed in. A pick still names its organization then.
+	var isSignedOut = false
 	/// The credential was refused and only the app can register it again.
 	var needsApp = false
 	var isPlaceholder = false
@@ -59,19 +62,17 @@ struct ScheduleProvider: AppIntentTimelineProvider {
 	}
 
 	private func makeEntry(for configuration: SelectScheduleIntent, at date: Date) -> ScheduleEntry {
-		let pickedId = configuration.schedule?.id
-		// A picked schedule is read from the organization that holds it, which
-		// need not be the one the app is in. No other organization's schedule
-		// is ever shown in its place.
-		let held = pickedId.flatMap { OnCallSnapshot.stored(holding: $0) }
-		let active = index.activeOrganizationId
-		let snapshot = held ?? active.flatMap { WidgetSnapshotStore<OnCallSnapshot>.onCall(organizationId: $0).load() }
-		let organizationId = snapshot?.organizationId ?? active
+		let pick = configuration.schedule?.pick
+		// A picked schedule is read from the organization it was picked in, which
+		// need not be the one the app is in. No other organization's snapshot is
+		// ever shown or refreshed in its place, with or without one on disk.
+		let organizationId = SchedulePick.organizationId(showing: pick)
 		return ScheduleEntry(
 			date: date,
-			snapshot: snapshot,
-			pickedId: pickedId,
+			snapshot: organizationId.flatMap { WidgetSnapshotStore<OnCallSnapshot>.onCall(organizationId: $0).load() },
+			pickedId: pick?.scheduleId,
 			organizationId: organizationId,
+			isSignedOut: index.activeOrganizationId == nil,
 			needsApp: organizationId.map(OnCallTimeline.isRejected) ?? false
 		)
 	}
