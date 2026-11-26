@@ -34,6 +34,7 @@ import {
 	sortingKeyMigrationColumns,
 	createSchemaFeaturesTableSql,
 	defaultRestored,
+	runZeroKeyRepair,
 	createSchemaMigrationsTableSql,
 	type ActualTable,
 	type ApplyStep,
@@ -46,6 +47,7 @@ import {
 	Clock,
 	Config,
 	Effect,
+	Exit,
 	Option,
 	Predicate,
 	Redacted,
@@ -472,6 +474,39 @@ export const withRunHeartbeat = <A, E, R>(fence: RunFence, statement: Effect.Eff
 const fencedExec = (fence: RunFence, cfg: ChConfig, patch: RunPatch, sql: string) =>
 	updateRun(fence, patch).pipe(Effect.andThen(withRunHeartbeat(fence, execClickHouse(cfg, sql))))
 
+/**
+ * A planned step's statement, or for a 0-row repair each statement it decides on from the cluster's
+ * state as it runs. The repair is safe to rerun from any point, so a replayed durable step resumes it.
+ */
+export const execPlannedStep = <E, R>(
+	step: Pick<ApplyStep, "sql" | "repair">,
+	exec: (sql: string) => Effect.Effect<string, E, R>,
+): Effect.Effect<string, E | ClickHouseExecError, R> => {
+	const repair = step.repair
+	if (repair === undefined) return exec(step.sql)
+	return Effect.gen(function* () {
+		const context = yield* Effect.context<R>()
+		const runExit = Effect.runPromiseExitWith(context)
+		// A statement's own failure (a superseded run included) is what the step fails with.
+		let failed: Cause.Cause<E> | undefined
+		const exit = yield* Effect.exit(
+			Effect.tryPromise({
+				try: (signal) =>
+					runZeroKeyRepair(repair, (sql) =>
+						runExit(exec(sql), { signal }).then((result) => {
+							if (Exit.isSuccess(result)) return result.value
+							failed = result.cause
+							return Promise.reject(Cause.squash(result.cause))
+						}),
+					),
+				catch: toClickHouseExecError,
+			}),
+		)
+		if (Exit.isSuccess(exit)) return ""
+		return yield* failed === undefined ? Effect.failCause(exit.cause) : Effect.failCause(failed)
+	})
+}
+
 const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 	const out: DesiredTable[] = []
 	for (const stmt of clickHouseMigrations[0]?.statements ?? []) {
@@ -799,16 +834,18 @@ const applySchema = (fence: RunFence) =>
 								s,
 								durableStep(
 									`m${migration.version}:${s.name}`,
-									fencedExec(
-										fence,
-										cfg,
-										{
-											phase: `migration ${migration.version} · ${s.name}`,
-											currentMigration: migration.version,
-											stepsTotal: steps.length,
-											stepsDone: index,
-										},
-										s.sql,
+									execPlannedStep(s, (sql) =>
+										fencedExec(
+											fence,
+											cfg,
+											{
+												phase: `migration ${migration.version} · ${s.name}`,
+												currentMigration: migration.version,
+												stepsTotal: steps.length,
+												stepsDone: index,
+											},
+											sql,
+										),
 									),
 									STEP,
 								),
@@ -886,16 +923,18 @@ const applySchema = (fence: RunFence) =>
 									migrationStep,
 									durableStep(
 										`performance-m${migration.version}:${migrationStep.name}`,
-										fencedExec(
-											fence,
-											cfg,
-											{
-												phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
-												currentMigration: migration.version,
-												stepsTotal: steps.length,
-												stepsDone: index,
-											},
-											migrationStep.sql,
+										execPlannedStep(migrationStep, (sql) =>
+											fencedExec(
+												fence,
+												cfg,
+												{
+													phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
+													currentMigration: migration.version,
+													stepsTotal: steps.length,
+													stepsDone: index,
+												},
+												sql,
+											),
 										),
 										STEP,
 									),
