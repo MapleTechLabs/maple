@@ -37,11 +37,13 @@ partition holds one period and expires whole. The 30d in the table above is the 
 
 The row-level projections of `traces` (`trace_index`, `trace_list_mv`, `service_map_spans`,
 `service_map_children`, `service_overview_spans`, `ai_trace_index`, `ai_crawler_requests`,
-`scanner_requests`) copy the span's `RetentionDays` and expire the same way, so a trace never
-outlives its index or the other way round. Rollups keep their fixed periods, except
-`trace_facets_hourly`: it keeps one row per `RetentionDays` (in its sorting key) and expires each at
-`least(RetentionDays, 30)` days, so the traces sidebar never counts a span the list has dropped;
-hours past 30 days read `trace_list_mv`. `product_events`
+`scanner_requests`) copy the span's `RetentionDays` and share its TTL rule, so a trace and its
+index are due to expire on the same day. ClickHouse removes expired parts in the background, table
+by table, so one can still be readable for a while after the other is gone. Rollups keep their
+fixed periods, except `trace_facets_hourly`: it keeps one row per `RetentionDays` (in its sorting
+key) and expires each at `least(RetentionDays, 30)` days, the same day as the `trace_list_mv` row it
+counts. Removal is asynchronous here too, so until a merge drops the facet row the traces sidebar
+can still count a span the list no longer shows; hours past 30 days read `trace_list_mv`. `product_events`
 expires at the source's `events` period: direct rows carry the gateway's stamp, and the two views
 copy `EventsRetentionDays` from the `session_events` or `traces` row, which the gateway stamps
 with the source's events period (`events_retention_days`), never that row's own `RetentionDays`.
