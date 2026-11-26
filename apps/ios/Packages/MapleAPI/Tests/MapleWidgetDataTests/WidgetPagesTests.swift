@@ -120,6 +120,10 @@ private struct Harness {
 		WidgetSnapshotStore<PagesTapRecord>.pagesTap(organizationId: organizationId, appGroupIdentifier: suite).load()?.outcome
 	}
 
+	var lastRead: PagesReadRecord? {
+		WidgetSnapshotStore<PagesReadRecord>.pagesRead(organizationId: organizationId, appGroupIdentifier: suite).load()
+	}
+
 	var stored: PagesSnapshot? {
 		WidgetSnapshotStore<PagesSnapshot>.pages(organizationId: organizationId, appGroupIdentifier: suite).load()
 	}
@@ -237,6 +241,12 @@ struct WidgetPagesClientTests {
 		let refused = ScriptedTransport(["/v2/device_tokens": tokenReply, listPath: .init(status: 403, body: "{}")])
 		#expect(await harness.client(refused).refresh(organizationId: organizationId, organizationName: nil, now: now) == .needsApp)
 		#expect(harness.stored == nil)
+		// Every read leaves how it ended, and a run of failures is counted until one lands.
+		#expect(harness.lastRead?.outcome == .needsApp)
+		#expect(harness.lastRead?.consecutiveFailures == 3)
+		let working = ScriptedTransport(["/v2/device_tokens": tokenReply, listPath: .init(status: 200, body: listJSON([pageJSON()]))])
+		_ = await harness.client(working).refresh(organizationId: organizationId, organizationName: nil, now: now)
+		#expect(harness.lastRead == PagesReadRecord(outcome: .fetched, at: now, consecutiveFailures: 0))
 	}
 
 	@Test("A revoked credential is recorded for the app to replace, and a refusal of the request or no network is not")

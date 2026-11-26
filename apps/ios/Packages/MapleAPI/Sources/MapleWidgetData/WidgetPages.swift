@@ -242,6 +242,37 @@ public struct PagesTapRecord: Codable, Sendable, Equatable {
 	}
 }
 
+/// How the last Pages read ended, from the widget or the app, and how many
+/// have failed in a row. Read by the app onto its widget span: a widget whose
+/// reads keep failing would otherwise go stale without a trace.
+public struct PagesReadRecord: Codable, Sendable, Equatable {
+	public enum Outcome: String, Codable, Sendable {
+		case fetched
+		case noCredential = "no_credential"
+		case needsApp = "needs_app"
+		case failed
+	}
+
+	public var outcome: Outcome
+	public var at: Date
+	public var consecutiveFailures: Int
+
+	public init(outcome: Outcome, at: Date, consecutiveFailures: Int) {
+		self.outcome = outcome
+		self.at = at
+		self.consecutiveFailures = consecutiveFailures
+	}
+}
+
+extension WidgetSnapshotStore where Value == PagesReadRecord {
+	public static func pagesRead(
+		organizationId: String,
+		appGroupIdentifier: String = WidgetAppGroup.identifier
+	) -> WidgetSnapshotStore<PagesReadRecord> {
+		.init(key: "pages.read.v1.\(organizationId)", appGroupIdentifier: appGroupIdentifier)
+	}
+}
+
 extension WidgetSnapshotStore where Value == PagesTapRecord {
 	public static func pagesTap(
 		organizationId: String,
@@ -316,6 +347,22 @@ public actor WidgetPagesClient {
 
 	/// Read what is paging the person this credential belongs to, and store it.
 	public func refresh(organizationId: String, organizationName: String?, now: Date = Date()) async -> Refresh {
+		let answer = await read(organizationId: organizationId, organizationName: organizationName, now: now)
+		let outcome: PagesReadRecord.Outcome =
+			switch answer {
+			case .fetched: .fetched
+			case .noCredential: .noCredential
+			case .needsApp: .needsApp
+			case .failed: .failed
+			}
+		let reads = WidgetSnapshotStore<PagesReadRecord>
+			.pagesRead(organizationId: organizationId, appGroupIdentifier: appGroupIdentifier)
+		let failures = outcome == .fetched ? 0 : (reads.load()?.consecutiveFailures ?? 0) + 1
+		reads.save(PagesReadRecord(outcome: outcome, at: now, consecutiveFailures: failures))
+		return answer
+	}
+
+	private func read(organizationId: String, organizationName: String?, now: Date) async -> Refresh {
 		guard let (device, key) = signer(organizationId: organizationId, now: now) else {
 			return credentials.loadDevice(organizationId: organizationId) == nil ? .noCredential : .needsApp
 		}

@@ -327,6 +327,10 @@ final class WidgetPublisher {
 		// One person's pages, kept per organization: the next account on this
 		// phone may be in the same one.
 		WidgetSnapshotStore<PagesSnapshot>.pages(organizationId: organizationId).clear()
+		// And what the widget recorded about its own reads and taps, which the
+		// next account's spans would otherwise report as theirs.
+		WidgetSnapshotStore<PagesTapRecord>.pagesTap(organizationId: organizationId).clear()
+		WidgetSnapshotStore<PagesReadRecord>.pagesRead(organizationId: organizationId).clear()
 		var slots: [String?] = [nil]
 		slots.append(contentsOf: (organization?.environments ?? []).map { $0 })
 		if let active = organization?.activeEnvironment, !slots.contains(active) { slots.append(active) }
@@ -534,6 +538,11 @@ final class WidgetPublisher {
 			span?.setAttribute(Telemetry.Key.widgetPagesTapOutcome, tap.outcome.rawValue)
 			span?.setAttribute(Telemetry.Key.widgetPagesTapAgeSeconds, Int(Date().timeIntervalSince(tap.at)))
 			taps.clear()
+		}
+		// How the last Pages read ended, whichever process made it.
+		if let read = WidgetSnapshotStore<PagesReadRecord>.pagesRead(organizationId: organizationId).load() {
+			span?.setAttribute(Telemetry.Key.widgetPagesReadOutcome, read.outcome.rawValue)
+			span?.setAttribute(Telemetry.Key.widgetPagesReadFailures, read.consecutiveFailures)
 		}
 		let state = fetchStates.load(organizationId: organizationId)
 		guard let outcome = state.lastOutcome else { return }

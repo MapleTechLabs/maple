@@ -204,7 +204,7 @@ struct MainTabView: View {
 				// And the Lock Screen cards: who has each incident may have changed
 				// while the app was away, and no push says so.
 				Task { await liveActivities.refreshRunningActivities() }
-				Task { await PagesWidgetPublisher.refresh(session: session) }
+				Task { await PagesWidgetPublisher.refresh(session: session, reason: .foreground) }
 			case .background:
 				// Queue the next opportunistic refresh on the way out, which is
 				// the only moment iOS accepts one.

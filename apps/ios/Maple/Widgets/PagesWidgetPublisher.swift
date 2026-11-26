@@ -12,8 +12,27 @@ import WidgetKit
 /// the widget uses, so both write one shape into the App Group.
 @MainActor
 enum PagesWidgetPublisher {
-	static func refresh(session: SessionController) async {
+	enum Reason {
+		/// The app came to the front. Happens on every app switch and unlock, so
+		/// it is held to one read a minute, as the other widgets' publisher is.
+		case foreground
+		/// Something that moves the answer: a push, an incident answered in the
+		/// app, a switch of organization. Always read.
+		case changed
+	}
+
+	private static let minimumInterval: TimeInterval = 60
+	private static var lastRefreshedAt: [String: Date] = [:]
+
+	static func refresh(session: SessionController, reason: Reason = .changed) async {
 		guard let organizationId = session.currentOrganizationId else { return }
+		let now = Date()
+		if reason == .foreground, let last = lastRefreshedAt[organizationId],
+			now.timeIntervalSince(last) < minimumInterval
+		{
+			return
+		}
+		lastRefreshedAt[organizationId] = now
 		if FixtureAPI.isEnabled {
 			await publishFixture(api: session.api, organizationId: organizationId)
 		} else {

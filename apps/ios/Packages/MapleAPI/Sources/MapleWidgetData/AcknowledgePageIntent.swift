@@ -13,6 +13,10 @@ public struct AcknowledgePageIntent: AppIntent {
 	public static let description = IntentDescription("Acknowledges an incident that is paging you.")
 	/// Not something to offer in Shortcuts: it only means anything on its row.
 	public static let isDiscoverable = false
+	/// As on the Live Activity's button: answering a page should not wait on
+	/// Face ID. WidgetKit asks for an unlock before it runs a widget's button on
+	/// a locked phone whatever this says; where the system honours it, it does.
+	public static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
 	@Parameter(title: "Incident")
 	public var incidentId: String

@@ -118,6 +118,8 @@ enum Telemetry {
 		/// How the extension's last fetch ended: success, unauthorized, …
 		static let widgetFetchOutcome = "maple.app.widget.fetch.outcome"
 		static let widgetPagesTapOutcome = "maple.app.widget.pages.tap.outcome"
+		static let widgetPagesReadOutcome = "maple.app.widget.pages.read.outcome"
+		static let widgetPagesReadFailures = "maple.app.widget.pages.read.consecutive_failures"
 		static let widgetPagesTapAgeSeconds = "maple.app.widget.pages.tap.age_seconds"
 		/// Seconds since the extension last fetched successfully. Absent when it
 		/// never has, which is a different statement from "a long time ago".
