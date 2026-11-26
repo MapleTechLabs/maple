@@ -35,3 +35,28 @@ describe("codeBlock", () => {
 		)
 	})
 })
+
+const FILE = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8"
+
+const foldUpdate = (isOpen: boolean, _message: "toggle") => ({ model: !isOpen })
+
+const foldView = (isOpen: boolean, h: HtmlBuilder<"toggle">): Html =>
+	codeBlock<"toggle">(h, {
+		code: FILE,
+		fileName: "maple.ts",
+		isPlain: true,
+		fold: { isOpen, lines: 2, onToggle: "toggle" },
+	})
+
+describe("codeBlock fold", () => {
+	test("offers the whole file while folded and the fold once open", () => {
+		scene(
+			{ update: foldUpdate, view: foldView },
+			given(false),
+			click(role("button", { name: "Show all 8 lines" })),
+			expectView(role("button", { name: "Show all 8 lines" })).not.toExist(),
+			click(role("button", { name: "Show fewer lines" })),
+			expectView(role("button", { name: "Show all 8 lines" })).toExist(),
+		)
+	})
+})

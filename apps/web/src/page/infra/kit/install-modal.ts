@@ -46,6 +46,8 @@ export const Model = Schema.Struct({
 	tabs: Tabs.Model,
 	methods: ToggleGroup.Model,
 	isRevealed: Schema.Boolean,
+	/** The files shown whole; the others show their first lines. */
+	openFiles: Schema.Array(Snippet),
 	ingestKey: IngestKeyData.schema,
 	copies: Schema.Struct({
 		helm: CopyButton.Model,
@@ -68,6 +70,7 @@ export const init = (id: string, defaultTab: InstallTab): Model => ({
 	tabs: Tabs.init({ idBase: 0, values: INSTALL_TABS, selected: defaultTab }),
 	methods: initMethods(),
 	isRevealed: false,
+	openFiles: [],
 	ingestKey: IngestKeyData.Idle(),
 	copies: {
 		helm: CopyButton.init(),
@@ -85,6 +88,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchIngestKey: { result: Schema.Result(Schema.String, LoadFailure) },
 	ClickedOpen: {},
 	ClickedToggleReveal: {},
+	ClickedToggleFile: { snippet: Snippet },
 	MountedInstallModal: {},
 	GotDialogMessage: { message: Dialog.Message },
 	GotTabsMessage: { message: Tabs.Message },
@@ -122,11 +126,12 @@ export const MountInstallModal = Mount.define("MountInstallModal", {
 	execute: () => Effect.succeed(Message.MountedInstallModal()),
 })
 
-/** Closing re-masks the key and restores the caller's tab, so each open starts the same way. */
+/** Closing re-masks the key, folds the files and restores the caller's tab, so each open starts the same way. */
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = result.outMessage !== undefined && result.outMessage._tag === "Closed"
 	const reset = {
 		isRevealed: false,
+		openFiles: [],
 		tabs: Tabs.init({ idBase: model.tabs.idBase, values: INSTALL_TABS, selected: model.defaultTab }),
 		methods: initMethods(),
 	}
@@ -146,6 +151,14 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		ClickedOpen: () => liftDialog(model, Dialog.open(model.dialog)),
 		ClickedToggleReveal: () => ({ model: { ...model, isRevealed: !model.isRevealed } }),
+		ClickedToggleFile: ({ snippet }) => ({
+			model: {
+				...model,
+				openFiles: model.openFiles.includes(snippet)
+					? Arr.filter(model.openFiles, (open) => open !== snippet)
+					: [...model.openFiles, snippet],
+			},
+		}),
 		GotDialogMessage: ({ message: inner }) => liftDialog(model, Dialog.update(model.dialog, inner)),
 		GotTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.tabs, inner)

@@ -1,12 +1,15 @@
 import { docsUrl } from "../../kit/docs"
 import { codeBlock } from "../../kit/code-block"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as DialogView from "@maple/views/ui/dialog-view"
+import { heading } from "@maple/views/ui/heading"
 import { icon, type IconName } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { typography } from "@maple/views/ui/typography"
@@ -38,19 +41,20 @@ type H = HtmlBuilder<Message>
 
 type SnippetPanel = Readonly<{
 	snippet: Snippet
-	/** The block's eyebrow: a file name or what the command does. */
-	label: string
 	/** The language to highlight as. */
 	lang: string
+	/** The file the snippet is saved as; a command has none. */
+	fileName?: string
 	isLoading: boolean
 	/** What Copy writes. */
 	value: string
 	/** What shows: `value` with the key masked unless revealed. */
 	display: string
 	hasReveal: boolean
-	/** A whole file: capped in height and scrolled, so the command under it stays in view. */
-	isFile?: boolean
 }>
+
+// A file shows this many lines until opened, so the command under it stays in view.
+const FILE_LINES = 12
 
 const revealButton = (h: H, model: Model): Html =>
 	button(
@@ -72,18 +76,54 @@ const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 		: codeBlock(h, {
 				code: panel.display,
 				copyValue: panel.value,
-				language: panel.label,
+				language: "shell",
+				fileName: panel.fileName,
 				lang: panel.lang,
 				copy: model.copies[panel.snippet],
 				toCopyMessage: (message) => Message.GotCopyMessage({ snippet: panel.snippet, message }),
 				actions: panel.hasReveal ? [revealButton(h, model)] : undefined,
-				bodyClassName: panel.isFile === true ? "max-h-64 overflow-y-auto" : undefined,
+				// A one-line command wraps to show whole; one already broken into lines keeps them and scrolls.
+				wrap: panel.fileName === undefined && !Str.includes("\n")(panel.display),
+				fold:
+					panel.fileName === undefined
+						? undefined
+						: {
+								isOpen: model.openFiles.includes(panel.snippet),
+								lines: FILE_LINES,
+								onToggle: Message.ClickedToggleFile({ snippet: panel.snippet }),
+							},
 			})
 
-const note = (h: H, children: ReadonlyArray<Html | string>): Html =>
+type Children = ReadonlyArray<Html | string>
+
+const note = (h: H, children: Children): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p" }, children)
 
-const code = (h: H, text: string): Html => h.code([h.Class("font-mono")], [text])
+/** What the tab installs, once, above its steps. */
+const intro = (h: H, children: Children): Html =>
+	typography(h, { size: "sm", tone: "muted", as: "p" }, children)
+
+const code = (h: H, text: string): Html => inlineCode(h, {}, [text])
+
+/** One thing to do: what it is, a line of detail, the snippet, and a note that belongs to the snippet. */
+const step = (h: H, parts: Readonly<{ title: Children; hint?: Children; block: Html; after?: Html }>): Html =>
+	vstack(h, { gap: "2", className: "min-w-0" }, [
+		vstack(h, { gap: "0.5" }, [
+			heading(h, { level: 3, variant: "subsection" }, parts.title),
+			...(parts.hint === undefined ? [] : [note(h, parts.hint)]),
+		]),
+		parts.block,
+		...(parts.after === undefined ? [] : [parts.after]),
+	])
+
+/** Sits under each command that carries the key. */
+const keyNote = (h: H): Html =>
+	note(h, [
+		"This command carries your org's",
+		" ",
+		typography(h, { weight: "medium", tone: "foreground" }, ["private ingest key"]),
+		". Rotate it in Settings → Ingestion if it leaks.",
+	])
 
 /** `value` is what Copy writes; `display` masks the key unless revealed. */
 const keyed = (model: Model, build: (token: string) => string) => {
@@ -97,26 +137,55 @@ const keyed = (model: Model, build: (token: string) => string) => {
 }
 
 /** A file with no key in it: shown as is, with no reveal. */
-const filePanel = (h: H, model: Model, snippet: Snippet, label: string, lang: string, text: string): Html =>
+const filePanel = (
+	h: H,
+	model: Model,
+	snippet: Snippet,
+	fileName: string,
+	lang: string,
+	text: string,
+): Html =>
 	snippetPanel(h, model, {
 		snippet,
-		label,
+		fileName,
 		lang,
 		isLoading: false,
 		value: text,
 		display: text,
 		hasReveal: false,
-		isFile: true,
 	})
 
 /** A command carrying the key, masked until revealed. */
-const commandPanel = (
+const commandPanel = (h: H, model: Model, snippet: Snippet, build: (token: string) => string): Html =>
+	snippetPanel(h, model, { snippet, lang: "shell", ...keyed(model, build), hasReveal: true })
+
+const saveStep = (
 	h: H,
 	model: Model,
-	snippet: Snippet,
-	label: string,
-	build: (token: string) => string,
-): Html => snippetPanel(h, model, { snippet, label, lang: "shell", ...keyed(model, build), hasReveal: true })
+	file: Readonly<{ snippet: Snippet; name: string; lang: string; text: string; hint: Children }>,
+): Html =>
+	step(h, {
+		title: ["Save this as ", code(h, file.name)],
+		hint: file.hint,
+		block: filePanel(h, model, file.snippet, file.name, file.lang, file.text),
+	})
+
+const commandStep = (
+	h: H,
+	model: Model,
+	command: Readonly<{
+		snippet: Snippet
+		title: string
+		hint?: Children
+		build: (token: string) => string
+	}>,
+): Html =>
+	step(h, {
+		title: [command.title],
+		hint: command.hint,
+		block: commandPanel(h, model, command.snippet, command.build),
+		after: keyNote(h),
+	})
 
 const labelled = (h: H, name: IconName, label: string): ReadonlyArray<Html | string> => [
 	icon(h, name, { size: 14 }),
@@ -124,73 +193,106 @@ const labelled = (h: H, name: IconName, label: string): ReadonlyArray<Html | str
 ]
 
 const methodToggle = (h: H, model: Model): Html =>
-	ToggleGroup.view(h, {
-		model: model.methods,
-		toParentMessage: (message) => Message.GotMethodMessage({ message }),
-		items: [
-			{ value: "helm", label: "Helm", children: labelled(h, "HelmIcon", "Helm") },
-			{ value: "alchemy", label: "Alchemy", children: labelled(h, "AlchemyIcon", "Alchemy") },
-			{ value: "terraform", label: "Terraform", children: labelled(h, "TerraformIcon", "Terraform") },
-		],
-		variant: "outline",
-		size: "sm",
-	})
+	hstack(h, { gap: "3", align: "center", wrap: true }, [
+		typography(h, { size: "sm", weight: "medium" }, ["Install with"]),
+		ToggleGroup.view(h, {
+			model: model.methods,
+			toParentMessage: (message) => Message.GotMethodMessage({ message }),
+			items: [
+				{ value: "helm", label: "Helm", children: labelled(h, "HelmIcon", "Helm") },
+				{ value: "alchemy", label: "Alchemy", children: labelled(h, "AlchemyIcon", "Alchemy") },
+				{
+					value: "terraform",
+					label: "Terraform",
+					children: labelled(h, "TerraformIcon", "Terraform"),
+				},
+			],
+			variant: "outline",
+			size: "sm",
+		}),
+	])
 
-const kubernetesPanel = (h: H, model: Model): ReadonlyArray<Html> => {
+const kubernetesSteps = (h: H, model: Model): ReadonlyArray<Html> => {
 	const method = kubernetesMethod(model)
-	const chart =
-		"The Maple Helm chart deploys a DaemonSet for per-node host + kubelet metrics and a single-replica deployment for cluster-wide signals."
 	if (method === "alchemy")
 		return [
-			methodToggle(h, model),
-			note(h, [
-				`${chart} Save this as `,
-				code(h, ALCHEMY_FILE),
-				" and deploy it with the command below; it targets your kubeconfig's current context. Pod auto-instrumentation stays off: it needs Helm's install hooks.",
-			]),
-			filePanel(h, model, "alchemy", ALCHEMY_FILE, "typescript", alchemyStack()),
-			commandPanel(h, model, "alchemyDeploy", "Deploy", alchemyDeployCommand),
+			saveStep(h, model, {
+				snippet: "alchemy",
+				name: ALCHEMY_FILE,
+				lang: "typescript",
+				text: alchemyStack(),
+				hint: [
+					"It targets your kubeconfig's current context. Pod auto-instrumentation stays off: it needs Helm's install hooks.",
+				],
+			}),
+			commandStep(h, model, {
+				snippet: "alchemyDeploy",
+				title: "Deploy it",
+				build: alchemyDeployCommand,
+			}),
 		]
 	if (method === "terraform")
 		return [
-			methodToggle(h, model),
-			note(h, [
-				`${chart} Save this as `,
-				code(h, TERRAFORM_FILE),
-				" (or merge it into a module of yours) and apply it with the command below. Pod auto-instrumentation stays off.",
-			]),
-			filePanel(h, model, "terraform", TERRAFORM_FILE, "hcl", terraformConfig()),
-			commandPanel(h, model, "terraformApply", "Apply", terraformApplyCommand),
+			saveStep(h, model, {
+				snippet: "terraform",
+				name: TERRAFORM_FILE,
+				lang: "hcl",
+				text: terraformConfig(),
+				hint: ["Or merge it into a module of yours. Pod auto-instrumentation stays off."],
+			}),
+			commandStep(h, model, {
+				snippet: "terraformApply",
+				title: "Apply it",
+				build: terraformApplyCommand,
+			}),
 		]
 	return [
-		methodToggle(h, model),
-		note(h, [
-			`${chart} Run the command against your cluster. For production, prefer an existing Secret over an inline value. See the docs.`,
-		]),
-		commandPanel(h, model, "helm", "Install", helmCommand),
+		commandStep(h, model, {
+			snippet: "helm",
+			title: "Run this against your cluster",
+			hint: ["For production, use an existing Secret instead of an inline key. See the docs."],
+			build: helmCommand,
+		}),
 	]
 }
 
 const panelFor = (h: H, model: Model, value: string): ReadonlyArray<Html> => {
-	if (value === "kubernetes") return kubernetesPanel(h, model)
+	if (value === "kubernetes")
+		return [
+			intro(h, [
+				"Maple's Helm chart runs a DaemonSet for node and kubelet metrics, and one deployment for cluster-wide signals.",
+			]),
+			methodToggle(h, model),
+			...kubernetesSteps(h, model),
+		]
 	if (value === "docker")
 		return [
-			note(h, [
-				"The Maple Docker agent runs as a single container with read-only access to the Docker socket and streams per-container CPU, memory, network, and block I/O, plus container logs via the mounted log directory (drop that mount to skip logs). It also accepts app OTLP on 4317/4318.",
+			intro(h, [
+				"One container with read-only access to the Docker socket. It reports CPU, memory, network and block I/O for every container, and accepts app OTLP on 4317 and 4318.",
 			]),
-			commandPanel(h, model, "docker", "docker run", dockerCommand),
+			commandStep(h, model, {
+				snippet: "docker",
+				title: "Run the agent",
+				hint: ["Container logs come from the mounted log directory. Drop that mount to skip them."],
+				build: dockerCommand,
+			}),
 		]
 	return [
-		note(h, [
-			"For any Linux, macOS or Windows machine outside Kubernetes. Install the OpenTelemetry Collector Contrib distribution (",
-			code(h, "otelcol-contrib"),
-			"), save this as",
-			" ",
-			code(h, "config.yaml"),
-			", then start it with the command below. On Kubernetes, the Helm chart already reports every node.",
+		intro(h, [
+			"For any Linux, macOS or Windows machine outside Kubernetes. On Kubernetes, the Helm chart already reports every node.",
 		]),
-		filePanel(h, model, "hostConfig", "config.yaml", "yaml", HOST_CONFIG),
-		commandPanel(h, model, "host", "Run", hostCommand),
+		saveStep(h, model, {
+			snippet: "hostConfig",
+			name: "config.yaml",
+			lang: "yaml",
+			text: HOST_CONFIG,
+			hint: [
+				"Install the OpenTelemetry Collector Contrib distribution, ",
+				code(h, "otelcol-contrib"),
+				", first. This is its config.",
+			],
+		}),
+		commandStep(h, model, { snippet: "host", title: "Start the collector", build: hostCommand }),
 	]
 }
 
@@ -214,7 +316,7 @@ const content = (h: H, model: Model, close: ReadonlyArray<ChildAttribute>): Read
 	]),
 	DialogView.dialogPanel(h, "dialog", model.dialog.id, [
 		h.div(
-			[h.Class("space-y-4 min-w-0")],
+			[h.Class("min-w-0")],
 			[
 				h.submodel({
 					slotId: "install-tabs",
@@ -225,16 +327,13 @@ const content = (h: H, model: Model, close: ReadonlyArray<ChildAttribute>): Read
 						labels: ["Kubernetes", "Docker", "Host"],
 						tabContent: (value: string, label: string) =>
 							isInstallTab(value) ? labelled(h, TAB_ICONS[value], label) : [label],
-						panelClassName: "space-y-4 pt-3",
+						variant: "underline",
+						ariaLabel: "Where the collector runs",
+						wrapList: (list: Html) => h.div([h.Class("border-b border-border")], [list]),
+						panelClassName: "space-y-5 pt-3",
 						panel: (value) => panelFor(h, model, value),
 					},
 				}),
-				note(h, [
-					"The command embeds your org's",
-					" ",
-					h.strong([h.Class("text-foreground")], ["private ingest key"]),
-					". Rotate it from Settings → Ingestion if it leaks.",
-				]),
 			],
 		),
 	]),
@@ -265,7 +364,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 		model: model.dialog,
 		view: DialogView.view,
 		viewInputs: {
-			className: "max-w-2xl overflow-hidden",
+			className: "max-w-3xl overflow-hidden",
 			hasTrigger: false,
 			toView: ({ portal }) => portal,
 			toContent: (close) => content(h, model, close),
@@ -287,7 +386,7 @@ export const mountedView = Submodel.defineView<Model, Message>((model, h) =>
 				model: model.dialog,
 				view: DialogView.view,
 				viewInputs: {
-					className: "max-w-2xl overflow-hidden",
+					className: "max-w-3xl overflow-hidden",
 					hasTrigger: false,
 					toView: ({ portal }) => portal,
 					toContent: (close) => content(h, model, close),

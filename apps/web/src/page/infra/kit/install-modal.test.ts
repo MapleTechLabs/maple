@@ -19,3 +19,17 @@ describe("install modal Kubernetes method", () => {
 		expect(kubernetesMethod(press(alchemy, "alchemy", 1))).toBe("alchemy")
 	})
 })
+
+describe("install modal files", () => {
+	it("opens and folds one file without touching the others", () => {
+		const opened = update(
+			init("install", "kubernetes"),
+			Message.ClickedToggleFile({ snippet: "alchemy" }),
+		).model
+		expect(opened.openFiles).toEqual(["alchemy"])
+		const both = update(opened, Message.ClickedToggleFile({ snippet: "terraform" })).model
+		expect(update(both, Message.ClickedToggleFile({ snippet: "alchemy" })).model.openFiles).toEqual([
+			"terraform",
+		])
+	})
+})
