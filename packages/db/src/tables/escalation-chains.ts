@@ -123,6 +123,8 @@ export const AlertMemberNotifications = PG.table("alert_member_notifications", {
 		PG.uniqueIndex("alert_member_notifications_dedupe_idx", ["dedupeKey"]),
 		PG.index("alert_member_notifications_due_idx", ["status", "scheduledAt"]),
 		PG.index("alert_member_notifications_org_incident_idx", ["orgId", "incidentId"]),
+		// "What paged me": one person's pages in an org, without reading everyone's.
+		PG.index("alert_member_notifications_org_user_idx", ["orgId", "userId"]),
 	],
 	foreignKeys: [
 		PG.foreignKey({

@@ -4,18 +4,34 @@ import MapleAPI
 /// One open incident as Home shows it: the incident, the services its rule
 /// covers, and the rule's last hour of observations for the sparkline.
 struct IncidentCard: Identifiable, Hashable, Codable {
-	let incident: AlertIncident
+	var incident: AlertIncident
 	let serviceNames: [String]
 	let display: SignalDisplay
 	/// Observed values from the rule's own checks, oldest first. Empty until
 	/// loaded, and stays empty for a rule whose checks failed to load: the
 	/// card is still worth showing.
 	var observations: [Double]
+	/// An escalation step paged the person holding the phone for this incident.
+	var pagesViewer = false
+
+	/// `pagesViewer` is left out on purpose: a board seeded from disk must never
+	/// claim a page it cannot know is still waiting, so it starts false until the
+	/// load that follows says otherwise. It also keeps older snapshots readable.
+	private enum CodingKeys: String, CodingKey {
+		case incident
+		case serviceNames
+		case display
+		case observations
+	}
 
 	var id: String { incident.id }
 
+	/// Paged to the viewer and still waiting on an answer: what leads every list.
+	var needsViewer: Bool { pagesViewer && incident.responseState.isUnacknowledged }
+
 	static func == (lhs: IncidentCard, rhs: IncidentCard) -> Bool {
 		lhs.incident == rhs.incident && lhs.observations == rhs.observations && lhs.serviceNames == rhs.serviceNames
+			&& lhs.pagesViewer == rhs.pagesViewer
 	}
 
 	func hash(into hasher: inout Hasher) {
@@ -151,7 +167,12 @@ struct HomeSnapshot: Codable {
 			parts.append(services.count == 1 ? "Your service is healthy" : "All \(services.count) services healthy")
 		case .degraded, .critical:
 			let critical = criticalIncidents.count
-			if critical > 0 {
+			// A page waiting on this person outranks every other fact on the board.
+			let paging = incidents.filter(\.needsViewer)
+			if !paging.isEmpty {
+				let kind = paging.allSatisfy { $0.incident.severity == .critical } ? "critical alert" : "alert"
+				parts.append(paging.count == 1 ? "1 \(kind) is paging you" : "\(paging.count) \(kind)s are paging you")
+			} else if critical > 0 {
 				parts.append(critical == 1 ? "1 critical alert" : "\(critical) critical alerts")
 			} else if !incidents.isEmpty {
 				parts.append(incidents.count == 1 ? "1 open alert" : "\(incidents.count) open alerts")
@@ -186,6 +207,7 @@ final class HomeModel {
 	/// while the next one loads.
 	let scope: SessionController.DataScope
 
+	let responder: IncidentResponder
 	private let api: any MapleAPI
 	/// The cache key's stable half. `scope.generation` moves every sign-in, so
 	/// the persisted board is keyed on the organization itself.
@@ -193,6 +215,11 @@ final class HomeModel {
 	/// The in-flight second pass, so a new load can cancel the previous one
 	/// instead of racing it.
 	private var decorations: Task<Void, Never>?
+
+	/// Who is on call, for the shift card. Beside the board and never part of
+	/// it: it is not persisted, so a card seeded from disk cannot claim a shift.
+	private(set) var onCall: OnCallOverview?
+	private var onCallRead: Task<Void, Never>?
 
 	/// Home is always "now": an hour for rates, a day for what's new. There is
 	/// no time picker on purpose: a picker answers "what happened", and that
@@ -204,10 +231,19 @@ final class HomeModel {
 		self.api = api
 		self.scope = scope
 		self.organizationId = session.currentOrganizationId
+		self.responder = IncidentResponder(api: api, surface: .overview)
 		self.loader = ScreenLoader(session: session, screen: Screen.home) { [unowned self] in try await self.fetch() }
 	}
 
 	var state: LoadState<HomeSnapshot> { loader.state }
+
+	/// Acknowledge from the card: it changes as soon as the server answers.
+	func acknowledge(_ incidentId: String) async {
+		await responder.perform(.acknowledge, on: incidentId, in: loader) { snapshot, incident in
+			guard let index = snapshot.incidents.firstIndex(where: { $0.id == incidentId }) else { return }
+			snapshot.incidents[index].incident = incident
+		}
+	}
 
 	/// First appearance for this scope: paint the persisted board if there is
 	/// one and revalidate it, otherwise load cold. The seeded path refreshes
@@ -234,6 +270,7 @@ final class HomeModel {
 	/// sparklines follow in a second pass.
 	private func fetch() async throws -> HomeSnapshot {
 		decorations?.cancel()
+		readOnCall()
 		let now = Date()
 		let rates = Self.rateWindow.resolve(now: now)
 		let recent = Self.recentWindow.resolve(now: now)
@@ -244,15 +281,24 @@ final class HomeModel {
 		// decoration in the failure sense: a card without its rule falls back
 		// to the signal type rather than taking the screen down.
 		async let rulesTask = api.alertRules(limit: 100, cursor: nil)
+		// Also decoration: without it the cards list, they just do not lead with
+		// what is paging this person.
+		async let pagingTask = api.alertIncidentsPagingMe(limit: 50)
 
 		let health = try await healthTask
 		let previousServices = health.previous.map { ServiceSummary.aggregate($0) }
 		let services = ServiceSummary.aggregate(health.services)
-		let incidents = try await incidentsTask.items
+		let listed = try await incidentsTask.items
 		let rules = Dictionary(
 			((try? await rulesTask.items) ?? []).map { ($0.id, $0) },
 			uniquingKeysWith: { first, _ in first }
 		)
+		// A page to this person gets its card even when fifty newer incidents
+		// would have pushed it off the list.
+		let paging = (try? await pagingTask) ?? []
+		let pagingMe = Set(paging.map(\.id))
+		let listedIds = Set(listed.map(\.id))
+		let incidents = paging.filter { !listedIds.contains($0.id) } + listed
 
 		var cards = incidents.map { incident in
 			let rule = rules[incident.ruleId]
@@ -260,11 +306,13 @@ final class HomeModel {
 				incident: incident,
 				serviceNames: rule?.serviceNames ?? [],
 				display: rule.map(SignalDisplay.init(rule:)) ?? SignalDisplay(signal: incident.signalType),
-				observations: []
+				observations: [],
+				pagesViewer: pagingMe.contains(incident.id)
 			)
 		}
-		// Critical first, then most recently triggered.
+		// What is waiting on this person first, then critical, then most recently triggered.
 		cards.sort { a, b in
+			if a.needsViewer != b.needsViewer { return a.needsViewer }
 			if a.incident.severity != b.incident.severity { return a.incident.severity == .critical }
 			return a.incident.lastTriggeredAt > b.incident.lastTriggeredAt
 		}
@@ -291,6 +339,22 @@ final class HomeModel {
 			openAnomalies: previous?.openAnomalies,
 			loadedAt: now
 		)
+	}
+
+	/// The shift card's read, started with the board's and never awaited by it:
+	/// the card appears when this answers. A failure leaves the card as it was,
+	/// which on a first load is no card.
+	private func readOnCall() {
+		onCallRead?.cancel()
+		let api = self.api
+		let organizationId = self.organizationId
+		onCallRead = Task { [weak self] in
+			let overview = await Telemetry.screenDecorations(screen: Screen.home, organizationId: organizationId) {
+				try? await api.onCallOverview()
+			}
+			guard let self, !Task.isCancelled, let overview else { return }
+			self.onCall = overview
+		}
 	}
 
 	/// What the second pass produced. Counts stay `nil` on failure so the

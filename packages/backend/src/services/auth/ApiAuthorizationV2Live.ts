@@ -19,7 +19,11 @@ import { makeResolveTenant } from "@maple/auth"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
-import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import {
+	CurrentAuditActor,
+	MOBILE_CLIENT_HEADER,
+	MOBILE_CLIENT_VALUE,
+} from "@maple/backend/services/auth/audit-actor"
 import { recordImpersonation } from "@maple/backend/services/auth/impersonation-audit"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
@@ -191,7 +195,12 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						const label = "Device credential"
 						return yield* httpEffect.pipe(
 							provideRequestTenant(tenant),
-							Effect.provideService(CurrentAuditActor, { type: "user", label, source: "api" }),
+							Effect.provideService(CurrentAuditActor, {
+								type: "user",
+								label,
+								source: "api",
+								client: "mobile",
+							}),
 							withAuditedRead(audit, request, options, {
 								orgId: resolved.orgId,
 								actor: { type: "user", userId: resolved.userId, label },
@@ -371,7 +380,13 @@ export const ApiAuthorizationV2Live = Layer.effect(
 					yield* checkEndpointAccessV2(tenant.permissions, options, route.path)
 					return yield* httpEffect.pipe(
 						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
-						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
+						Effect.provideService(CurrentAuditActor, {
+							type: "user",
+							source: "dashboard",
+							...(request.headers[MOBILE_CLIENT_HEADER] === MOBILE_CLIENT_VALUE
+								? { client: "mobile" as const }
+								: undefined),
+						}),
 						withAuditedRead(audit, request, options, {
 							orgId: tenant.orgId,
 							actor: { type: "user", userId: tenant.userId },

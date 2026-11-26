@@ -117,8 +117,13 @@ struct IncidentActivityAttributesTests {
 
 		let state = try JSONEncoder().encode(IncidentActivityAttributes.ContentState.sample)
 		let stateJson = try object(String(decoding: state, as: UTF8.self))
+		// The sample is an unanswered page, so the next page rides along. Who
+		// acknowledged is absent rather than null while nobody has.
 		#expect(
-			Set(stateJson.keys) == ["value", "threshold", "status", "updated_at", "series", "threshold_value"]
+			Set(stateJson.keys) == [
+				"value", "threshold", "status", "updated_at", "series", "threshold_value", "next_page_at",
+				"next_page_people",
+			]
 		)
 	}
 
@@ -163,5 +168,43 @@ struct IncidentActivityAttributesTests {
 		let decoded = try JSONDecoder().decode(IncidentActivityAttributes.self, from: Data(json.utf8))
 		#expect(decoded.organizationId == nil)
 		#expect(decoded.deepLinkURL?.absoluteString == "maple://incident/inc_1")
+	}
+	@Test("A push without the response fields reads as unacknowledged, with nothing known about the next page")
+	func decodesStateWithoutResponse() throws {
+		let json = """
+			{"value": "9.1%", "threshold": "> 5%", "status": "firing", "updated_at": 1800000060}
+			"""
+		let state = try JSONDecoder().decode(IncidentActivityAttributes.ContentState.self, from: Data(json.utf8))
+		#expect(state.acknowledgedBy == nil)
+		#expect(state.nextPageAt == nil)
+		#expect(state.nextPagePeople == nil)
+		#expect(state.awaitsAcknowledgement)
+	}
+
+	@Test("Who has the incident and who is paged next survive the wire, with time as epoch seconds")
+	func responseFieldsRoundTrip() throws {
+		var state = IncidentActivityAttributes.ContentState(
+			value: "9.1%", threshold: "> 5%", status: .firing, updatedAt: Date(timeIntervalSince1970: 1_800_000_060)
+		)
+		state.nextPageAt = Date(timeIntervalSince1970: 1_800_000_300)
+		state.nextPagePeople = "Priya Shah +1"
+		let encoded = try object(String(decoding: try JSONEncoder().encode(state), as: UTF8.self))
+		#expect(encoded["next_page_at"] as? Double == 1_800_000_300)
+		#expect(encoded["next_page_people"] as? String == "Priya Shah +1")
+		#expect(encoded["acknowledged_by"] == nil)
+
+		state.acknowledgedBy = "Dana Kim"
+		let decoded = try JSONDecoder().decode(
+			IncidentActivityAttributes.ContentState.self, from: try JSONEncoder().encode(state)
+		)
+		#expect(decoded == state)
+		#expect(!decoded.awaitsAcknowledgement)
+	}
+
+	@Test("A resolved incident never offers Acknowledge")
+	func resolvedDoesNotAwait() {
+		#expect(!IncidentActivityAttributes.ContentState.resolvedSample.awaitsAcknowledgement)
+		#expect(!IncidentActivityAttributes.ContentState.acknowledgedSample.awaitsAcknowledgement)
+		#expect(IncidentActivityAttributes.ContentState.sample.awaitsAcknowledgement)
 	}
 }

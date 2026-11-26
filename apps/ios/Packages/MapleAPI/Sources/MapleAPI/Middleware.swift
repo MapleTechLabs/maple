@@ -49,6 +49,29 @@ public struct BearerAuthMiddleware: ClientMiddleware {
 	}
 }
 
+/// Says the request comes from the iOS app, which is what lets the server record
+/// an acknowledgement as made from the phone rather than from the dashboard: both
+/// arrive with the same kind of session token. A label, not a credential.
+public struct ClientIdentityMiddleware: ClientMiddleware {
+	/// Must match `MOBILE_CLIENT_HEADER` in `ApiAuthorizationV2Live.ts`.
+	public static let headerName = HTTPField.Name("x-maple-client")!
+	public static let value = "ios"
+
+	public init() {}
+
+	public func intercept(
+		_ request: HTTPRequest,
+		body: HTTPBody?,
+		baseURL: URL,
+		operationID: String,
+		next: (HTTPRequest, HTTPBody?, URL) async throws -> (HTTPResponse, HTTPBody?)
+	) async throws -> (HTTPResponse, HTTPBody?) {
+		var request = request
+		request.headerFields[Self.headerName] = Self.value
+		return try await next(request, body, baseURL)
+	}
+}
+
 /// Names the organization explicitly, for the one caller that cannot use the
 /// token's own claim.
 ///

@@ -1,9 +1,10 @@
+import { HttpServerRequest } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import type {
+	AlertIncidentAckSource,
 	AlertIncidentDocument,
 	AlertIncidentEscalationDocument,
 	AlertIncidentEventDocument,
-	AlertIncidentId,
 	OrgId,
 } from "@maple/domain/http"
 import { CurrentTenant, isAlertNotificationEventType } from "@maple/domain/http"
@@ -19,9 +20,11 @@ import {
 import {
 	AlertIncidentPagesService,
 	mergePagesIntoEvents,
+	type AlertIncidentNextStepPeople,
 } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
-import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { CurrentAuditActor, MOBILE_CLIENT_HEADER } from "@maple/backend/services/auth/audit-actor"
+import { loadIncidentEscalations } from "./incident-escalations"
 
 /**
  * An ack pauses the run on the scheduler's next tick; until then the wire already reads it paused,
@@ -30,6 +33,8 @@ import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 const toV2Escalation = (
 	doc: AlertIncidentEscalationDocument,
 	isAcknowledged: boolean,
+	nextStepPeople: AlertIncidentNextStepPeople["people"],
+	client: WireClient,
 ): V2AlertIncidentEscalation => {
 	const isPausing = isAcknowledged && doc.status === "active"
 	return {
@@ -43,12 +48,46 @@ const toV2Escalation = (
 		pass_count: doc.repeatCount + 1,
 		steps_sent: doc.stepsSent,
 		next_step_at: isPausing ? null : doc.nextStepAt,
+		...(client.isOlderIosBuild
+			? undefined
+			: {
+					next_step_people:
+						isPausing || doc.nextStepAt === null
+							? []
+							: Arr.map(nextStepPeople, (person) => ({
+									user_id: person.userId,
+									name: person.name,
+								})),
+				}),
 	}
 }
+
+/**
+ * iOS builds from before the app could acknowledge decode these objects strictly: a key or an enum
+ * value they do not know fails their whole incident list. They are the callers on Apple's
+ * networking stack that do not name themselves, and they are served the shape they shipped with:
+ * `mobile` reads as `api`, and the escalation block carries no `next_step_people`.
+ */
+interface WireClient {
+	readonly isOlderIosBuild: boolean
+	readonly ackSource: (source: AlertIncidentAckSource | null) => AlertIncidentAckSource | null
+}
+
+const wireClient = Effect.map(HttpServerRequest.HttpServerRequest, (request): WireClient => {
+	const isOlderIosBuild =
+		request.headers[MOBILE_CLIENT_HEADER] === undefined &&
+		/CFNetwork\//u.test(request.headers["user-agent"] ?? "")
+	return {
+		isOlderIosBuild,
+		ackSource: (source) => (isOlderIosBuild && source === "mobile" ? "api" : source),
+	}
+})
 
 const toV2Incident = (
 	doc: AlertIncidentDocument,
 	escalation: AlertIncidentEscalationDocument | undefined,
+	nextStepPeople: AlertIncidentNextStepPeople["people"],
+	client: WireClient,
 ): V2AlertIncident => ({
 	id: doc.id,
 	object: "alert_incident",
@@ -82,9 +121,12 @@ const toV2Incident = (
 		doc.acknowledgedAt === null
 			? null
 			: { user_id: doc.acknowledgedByUserId, name: doc.acknowledgedByName },
-	acknowledged_via: doc.acknowledgedVia,
+	acknowledged_via: client.ackSource(doc.acknowledgedVia),
 	error_issue_id: doc.errorIssueId,
-	escalation: escalation === undefined ? null : toV2Escalation(escalation, doc.acknowledgedAt !== null),
+	escalation:
+		escalation === undefined
+			? null
+			: toV2Escalation(escalation, doc.acknowledgedAt !== null, nextStepPeople, client),
 	...(doc.anomalyIncidentId === undefined ? undefined : { anomaly_incident_id: doc.anomalyIncidentId }),
 	...(doc.groupLabel === undefined ? undefined : { group_label: doc.groupLabel }),
 	...(doc.labels === undefined ? undefined : { labels: doc.labels }),
@@ -92,7 +134,7 @@ const toV2Incident = (
 	silenced_at: timestampOrNull(doc.silencedAt),
 })
 
-const toV2Event = (doc: AlertIncidentEventDocument): V2AlertIncidentEvent => ({
+const toV2Event = (doc: AlertIncidentEventDocument, client: WireClient): V2AlertIncidentEvent => ({
 	id: doc.id,
 	object: "alert_incident_event",
 	incident_id: doc.incidentId,
@@ -101,7 +143,7 @@ const toV2Event = (doc: AlertIncidentEventDocument): V2AlertIncidentEvent => ({
 		doc.actorUserId === null && doc.actorName === null
 			? null
 			: { user_id: doc.actorUserId, name: doc.actorName },
-	source: doc.source,
+	source: client.ackSource(doc.source),
 	...(doc.page === undefined
 		? undefined
 		: {
@@ -125,23 +167,17 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 		const pagesService = yield* AlertIncidentPagesService
 		const members = yield* OrgMembersService
 
-		// One escalation read for a whole page of incidents, never one per incident.
+		const incidentsOnWire = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
+			Effect.gen(function* () {
+				const client = yield* wireClient
+				const escalations = yield* loadIncidentEscalations(readModels, pagesService, orgId, docs)
+				return (doc: AlertIncidentDocument) =>
+					toV2Incident(doc, escalations.runOf(doc.id), escalations.nextStepPeopleOf(doc.id), client)
+			})
 		const withEscalations = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
-			readModels
-				.listIncidentEscalations(
-					orgId,
-					Arr.map(docs, (doc): AlertIncidentId => doc.id),
-				)
-				.pipe(
-					Effect.map((escalations) => {
-						const byIncident = new Map(Arr.map(escalations, (row) => [row.incidentId, row]))
-						return Arr.map(docs, (doc) => toV2Incident(doc, byIncident.get(doc.id)))
-					}),
-				)
+			Effect.map(incidentsOnWire(orgId, docs), (toWire) => Arr.map(docs, toWire))
 		const withEscalation = (orgId: OrgId, doc: AlertIncidentDocument) =>
-			Effect.map(readModels.listIncidentEscalations(orgId, [doc.id]), (rows) =>
-				toV2Incident(doc, rows[0]),
-			)
+			Effect.map(incidentsOnWire(orgId, [doc]), (toWire) => toWire(doc))
 
 		// Who is acknowledging, with a name recorded alongside so every surface can show it without a
 		// directory lookup. An API key is not a person: it is named by its label and has no user. A
@@ -163,7 +199,12 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 			const actor: AlertIncidentActor = {
 				userId: credential?.type === "api_key" ? null : tenant.userId,
 				name,
-				source: credential?.source === "dashboard" ? "web" : "api",
+				source:
+					credential?.client === "mobile"
+						? "mobile"
+						: credential?.source === "dashboard"
+							? "web"
+							: "api",
 			}
 			return { orgId: tenant.orgId, actor }
 		})
@@ -180,6 +221,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 								...(query.acknowledged !== undefined
 									? { acknowledged: query.acknowledged === "true" }
 									: undefined),
+								...(query.paged === "me" ? { pagedUserId: tenant.userId } : undefined),
 								limit,
 								offset,
 							})
@@ -226,7 +268,11 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 					const ackEvents = yield* acks.listEvents(tenant.orgId, params.id)
 					const pages = yield* pagesService.listPages(tenant.orgId, [params.id])
 					const events = mergePagesIntoEvents(ackEvents, pages)
-					return { object: "list" as const, data: Arr.map(events, toV2Event) }
+					const client = yield* wireClient
+					return {
+						object: "list" as const,
+						data: Arr.map(events, (event) => toV2Event(event, client)),
+					}
 				}),
 			)
 	}),

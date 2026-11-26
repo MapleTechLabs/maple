@@ -4,6 +4,7 @@ import { V2AlertDestinationsApiGroup } from "./alert-destinations"
 import { V2AnomaliesApiGroup } from "./anomalies"
 import { V2AlertIncidentsApiGroup } from "./alert-incidents"
 import { V2EscalationChainsApiGroup } from "./escalation-chains"
+import { V2OnCallOverviewApiGroup, V2WidgetOnCallApiGroup } from "./oncall-overview"
 import { V2OnCallSchedulesApiGroup } from "./oncall-schedules"
 import { V2AlertSilencesApiGroup } from "./alert-silences"
 import { V2AlertMaintenanceWindowsApiGroup } from "./alert-maintenance-windows"
@@ -43,6 +44,7 @@ import { V2SupportChannelApiGroup } from "./support-channel"
 import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
 import { V2SharePublicApiGroup } from "./share"
 import { V2WidgetCredentialsApiGroup } from "./widget-credentials"
+import { V2WidgetPagesApiGroup } from "./widget-pages"
 import { V2WidgetSummaryApiGroup } from "./widget-summary"
 import {
 	V2EnvironmentsApiGroup,
@@ -115,6 +117,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AlertIncidentsApiGroup)
 	.add(V2EscalationChainsApiGroup)
 	.add(V2OnCallSchedulesApiGroup)
+	.add(V2OnCallOverviewApiGroup)
 	.add(V2AlertSilencesApiGroup)
 	.add(V2AlertMaintenanceWindowsApiGroup)
 	.add(V2IngestKeysApiGroup)
@@ -157,6 +160,8 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2EnvironmentsApiGroup)
 	.add(V2SharePublicApiGroup)
 	.add(V2WidgetSummaryApiGroup)
+	.add(V2WidgetPagesApiGroup)
+	.add(V2WidgetOnCallApiGroup)
 	.add(V2WidgetCredentialsApiGroup)
 	.add(V2DeviceCredentialsApiGroup)
 	.add(V2DeviceTokensApiGroup)
