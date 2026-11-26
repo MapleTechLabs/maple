@@ -19,6 +19,10 @@ export type CodeBlockOptions<M> = Readonly<{
 	/** The header's copy button; without both, the block is read-only and a sibling control copies it. */
 	copy?: CopyButton.Model
 	toCopyMessage?: (message: CopyButton.Message) => M
+	/** What Copy writes, when it differs from the code shown (a key masked on screen). */
+	copyValue?: string
+	/** Controls in the header, before the copy button (a reveal toggle). */
+	actions?: ReadonlyArray<Html>
 	/** Prose, not code (a prompt for a coding agent): shown as typed, without highlighting. */
 	isPlain?: boolean
 	/** A muted last line that is not part of `code`: a value shown masked until it is copied. */
@@ -32,15 +36,18 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 	const { copy, toCopyMessage } = options
 	const header = [
 		...(options.language === undefined ? [] : [eyebrow(h, { variant: "mono" }, [options.language])]),
+		...(options.actions === undefined
+			? []
+			: [hstack(h, { gap: "1", align: "center", className: "ml-auto" }, options.actions)]),
 		...(copy === undefined || toCopyMessage === undefined
 			? []
 			: [
 					CopyButton.view(h, {
 						model: copy,
 						toParentMessage: toCopyMessage,
-						value: options.code,
+						value: options.copyValue ?? options.code,
 						label: "Code",
-						className: "ml-auto",
+						className: options.actions === undefined ? "ml-auto" : undefined,
 					}),
 				]),
 	]

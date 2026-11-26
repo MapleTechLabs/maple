@@ -1,17 +1,23 @@
-import { cn } from "@maple/ui/lib/utils"
 import { docsUrl } from "../../kit/docs"
-import { String as Str } from "effect"
+import { codeBlock } from "../../kit/code-block"
+import { Schema } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
-import * as CopyButton from "@maple/views/ui/copy-button"
 import * as DialogView from "@maple/views/ui/dialog-view"
-import { icon } from "@maple/views/ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton } from "@maple/views/ui/input-group"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import * as TabsView from "@maple/views/ui/tabs-view"
-import { textarea } from "@maple/views/ui/textarea"
-import { kubernetesMethod, Message, type Model, MountInstallModal, type Snippet } from "./install-modal"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { typography } from "@maple/views/ui/typography"
+import {
+	InstallTab,
+	kubernetesMethod,
+	Message,
+	type Model,
+	MountInstallModal,
+	type Snippet,
+} from "./install-modal"
 import {
 	ALCHEMY_FILE,
 	alchemyDeployCommand,
@@ -20,14 +26,11 @@ import {
 	helmCommand,
 	HOST_CONFIG,
 	hostCommand,
-	isCustomEndpoint,
 	maskToken,
 	TERRAFORM_FILE,
 	terraformApplyCommand,
 	terraformConfig,
 } from "./install-snippets"
-import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { typography } from "@maple/views/ui/typography"
 
 // The install modal's dialog, rendered only while open or closing.
 
@@ -35,67 +38,54 @@ type H = HtmlBuilder<Message>
 
 type SnippetPanel = Readonly<{
 	snippet: Snippet
+	/** The block's eyebrow: a file name or what the command does. */
+	label: string
+	/** The language to highlight as. */
+	lang: string
 	isLoading: boolean
+	/** What Copy writes. */
 	value: string
+	/** What shows: `value` with the key masked unless revealed. */
 	display: string
-	rows: number
 	hasReveal: boolean
-	copyLabel?: string
-	/** A whole file: capped in height and scrolled, since the textarea grows to its content. */
+	/** A whole file: capped in height and scrolled, so the command under it stays in view. */
 	isFile?: boolean
 }>
 
+const revealButton = (h: H, model: Model): Html =>
+	button(
+		h,
+		{
+			variant: "ghost",
+			size: "xs",
+			attributes: [
+				h.AriaLabel(model.isRevealed ? "Hide key" : "Reveal key"),
+				h.OnClick(Message.ClickedToggleReveal()),
+			],
+		},
+		[icon(h, "EyeIcon", { size: 12 }), model.isRevealed ? "Hide key" : "Reveal key"],
+	)
+
 const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 	panel.isLoading
-		? skeleton(h, "h-36 w-full")
-		: inputGroup(h, {}, [
-				textarea(h, {
-					id: `${model.id}-${panel.snippet}`,
-					isUnstyled: true,
-					controlClassName: cn(
-						"font-mono text-xs select-all leading-relaxed",
-						panel.isFile === true && "max-h-64 overflow-y-auto",
-					),
-					defaultValue: panel.display,
-					attributes: [h.Readonly(true), h.Attribute("wrap", "off"), h.Rows(panel.rows)],
-				}),
-				inputGroupAddon(h, { align: "block-end" }, [
-					...(panel.hasReveal
-						? [
-								inputGroupButton(
-									h,
-									{
-										attributes: [
-											h.AriaLabel(model.isRevealed ? "Hide key" : "Reveal key"),
-											h.Title(model.isRevealed ? "Hide key" : "Reveal key"),
-											h.OnClick(Message.ClickedToggleReveal()),
-										],
-									},
-									[
-										icon(h, "EyeIcon", { size: 14 }),
-										model.isRevealed ? "Hide key" : "Reveal key",
-									],
-								),
-							]
-						: []),
-					CopyButton.view(h, {
-						model: model.copies[panel.snippet],
-						toParentMessage: (message) =>
-							Message.GotCopyMessage({ snippet: panel.snippet, message }),
-						value: panel.value,
-						label: panel.copyLabel ?? "Install command",
-						idleLabel: "Copy",
-						className: "ml-auto",
-					}),
-				]),
-			])
+		? skeleton(h, "h-24 w-full")
+		: codeBlock(h, {
+				code: panel.display,
+				copyValue: panel.value,
+				language: panel.label,
+				lang: panel.lang,
+				copy: model.copies[panel.snippet],
+				toCopyMessage: (message) => Message.GotCopyMessage({ snippet: panel.snippet, message }),
+				actions: panel.hasReveal ? [revealButton(h, model)] : undefined,
+				bodyClassName: panel.isFile === true ? "max-h-64 overflow-y-auto" : undefined,
+			})
 
 const note = (h: H, children: ReadonlyArray<Html | string>): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p" }, children)
 
 const code = (h: H, text: string): Html => h.code([h.Class("font-mono")], [text])
 
-/** `snippet` is what Copy writes; `display` masks the key unless revealed. */
+/** `value` is what Copy writes; `display` masks the key unless revealed. */
 const keyed = (model: Model, build: (token: string) => string) => {
 	const token = AsyncData.getOrElse(model.ingestKey, () => "")
 	const value = token === "" ? "" : build(token)
@@ -106,29 +96,41 @@ const keyed = (model: Model, build: (token: string) => string) => {
 	}
 }
 
-const lineCount = (text: string): number => Str.split("\n")(text).length
-
 /** A file with no key in it: shown as is, with no reveal. */
-const filePanel = (h: H, model: Model, snippet: Snippet, file: string, text: string): Html =>
+const filePanel = (h: H, model: Model, snippet: Snippet, label: string, lang: string, text: string): Html =>
 	snippetPanel(h, model, {
 		snippet,
+		label,
+		lang,
 		isLoading: false,
 		value: text,
 		display: text,
-		rows: Math.min(lineCount(text), 14),
 		hasReveal: false,
-		copyLabel: file,
 		isFile: true,
 	})
+
+/** A command carrying the key, masked until revealed. */
+const commandPanel = (
+	h: H,
+	model: Model,
+	snippet: Snippet,
+	label: string,
+	build: (token: string) => string,
+): Html => snippetPanel(h, model, { snippet, label, lang: "shell", ...keyed(model, build), hasReveal: true })
+
+const labelled = (h: H, name: IconName, label: string): ReadonlyArray<Html | string> => [
+	icon(h, name, { size: 14 }),
+	label,
+]
 
 const methodToggle = (h: H, model: Model): Html =>
 	ToggleGroup.view(h, {
 		model: model.methods,
 		toParentMessage: (message) => Message.GotMethodMessage({ message }),
 		items: [
-			{ value: "helm", label: "Helm" },
-			{ value: "alchemy", label: "Alchemy" },
-			{ value: "terraform", label: "Terraform" },
+			{ value: "helm", label: "Helm", children: labelled(h, "HelmIcon", "Helm") },
+			{ value: "alchemy", label: "Alchemy", children: labelled(h, "AlchemyIcon", "Alchemy") },
+			{ value: "terraform", label: "Terraform", children: labelled(h, "TerraformIcon", "Terraform") },
 		],
 		variant: "outline",
 		size: "sm",
@@ -146,14 +148,8 @@ const kubernetesPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 				code(h, ALCHEMY_FILE),
 				" and deploy it with the command below; it targets your kubeconfig's current context. Pod auto-instrumentation stays off: it needs Helm's install hooks.",
 			]),
-			filePanel(h, model, "alchemy", ALCHEMY_FILE, alchemyStack()),
-			snippetPanel(h, model, {
-				snippet: "alchemyDeploy",
-				...keyed(model, alchemyDeployCommand),
-				rows: 1,
-				hasReveal: true,
-				copyLabel: "Deploy command",
-			}),
+			filePanel(h, model, "alchemy", ALCHEMY_FILE, "typescript", alchemyStack()),
+			commandPanel(h, model, "alchemyDeploy", "Deploy", alchemyDeployCommand),
 		]
 	if (method === "terraform")
 		return [
@@ -163,26 +159,15 @@ const kubernetesPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 				code(h, TERRAFORM_FILE),
 				" (or merge it into a module of yours) and apply it with the command below. Pod auto-instrumentation stays off.",
 			]),
-			filePanel(h, model, "terraform", TERRAFORM_FILE, terraformConfig()),
-			snippetPanel(h, model, {
-				snippet: "terraformApply",
-				...keyed(model, terraformApplyCommand),
-				rows: 1,
-				hasReveal: true,
-				copyLabel: "Apply command",
-			}),
+			filePanel(h, model, "terraform", TERRAFORM_FILE, "hcl", terraformConfig()),
+			commandPanel(h, model, "terraformApply", "Apply", terraformApplyCommand),
 		]
 	return [
 		methodToggle(h, model),
 		note(h, [
 			`${chart} Run the command against your cluster. For production, prefer an existing Secret over an inline value. See the docs.`,
 		]),
-		snippetPanel(h, model, {
-			snippet: "helm",
-			...keyed(model, helmCommand),
-			rows: isCustomEndpoint ? 6 : 5,
-			hasReveal: true,
-		}),
+		commandPanel(h, model, "helm", "Install", helmCommand),
 	]
 }
 
@@ -193,12 +178,7 @@ const panelFor = (h: H, model: Model, value: string): ReadonlyArray<Html> => {
 			note(h, [
 				"The Maple Docker agent runs as a single container with read-only access to the Docker socket and streams per-container CPU, memory, network, and block I/O, plus container logs via the mounted log directory (drop that mount to skip logs). It also accepts app OTLP on 4317/4318.",
 			]),
-			snippetPanel(h, model, {
-				snippet: "docker",
-				...keyed(model, dockerCommand),
-				rows: isCustomEndpoint ? 10 : 9,
-				hasReveal: true,
-			}),
+			commandPanel(h, model, "docker", "docker run", dockerCommand),
 		]
 	return [
 		note(h, [
@@ -209,18 +189,18 @@ const panelFor = (h: H, model: Model, value: string): ReadonlyArray<Html> => {
 			code(h, "config.yaml"),
 			", then start it with the command below. On Kubernetes, the Helm chart already reports every node.",
 		]),
-		snippetPanel(h, model, {
-			snippet: "hostConfig",
-			isLoading: false,
-			value: HOST_CONFIG,
-			display: HOST_CONFIG,
-			rows: 12,
-			hasReveal: false,
-			copyLabel: "Collector config",
-		}),
-		snippetPanel(h, model, { snippet: "host", ...keyed(model, hostCommand), rows: 1, hasReveal: true }),
+		filePanel(h, model, "hostConfig", "config.yaml", "yaml", HOST_CONFIG),
+		commandPanel(h, model, "host", "Run", hostCommand),
 	]
 }
+
+const TAB_ICONS = {
+	kubernetes: "KubernetesIcon",
+	docker: "DockerIcon",
+	hosts: "ServerIcon",
+} as const satisfies Record<InstallTab, IconName>
+
+const isInstallTab = Schema.is(InstallTab)
 
 const content = (h: H, model: Model, close: ReadonlyArray<ChildAttribute>): ReadonlyArray<Html> => [
 	DialogView.dialogHeader(h, "dialog", [
@@ -243,6 +223,8 @@ const content = (h: H, model: Model, close: ReadonlyArray<ChildAttribute>): Read
 					toParentMessage: (message) => Message.GotTabsMessage({ message }),
 					viewInputs: {
 						labels: ["Kubernetes", "Docker", "Host"],
+						tabContent: (value: string, label: string) =>
+							isInstallTab(value) ? labelled(h, TAB_ICONS[value], label) : [label],
 						panelClassName: "space-y-4 pt-3",
 						panel: (value) => panelFor(h, model, value),
 					},

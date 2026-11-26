@@ -11,6 +11,7 @@ import { panel } from "@maple/views/ui/panel"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../../kit/code-block"
+import { icon } from "@maple/views/ui/icon"
 import { maskedToken, type SourceSnippet, sourceSnippets } from "./snippets"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
@@ -180,6 +181,16 @@ const snippetTabs = <P>(
 									viewInputs: {
 										variant: "underline",
 										labels: Arr.map(snippets, (entry) => entry.label),
+										tabContent: (value: string, label: string) => {
+											const mark = Option.flatMapNullishOr(
+												Arr.findFirst(snippets, (entry) => entry.id === value),
+												(entry) => entry.icon,
+											)
+											return Option.match(mark, {
+												onNone: () => [label],
+												onSome: (name) => [icon(h, name, { size: 14 }), label],
+											})
+										},
 										panel: () => undefined,
 									},
 								}),

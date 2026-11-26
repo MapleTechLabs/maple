@@ -19,6 +19,7 @@ import {
 	terraformApplyCommand,
 	terraformConfig,
 } from "../../infra/kit/install-snippets"
+import type { IconName } from "@maple/views/ui/icon"
 import { Array as Arr, String as Str, Option } from "effect"
 
 export interface SourceSnippet {
@@ -26,6 +27,8 @@ export interface SourceSnippet {
 	readonly label: string
 	readonly language: string
 	readonly code: string
+	/** The tool's mark in the snippet's tab, when the tabs name tools. */
+	readonly icon?: IconName
 }
 
 const envSnippet = (token: string, serviceName: string, needsHttp = false): SourceSnippet => ({
@@ -122,30 +125,34 @@ export const sourceSnippets = (
 	switch (platform) {
 		case "kubernetes":
 			return [
-				{ id: "helm", label: "Helm", language: "shell", code: helmCommand(token) },
+				{ id: "helm", label: "Helm", language: "shell", code: helmCommand(token), icon: "HelmIcon" },
 				{
 					id: "alchemy",
 					label: `Alchemy ${ALCHEMY_FILE}`,
 					language: "typescript",
 					code: alchemyStack(),
+					icon: "AlchemyIcon",
 				},
 				{
 					id: "alchemy-deploy",
 					label: "Alchemy deploy",
 					language: "shell",
 					code: alchemyDeployCommand(token),
+					icon: "AlchemyIcon",
 				},
 				{
 					id: "terraform",
 					label: `Terraform ${TERRAFORM_FILE}`,
 					language: "hcl",
 					code: terraformConfig(),
+					icon: "TerraformIcon",
 				},
 				{
 					id: "terraform-apply",
 					label: "Terraform apply",
 					language: "shell",
 					code: terraformApplyCommand(token),
+					icon: "TerraformIcon",
 				},
 			]
 		case "docker":
