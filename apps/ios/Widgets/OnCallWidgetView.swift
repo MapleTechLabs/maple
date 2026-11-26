@@ -307,7 +307,7 @@ struct OnCallFrame<Content: View>: View {
 	private var reason: String {
 		if isSignedOut { return "Sign in to see who is on call." }
 		// A read older than its own window would name whoever was on call then.
-		return snapshot == nil ? "Nothing has been read yet." : "This schedule is out of date."
+		return snapshot == nil ? "Nothing has been read yet." : "The on-call data is out of date."
 	}
 }
 
