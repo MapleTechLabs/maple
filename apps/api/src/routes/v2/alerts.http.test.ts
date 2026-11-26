@@ -18,6 +18,7 @@ import {
 	Schema,
 	Array as Arr,
 	String as Str,
+	Order,
 } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
@@ -75,9 +76,11 @@ import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSch
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { HttpV2AlertDeliveriesLive } from "./alert-deliveries.http"
+import { HttpV2WidgetPagesLive } from "./widget-pages.http"
 import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "./alert-incidents.http"
 import { HttpV2EscalationChainsLive } from "./escalation-chains.http"
+import { HttpV2OnCallOverviewLive, HttpV2WidgetOnCallLive } from "./oncall-overview.http"
 import { HttpV2OnCallSchedulesLive } from "./oncall-schedules.http"
 import { HttpV2AlertSilencesLive } from "./alert-silences.http"
 import { HttpV2AlertMaintenanceWindowsLive } from "./alert-maintenance-windows.http"
@@ -257,8 +260,11 @@ const makeHarness = (
 			MapleApiV2.groups.alertRules,
 			MapleApiV2.groups.alertDestinations,
 			MapleApiV2.groups.alertIncidents,
+			MapleApiV2.groups.widgetPages,
 			MapleApiV2.groups.escalationChains,
 			MapleApiV2.groups.oncallSchedules,
+			MapleApiV2.groups.oncallOverview,
+			MapleApiV2.groups.widgetOnCall,
 			MapleApiV2.groups.alertSilences,
 			MapleApiV2.groups.alertMaintenanceWindows,
 		),
@@ -284,12 +290,22 @@ const makeHarness = (
 						),
 					),
 				),
+				HttpV2WidgetPagesLive.pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+							Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make),
+						),
+					),
+				),
 				HttpV2EscalationChainsLive.pipe(
 					Layer.provide(Layer.effect(EscalationChainsService, EscalationChainsService.make)),
 				),
-				HttpV2OnCallSchedulesLive.pipe(
-					Layer.provide(Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make)),
-				),
+				Layer.mergeAll(
+					HttpV2OnCallSchedulesLive,
+					HttpV2OnCallOverviewLive,
+					HttpV2WidgetOnCallLive,
+				).pipe(Layer.provide(Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make))),
 				HttpV2AlertSilencesLive.pipe(Layer.provide(AlertSilencesService.layer)),
 				HttpV2AlertMaintenanceWindowsLive.pipe(Layer.provide(AlertMaintenanceWindowsService.layer)),
 			).pipe(Layer.provide(OrgMembersServiceStubLayer)),
@@ -2033,6 +2049,163 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("lists what is paging the caller for a widget, and acknowledges within the widget's own scope", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const reader = await harness.bootstrapKey(["widget_summary:read"])
+		const writer = await harness.bootstrapKey(["widget_summary:write"])
+		const cannotRespond = await harness.bootstrapKey(["widget_summary:write"], ["telemetry:read"])
+		await createWebhookAndRule(harness, key.secret)
+		const waiting = "00000000-0000-4000-8000-000000001a01"
+		const answered = "00000000-0000-4000-8000-000000001a02"
+		const notMine = "00000000-0000-4000-8000-000000001a03"
+		await insertOpenIncidents(harness, "org_alerts_e2e", [waiting, answered, notMine])
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set last_observed_value = 0.091 where org_id = 'org_alerts_e2e'`,
+		)
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = now(), acknowledged_by_user_id = 'user_dana',
+				acknowledged_by_name = 'Dana Kim', acknowledged_via = 'slack', last_triggered_at = now() + interval '1 minute'
+				where id = '${answered}'`,
+		)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_member_notifications (
+				id, org_id, incident_id, run_id, user_id, channel, status, scheduled_at, payload_json,
+				dedupe_key, created_at, updated_at
+			) values
+				('wp-1', 'org_alerts_e2e', '${waiting}', 'run-1', 'user_alerts_e2e', 'push', 'sent', now(), '{}'::jsonb, 'wp-1', now(), now()),
+				('wp-2', 'org_alerts_e2e', '${answered}', 'run-2', 'user_alerts_e2e', 'email', 'sent', now(), '{}'::jsonb, 'wp-2', now(), now()),
+				('wp-3', 'org_alerts_e2e', '${notMine}', 'run-3', 'user_someone_else', 'email', 'sent', now(), '{}'::jsonb, 'wp-3', now(), now())`,
+		)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_escalation_runs (
+				id, org_id, incident_id, chain_id, chain_name, severity, steps_json, repeat_count,
+				step_index, pass_index, next_step_at, status, payload_json, steps_sent, created_at, updated_at
+			) values ('00000000-0000-4000-8000-000000001b01', 'org_alerts_e2e', '${waiting}',
+				'00000000-0000-4000-8000-0000000000e2', 'Checkout on-call', 'critical',
+				'[{"targets":[{"type":"user","userId":"user_first"}],"waitMinutes":5},{"targets":[{"type":"user","userId":"user_next"},{"type":"user","userId":"user_other"}],"waitMinutes":5}]'::jsonb,
+				0, 1, 0, now() + interval '4 minutes', 'active', '{}'::jsonb, 1, now(), now())`,
+		)
+		const call = (method: string, path: string, token: string) => harness.request(method, path, token)
+
+		const listed = await call("GET", "/v2/widget_summary/pages", reader.secret)
+		expect(listed.status).toBe(200)
+		expect(listed.body).toMatchObject({
+			object: "widget_pages",
+			organization_id: "org_alerts_e2e",
+			has_more: false,
+		})
+		// What waits on an answer leads, though the answered one triggered more recently.
+		expect(listed.body.data).toMatchObject([
+			{
+				rule_name: "Checkout error rate",
+				severity: "critical",
+				value: "9.1%",
+				threshold: "> 5%",
+				acknowledged_by: null,
+				acknowledged_by_you: false,
+				next_page_at: expect.any(String),
+				next_page_people: "a teammate +1",
+			},
+			{
+				acknowledged_by: "Dana Kim",
+				acknowledged_by_you: false,
+				next_page_at: null,
+				next_page_people: null,
+			},
+		])
+		const waitingId: string = listed.body.data[0].incident_id
+		expect(waitingId).toMatch(/^inc_/)
+
+		// Reading is not answering, and a role that cannot respond to incidents cannot from a widget either.
+		const path = `/v2/widget_summary/pages/${waitingId}/acknowledge`
+		expect((await call("POST", path, reader.secret)).status).toBe(403)
+		expect((await call("POST", path, cannotRespond.secret)).status).toBe(403)
+
+		const acknowledged = await call("POST", path, writer.secret)
+		expect(acknowledged.status).toBe(200)
+		expect(acknowledged.body).toMatchObject({
+			incident_id: waitingId,
+			acknowledged_by_you: true,
+			next_page_at: null,
+			next_page_people: null,
+		})
+		const incident = await call("GET", `/v2/alerts/incidents/${waitingId}`, key.secret)
+		expect(incident.body).toMatchObject({
+			acknowledged_via: "mobile",
+			acknowledged_by: { user_id: "user_alerts_e2e" },
+		})
+
+		// A widget answers its owner's pages only: an incident that paged someone else is not there.
+		const notMineId = encodePublicId("inc", notMine)
+		expect(
+			(await call("POST", `/v2/widget_summary/pages/${notMineId}/acknowledge`, writer.secret)).status,
+		).toBe(404)
+		expect(
+			(await call("GET", `/v2/alerts/incidents/${notMineId}`, key.secret)).body.acknowledged_at,
+		).toBeNull()
+
+		// The widget's scope is a fence: it reaches nothing else about alerts.
+		expect((await call("GET", "/v2/alerts/incidents", writer.secret)).status).toBe(403)
+		expect((await call("POST", `/v2/alerts/incidents/${waitingId}/resolve`, writer.secret)).status).toBe(
+			403,
+		)
+
+		await harness.dispose()
+	})
+
+	it("keeps an unanswered page on the widget however many answered incidents triggered since", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const reader = await harness.bootstrapKey(["widget_summary:read"])
+		await createWebhookAndRule(harness, key.secret)
+		const waiting = "00000000-0000-4000-8000-000000002a00"
+		const answered = Arr.makeBy(11, (n) => `00000000-0000-4000-8000-000000002b${10 + n}`)
+		await insertOpenIncidents(harness, "org_alerts_e2e", [waiting, ...answered])
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = now(), acknowledged_by_user_id = 'user_dana',
+				acknowledged_by_name = 'Dana Kim', acknowledged_via = 'slack', last_triggered_at = now() + interval '1 minute'
+				where id <> '${waiting}' and org_id = 'org_alerts_e2e'`,
+		)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_member_notifications (
+				id, org_id, incident_id, run_id, user_id, channel, status, scheduled_at, payload_json,
+				dedupe_key, created_at, updated_at
+			)
+			select 'wp-' || id, org_id, id, 'run-' || id, 'user_alerts_e2e', 'push', 'sent', now(), '{}'::jsonb,
+				'wp-' || id, now(), now()
+			from alert_incidents where org_id = 'org_alerts_e2e'`,
+		)
+
+		const listed = await harness.request("GET", "/v2/widget_summary/pages", reader.secret)
+		expect(listed.status).toBe(200)
+		// Only answered incidents were left out, so the count of unanswered ones is exact.
+		expect(listed.body.has_more).toBe(false)
+		expect(listed.body.data).toHaveLength(10)
+		expect(listed.body.data[0]).toMatchObject({
+			incident_id: encodePublicId("inc", waiting),
+			acknowledged_by: null,
+		})
+
+		// With more unanswered than a widget lists, the count becomes a floor.
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = null, acknowledged_by_user_id = null,
+				acknowledged_by_name = null, acknowledged_via = null where org_id = 'org_alerts_e2e'`,
+		)
+		const crowded = await harness.request("GET", "/v2/widget_summary/pages", reader.secret)
+		expect(crowded.body.has_more).toBe(true)
+		expect(crowded.body.data).toHaveLength(10)
+
+		await harness.dispose()
+	})
+
 	it("lists the incidents that paged the caller", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:read", "alerts:write"])
@@ -2407,6 +2580,154 @@ describe("v2 alerts over HTTP", () => {
 			key.secret,
 		)
 		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
+	it("answers who is on call everywhere and when the caller is, for the app and for a widget", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const widget = await harness.bootstrapKey(["widget_summary:read"])
+		const rotation = { kind: "weekly", handoff_weekday: "mon", handoff_time: "09:00" }
+		// Already rotating: the caller and one teammate, a week each.
+		const covered = await harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+			name: "Checkout primary",
+			time_zone: "Europe/Berlin",
+			layers: [
+				{
+					name: "Primary",
+					participants: ["user_alerts_e2e", "user_ben"],
+					rotation,
+					starts_at: "2026-01-05T08:00:00.000Z",
+				},
+			],
+		})
+		expect(covered.status, JSON.stringify(covered.body)).toBe(200)
+		// Starts years from now: nobody is on call and the whole window is a gap.
+		const empty = await harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+			name: "Data pipeline",
+			time_zone: "UTC",
+			layers: [
+				{ name: "A", participants: ["user_chen"], rotation, starts_at: "2099-01-05T08:00:00.000Z" },
+				{ name: "B", participants: ["user_ana"], rotation, starts_at: "2099-01-05T08:00:00.000Z" },
+			],
+		})
+		expect(empty.status, JSON.stringify(empty.body)).toBe(200)
+
+		// One person, turn after turn: a stretch with no handoff in it.
+		const solo = await harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+			name: "Solo",
+			time_zone: "UTC",
+			layers: [
+				{ name: "Only", participants: ["user_dee"], rotation, starts_at: "2026-01-05T08:00:00.000Z" },
+			],
+		})
+		expect(solo.status, JSON.stringify(solo.body)).toBe(200)
+
+		const overview = await harness.request("GET", "/v2/alerts/oncall_overview", key.secret)
+		expect(overview.status, JSON.stringify(overview.body)).toBe(200)
+		expect(overview.body).toMatchObject({
+			object: "oncall_overview",
+			organization_id: "org_alerts_e2e",
+			user_id: "user_alerts_e2e",
+		})
+		const [checkout, pipeline, alone] = overview.body.schedules
+		expect(checkout).toMatchObject({
+			id: covered.body.id,
+			name: "Checkout primary",
+			rotation_summary: "Weekly, hands off Mon 09:00",
+			coverage_gaps: [],
+		})
+		// Two people a week each: whoever has it now hands off to the other, when the shift ends.
+		const pair = ["user_alerts_e2e", "user_ben"]
+		expect(pair).toContain(checkout.on_call_now.user_id)
+		expect(Arr.filter(pair, (id) => id !== checkout.on_call_now.user_id)).toEqual([checkout.next.user_id])
+		expect(checkout.next.starts_at).toBe(checkout.on_call_now.ends_at)
+		// The stretch that is running keeps its real start, a handoff on the hour some time ago,
+		// not the millisecond of the read that a render clipped to "now" would report.
+		expect(checkout.on_call_now.starts_at).toMatch(/:00:00\.000Z$/)
+		expect(Date.parse(checkout.on_call_now.starts_at)).toBeLessThan(
+			Date.parse(overview.body.generated_at),
+		)
+		expect(checkout.shifts[0].starts_at).toBe(checkout.on_call_now.starts_at)
+		// The window is 14 days, and its last shift is cut where the window ends.
+		expect(checkout.shifts.length).toBeGreaterThanOrEqual(2)
+		expect(checkout.shifts.at(-1).ends_at).toBe(overview.body.schedule_window_ends_at)
+		expect(pipeline).toMatchObject({
+			name: "Data pipeline",
+			rotation_summary: "2 layers",
+			on_call_now: null,
+			next: null,
+			shifts: [],
+		})
+		expect(pipeline.coverage_gaps).toHaveLength(1)
+		// Nobody takes over from someone who is the whole rotation: no next shift, no gap, and the
+		// ends that the windows cut say so instead of reading as handoffs.
+		expect(alone).toMatchObject({ name: "Solo", next: null, coverage_gaps: [] })
+		expect(alone.on_call_now).toMatchObject({ user_id: "user_dee", continues: true })
+		expect(alone.shifts).toHaveLength(1)
+		expect(alone.shifts[0]).toMatchObject({
+			user_id: "user_dee",
+			continues: true,
+			ends_at: overview.body.schedule_window_ends_at,
+		})
+		// A real handoff is not marked.
+		expect(checkout.on_call_now.continues).toBe(false)
+		// The caller's own weeks over two months, on the one schedule they are in, in order.
+		const mine: ReadonlyArray<{ schedule_name: string; starts_at: string }> = overview.body.my_shifts
+		expect(mine.length).toBeGreaterThanOrEqual(4)
+		expect(Arr.dedupe(Arr.map(mine, (shift) => shift.schedule_name))).toEqual(["Checkout primary"])
+		expect(Arr.map(mine, (shift) => shift.starts_at)).toEqual(
+			Arr.sort(
+				Arr.map(mine, (shift) => shift.starts_at),
+				Order.String,
+			),
+		)
+
+		// An override that holds now is said to be one, and hands back to the rotation when it ends.
+		const coverUntil = new Date(Date.now() + 2 * 60 * 60_000).toISOString()
+		const cover = await harness.request(
+			"POST",
+			`/v2/alerts/oncall_schedules/${solo.body.id}/overrides`,
+			key.secret,
+			{
+				user_id: "user_chen",
+				starts_at: new Date(Date.now() - 60_000).toISOString(),
+				ends_at: coverUntil,
+			},
+		)
+		expect(cover.status, JSON.stringify(cover.body)).toBe(200)
+		const covering = await harness.request("GET", "/v2/alerts/oncall_overview", key.secret)
+		expect(covering.body.schedules[2]).toMatchObject({
+			name: "Solo",
+			on_call_now: { user_id: "user_chen", is_override: true, continues: false, ends_at: coverUntil },
+			next: { user_id: "user_dee", is_override: false, starts_at: coverUntil },
+		})
+
+		// A widget's credential reads the same document under its own scope, and nothing beside it.
+		const fromWidget = await harness.request("GET", "/v2/widget_summary/oncall", widget.secret)
+		expect(fromWidget.status).toBe(200)
+		const held = (body: typeof overview.body) =>
+			Arr.map(
+				body.schedules,
+				// Who and since when: an end cut by a window moves with the clock between two reads.
+				(schedule: {
+					id: string
+					on_call_now: { user_id: string; starts_at: string } | null
+					next: { user_id: string; starts_at: string } | null
+				}) => [
+					schedule.id,
+					schedule.on_call_now?.user_id ?? null,
+					schedule.on_call_now?.starts_at ?? null,
+					schedule.next?.user_id ?? null,
+					schedule.next?.starts_at ?? null,
+				],
+			)
+		expect(held(fromWidget.body)).toEqual(held(covering.body))
+		expect(Arr.map(fromWidget.body.my_shifts, (shift: { starts_at: string }) => shift.starts_at)).toEqual(
+			Arr.map(mine, (shift) => shift.starts_at),
+		)
+		expect((await harness.request("GET", "/v2/alerts/oncall_overview", widget.secret)).status).toBe(403)
 
 		await harness.dispose()
 	})

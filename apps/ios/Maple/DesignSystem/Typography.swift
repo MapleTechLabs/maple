@@ -81,11 +81,13 @@ extension View {
 	/// `text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground`.
 	/// This is the *only* uppercase treatment in the system — everything else is
 	/// sentence case.
-	func sectionLabelStyle() -> some View {
+	///
+	/// `tint` is for the one label that carries a state, like a page's severity.
+	func sectionLabelStyle(tint: Color = Token.mutedForeground) -> some View {
 		font(Typo.microMedium)
 			.textCase(.uppercase)
 			.tracking(1.2)
-			.foregroundStyle(Token.mutedForeground)
+			.foregroundStyle(tint)
 	}
 
 	/// Every count, percentile, percentage, duration, and relative time.

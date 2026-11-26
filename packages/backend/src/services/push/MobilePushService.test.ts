@@ -568,6 +568,13 @@ describe("MobilePushService.pageMember", () => {
 		body: "Critical. Error Rate 9.1% > 5%.",
 		linkUrl: "https://app.maple.test/alerts/incidents/x",
 		collapseId: "page:x",
+		severity: "critical" as const,
+		// A later step's page: the incident's own card has long been sent.
+		openForMs: 10 * 60_000,
+	}
+	const card = {
+		attributes: { incident_id: "inc_x", rule_name: "Checkout error rate" },
+		contentState: { value: "9.1%", threshold: "> 5%", status: "firing" },
 	}
 	// Everything off: what the org's incidents tell this person is their choice, a page is not.
 	const muted = {
@@ -615,6 +622,136 @@ describe("MobilePushService.pageMember", () => {
 			),
 		)
 	})
+
+	it.effect("starts the Lock Screen card with a page, on phones that are not showing one already", () => {
+		const live: LiveActivityRecorder = { pushes: [], ended: [] }
+		return Effect.gen(function* () {
+			const push = yield* MobilePushService
+			// Whatever the severity and the phone's preferences, once the incident's own start has
+			// had time to land: only a card known to be running counts, since a start that was
+			// budgeted away or rejected left none.
+			yield* push.pageMember({ ...page, subtitle: "checkout-api", liveActivity: card })
+			assert.deepStrictEqual(
+				Arr.map(live.pushes, (one) => [one.pushToken, one.event, one.attributes, one.contentState]),
+				[
+					["start-1", "start", card.attributes, card.contentState],
+					["start-4", "start", card.attributes, card.contentState],
+				],
+			)
+			// A start push needs an alert of its own to start anything: the page's words.
+			assert.deepStrictEqual(live.pushes[0]?.alert, {
+				title: page.title,
+				subtitle: "checkout-api",
+				body: page.body,
+			})
+			// Without a card to draw, nothing is started.
+			live.pushes.length = 0
+			yield* push.pageMember({ ...page, severity: "warning" })
+			assert.deepStrictEqual(live.pushes, [])
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					[
+						device(1, { preferences: muted }),
+						// Already showing this incident's card.
+						device(2),
+						device(3, { liveActivityStartToken: null }),
+						device(4),
+						device(5, { userId: OTHER }),
+					],
+					() => ({ outcome: "sent", apnsId: null }),
+					[],
+					[],
+					true,
+					live,
+					[activity(2, { incidentId: page.incidentId })],
+				),
+			),
+		)
+	})
+
+	it.effect("leaves the card to the incident's own start while that is still on its way", () => {
+		const live: LiveActivityRecorder = { pushes: [], ended: [] }
+		const firstPage = { ...page, openForMs: 5_000, liveActivity: card }
+		return Effect.gen(function* () {
+			const push = yield* MobilePushService
+			// Critical and just opened: phones that take critical incidents were sent this card
+			// seconds ago, so only the phone that has them off gets one from the page.
+			yield* push.pageMember(firstPage)
+			assert.deepStrictEqual(
+				Arr.map(live.pushes, (one) => one.pushToken),
+				["start-1"],
+			)
+			// A warning opens no card of its own, so the page starts it everywhere.
+			live.pushes.length = 0
+			yield* push.pageMember({ ...firstPage, severity: "warning" })
+			assert.deepStrictEqual(
+				Arr.map(live.pushes, (one) => one.pushToken),
+				["start-1", "start-2"],
+			)
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					[device(1, { preferences: muted }), device(2)],
+					() => ({ outcome: "sent", apnsId: null }),
+					[],
+					[],
+					true,
+					live,
+				),
+			),
+		)
+	})
+
+	it.effect(
+		"sends a test page as a page is sent, to the caller's phones only, and with no incident behind it",
+		() => {
+			const sent: Array<ApnsPush> = []
+			const live: LiveActivityRecorder = { pushes: [], ended: [] }
+			return Effect.gen(function* () {
+				const push = yield* MobilePushService
+				const summary = yield* push.testPage(ORG, USER)
+				assert.deepStrictEqual(summary, {
+					sent: 1,
+					failed: 0,
+					unregistered: 0,
+					skipped: 0,
+					configured: true,
+				})
+				// Time sensitive and top priority, so it meets Focus and silent mode the way a page would.
+				assert.deepStrictEqual(
+					Arr.map(sent, (one) => [
+						one.deviceToken,
+						one.interruptionLevel,
+						one.priority,
+						one.alert.title,
+					]),
+					[["token-1", "time-sensitive", 10, "Test page"]],
+				)
+				// Nothing to acknowledge and nothing to open: no page category, no incident, no card.
+				assert.deepStrictEqual(
+					[sent[0]?.category, sent[0]?.data.maple_kind, sent[0]?.data.maple_incident_id],
+					[undefined, "test_page", undefined],
+				)
+				assert.deepStrictEqual(live.pushes, [])
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						[
+							device(1, { preferences: muted }),
+							device(2, { userId: OTHER }),
+							device(3, { enabled: false }),
+						],
+						() => ({ outcome: "sent", apnsId: null }),
+						sent,
+						[],
+						true,
+						live,
+					),
+				),
+			)
+		},
+	)
 
 	it.effect(
 		"pages only someone who still reads telemetry, and keeps paging when the directory cannot say",
@@ -775,6 +912,8 @@ describe("MobilePushService live activities", () => {
 			)
 			const [first] = live.pushes
 			assert.strictEqual(first.attributesType, "IncidentActivityAttributes")
+			// The start carries the incident's banner text: ActivityKit starts nothing without it.
+			assert.deepStrictEqual(first.alert, renderIncidentPush(event()).alert)
 			assert.deepStrictEqual(first.attributes, {
 				incident_id: encodePublicId("inc", "inc-1"),
 				rule_name: "Checkout error rate",

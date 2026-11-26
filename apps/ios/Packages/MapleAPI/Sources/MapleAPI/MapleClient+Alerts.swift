@@ -23,6 +23,39 @@ extension MapleClient {
 		}
 	}
 
+	public func alertIncidentsPagingMe(limit: Int = 50) async throws -> [AlertIncident] {
+		try await mapping {
+			let output = try await client.listAlertIncidents(
+				.init(query: .init(limit: String(limit), status: .open, paged: .me))
+			)
+			return try output.ok.body.json.data
+		}
+	}
+
+	public func alertIncidentEvents(incidentId: String) async throws -> [AlertIncidentEvent] {
+		try await mapping {
+			try await client.listAlertIncidentEvents(.init(path: .init(id: incidentId))).ok.body.json.data
+		}
+	}
+
+	public func acknowledgeIncident(id: String) async throws -> AlertIncident {
+		try await mapping {
+			try await client.acknowledgeAlertIncident(.init(path: .init(id: id))).ok.body.json
+		}
+	}
+
+	public func unacknowledgeIncident(id: String) async throws -> AlertIncident {
+		try await mapping {
+			try await client.unacknowledgeAlertIncident(.init(path: .init(id: id))).ok.body.json
+		}
+	}
+
+	public func resolveIncident(id: String) async throws -> AlertIncident {
+		try await mapping {
+			try await client.resolveAlertIncident(.init(path: .init(id: id))).ok.body.json
+		}
+	}
+
 	public func alertRules(limit: Int = 100, cursor: String? = nil) async throws -> Page<AlertRule> {
 		try await mapping {
 			let output = try await client.listAlertRules(.init(query: .init(limit: String(limit), cursor: cursor)))

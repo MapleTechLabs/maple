@@ -631,6 +631,115 @@
         "title": "Alert incident escalation",
         "type": "object"
       },
+      "AlertIncidentEvent": {
+        "additionalProperties": false,
+        "description": "One entry in an alert incident's activity log, oldest first.",
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/AlertIncidentActor",
+            "description": "Who did it, or `null` for a scheduler-written event."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "detail": {
+            "description": "Set on an `on_call_gap` event that is about schedules: the names of those that had nobody on call. Absent when the step reached nobody for another reason (its destinations are disabled, its people have left).",
+            "examples": [
+              "Checkout primary"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/_maple_AlertIncidentEventId"
+          },
+          "incident_id": {
+            "$ref": "#/components/schemas/_maple_AlertIncidentId"
+          },
+          "object": {
+            "description": "The object type — always `\"alert_incident_event\"`.",
+            "enum": [
+              "alert_incident_event"
+            ],
+            "examples": [
+              "alert_incident_event"
+            ],
+            "type": "string"
+          },
+          "page": {
+            "additionalProperties": false,
+            "description": "Set on a `paged` event. Never carries the address.",
+            "properties": {
+              "channel": {
+                "description": "`email`, `push` (the person's phones, through the Maple app), or the chat platform of the direct message (`slack`, `discord`).",
+                "examples": [
+                  "email"
+                ],
+                "type": "string"
+              },
+              "error_message": {
+                "description": "Why a `failed` or `skipped` page was not delivered; on a `queued` page, why the last attempt failed before the retry.",
+                "type": "string"
+              },
+              "name": {
+                "description": "Their display name, or `null` when the member directory could not name them.",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/_maple_AlertIncidentPageStatus"
+              },
+              "user_id": {
+                "$ref": "#/components/schemas/_maple_UserId"
+              }
+            },
+            "required": [
+              "user_id",
+              "channel",
+              "status"
+            ],
+            "type": "object"
+          },
+          "source": {
+            "$ref": "#/components/schemas/_maple_AlertIncidentAckSource",
+            "description": "Where it came from, or `null` for a scheduler-written event."
+          },
+          "type": {
+            "$ref": "#/components/schemas/_maple_AlertIncidentEventType"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "incident_id",
+          "type",
+          "created_at"
+        ],
+        "title": "Alert Incident Event",
+        "type": "object"
+      },
+      "AlertIncidentEventList": {
+        "additionalProperties": false,
+        "description": "An incident's activity, oldest first.",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AlertIncidentEvent"
+            },
+            "type": "array"
+          },
+          "object": {
+            "enum": [
+              "list"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data"
+        ],
+        "title": "Alert incident event list",
+        "type": "object"
+      },
       "AlertIncidentList": {
         "additionalProperties": false,
         "description": "A cursor-paginated page of alert incidents.",
@@ -4089,7 +4198,8 @@
             "object": "device_credential",
             "organization_id": "org_2abcDEF",
             "scopes": [
-              "widget_summary:read"
+              "widget_summary:read",
+              "widget_summary:write"
             ]
           }
         ],
@@ -4136,7 +4246,7 @@
             "$ref": "#/components/schemas/_maple_OrgId"
           },
           "scopes": {
-            "description": "Fixed by the server. Today, exactly `widget_summary:read`.",
+            "description": "Fixed by the server. Today `widget_summary:read`, the widgets' reads, and for a member who may respond to incidents `widget_summary:write`, acknowledging a page from a widget.",
             "items": {
               "type": "string"
             },
@@ -5754,6 +5864,342 @@
           "bundle_id"
         ],
         "title": "Mobile device registration",
+        "type": "object"
+      },
+      "MobileTestPage": {
+        "additionalProperties": false,
+        "description": "What a test page came to. All counts zero with `configured` true means no phone of the caller's is registered and enabled here.",
+        "examples": [
+          {
+            "configured": true,
+            "failed": 0,
+            "object": "mobile_test_page",
+            "sent": 1,
+            "unregistered": 0
+          }
+        ],
+        "properties": {
+          "configured": {
+            "description": "False on a deployment without push credentials: nothing was tried, whatever phones are registered.",
+            "type": "boolean"
+          },
+          "failed": {
+            "description": "Phones the test page could not be sent to, or 1 when the phones could not be read.",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "object": {
+            "description": "Always `\"mobile_test_page\"`.",
+            "enum": [
+              "mobile_test_page"
+            ],
+            "type": "string"
+          },
+          "sent": {
+            "description": "Phones the push platform accepted the test page for.",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unregistered": {
+            "description": "Phones the push platform called gone. They are switched off until the app registers again.",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "object",
+          "configured",
+          "sent",
+          "failed",
+          "unregistered"
+        ],
+        "title": "Mobile test page",
+        "type": "object"
+      },
+      "OnCallGap": {
+        "additionalProperties": false,
+        "description": "A stretch when nobody is on call.",
+        "properties": {
+          "ends_at": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_at",
+          "ends_at"
+        ],
+        "title": "On-call gap",
+        "type": "object"
+      },
+      "OnCallMyShift": {
+        "additionalProperties": false,
+        "description": "One of the calling user's own shifts.",
+        "properties": {
+          "continues": {
+            "description": "The shift runs past the 60 day window: `ends_at` is the window's end, not a handoff.",
+            "type": "boolean"
+          },
+          "ends_at": {
+            "type": "string"
+          },
+          "is_override": {
+            "description": "The shift comes from an override, not the rotation.",
+            "type": "boolean"
+          },
+          "schedule_id": {
+            "$ref": "#/components/schemas/_maple_OnCallScheduleId"
+          },
+          "schedule_name": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schedule_id",
+          "schedule_name",
+          "starts_at",
+          "ends_at",
+          "is_override",
+          "continues"
+        ],
+        "title": "My on-call shift",
+        "type": "object"
+      },
+      "OnCallOverview": {
+        "additionalProperties": false,
+        "description": "Who is on call across the organization, and when the calling user is.",
+        "examples": [
+          {
+            "generated_at": "2026-11-27T01:14:00.000Z",
+            "my_shifts": [
+              {
+                "continues": false,
+                "ends_at": "2026-11-30T08:00:00.000Z",
+                "is_override": false,
+                "schedule_id": "onc_gQtGH2s65G6a7sJmuayXL6",
+                "schedule_name": "Checkout primary",
+                "starts_at": "2026-11-23T08:00:00.000Z"
+              }
+            ],
+            "object": "oncall_overview",
+            "organization_id": "org_2abcDEF",
+            "people": [
+              {
+                "name": "Dana Kim",
+                "user_id": "user_2Nk8mXqPfR3yZ1aB4cD5eF6g"
+              }
+            ],
+            "schedule_window_ends_at": "2026-12-11T01:14:00.000Z",
+            "schedules": [
+              {
+                "coverage_gaps": [],
+                "id": "onc_gQtGH2s65G6a7sJmuayXL6",
+                "name": "Checkout primary",
+                "next": {
+                  "continues": false,
+                  "ends_at": "2026-12-07T08:00:00.000Z",
+                  "is_override": false,
+                  "starts_at": "2026-11-30T08:00:00.000Z",
+                  "user_id": "user_2Pq9rStUvWxYz0aB1cD2eF3g"
+                },
+                "on_call_now": {
+                  "continues": false,
+                  "ends_at": "2026-11-30T08:00:00.000Z",
+                  "is_override": false,
+                  "starts_at": "2026-11-23T08:00:00.000Z",
+                  "user_id": "user_2Nk8mXqPfR3yZ1aB4cD5eF6g"
+                },
+                "rotation_summary": "Weekly, hands off Mon 09:00",
+                "shifts": [
+                  {
+                    "continues": false,
+                    "ends_at": "2026-11-30T08:00:00.000Z",
+                    "is_override": false,
+                    "starts_at": "2026-11-23T08:00:00.000Z",
+                    "user_id": "user_2Nk8mXqPfR3yZ1aB4cD5eF6g"
+                  }
+                ],
+                "time_zone": "Europe/Berlin"
+              }
+            ],
+            "user_id": "user_2Nk8mXqPfR3yZ1aB4cD5eF6g"
+          }
+        ],
+        "properties": {
+          "generated_at": {
+            "type": "string"
+          },
+          "my_shifts": {
+            "description": "The calling user's shifts over the next 60 days across every schedule, earliest first (at most 20). One that has started is the shift they are on now.",
+            "items": {
+              "$ref": "#/components/schemas/OnCallMyShift"
+            },
+            "type": "array"
+          },
+          "object": {
+            "description": "Always `\"oncall_overview\"`.",
+            "enum": [
+              "oncall_overview"
+            ],
+            "type": "string"
+          },
+          "organization_id": {
+            "$ref": "#/components/schemas/_maple_OrgId"
+          },
+          "people": {
+            "description": "Names for the user ids above. A member without a name, or a deployment without a member directory, has no entry.",
+            "items": {
+              "$ref": "#/components/schemas/OnCallPerson"
+            },
+            "type": "array"
+          },
+          "schedule_window_ends_at": {
+            "type": "string"
+          },
+          "schedules": {
+            "description": "Every schedule of the organization, by name.",
+            "items": {
+              "$ref": "#/components/schemas/OnCallOverviewSchedule"
+            },
+            "type": "array"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/_maple_UserId"
+          }
+        },
+        "required": [
+          "object",
+          "generated_at",
+          "organization_id",
+          "user_id",
+          "schedule_window_ends_at",
+          "schedules",
+          "my_shifts",
+          "people"
+        ],
+        "title": "On-call overview",
+        "type": "object"
+      },
+      "OnCallOverviewSchedule": {
+        "additionalProperties": false,
+        "description": "One schedule as a phone draws it.",
+        "properties": {
+          "coverage_gaps": {
+            "description": "Every stretch of the window when nobody is on call, earliest first.",
+            "items": {
+              "$ref": "#/components/schemas/OnCallGap"
+            },
+            "type": "array"
+          },
+          "id": {
+            "$ref": "#/components/schemas/_maple_OnCallScheduleId"
+          },
+          "name": {
+            "examples": [
+              "Checkout primary"
+            ],
+            "type": "string"
+          },
+          "next": {
+            "$ref": "#/components/schemas/OnCallOverviewShift",
+            "description": "The shift that follows `on_call_now` (or the first one ahead when nobody is on call), or `null` when none starts inside the 14 day window."
+          },
+          "on_call_now": {
+            "$ref": "#/components/schemas/OnCallOverviewShift",
+            "description": "The stretch that holds now, or `null` when nobody is on call. Back-to-back turns of one person are one stretch, so `ends_at` is when someone else takes over or coverage stops; with `continues` set, that is more than 60 days away."
+          },
+          "rotation_summary": {
+            "description": "How the schedule rotates, as one line for a header. A schedule with several layers says how many.",
+            "examples": [
+              "Weekly, hands off Mon 09:00",
+              "Daily, hands off 09:00",
+              "Every 12 hours",
+              "3 layers"
+            ],
+            "type": "string"
+          },
+          "shifts": {
+            "description": "The effective shifts from now to `schedule_window_ends_at`, earliest first, cut at the window's end. The first may have started before now.",
+            "items": {
+              "$ref": "#/components/schemas/OnCallOverviewShift"
+            },
+            "type": "array"
+          },
+          "time_zone": {
+            "description": "IANA time zone.",
+            "examples": [
+              "Europe/Berlin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "time_zone",
+          "rotation_summary",
+          "shifts",
+          "coverage_gaps"
+        ],
+        "title": "On-call overview schedule",
+        "type": "object"
+      },
+      "OnCallOverviewShift": {
+        "additionalProperties": false,
+        "description": "One person on call over a time range.",
+        "properties": {
+          "continues": {
+            "description": "The person is still on call at `ends_at`: the window stops there, nobody takes over. Never read such an end as a handoff.",
+            "type": "boolean"
+          },
+          "ends_at": {
+            "type": "string"
+          },
+          "is_override": {
+            "description": "An override put this person on call, not the rotation.",
+            "type": "boolean"
+          },
+          "starts_at": {
+            "type": "string"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/_maple_UserId"
+          }
+        },
+        "required": [
+          "user_id",
+          "starts_at",
+          "ends_at",
+          "is_override",
+          "continues"
+        ],
+        "title": "On-call overview shift",
+        "type": "object"
+      },
+      "OnCallPerson": {
+        "additionalProperties": false,
+        "description": "A display name for a user id the overview mentions.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/_maple_UserId"
+          }
+        },
+        "required": [
+          "user_id",
+          "name"
+        ],
+        "title": "On-call person",
         "type": "object"
       },
       "Service": {
@@ -7418,6 +7864,31 @@
         "title": "Alert Incident Acknowledgement Source",
         "type": "string"
       },
+      "_maple_AlertIncidentEventId": {
+        "description": "Opaque, prefixed public object ID (e.g. `evt_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "evt_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
+        "type": "string"
+      },
+      "_maple_AlertIncidentEventType": {
+        "description": "`acknowledged` or `unacknowledged` by a person, `ack_cleared` when the scheduler cleared an acknowledgement because the incident escalated to a higher severity, `paged` when an escalation step paged a person (see `page`), or `on_call_gap` when a step's on-call schedule had nobody on call (see `detail`) or the step reached nobody at all, or `resolved` when a person resolved the incident by hand.",
+        "enum": [
+          "acknowledged",
+          "unacknowledged",
+          "ack_cleared",
+          "paged",
+          "on_call_gap",
+          "resolved"
+        ],
+        "examples": [
+          "acknowledged"
+        ],
+        "title": "Alert Incident Event Type",
+        "type": "string"
+      },
       "_maple_AlertIncidentHoldReason": {
         "enum": [
           "no_data",
@@ -7435,6 +7906,18 @@
         ],
         "format": "maple.public_id",
         "title": "Public ID",
+        "type": "string"
+      },
+      "_maple_AlertIncidentPageStatus": {
+        "description": "`sent`; `queued` or `sending` while on its way; `failed` when the channel refused it; `skipped` when the incident was acknowledged or resolved first.",
+        "enum": [
+          "queued",
+          "sending",
+          "sent",
+          "failed",
+          "skipped"
+        ],
+        "title": "Alert Incident Page Status",
         "type": "string"
       },
       "_maple_AlertIncidentStatus": {
@@ -7770,11 +8253,19 @@
         "title": "Mobile Push Environment",
         "type": "string"
       },
+      "_maple_OnCallScheduleId": {
+        "description": "Opaque, prefixed public object ID (e.g. `onc_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "onc_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
+        "type": "string"
+      },
       "_maple_OrgId": {
-        "description": "The organization's opaque `org_…` ID (e.g. `org_2abcDEF`).",
         "minLength": 1,
         "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-        "title": "Organization ID",
+        "title": "Org ID",
         "type": "string"
       },
       "_maple_QueryEngineAlertReducer": {
@@ -8332,6 +8823,687 @@
         "summary": "Retrieve an alert incident",
         "tags": [
           "Alert Incidents"
+        ]
+      }
+    },
+    "/v2/alerts/incidents/{id}/acknowledge": {
+      "post": {
+        "description": "Marks an open incident as acknowledged by the calling user, which pauses reminders until it is unacknowledged, escalates to a higher severity, or resolves. Acknowledging an already acknowledged incident changes nothing and returns it. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+        "operationId": "acknowledgeAlertIncident",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_AlertIncidentId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertIncident"
+                }
+              }
+            },
+            "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. An open incident can be acknowledged to pause reminders; resolution is scheduler-driven."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertIncidentNotFoundError failure. HTTP 404."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertIncidentResolvedError failure. HTTP 409."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Acknowledge an alert incident",
+        "tags": [
+          "Alert Incidents"
+        ]
+      }
+    },
+    "/v2/alerts/incidents/{id}/events": {
+      "get": {
+        "description": "Returns the incident's acknowledgement history, oldest first, up to its 500 most recent entries. Requires the `alerts:read` scope.",
+        "operationId": "listAlertIncidentEvents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_AlertIncidentId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertIncidentEventList"
+                }
+              }
+            },
+            "description": "An incident's activity, oldest first."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertIncidentNotFoundError failure. HTTP 404."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List an alert incident's events",
+        "tags": [
+          "Alert Incidents"
+        ]
+      }
+    },
+    "/v2/alerts/incidents/{id}/resolve": {
+      "post": {
+        "description": "Resolves an open incident by hand and sends the all-clear to every destination it notified. If the rule still breaches, it opens no new incident for this group until a check reads healthy or reads no data, and for a day at most, so a resolve is not undone a minute later. Fails with 409 on an incident that is already resolved. Requires the `alerts:write` scope.",
+        "operationId": "resolveAlertIncident",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_AlertIncidentId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertIncident"
+                }
+              }
+            },
+            "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. An open incident can be acknowledged to pause reminders; resolution is scheduler-driven."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertIncidentNotFoundError failure. HTTP 404."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertIncidentResolvedError failure. HTTP 409."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Resolve an alert incident",
+        "tags": [
+          "Alert Incidents"
+        ]
+      }
+    },
+    "/v2/alerts/incidents/{id}/unacknowledge": {
+      "post": {
+        "description": "Clears an open incident's acknowledgement, so reminders resume: one that came due while it was acknowledged is sent on the next check. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+        "operationId": "unacknowledgeAlertIncident",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_AlertIncidentId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertIncident"
+                }
+              }
+            },
+            "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. An open incident can be acknowledged to pause reminders; resolution is scheduler-driven."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertIncidentNotFoundError failure. HTTP 404."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertIncidentResolvedError failure. HTTP 409."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unacknowledge an alert incident",
+        "tags": [
+          "Alert Incidents"
+        ]
+      }
+    },
+    "/v2/alerts/oncall_overview": {
+      "get": {
+        "description": "Returns who is on call on every schedule, each schedule's next 14 days with its coverage gaps, and the calling user's own shifts over the next 60 days. Requires the `alerts:read` scope.",
+        "operationId": "getOnCallOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnCallOverview"
+                }
+              }
+            },
+            "description": "Who is on call across the organization, and when the calling user is."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Who is on call, and when you are",
+        "tags": [
+          "On-Call Overview"
         ]
       }
     },
@@ -12085,6 +13257,121 @@
         ]
       }
     },
+    "/v2/mobile_devices/test_page": {
+      "post": {
+        "description": "Sends a test page to the current user's own phones in the current organization, delivered exactly as an escalation step's page is (time sensitive, top priority) and saying it is a test. Use it to see that a page reaches the phone through Focus and notification settings. Requires the `mobile_devices:write` scope.",
+        "operationId": "sendMobileTestPage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileTestPage"
+                }
+              }
+            },
+            "description": "What a test page came to. All counts zero with `configured` true means no phone of the caller's is registered and enabled here."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send myself a test page",
+        "tags": [
+          "Mobile Devices"
+        ]
+      }
+    },
     "/v2/mobile_devices/{token}": {
       "delete": {
         "description": "Removes the device from the current organization; the app calls this on sign-out. Requires the `mobile_devices:write` scope.",
@@ -14313,6 +15600,10 @@
       "name": "On-Call Schedules"
     },
     {
+      "description": "Who is on call across every schedule, and when the calling user is, in one read.",
+      "name": "On-Call Overview"
+    },
+    {
       "description": "Maintenance windows for alerting: quiet a deploy or a planned migration without disabling rules. Rules keep evaluating and incidents still open and resolve; only notifications are held back.",
       "name": "Alert Silences"
     },
@@ -14479,6 +15770,14 @@
     {
       "description": "The single read behind the Maple mobile Home Screen widgets. Deliberately its own scope family so a device credential can be fenced to it alone.",
       "name": "Widget Summary"
+    },
+    {
+      "description": "What the Maple mobile Pages widget reads and does. In the widget's own scope family so a device credential can acknowledge without reaching the rest of the alerts API.",
+      "name": "Widget Pages"
+    },
+    {
+      "description": "What the Maple mobile On call and Schedule widgets read. In the widget's own scope family so a device credential reaches it without reaching the rest of the alerts API.",
+      "name": "Widget On-Call"
     },
     {
       "description": "Device-scoped, read-only credentials for the Maple mobile Home Screen widgets. Minted by a signed-in app for one installation at a time.",

@@ -1,9 +1,12 @@
 #if DEBUG
 	import Foundation
+	import MapleAPI
 
 	/// `maple://debug/<path>` opens any screen for the latency harness and screenshots
 	/// (Debug only): `home`, `services`, `triage/<segment>`, `explore/<segment>`,
-	/// `search`, `org|service|issue|incident|anomaly|trace|dashboard/<id>`.
+	/// `search`, `oncall`, `org|service|issue|incident|anomaly|trace|dashboard|schedule/<id>`.
+	/// `reachability/<denied|timesensitive|unregistered|ok>` forces what the page
+	/// reachability surfaces show until the app quits; any other state lifts it.
 	enum DebugRoute {
 		@MainActor
 		static func open(_ url: URL, navigation: AppNavigation, session: SessionController) -> Bool {
@@ -13,7 +16,20 @@
 			let arg = parts.dropFirst().joined(separator: "/")
 			switch head {
 			case "org": Task { await session.select(organizationId: arg) }
-			case "home": navigation.tab = .home
+			case "home":
+				navigation.homePath = []
+				navigation.tab = .home
+			case "oncall":
+				navigation.homePath = [.onCall()]
+				navigation.tab = .home
+			case "schedule":
+				// Under the On call screen, so back goes where a tap would have come from.
+				navigation.homePath = [.onCall(), .schedule(id: arg)]
+				navigation.tab = .home
+			case "reachability":
+				// Only what the app draws: the phone's own settings are left alone,
+				// and the screen stays where it is so the state can be flipped in place.
+				PushRegistrar.shared.debugReachability = reachability(arg)
 			case "services":
 				navigation.servicesPath = []
 				navigation.tab = .services
@@ -42,6 +58,17 @@
 			default: break
 			}
 			return true
+		}
+
+		/// What the phone would know in each forced state. Nil for a state not listed.
+		private static func reachability(_ state: String) -> PageReachability? {
+			switch state {
+			case "denied": PageReachability(authorization: .denied)
+			case "timesensitive": PageReachability(authorization: .authorized, timeSensitiveEnabled: false)
+			case "unregistered": PageReachability(authorization: .authorized, registration: .missing)
+			case "ok": PageReachability(authorization: .authorized)
+			default: nil
+			}
 		}
 	}
 #endif

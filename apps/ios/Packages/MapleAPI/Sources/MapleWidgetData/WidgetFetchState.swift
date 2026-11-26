@@ -152,6 +152,16 @@ public struct WidgetFetchStateStore: Sendable {
 		save(state, organizationId: organizationId)
 	}
 
+	/// A widget request other than the summary read met a refused credential.
+	/// Only the rejection is stamped: the summary's own attempt record is its
+	/// backoff, and another widget's failure must not move it.
+	public func recordCredentialRejection(organizationId: String, at date: Date) {
+		var state = load(organizationId: organizationId)
+		guard !state.isCredentialRejected else { return }
+		state.credentialRejectedAt = date
+		save(state, organizationId: organizationId)
+	}
+
 	/// The app, having minted a fresh credential, telling the widget to stop
 	/// treating 401 as terminal.
 	public func clearCredentialRejection(organizationId: String) {
