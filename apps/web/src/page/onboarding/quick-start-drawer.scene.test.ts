@@ -47,7 +47,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				],
 			)
 
-/** The sheet portals and traps focus on mount; the agent prompt's tabs measure their indicator. */
+/** The sheet portals and traps focus on mount; tab bars (the agent prompt, Kubernetes install methods) measure their indicator. */
 const dialogMounted = () => Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
 const tabsMeasured = () =>
 	Mount.resolve<string, Tabs.Message>(
@@ -131,6 +131,7 @@ describe("onboarding connect drawer", () => {
 			{ update, view },
 			given(opened),
 			tabsMeasured(),
+			tabsMeasured(),
 			dialogMounted(),
 			expectView(role("heading", { name: "Connect Kubernetes" })).toExist(),
 			expectView(text("Name the source")).toExist(),
@@ -160,6 +161,7 @@ describe("onboarding connect drawer", () => {
 		scene(
 			{ update, view },
 			given(made),
+			tabsMeasured(),
 			tabsMeasured(),
 			dialogMounted(),
 			expectView(text("Token")).toExist(),
@@ -234,6 +236,7 @@ describe("onboarding connect drawer", () => {
 		scene(
 			{ update, view },
 			given(late),
+			tabsMeasured(),
 			tabsMeasured(),
 			// Still mounted while it animates out.
 			dialogMounted(),
