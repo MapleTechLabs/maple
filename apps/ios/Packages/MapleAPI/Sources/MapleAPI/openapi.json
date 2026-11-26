@@ -626,8 +626,7 @@
           "step_count",
           "pass",
           "pass_count",
-          "steps_sent",
-          "next_step_people"
+          "steps_sent"
         ],
         "title": "Alert incident escalation",
         "type": "object"
@@ -8227,7 +8226,7 @@
             "name": "paged",
             "required": false,
             "schema": {
-              "description": "`me` for incidents an escalation step paged the calling user for, on any channel: with an API key, the user who created the key. Combine with `status=open` for what is paging you now.",
+              "description": "`me` for incidents an escalation step paged the calling user for, on any channel that delivered: with an API key, the user who created the key. Combine with `status=open` for what is paging you now.",
               "enum": [
                 "me"
               ],

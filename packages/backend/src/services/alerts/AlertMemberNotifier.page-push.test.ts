@@ -47,8 +47,22 @@ describe("renderPagePush", () => {
 			}),
 		)
 		expect(down.body).toBe("Critical. GET https://shop.test/health timed out after 10s.")
-		const anomaly = renderPagePush(context({ signalType: "anomaly", value: 2, detail: null }))
-		expect(anomaly.body).toBe("Critical. Critical anomaly.")
+		// An anomaly's sentence already leads with the severity, and its group is a label, not its key.
+		const anomaly = renderPagePush(
+			context({
+				signalType: "anomaly",
+				value: 2,
+				detail: null,
+				groupKey: "00000000-0000-4000-8000-0000000000c1",
+				groupLabel: "checkout (production)",
+			}),
+		)
+		expect(anomaly).toMatchObject({ subtitle: "checkout (production)", body: "Critical anomaly." })
+	})
+
+	it("leaves a query rule's numbers bare when the page does not know what they measure", () => {
+		const query = renderPagePush(context({ signalType: "builder_query", value: 1200, threshold: 1000 }))
+		expect(query.body).toBe("Critical. 1,200 > 1,000.")
 	})
 
 	it("says there was no data instead of naming a value that was never measured", () => {

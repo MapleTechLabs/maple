@@ -25,7 +25,18 @@ import {
 	ChatWorkspaces,
 	type AlertMemberNotificationRow,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, Exit, Layer, Option, Random, Ref, Schema } from "effect"
+import {
+	Array as Arr,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Random,
+	Ref,
+	Schema,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -91,18 +102,25 @@ export const renderPagePush = (
 	const severity = context.severity === "critical" ? "Critical" : "Warning"
 	const observed = truncate(formatObservedSummary(context), PAGE_BODY_LIMIT)
 	// An uptime error, an anomaly, a check's own reason or "No data" is already a sentence; a
-	// measured value needs its name.
+	// measured value needs its name. A query rule's name and unit live on the rule, which a queued
+	// page does not carry, so its numbers stand bare rather than under the word "query".
 	const saysItself =
 		context.signalType === "uptime" ||
 		context.signalType === "anomaly" ||
 		context.value === null ||
-		(signalCarriesDetail(context.signalType) && context.detail != null)
+		(signalCarriesDetail(context.signalType) && context.detail != null) ||
+		(context.signalDisplay == null &&
+			(context.signalType === "builder_query" || context.signalType === "raw_query"))
 	const breach = saysItself ? observed : `${signalDisplayOf(context).label} ${observed}`
+	const sentence = /[.!?…]$/u.test(breach) ? breach : `${breach}.`
 	return {
 		title: `You are paged · ${truncate(context.ruleName, 60)}`,
 		// Which group or service breached, for a rule that watches several.
 		subtitle: displayGroup(context) ?? undefined,
-		body: `${severity}. ${/[.!?…]$/u.test(breach) ? breach : `${breach}.`}`,
+		// "Critical anomaly." already leads with the severity; it is not said twice.
+		body: Str.startsWith(Str.toLowerCase(severity))(Str.toLowerCase(sentence))
+			? sentence
+			: `${severity}. ${sentence}`,
 	}
 }
 
@@ -118,6 +136,7 @@ const MemberPayload = Schema.Struct({
 			signalType: Schema.optionalKey(Schema.String),
 			severity: Schema.optionalKey(Schema.String),
 			groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			groupLabel: Schema.optionalKey(Schema.NullOr(Schema.String)),
 			comparator: Schema.optionalKey(Schema.String),
 			threshold: Schema.optionalKey(Schema.Number),
 			thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
@@ -178,6 +197,7 @@ const cardInput = (
 			ruleId: rule?.id ?? "",
 			ruleName: rule?.name ?? "Alert",
 			groupKey: rule?.groupKey ?? null,
+			groupLabel: rule?.groupLabel ?? null,
 			signalType: Option.getOrElse(decodeSignalType(rule?.signalType), () => "throughput" as const),
 			severity: Option.getOrElse(decodeSeverity(rule?.severity), () => "warning" as const),
 			comparator: Option.getOrElse(decodeComparator(rule?.comparator), () => "gt" as const),

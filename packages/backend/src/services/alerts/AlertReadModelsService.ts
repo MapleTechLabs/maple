@@ -281,7 +281,8 @@ export class AlertReadModelsService extends Context.Service<
 					? undefined
 					: PG.from(AlertMemberNotifications)
 							.select(($) => ({ incidentId: $.incidentId }))
-							.where(($) => [$.orgId.eq(orgId), $.userId.eq(pagedUserId)])
+							// A page that was skipped or never got through did not page anyone.
+							.where(($) => [$.orgId.eq(orgId), $.userId.eq(pagedUserId), $.status.eq("sent")])
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertIncidents)
