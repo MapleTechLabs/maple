@@ -314,11 +314,11 @@ describe("RetentionService.readHorizon", () => {
 				assert.deepStrictEqual((yield* retention.get(ORG)).overrides, { traces: 60 })
 				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
 					days: { ...DEFAULT_RETENTION_DAYS, traces: 60 },
-					configured: ["traces"],
+					configured: RETENTION_SIGNALS,
 				})
 				assert.deepStrictEqual(yield* retention.readHorizon(OTHER_ORG), {
 					days: { ...DEFAULT_RETENTION_DAYS, metrics: 730 },
-					configured: ["metrics"],
+					configured: RETENTION_SIGNALS,
 				})
 			}),
 		),
