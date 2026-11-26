@@ -6,11 +6,12 @@
 //! by. Storage is billed from that day for the period stamped then, and never past
 //! `day + retention_days` (`storage-metering.ts`).
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
+use maple_ingest::metrics;
+use tokio::sync::watch;
 use tracing::{error, warn};
 
 use crate::KeyStore;
@@ -18,8 +19,9 @@ use crate::KeyStore;
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// Rows per `INSERT`: 5 parameters each, far below Postgres' 65535 limit.
 const LEDGER_ROWS_PER_STATEMENT: usize = 1000;
-/// Consecutive failed flushes after which the pending bytes are given up.
-const MAX_FAILED_FLUSHES: u32 = 30;
+/// Pending keys kept while the store is down; past it the oldest days are dropped.
+/// A key is an org, signal, day and stamp, so this is far above a healthy flush's worth.
+const MAX_PENDING_KEYS: usize = 200_000;
 
 /// One `ingest_storage_ledger` row's worth of bytes to add.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,13 +39,25 @@ pub(crate) struct StorageLedgerRow {
 type LedgerKey = (Arc<str>, &'static str, i64, u16);
 
 /// Bytes summed per ledger key until the next flush. Sharded, so concurrent requests rarely contend.
-#[derive(Default)]
 pub(crate) struct StorageLedgerSink {
     pending: DashMap<LedgerKey, u64>,
-    failed_flushes: AtomicU32,
+    max_pending_keys: usize,
+}
+
+impl Default for StorageLedgerSink {
+    fn default() -> Self {
+        Self::with_max_pending_keys(MAX_PENDING_KEYS)
+    }
 }
 
 impl StorageLedgerSink {
+    pub(crate) fn with_max_pending_keys(max_pending_keys: usize) -> Self {
+        Self {
+            pending: DashMap::new(),
+            max_pending_keys,
+        }
+    }
+
     /// Adds `bytes` stored for `retention_days`; free when nothing was stored.
     pub(crate) fn record(
         &self,
@@ -76,9 +90,11 @@ impl StorageLedgerSink {
         }
     }
 
-    /// Removes and returns every pending row; bytes added meanwhile wait for the next flush.
-    fn take(&self) -> Vec<StorageLedgerRow> {
-        let keys: Vec<LedgerKey> = self.pending.iter().map(|entry| entry.key().clone()).collect();
+    /// Removes and returns every pending row in primary key order, so concurrent gateway
+    /// upserts lock rows in one order and cannot deadlock. Bytes added meanwhile wait.
+    pub(crate) fn take(&self) -> Vec<StorageLedgerRow> {
+        let mut keys: Vec<LedgerKey> = self.pending.iter().map(|entry| entry.key().clone()).collect();
+        keys.sort_unstable();
         keys.into_iter()
             .filter_map(|key| self.pending.remove(&key))
             .map(|((org_id, signal, day_ms, retention_days), bytes)| StorageLedgerRow {
@@ -98,12 +114,12 @@ impl StorageLedgerSink {
         }
     }
 
-    /// Writes the pending bytes. A failure keeps them for the next flush, up to
-    /// `MAX_FAILED_FLUSHES` in a row, after which they are dropped and logged.
-    pub(crate) async fn flush(&self, store: &dyn KeyStore) {
+    /// Writes the pending bytes. A failure keeps them for the next flush, however many fail
+    /// in a row; only keys past the pending cap are dropped. Returns the rows dropped.
+    pub(crate) async fn flush(&self, store: &dyn KeyStore) -> usize {
         let rows = self.take();
         if rows.is_empty() {
-            return;
+            return 0;
         }
         let mut failed: Vec<StorageLedgerRow> = Vec::new();
         for chunk in rows.chunks(LEDGER_ROWS_PER_STATEMENT) {
@@ -117,7 +133,11 @@ impl StorageLedgerSink {
                 failed.extend_from_slice(chunk);
             }
         }
-        self.settle_failed(failed);
+        if failed.is_empty() {
+            return 0;
+        }
+        self.restore(failed);
+        self.drop_past_cap()
     }
 
     /// The flush at shutdown: the sink is dropped right after, so rows that fail are logged
@@ -145,31 +165,31 @@ impl StorageLedgerSink {
         }
     }
 
-    /// Keeps the rows a flush could not write, or drops them on the `MAX_FAILED_FLUSHES`th
-    /// failure in a row. Returns how many rows were dropped.
-    fn settle_failed(&self, failed: Vec<StorageLedgerRow>) -> Option<usize> {
-        if failed.is_empty() {
-            self.failed_flushes.store(0, Ordering::Relaxed);
-            return None;
+    /// Drops the oldest days' keys past `max_pending_keys`, logging each row so its bytes can
+    /// be added by hand. Returns how many were dropped.
+    fn drop_past_cap(&self) -> usize {
+        let pending = self.pending.len();
+        if pending <= self.max_pending_keys {
+            return 0;
         }
-        let failures = self.failed_flushes.fetch_add(1, Ordering::Relaxed) + 1;
-        if failures < MAX_FAILED_FLUSHES {
-            self.restore(failed);
-            return None;
+        let mut keys: Vec<LedgerKey> = self.pending.iter().map(|entry| entry.key().clone()).collect();
+        keys.sort_unstable_by_key(|key| key.2);
+        let mut dropped = 0;
+        for key in keys.into_iter().take(pending - self.max_pending_keys) {
+            if let Some(((org_id, signal, day_ms, retention_days), bytes)) = self.pending.remove(&key) {
+                dropped += 1;
+                error!(
+                    org_id = %org_id,
+                    signal,
+                    day_ms,
+                    retention_days,
+                    bytes,
+                    "Storage ledger bytes dropped: too many pending while the store is down"
+                );
+            }
         }
-        // One line per row, so the bytes can be added by hand.
-        for row in &failed {
-            warn!(
-                org_id = %row.org_id,
-                signal = row.signal,
-                day_ms = row.day_ms,
-                retention_days = row.retention_days,
-                bytes = row.bytes,
-                "Storage ledger bytes dropped after repeated failed flushes"
-            );
-        }
-        self.failed_flushes.store(0, Ordering::Relaxed);
-        Some(failed.len())
+        metrics::storage_ledger_dropped_rows(u64::try_from(dropped).unwrap_or(u64::MAX));
+        dropped
     }
 }
 
@@ -232,19 +252,25 @@ pub(crate) fn storage_ledger_upsert_sql(rows: usize) -> String {
     sql
 }
 
-/// Flushes the sink every `every` until the process exits.
+/// Flushes the sink every `every` until `stop` changes. A flush in progress finishes first, so
+/// the final flush after this returns sees every row it took back.
 pub(crate) async fn run_ledger_flusher(
     sink: Arc<StorageLedgerSink>,
     store: Arc<dyn KeyStore>,
     every: Duration,
+    mut stop: watch::Receiver<bool>,
 ) {
     let mut interval = tokio::time::interval(every);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // The first tick completes at once; nothing is pending yet.
     interval.tick().await;
     loop {
-        interval.tick().await;
-        sink.flush(store.as_ref()).await;
+        tokio::select! {
+            _ = stop.changed() => return,
+            _ = interval.tick() => {
+                sink.flush(store.as_ref()).await;
+            }
+        }
     }
 }
 
@@ -303,21 +329,37 @@ mod tests {
     }
 
     #[test]
-    fn failed_rows_are_kept_until_the_limit_then_dropped() {
+    fn rows_come_out_in_key_order() {
         let sink = StorageLedgerSink::default();
-        let row = StorageLedgerRow {
-            org_id: "org_a".to_owned(),
-            signal: "logs",
-            day_ms: MIDNIGHT_MS,
-            retention_days: 30,
-            bytes: 10,
-        };
-        for _ in 1..MAX_FAILED_FLUSHES {
-            assert_eq!(sink.settle_failed(vec![row.clone()]), None);
-            assert_eq!(sink.take(), vec![row.clone()]);
-        }
-        assert_eq!(sink.settle_failed(vec![row.clone()]), Some(1));
-        assert!(sink.take().is_empty());
+        sink.record("org_b", "logs", 30, 1, NOON_MS);
+        sink.record("org_a", "traces", 30, 1, NOON_MS);
+        sink.record("org_a", "logs", 90, 1, NOON_MS);
+        sink.record("org_a", "logs", 30, 1, NOON_MS);
+        let keys: Vec<(String, &str, u16)> = sink
+            .take()
+            .into_iter()
+            .map(|row| (row.org_id, row.signal, row.retention_days))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                ("org_a".to_owned(), "logs", 30),
+                ("org_a".to_owned(), "logs", 90),
+                ("org_a".to_owned(), "traces", 30),
+                ("org_b".to_owned(), "logs", 30),
+            ]
+        );
+    }
+
+    #[test]
+    fn past_the_cap_the_oldest_days_are_dropped() {
+        let sink = StorageLedgerSink::with_max_pending_keys(2);
+        sink.record("org_a", "logs", 30, 1, NOON_MS - DAY_MS);
+        sink.record("org_a", "logs", 30, 2, NOON_MS);
+        sink.record("org_a", "logs", 30, 3, NOON_MS + DAY_MS);
+        assert_eq!(sink.drop_past_cap(), 1);
+        let days: Vec<i64> = sink.take().into_iter().map(|row| row.day_ms).collect();
+        assert_eq!(days, vec![MIDNIGHT_MS, MIDNIGHT_MS + DAY_MS]);
     }
 
     #[test]

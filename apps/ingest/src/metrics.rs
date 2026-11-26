@@ -409,6 +409,13 @@ static WAL_SHARD_BYTES: LazyLock<Gauge<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static STORAGE_LEDGER_DROPPED_ROWS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("storage_ledger_dropped_rows_total")
+        .with_description("Storage ledger rows dropped unwritten because too many were pending")
+        .build()
+});
+
 static AUTUMN_PENDING_GB: LazyLock<Gauge<f64>> = LazyLock::new(|| {
     METER
         .f64_gauge("autumn_track_pending_gb")
@@ -1203,6 +1210,11 @@ pub fn autumn_flush(status: &'static str, duration_secs: f64) {
 /// rate is what says whether the decision cache is doing its job.
 pub fn autumn_entitlement_decision(source: &'static str) {
     AUTUMN_ENTITLEMENT_DECISIONS_TOTAL.add(1, &[KeyValue::new("source", source)]);
+}
+
+/// Storage ledger rows dropped unwritten: the store failed long enough to pass the pending cap.
+pub fn storage_ledger_dropped_rows(rows: u64) {
+    STORAGE_LEDGER_DROPPED_ROWS_TOTAL.add(rows, &[]);
 }
 
 /// Unflushed Autumn usage currently held in memory, in GB.

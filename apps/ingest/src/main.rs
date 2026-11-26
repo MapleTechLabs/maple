@@ -3465,13 +3465,15 @@ async fn main() {
     // Storage is billed from the ledger, so it is written only where ingest is billed.
     let storage_ledger = Arc::new(StorageLedgerSink::default());
     let storage_ledger_enabled = autumn_tracker.is_some();
-    if storage_ledger_enabled {
+    let (stop_ledger_flusher, ledger_flusher_stopped) = tokio::sync::watch::channel(false);
+    let ledger_flusher = storage_ledger_enabled.then(|| {
         tokio::spawn(storage_ledger::run_ledger_flusher(
             Arc::clone(&storage_ledger),
             Arc::clone(&store),
             STORAGE_LEDGER_FLUSH_INTERVAL,
-        ));
-    }
+            ledger_flusher_stopped,
+        ))
+    });
 
     // Same pooled client as every other outbound call; `http_client` itself is
     // moved into the state below.
@@ -3683,6 +3685,13 @@ async fn main() {
         ingest_rule_stats.flush(stats_store.as_ref()).await;
     }
     if storage_ledger_enabled {
+        // Stop the periodic flusher first: a flush in flight puts back what it could not write.
+        if stop_ledger_flusher.send(true).is_err() {
+            warn!("Storage ledger flusher had already stopped");
+        }
+        if let Some(flusher) = ledger_flusher {
+            drop(flusher.await);
+        }
         storage_ledger.flush_final(stats_store.as_ref()).await;
     }
 
@@ -14521,6 +14530,8 @@ mod tests {
         ingest_rule_stats: std::sync::Mutex<Vec<IngestRuleStatRow>>,
         /// Every row `record_storage_ledger` was given.
         storage_ledger: std::sync::Mutex<Vec<StorageLedgerRow>>,
+        /// Fails `record_storage_ledger`.
+        storage_ledger_errors: AtomicBool,
     }
 
     impl FakeKeyStore {
@@ -14777,6 +14788,9 @@ mod tests {
             Ok(())
         }
         async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), String> {
+            if self.storage_ledger_errors.load(Ordering::Relaxed) {
+                return Err("storage ledger store down".to_owned());
+            }
             self.storage_ledger.lock().unwrap().extend_from_slice(rows);
             Ok(())
         }
@@ -16291,6 +16305,77 @@ mod tests {
         assert!((billed[0].1 - expected).abs() < 1e-12, "{billed:?}");
         drop(std::fs::remove_dir_all(&refused_dir));
         drop(std::fs::remove_dir_all(&resent_dir));
+    }
+
+    // The billed bytes of a stored export wait in the storage ledger under the org's period.
+    #[tokio::test]
+    async fn a_billed_profiles_export_adds_its_bytes_to_the_storage_ledger() {
+        let queue_dir = unique_main_test_dir("profiles-storage-ledger");
+        let key = "maple_sk_test_profiles_ledger";
+        let store = private_key_store(key, "org_profiles_ledger", false);
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        let (state, _rx) = with_fake_autumn(state).await;
+        send_sdk_profiles(&state, key).await.expect("the export is stored");
+        assert_eq!(
+            imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await.len(),
+            PROFILES_SDK_ROWS
+        );
+        let rows = state.storage_ledger.take();
+        assert_ne!(rows, Vec::new());
+        assert!(rows
+            .iter()
+            .all(|row| row.org_id == "org_profiles_ledger" && row.signal == PROFILES_FEATURE_ID));
+        assert!(rows.iter().map(|row| row.bytes).sum::<u64>() > 0);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Storage is billed only for what Maple stores: never the sentinel org, never an org's own
+    // ClickHouse, and nothing where ingest is not billed.
+    #[tokio::test]
+    async fn stored_bytes_skip_the_sentinel_org_and_own_clickhouse() {
+        let queue_dir = unique_main_test_dir("storage-ledger-skips");
+        let store = private_key_store("maple_sk_test_ledger_skips", "org_real", false);
+        let (state, _imports) = profiles_test_state(store, queue_dir.clone()).await;
+        let shares = [(30_u16, 1_usize)];
+        record_stored_bytes(&state, &test_key(), "logs", &shares, 10);
+        assert_eq!(state.storage_ledger.take(), Vec::new(), "ingest is not billed here");
+
+        let (state, _rx) = with_fake_autumn(state).await;
+        let sentinel = ResolvedIngestKey {
+            org_id: SENTINEL_ORG_ID.to_owned(),
+            ..test_key()
+        };
+        let own_clickhouse = ResolvedIngestKey {
+            clickhouse_ready: true,
+            ..test_key()
+        };
+        record_stored_bytes(&state, &sentinel, "logs", &shares, 10);
+        record_stored_bytes(&state, &own_clickhouse, "logs", &shares, 10);
+        assert_eq!(state.storage_ledger.take(), Vec::new());
+        record_stored_bytes(&state, &test_key(), "logs", &shares, 10);
+        let rows = state.storage_ledger.take();
+        assert_eq!(rows.len(), 1);
+        assert_eq!((rows[0].org_id.as_str(), rows[0].bytes), ("org_real", 10));
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // A store that keeps failing loses nothing: the rows wait, however many flushes fail.
+    #[tokio::test]
+    async fn a_failing_store_keeps_the_storage_ledger_rows() {
+        let store = FakeKeyStore::default();
+        store.storage_ledger_errors.store(true, Ordering::Relaxed);
+        let sink = StorageLedgerSink::default();
+        sink.record("org_a", "logs", 30, 10, 1_764_072_000_000);
+        for _ in 0..40 {
+            assert_eq!(sink.flush(&store).await, 0);
+        }
+        assert_eq!(*store.storage_ledger.lock().unwrap(), Vec::new());
+
+        store.storage_ledger_errors.store(false, Ordering::Relaxed);
+        sink.flush(&store).await;
+        let written = store.storage_ledger.lock().unwrap().clone();
+        assert_eq!(written.len(), 1);
+        assert_eq!(written[0].bytes, 10);
     }
 
     // The spec's development path and the path it moves to both take an export.
