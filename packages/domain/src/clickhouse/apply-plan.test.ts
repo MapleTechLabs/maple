@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { BackfillSpec } from "./backfill"
 import { expandBackfill, expandMigrationToSteps, type ExecFn } from "./apply-plan"
 import type { ClickHouseMigration } from "./migrations"
+import { migration_0076_retention_storage } from "./migrations/0076_retention_storage"
 import { Array as Arr, String as Str } from "effect"
 
 const spec: BackfillSpec = {
@@ -63,5 +64,54 @@ describe("expandMigrationToSteps", () => {
 		// TRUNCATE is not identifier-rewritten by qualify (relies on session db) — passes through.
 		expect(Arr.getUnsafe(steps, 0).sql).toBe("TRUNCATE TABLE IF EXISTS service_overview_spans")
 		expect(Arr.every(steps.slice(1), (s) => s.backfill)).toBe(true)
+	})
+})
+
+describe("migration 0076's plan against the cluster", () => {
+	/** A cluster whose probe for `unkeyed` tables answers a row: the column exists outside the key. */
+	const clusterWith =
+		(unkeyed: ReadonlyArray<string>): ExecFn =>
+		async (sql) =>
+			Arr.some(unkeyed, (table) => Str.includes(`table = '${table}'`)(sql))
+				? `{"name":"RetentionDays"}\n`
+				: ""
+	const sqlOf = (steps: ReadonlyArray<{ readonly sql: string }>) => Arr.map(steps, (step) => step.sql)
+
+	it("drops a RetentionDays an older apply added outside the key, before merges stop", async () => {
+		const sql = sqlOf(
+			await expandMigrationToSteps(
+				migration_0076_retention_storage,
+				"maple",
+				clusterWith(["trace_index"]),
+			),
+		)
+		const drop = sql.indexOf(
+			"ALTER TABLE `maple`.`trace_index` DROP COLUMN IF EXISTS RetentionDays SETTINGS mutations_sync = 2",
+		)
+		expect(drop).toBeGreaterThanOrEqual(0)
+		expect(sql[drop + 1]).toBe("SYSTEM STOP MERGES trace_index")
+		expect(Arr.filter(sql, (statement) => Str.includes("DROP COLUMN")(statement))).toHaveLength(1)
+	})
+
+	it("plans no drop where the column is absent or already in the key", async () => {
+		const sql = sqlOf(
+			await expandMigrationToSteps(migration_0076_retention_storage, "maple", clusterWith([])),
+		)
+		expect(Arr.filter(sql, (statement) => Str.includes("DROP COLUMN")(statement))).toEqual([])
+	})
+
+	it("restarts merges when a step between a stop and its start fails, and only there", async () => {
+		const steps = await expandMigrationToSteps(migration_0076_retention_storage, "maple", clusterWith([]))
+		const restarts = Arr.flatMap(steps, (step) =>
+			step.onFailure === undefined
+				? []
+				: [[Arr.join(Arr.take(Str.split(" ")(step.sql), 5), " "), step.onFailure] as const],
+		)
+		expect(restarts).toEqual([
+			["ALTER TABLE trace_index ADD COLUMN", "SYSTEM START MERGES trace_index"],
+			["ALTER TABLE trace_index MODIFY COLUMN", "SYSTEM START MERGES trace_index"],
+			["ALTER TABLE trace_facets_hourly ADD COLUMN", "SYSTEM START MERGES trace_facets_hourly"],
+			["ALTER TABLE trace_facets_hourly MODIFY COLUMN", "SYSTEM START MERGES trace_facets_hourly"],
+		])
 	})
 })

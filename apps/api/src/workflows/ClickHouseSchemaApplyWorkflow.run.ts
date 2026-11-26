@@ -31,6 +31,7 @@ import {
 	recordMigrationSql,
 	selectAppliedVersionsSql,
 	selectFeatureRevisionsSql,
+	sortingKeyMigrationColumns,
 	createSchemaFeaturesTableSql,
 	createSchemaMigrationsTableSql,
 	type ActualTable,
@@ -521,34 +522,69 @@ const fetchActualSchema = (
 		return result
 	})
 
+/**
+ * The snapshot pass's DDL: create each missing object and add each missing column. A column a
+ * migration adds to a sorting key is left to it (`sortingKeyMigrationColumns`), since an existing
+ * column can no longer join the key.
+ */
+export const snapshotDiffStatements = (
+	desired: ReadonlyArray<DesiredTable>,
+	actual: ReadonlyMap<string, ActualTable>,
+	database: string,
+): ReadonlyArray<string> => {
+	const desiredByName = new Map(Arr.map(desired, (t) => [t.name, t]))
+	return Arr.flatMap(computeSchemaDiff({ tables: desired }, actual), (entry) => {
+		const table = desiredByName.get(entry.name)
+		if (!table) return []
+		if (entry.status === "missing") {
+			return [qualifyStatementForDatabase(table.createStatement, database)]
+		}
+		if (entry.status !== "drifted" || entry.kind !== "table") return []
+		const missing = Arr.filter(
+			entry.columnDrifts,
+			(drift) =>
+				drift.kind === "missing" && !sortingKeyMigrationColumns.has(`${entry.name}.${drift.column}`),
+		)
+		return Arr.flatMap(missing, (drift) => {
+			const colDef = extractColumnDefinition(table.createStatement, drift.column)
+			return colDef
+				? [
+						`ALTER TABLE ${quoteClickHouseIdentifier(database)}.${quoteClickHouseIdentifier(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
+					]
+				: []
+		})
+	})
+}
+
 const reconcileSchemaSnapshot = (
 	cfg: ChConfig,
 ): Effect.Effect<void, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
-		const desired = parseDesiredTables()
-		const desiredByName = new Map(Arr.map(desired, (t) => [t.name, t]))
 		const actual = yield* fetchActualSchema(cfg)
-		const statements = Arr.flatMap(computeSchemaDiff({ tables: desired }, actual), (entry) => {
-			const table = desiredByName.get(entry.name)
-			if (!table) return []
-			if (entry.status === "missing") {
-				return [qualifyStatementForDatabase(table.createStatement, cfg.database)]
-			}
-			if (entry.status !== "drifted" || entry.kind !== "table") return []
-			const missing = Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing")
-			return Arr.flatMap(missing, (drift) => {
-				const colDef = extractColumnDefinition(table.createStatement, drift.column)
-				return colDef
-					? [
-							`ALTER TABLE ${quoteClickHouseIdentifier(cfg.database)}.${quoteClickHouseIdentifier(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
-						]
-					: []
-			})
-		})
+		const statements = snapshotDiffStatements(parseDesiredTables(), actual, cfg.database)
 		yield* Effect.forEach(statements, (statement) => execClickHouse(cfg, statement), {
 			discard: true,
 		})
 	})
+
+/**
+ * Runs one planned step. When it fails inside a STOP/START MERGES pair, merges restart first and the
+ * step's own failure is what the run reports. Skipped on an interrupt: the run replays and resumes
+ * the step with merges still stopped.
+ */
+export const runPlannedStep = <A, E, R, B, E2, R2>(
+	step: Pick<ApplyStep, "onFailure">,
+	run: Effect.Effect<A, E, R>,
+	restartMerges: (sql: string) => Effect.Effect<B, E2, R2>,
+): Effect.Effect<A, E, R | R2> => {
+	const restart = step.onFailure
+	if (restart === undefined) return run
+	return run.pipe(
+		Effect.onError((cause) =>
+			Cause.hasInterrupts(cause) ? Effect.void : Effect.asVoid(Effect.exit(restartMerges(restart))),
+		),
+	)
+}
 
 interface SkippedFeature {
 	readonly id: string
@@ -703,20 +739,29 @@ const applySchema = (fence: RunFence) =>
 						(s, index) =>
 							// Progress rides inside the step: the body replays, so a write there
 							// would repeat, and a clock read there would differ per replay.
-							durableStep(
-								`m${migration.version}:${s.name}`,
-								fencedExec(
-									fence,
-									cfg,
-									{
-										phase: `migration ${migration.version} · ${s.name}`,
-										currentMigration: migration.version,
-										stepsTotal: steps.length,
-										stepsDone: index,
-									},
-									s.sql,
+							runPlannedStep(
+								s,
+								durableStep(
+									`m${migration.version}:${s.name}`,
+									fencedExec(
+										fence,
+										cfg,
+										{
+											phase: `migration ${migration.version} · ${s.name}`,
+											currentMigration: migration.version,
+											stepsTotal: steps.length,
+											stepsDone: index,
+										},
+										s.sql,
+									),
+									STEP,
 								),
-								STEP,
+								(sql) =>
+									durableStep(
+										`m${migration.version}:${s.name}:restart-merges`,
+										execClickHouse(cfg, sql),
+										STEP,
+									),
 							),
 						{ discard: true },
 					)
@@ -781,20 +826,29 @@ const applySchema = (fence: RunFence) =>
 						yield* Effect.forEach(
 							steps,
 							(migrationStep, index) =>
-								durableStep(
-									`performance-m${migration.version}:${migrationStep.name}`,
-									fencedExec(
-										fence,
-										cfg,
-										{
-											phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
-											currentMigration: migration.version,
-											stepsTotal: steps.length,
-											stepsDone: index,
-										},
-										migrationStep.sql,
+								runPlannedStep(
+									migrationStep,
+									durableStep(
+										`performance-m${migration.version}:${migrationStep.name}`,
+										fencedExec(
+											fence,
+											cfg,
+											{
+												phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
+												currentMigration: migration.version,
+												stepsTotal: steps.length,
+												stepsDone: index,
+											},
+											migrationStep.sql,
+										),
+										STEP,
 									),
-									STEP,
+									(sql) =>
+										durableStep(
+											`performance-m${migration.version}:${migrationStep.name}:restart-merges`,
+											execClickHouse(cfg, sql),
+											STEP,
+										),
 								),
 							{ discard: true },
 						)

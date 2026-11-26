@@ -1,4 +1,9 @@
 import { qualifyStatementForDatabase } from "./qualify"
+import {
+	isDropUnkeyedColumn,
+	renderDropUnkeyedColumnFull,
+	type DropUnkeyedColumnSpec,
+} from "./unkeyed-column"
 import { Array as Arr, String as Str } from "effect"
 
 /**
@@ -87,5 +92,12 @@ export const compileBackfillChunk = (
  * to their full `INSERT…SELECT`. Use this on the non-chunking apply paths so
  * they behave exactly as before the structured-backfill format landed.
  */
-export const renderStatementFull = (stmt: string | BackfillSpec, database: string): string =>
-	isBackfill(stmt) ? renderBackfillFull(stmt, database) : qualifyStatementForDatabase(stmt, database)
+export const renderStatementFull = (
+	stmt: string | BackfillSpec | DropUnkeyedColumnSpec,
+	database: string,
+): string =>
+	isBackfill(stmt)
+		? renderBackfillFull(stmt, database)
+		: isDropUnkeyedColumn(stmt)
+			? renderDropUnkeyedColumnFull(stmt)
+			: qualifyStatementForDatabase(stmt, database)

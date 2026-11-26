@@ -8,7 +8,7 @@
  * step's `sql` in order; the Workflow additionally wraps each in a durable
  * `step.do(step.name, …)` for resumability + progress.
  */
-import { Option, Schema, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 import {
 	compileBackfillChunk,
@@ -18,6 +18,7 @@ import {
 	type BackfillSpec,
 } from "./backfill"
 import type { ClickHouseMigration } from "./migrations"
+import { dropUnkeyedColumnSql, isDropUnkeyedColumn, unkeyedColumnProbeSql } from "./unkeyed-column"
 
 export interface ApplyStep {
 	/** Stable, unique step name — the Workflow's durable step key + UI label. */
@@ -25,6 +26,11 @@ export interface ApplyStep {
 	readonly sql: string
 	/** True for backfill chunks (long-running); false for structural DDL. */
 	readonly backfill: boolean
+	/**
+	 * Run when this step fails, before its failure is reported: the `SYSTEM START MERGES` of a
+	 * `SYSTEM STOP MERGES` an earlier step ran, so a failed apply never leaves merges stopped.
+	 */
+	readonly onFailure?: string
 }
 
 export type ExecFn = (sql: string) => Promise<string>
@@ -126,6 +132,14 @@ export const expandMigrationToSteps = async (
 	for (const stmt of migration.statements) {
 		if (isBackfill(stmt)) {
 			steps.push(...(await expandBackfill(stmt, database, exec)))
+		} else if (isDropUnkeyedColumn(stmt)) {
+			const unkeyed = parseFirstRow(await exec(unkeyedColumnProbeSql(stmt, database)))
+			if (unkeyed !== null)
+				steps.push({
+					name: `m${migration.version}:stmt${index}`,
+					sql: dropUnkeyedColumnSql(stmt, database),
+					backfill: false,
+				})
 		} else {
 			steps.push({
 				name: `m${migration.version}:stmt${index}`,
@@ -135,5 +149,25 @@ export const expandMigrationToSteps = async (
 		}
 		index += 1
 	}
-	return steps
+	return restartMergesOnFailure(steps)
+}
+
+const STOP_MERGES = /^SYSTEM STOP MERGES (\S+)$/
+
+/** Every step between a `SYSTEM STOP MERGES <t>` and its `SYSTEM START MERGES <t>` restarts them on failure. */
+const restartMergesOnFailure = (steps: ReadonlyArray<ApplyStep>): ReadonlyArray<ApplyStep> => {
+	let restart: string | undefined
+	return Arr.map(steps, (step) => {
+		const sql = Str.trim(step.sql)
+		if (restart !== undefined && sql === restart) {
+			restart = undefined
+			return step
+		}
+		const stopped = Option.fromNullishOr(STOP_MERGES.exec(sql)?.[1])
+		if (Option.isSome(stopped)) {
+			restart = `SYSTEM START MERGES ${stopped.value}`
+			return step
+		}
+		return restart === undefined ? step : { ...step, onFailure: restart }
+	})
 }

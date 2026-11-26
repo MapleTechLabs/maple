@@ -1,4 +1,5 @@
 import type { BackfillSpec } from "../backfill"
+import type { DropUnkeyedColumnSpec } from "../unkeyed-column"
 import { migration_0001_initial } from "./0001_initial"
 import { migration_0002_service_map_edges_rollup } from "./0002_service_map_edges_rollup"
 import { migration_0003_error_events_label } from "./0003_error_events_label"
@@ -78,11 +79,12 @@ import { migration_0076_retention_storage } from "./0076_retention_storage"
 import { Array as Arr } from "effect"
 
 /**
- * A migration statement is either a raw SQL string (structural DDL) or a
+ * A migration statement is either a raw SQL string (structural DDL), a
  * structured {@link BackfillSpec} the apply engine can split into time-windowed
- * chunks (see `../backfill.ts`).
+ * chunks (see `../backfill.ts`), or a {@link DropUnkeyedColumnSpec} planned
+ * against the cluster.
  */
-export type MigrationStatement = string | BackfillSpec
+export type MigrationStatement = string | BackfillSpec | DropUnkeyedColumnSpec
 
 export interface ClickHouseMigration {
 	readonly version: number

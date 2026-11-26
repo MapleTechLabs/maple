@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Exit, Fiber, Layer, Option, Schema, Array as Arr } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { OrgId } from "@maple/domain/http"
@@ -18,8 +18,18 @@ import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBo
 import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import {
+	expandMigrationToSteps,
+	migrations,
+	parseEmittedStatement,
+	type ActualTable,
+	type DesiredTable,
+} from "@maple/domain/clickhouse"
+import { latestSnapshotStatements } from "@maple/domain/generated/clickhouse-schema"
+import {
 	loadOptionalFeatureState,
 	runClickHouseSchemaApply,
+	runPlannedStep,
+	snapshotDiffStatements,
 	withRunHeartbeat,
 } from "./ClickHouseSchemaApplyWorkflow.run"
 
@@ -336,4 +346,95 @@ describe("withRunHeartbeat", () => {
 			assert.strictEqual(yield* updatedAt(testDb), 5 * 60_000)
 		}).pipe(Effect.provide(testDb.layer))
 	})
+})
+
+describe("snapshotDiffStatements", () => {
+	/** The snapshot's own table, and the same table on a v75 cluster: every column but `dropped`. */
+	const tableAt = (name: string, dropped: ReadonlyArray<string>) => {
+		const statement = Arr.findFirst(latestSnapshotStatements, (stmt) =>
+			Str.startsWith(`CREATE TABLE IF NOT EXISTS ${name} (`)(stmt),
+		).pipe(Option.getOrThrow)
+		const parsed = parseEmittedStatement(statement)
+		assert.isTrue(parsed?.kind === "table")
+		const columns = parsed?.kind === "table" ? parsed.columns : []
+		const desired: DesiredTable = { name, kind: "table", columns, createStatement: statement }
+		const actual: ActualTable = {
+			name,
+			kind: "table",
+			columns: Arr.filter(columns, (column) => !dropped.includes(column.name)),
+		}
+		return { desired, actual }
+	}
+
+	it("leaves the columns 0076 adds to a sorting key to 0076, and still adds other missing columns", () => {
+		const tables = [
+			tableAt("trace_index", ["RetentionDays"]),
+			tableAt("trace_facets_hourly", ["RetentionDays"]),
+			tableAt("service_map_spans", ["RetentionDays"]),
+		]
+		const statements = snapshotDiffStatements(
+			Arr.map(tables, (table) => table.desired),
+			new Map(Arr.map(tables, (table) => [table.actual.name, table.actual])),
+			"maple",
+		)
+		assert.deepStrictEqual(statements, [
+			"ALTER TABLE `maple`.`service_map_spans` ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
+		])
+	})
+})
+
+describe("runPlannedStep", () => {
+	it.effect("restarts merges when 0076's key ALTER fails, and the run still sees the ALTER's failure", () =>
+		Effect.gen(function* () {
+			const migration = Option.getOrThrow(
+				Arr.findFirst(migrations, (candidate) => candidate.version === 76),
+			)
+			const steps = yield* Effect.promise(() =>
+				expandMigrationToSteps(migration, "maple", async () => ""),
+			)
+			const executed: string[] = []
+			const exec = (sql: string) =>
+				Effect.suspend(() => {
+					executed.push(sql)
+					return Str.startsWith("ALTER TABLE trace_index ADD COLUMN")(sql)
+						? Effect.fail(new ClickHouseDenied({ message: "BAD_ARGUMENTS" }))
+						: Effect.void
+				})
+			const exit = yield* Effect.exit(
+				Effect.forEach(steps, (step) => runPlannedStep(step, exec(step.sql), exec), {
+					discard: true,
+				}),
+			)
+			assert.deepStrictEqual(
+				Option.map(Exit.findErrorOption(exit), (error) => error.message),
+				Option.some("BAD_ARGUMENTS"),
+			)
+			assert.deepStrictEqual(executed.slice(-3), [
+				"SYSTEM STOP MERGES trace_index",
+				"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
+				"SYSTEM START MERGES trace_index",
+			])
+		}),
+	)
+
+	it.effect("keeps the step's failure when the restart fails, and restarts nothing on an interrupt", () =>
+		Effect.gen(function* () {
+			const restarts: string[] = []
+			const step = { onFailure: "SYSTEM START MERGES t" }
+			const restart = (sql: string) =>
+				Effect.sync(() => restarts.push(sql)).pipe(
+					Effect.andThen(Effect.fail(new ClickHouseDenied({ message: "START denied" }))),
+				)
+			const failed = yield* Effect.exit(
+				runPlannedStep(step, Effect.fail(new ClickHouseDenied({ message: "ALTER denied" })), restart),
+			)
+			assert.deepStrictEqual(
+				Option.map(Exit.findErrorOption(failed), (error) => error.message),
+				Option.some("ALTER denied"),
+			)
+			const interrupted = yield* Effect.exit(runPlannedStep(step, Effect.interrupt, restart))
+			assert.isTrue(Exit.hasInterrupts(interrupted))
+			assert.deepStrictEqual(restarts, ["SYSTEM START MERGES t"])
+		}),
+	)
 })

@@ -8,8 +8,10 @@
  * (ClickHouse 26 refuses a plain column outside it), and gets its DEFAULT after, which ClickHouse
  * refuses on a column added to the key; old parts read the DEFAULT. Merges on each table stop
  * around the pair so none writes the column's 0 into a part first (needs the SYSTEM MERGES grant).
- * A failure between them leaves merges stopped until a rerun or a server restart (the stop is not
- * persisted). trace_facets_hourly's TTL reads the column, capped at 30 days, so it stays 30
+ * A failure between them restarts merges (the apply's `onFailure` step) and still fails the apply.
+ * The snapshot pass leaves both columns to this migration (`sortingKeyMigrationColumns`); one an
+ * older apply added outside the key holds only its default, so it is dropped first and re-added
+ * in the key. trace_facets_hourly's TTL reads the column, capped at 30 days, so it stays 30
  * here. No other TTL or partition change: self-managed inserts never stamp these columns
  * (`SELF_MANAGED_INSERT_OMITTED_COLUMNS`), so every row holds its default and each table keeps
  * one period. `requiredForIngest: false` for the same reason. Frozen v76 DDL.
@@ -21,6 +23,15 @@
  * `failureIsFatal`: a failed statement fails the apply rather than being skipped, so a dropped view
  * is never left missing silently, and a rerun (DROP IF EXISTS, CREATE IF NOT EXISTS) recreates it.
  */
+/**
+ * Columns this migration adds to a sorting key, so the snapshot pass never adds them first: an
+ * existing column can no longer join the key. `<table>.<column>`.
+ */
+export const sortingKeyMigrationColumns: ReadonlySet<string> = new Set([
+	"trace_index.RetentionDays",
+	"trace_facets_hourly.RetentionDays",
+])
+
 export const migration_0076_retention_storage = {
 	version: 76,
 	description:
@@ -32,10 +43,12 @@ export const migration_0076_retention_storage = {
 		"ALTER TABLE service_map_children ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE service_overview_spans ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE trace_list_mv ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
+		{ kind: "drop-unkeyed-column", table: "trace_index", column: "RetentionDays" },
 		"SYSTEM STOP MERGES trace_index",
 		"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
 		"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
 		"SYSTEM START MERGES trace_index",
+		{ kind: "drop-unkeyed-column", table: "trace_facets_hourly", column: "RetentionDays" },
 		"SYSTEM STOP MERGES trace_facets_hourly",
 		"ALTER TABLE trace_facets_hourly ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, RetentionDays)",
 		"ALTER TABLE trace_facets_hourly MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",

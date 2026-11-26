@@ -1,4 +1,4 @@
-import { Option, String as Str, Array as Arr } from "effect"
+import { Option, Predicate, String as Str, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
@@ -376,7 +376,7 @@ describe("migration 0037: service_overview_spans records why a row is an entry p
 })
 
 describe("migration 0076: span projections and product events carry their retention", () => {
-	const statements = migration_0076_retention_storage.statements
+	const statements = Arr.filter(migration_0076_retention_storage.statements, Predicate.isString)
 	const creates = Arr.filter(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
 	const viewName = (stmt: string) => Arr.getUnsafe(Str.split(" ")(stmt), 6)
 

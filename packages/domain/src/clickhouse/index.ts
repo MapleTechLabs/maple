@@ -22,6 +22,8 @@ export {
 	type MigrationStatement,
 } from "./migrations"
 export { performanceOnlySearchColumns } from "./migrations/0010_search_indexes"
+export { sortingKeyMigrationColumns } from "./migrations/0076_retention_storage"
+export { type DropUnkeyedColumnSpec, isDropUnkeyedColumn } from "./unkeyed-column"
 export {
 	type BackfillSpec,
 	isBackfill,
