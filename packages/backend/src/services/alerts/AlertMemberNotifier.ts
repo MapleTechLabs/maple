@@ -323,7 +323,14 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 				dbExecute((db) =>
 					db.run(
 						PG.from(AlertIncidents)
-							.select("status", "acknowledgedAt", "firstTriggeredAt", "severity")
+							.select(
+								"status",
+								"acknowledgedAt",
+								"firstTriggeredAt",
+								"severity",
+								"lastObservedValue",
+								"lastEvaluatedAt",
+							)
 							.where(($) => [$.id.eq(row.incidentId), $.orgId.eq(row.orgId)])
 							.limit(1),
 					),
@@ -389,7 +396,12 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 			const sendPush = (
 				row: AlertMemberNotificationRow,
 				input: ChatAlertCardInput,
-				incident: { readonly firstTriggeredAt: number; readonly severity: string },
+				incident: {
+					readonly firstTriggeredAt: number
+					readonly severity: string
+					readonly lastObservedValue: number | null
+					readonly lastEvaluatedAt: number | null
+				},
 			) =>
 				Effect.gen(function* () {
 					const context = input.context
@@ -405,7 +417,9 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 						signalDisplay: signalDisplayOf(context),
 						serviceNames: [],
 						openForMs: Math.max(0, nowMs - incident.firstTriggeredAt),
-						value: context.value,
+						// The latest reading, not the one the step was queued with: the banner is what the
+						// page said, the card is what the incident says now.
+						value: incident.lastObservedValue ?? context.value,
 						comparator: context.comparator,
 						threshold: context.threshold,
 						thresholdUpper: context.thresholdUpper,
@@ -423,7 +437,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 						severity: Option.getOrElse(decodeSeverity(incident.severity), () => context.severity),
 						liveActivity: {
 							attributes: renderLiveActivityAttributes(subject, nowMs),
-							contentState: renderLiveActivityState(subject, nowMs),
+							contentState: renderLiveActivityState(subject, incident.lastEvaluatedAt ?? nowMs),
 						},
 					})
 					// Without push credentials nothing was tried: say that, not that the member has no phone.
