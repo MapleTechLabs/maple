@@ -36,6 +36,14 @@ final class IncidentChanges {
 @MainActor
 @Observable
 final class IncidentResponder {
+	/// Where an action was taken, for the span.
+	enum Surface: String {
+		case incident
+		case triage
+		case overview
+		case notification
+	}
+
 	struct Pending: Equatable {
 		let incidentId: String
 		let action: IncidentAction
@@ -45,10 +53,11 @@ final class IncidentResponder {
 	var error: String?
 
 	private let api: any MapleAPI
-	/// Where the action was taken, for the span: `incident`, `triage`, `overview`.
-	private let surface: String
+	private let surface: Surface
+	/// The `IncidentChanges` revision this screen's content already reflects.
+	private var seenRevision = IncidentChanges.shared.revision
 
-	init(api: any MapleAPI, surface: String) {
+	init(api: any MapleAPI, surface: Surface) {
 		self.api = api
 		self.surface = surface
 	}
@@ -57,39 +66,74 @@ final class IncidentResponder {
 		pending == Pending(incidentId: incidentId, action: action)
 	}
 
-	/// The incident as the server now holds it, or nil when the action failed
-	/// (the reason is in `error`) or another one is still running.
-	func perform(_ action: IncidentAction, on incidentId: String) async -> AlertIncident? {
-		guard pending == nil else { return nil }
-		pending = Pending(incidentId: incidentId, action: action)
-		defer { pending = nil }
-		let api = self.api
-		do {
-			let incident = try await Telemetry.span(
-				Telemetry.Name.incidentAction,
-				attributes: [
-					Telemetry.Key.incidentAction: .string(action.rawValue),
-					Telemetry.Key.incidentActionSurface: .string(surface),
-				]
-			) { _ in
-				switch action {
-				case .acknowledge: try await api.acknowledgeIncident(id: incidentId)
-				case .unacknowledge: try await api.unacknowledgeIncident(id: incidentId)
-				case .resolve: try await api.resolveIncident(id: incidentId)
-				}
+	/// The request itself, with its span and event. Shared with the banner's
+	/// Acknowledge, which runs with no screen and no responder.
+	static func send(_ action: IncidentAction, on incidentId: String, api: any MapleAPI, surface: Surface) async throws
+		-> AlertIncident
+	{
+		let incident = try await Telemetry.span(
+			Telemetry.Name.incidentAction,
+			attributes: [
+				Telemetry.Key.incidentAction: .string(action.rawValue),
+				Telemetry.Key.incidentActionSurface: .string(surface.rawValue),
+			]
+		) { _ in
+			switch action {
+			case .acknowledge: try await api.acknowledgeIncident(id: incidentId)
+			case .unacknowledge: try await api.unacknowledgeIncident(id: incidentId)
+			case .resolve: try await api.resolveIncident(id: incidentId)
 			}
-			Telemetry.track(Telemetry.Event.incidentActed, ["action": action.rawValue, "surface": surface])
-			IncidentChanges.shared.didChange()
-			return incident
+		}
+		Telemetry.track(Telemetry.Event.incidentActed, ["action": action.rawValue, "surface": surface.rawValue])
+		IncidentChanges.shared.didChange()
+		return incident
+	}
+
+	/// Run an action for a screen. `apply` puts the server's answer on screen at
+	/// once; the reload that follows brings what the answer does not carry, and
+	/// supersedes any load that read the incident before the write.
+	///
+	/// A failure reloads too: its usual cause is a row that went stale (resolved
+	/// or acknowledged by someone else), and leaving it up invites the same tap.
+	func perform<Value>(
+		_ action: IncidentAction,
+		on incidentId: String,
+		in loader: ScreenLoader<Value>,
+		apply: (inout Value, AlertIncident) -> Void
+	) async {
+		guard pending == nil else { return }
+		pending = Pending(incidentId: incidentId, action: action)
+		let generation = loader.generation
+		do {
+			let incident = try await Self.send(action, on: incidentId, api: api, surface: surface)
+			loader.update(ifGeneration: generation) { value in
+				var next = value
+				apply(&next, incident)
+				return next
+			}
 		} catch is CancellationError {
-			return nil
+			pending = nil
+			return
 		} catch let error as MapleAPIError {
 			self.error = error.message
-			return nil
 		} catch {
 			self.error = action.failure
-			return nil
 		}
+		pending = nil
+		seenRevision = IncidentChanges.shared.revision
+		await loader.load(.afterWrite)
+	}
+
+	/// Reload when an incident was answered since this screen last loaded: on
+	/// another screen, from a banner, or while this one was off screen. Keyed
+	/// with `.task(id: IncidentChanges.shared.revision)`, which also runs on
+	/// appear, so a list that was not mounted when it happened still catches up.
+	func reloadIfAnswered<Value>(_ loader: ScreenLoader<Value>) async {
+		let revision = IncidentChanges.shared.revision
+		guard revision != seenRevision else { return }
+		seenRevision = revision
+		guard loader.state.hasContent else { return }
+		await loader.load(.afterWrite)
 	}
 }
 
@@ -119,12 +163,23 @@ struct IncidentPageStrip: View {
 	/// An escalation step paged the person holding the phone for this incident.
 	let pagedViewer: Bool
 	let viewerUserId: String?
+	/// Called a few seconds after the next step was due, to read what it did.
+	var onDue: () async -> Void = {}
+
+	/// How long after the step's time the scheduler has had to send it.
+	private static let dueGrace: Duration = .seconds(8)
 
 	var body: some View {
 		switch incident.responseState {
 		case .unacknowledged(let next):
 			if let next {
 				waiting(next)
+					.task(id: next.at) {
+						let wait = next.at.timeIntervalSinceNow
+						try? await Task.sleep(for: .seconds(max(0, wait)) + Self.dueGrace)
+						guard !Task.isCancelled else { return }
+						await onDue()
+					}
 			} else if pagedViewer {
 				unanswered
 			}
@@ -188,6 +243,12 @@ struct IncidentPageStrip: View {
 		.accessibilityElement(children: .combine)
 	}
 
+	/// A run that had ended (every step sent, or superseded) has nothing left to pause.
+	private var pausesEscalation: Bool {
+		guard let status = incident.escalation?.status else { return false }
+		return status == .active || status == .acknowledged
+	}
+
 	private func acknowledged(_ acknowledgement: IncidentResponseState.Acknowledgement) -> some View {
 		VStack(alignment: .leading, spacing: 6) {
 			HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -209,7 +270,7 @@ struct IncidentPageStrip: View {
 						.lineLimit(1)
 				}
 			}
-			Text(incident.escalation == nil ? "Reminders are paused." : "Escalation and reminders are paused.")
+			Text(pausesEscalation ? "Escalation and reminders are paused." : "Reminders are paused.")
 				.font(Typo.tiny)
 				.foregroundStyle(Token.mutedForeground)
 		}
@@ -219,17 +280,18 @@ struct IncidentPageStrip: View {
 	}
 }
 
-/// `3m 48s`, ticking. Once a second, and only while it is on screen.
+/// `3m 48s`, ticking, then `now`. Once a second, and only while it is on screen.
 struct PageCountdown: View {
 	let next: IncidentResponseState.NextPage
 
 	var body: some View {
 		TimelineView(.periodic(from: .now, by: 1)) { context in
-			Text(next.countdown(now: context.date))
+			let left = next.countdown(now: context.date)
+			Text(left)
 				.tabularNumbers()
 				.fixedSize()
+				.accessibilityLabel(left == "now" ? "Next page due now" : "Next page in \(left)")
 		}
-		.accessibilityLabel("Next page in \(next.countdown())")
 	}
 }
 
@@ -265,7 +327,11 @@ struct AcknowledgeButton: View {
 	}
 
 	var size: Size = .compact
+	/// The rule the page is for, so VoiceOver can tell two buttons apart.
+	let ruleName: String
 	let isPending: Bool
+	/// Another incident's action is still running: one at a time.
+	var isBusy = false
 	let action: () -> Void
 
 	var body: some View {
@@ -276,13 +342,14 @@ struct AcknowledgeButton: View {
 				.lineLimit(1)
 				.padding(.horizontal, size == .bar ? 0 : 14)
 				.frame(maxWidth: size == .bar ? .infinity : nil)
-				.frame(height: size == .bar ? 44 : 34)
+				.frame(height: size == .bar ? 44 : 36)
 				.background(Token.primary, in: .rect(cornerRadius: Token.Radius.md))
+				.opacity(isBusy && !isPending ? 0.5 : 1)
 				.contentShape(.rect)
 		}
 		.buttonStyle(.plain)
-		.disabled(isPending)
-		.accessibilityLabel("Acknowledge")
+		.disabled(isPending || isBusy)
+		.accessibilityLabel("Acknowledge \(ruleName)")
 	}
 }
 
@@ -330,7 +397,11 @@ struct IncidentActionBar: View {
 				}
 				.buttonStyle(.plain)
 			} else {
-				AcknowledgeButton(size: .bar, isPending: responder.isPending(.acknowledge, on: incident.id)) {
+				AcknowledgeButton(
+					size: .bar,
+					ruleName: incident.ruleName,
+					isPending: responder.isPending(.acknowledge, on: incident.id)
+				) {
 					perform(.acknowledge)
 				}
 			}
@@ -366,12 +437,10 @@ extension AlertIncident {
 			guard let next else { return pagedViewer ? "Unacknowledged" : nil }
 			return "Unacknowledged · \(next.headline(viewerUserId: viewerUserId).lowercasedFirst) at \(Format.clock(next.at))"
 		case .acknowledged(let acknowledgement):
-			return [acknowledgement.headline(viewerUserId: viewerUserId), acknowledgement.waitedText]
-				.compactMap { $0 }
-				.joined(separator: ", ")
+			return acknowledgement.summary(viewerUserId: viewerUserId)
 		case .resolved:
 			guard let waited = timeToAcknowledge else { return nil }
-			return "acknowledged in \(IncidentWording.span(waited))"
+			return "Acknowledged in \(IncidentWording.span(waited))"
 		}
 	}
 }

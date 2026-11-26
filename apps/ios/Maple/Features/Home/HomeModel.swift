@@ -4,7 +4,7 @@ import MapleAPI
 /// One open incident as Home shows it: the incident, the services its rule
 /// covers, and the rule's last hour of observations for the sparkline.
 struct IncidentCard: Identifiable, Hashable, Codable {
-	let incident: AlertIncident
+	var incident: AlertIncident
 	let serviceNames: [String]
 	let display: SignalDisplay
 	/// Observed values from the rule's own checks, oldest first. Empty until
@@ -13,6 +13,16 @@ struct IncidentCard: Identifiable, Hashable, Codable {
 	var observations: [Double]
 	/// An escalation step paged the person holding the phone for this incident.
 	var pagesViewer = false
+
+	/// `pagesViewer` is left out on purpose: a board seeded from disk must never
+	/// claim a page it cannot know is still waiting, so it starts false until the
+	/// load that follows says otherwise. It also keeps older snapshots readable.
+	private enum CodingKeys: String, CodingKey {
+		case incident
+		case serviceNames
+		case display
+		case observations
+	}
 
 	var id: String { incident.id }
 
@@ -216,7 +226,7 @@ final class HomeModel {
 		self.api = api
 		self.scope = scope
 		self.organizationId = session.currentOrganizationId
-		self.responder = IncidentResponder(api: api, surface: "overview")
+		self.responder = IncidentResponder(api: api, surface: .overview)
 		self.loader = ScreenLoader(session: session, screen: Screen.home) { [unowned self] in try await self.fetch() }
 	}
 
@@ -224,23 +234,10 @@ final class HomeModel {
 
 	/// Acknowledge from the card: it changes as soon as the server answers.
 	func acknowledge(_ incidentId: String) async {
-		let generation = loader.generation
-		guard let incident = await responder.perform(.acknowledge, on: incidentId) else { return }
-		loader.update(ifGeneration: generation) { snapshot in
-			var next = snapshot
-			next.incidents = next.incidents.map { card in
-				guard card.id == incidentId else { return card }
-				return IncidentCard(
-					incident: incident,
-					serviceNames: card.serviceNames,
-					display: card.display,
-					observations: card.observations,
-					pagesViewer: card.pagesViewer
-				)
-			}
-			return next
+		await responder.perform(.acknowledge, on: incidentId, in: loader) { snapshot, incident in
+			guard let index = snapshot.incidents.firstIndex(where: { $0.id == incidentId }) else { return }
+			snapshot.incidents[index].incident = incident
 		}
-		persist()
 	}
 
 	/// First appearance for this scope: paint the persisted board if there is

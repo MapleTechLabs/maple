@@ -493,7 +493,7 @@ struct IncidentTimeline: View {
 							Text(event.title)
 								.font(Typo.body)
 								.foregroundStyle(Token.foreground)
-								.lineLimit(1)
+								.lineLimit(2)
 							if let text = event.detail {
 								Text(text)
 									.font(Typo.tiny)

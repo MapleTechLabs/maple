@@ -51,23 +51,18 @@ final class IncidentDetailModel {
 		self.incidentID = incidentID
 		self.api = api
 		self.generation = session.dataGeneration
-		self.responder = IncidentResponder(api: api, surface: "incident")
+		self.responder = IncidentResponder(api: api, surface: .incident)
 		self.loader = ScreenLoader(session: session, screen: Screen.incidentDetail) { [unowned self] in try await self.fetch() }
 	}
 
 	var state: LoadState<IncidentDetail> { loader.state }
 
-	/// The answer goes on screen as soon as the server gives it; the refresh that
+	/// The answer goes on screen as soon as the server gives it; the reload that
 	/// follows brings the timeline entry it wrote.
 	func perform(_ action: IncidentAction) async {
-		let generation = loader.generation
-		guard let incident = await responder.perform(action, on: incidentID) else { return }
-		loader.update(ifGeneration: generation) { detail in
-			var next = detail
-			next.incident = incident
-			return next
+		await responder.perform(action, on: incidentID, in: loader) { detail, incident in
+			detail.incident = incident
 		}
-		await loader.load(.refresh)
 	}
 
 	private func fetch() async throws -> IncidentDetail {
@@ -187,7 +182,9 @@ struct IncidentDetailView: View {
 				emptyMessage: "This incident no longer exists.",
 				skeleton: { DetailSkeleton(leadsWithHeadline: true) }
 			) { detail in
-				IncidentDetailContent(detail: detail, viewerUserId: session.currentUserId)
+				IncidentDetailContent(detail: detail, viewerUserId: session.currentUserId) {
+					await model?.loader.load(.refresh)
+				}
 			}
 		}
 		// An open incident has one thing to do next, and it sits where the tab
@@ -201,6 +198,11 @@ struct IncidentDetailView: View {
 		}
 		.toolbar(.hidden, for: .tabBar)
 		.incidentActionAlert(model?.responder)
+		// Answered from a banner, or on another tab while this screen stayed open.
+		.task(id: IncidentChanges.shared.revision) {
+			guard let model else { return }
+			await model.responder.reloadIfAnswered(model.loader)
+		}
 		.navigationTitle("")
 		.navigationBarTitleDisplayMode(.inline)
 		.mapleScreen(Screen.incidentDetail)
@@ -221,6 +223,8 @@ struct IncidentDetailView: View {
 private struct IncidentDetailContent: View {
 	let detail: IncidentDetail
 	let viewerUserId: String?
+	/// The next escalation step came due: read what it did.
+	let onPageDue: () async -> Void
 
 	private var pagedViewer: Bool { detail.events.paged(userId: viewerUserId) }
 
@@ -228,7 +232,12 @@ private struct IncidentDetailContent: View {
 		VStack(alignment: .leading, spacing: 24) {
 			VStack(alignment: .leading, spacing: 16) {
 				IncidentHeader(detail: detail)
-				IncidentPageStrip(incident: detail.incident, pagedViewer: pagedViewer, viewerUserId: viewerUserId)
+				IncidentPageStrip(
+					incident: detail.incident,
+					pagedViewer: pagedViewer,
+					viewerUserId: viewerUserId,
+					onDue: onPageDue
+				)
 			}
 			RuleSignalSection(detail: detail)
 			if detail.serviceName != nil {

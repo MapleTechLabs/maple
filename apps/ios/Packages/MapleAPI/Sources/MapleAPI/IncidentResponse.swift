@@ -54,12 +54,17 @@ public enum IncidentResponseState: Hashable, Sendable {
 		public let at: Date?
 		/// Seconds the incident stood before anyone first acknowledged it.
 		public let waited: TimeInterval?
+		/// False when an earlier acknowledgement was cleared and this is a later one.
+		public let isFirst: Bool
 
-		public init(by: Person, source: AlertIncidentAckSource?, at: Date?, waited: TimeInterval?) {
+		public init(
+			by: Person, source: AlertIncidentAckSource?, at: Date?, waited: TimeInterval?, isFirst: Bool = true
+		) {
 			self.by = by
 			self.source = source
 			self.at = at
 			self.waited = waited
+			self.isFirst = isFirst
 		}
 	}
 
@@ -78,7 +83,8 @@ extension AlertIncident {
 					by: .init(userId: acknowledgedBy?.userId, name: acknowledgedBy?.name),
 					source: acknowledgedVia,
 					at: acknowledgedAt.flatMap(ResolvedTimeWindow.parse),
-					waited: timeToAcknowledge
+					waited: timeToAcknowledge,
+					isFirst: acknowledgedAt == firstAcknowledgedAt
 				)
 			)
 		}
@@ -136,10 +142,11 @@ extension IncidentResponseState.NextPage {
 		passCount > 1 ? "Step \(step) of \(stepCount), pass \(pass) of \(passCount)" : "Step \(step) of \(stepCount)"
 	}
 
-	/// `3m 48s`, `48s`, `1h 2m`: what is left before the step, never negative.
-	/// Seconds matter here, so this is not `Format.duration`.
+	/// `3m 48s`, `48s`, `1h 2m`: what is left before the step, and `now` once it
+	/// is due. Seconds matter here, so this is not `Format.duration`.
 	public func countdown(now: Date = Date()) -> String {
-		let left = max(0, Int(at.timeIntervalSince(now).rounded(.down)))
+		let left = Int(at.timeIntervalSince(now).rounded(.down))
+		if left <= 0 { return "now" }
 		if left >= 3600 { return "\(left / 3600)h \((left % 3600) / 60)m" }
 		if left >= 60 { return "\(left / 60)m \(left % 60)s" }
 		return "\(left)s"
@@ -153,9 +160,18 @@ extension IncidentResponseState.Acknowledgement {
 		"Acknowledged by \(by.label(viewerUserId: viewerUserId, unnamed: source == .mcp ? "an agent over MCP" : "a teammate"))"
 	}
 
-	/// "2m after it opened", or nil when the wait is unknown.
+	/// "2m after it opened", or "first acknowledged after 2m" when this is a later
+	/// acknowledgement than the first. Nil when the wait is unknown.
 	public var waitedText: String? {
-		waited.map { "\(IncidentWording.span($0)) after it opened" }
+		waited.map {
+			isFirst ? "\(IncidentWording.span($0)) after it opened" : "first acknowledged after \(IncidentWording.span($0))"
+		}
+	}
+
+	/// The headline and the wait on one line, as the web's incident rows read.
+	public func summary(viewerUserId: String?) -> String {
+		guard let waitedText else { return headline(viewerUserId: viewerUserId) }
+		return "\(headline(viewerUserId: viewerUserId))\(isFirst ? "," : " ·") \(waitedText)"
 	}
 }
 
@@ -163,13 +179,18 @@ extension IncidentResponseState.Acknowledgement {
 /// timeline (`packages/web-data/src/alerts/incident-timeline.ts`) so the phone
 /// and the browser describe one event the same way.
 public enum IncidentWording {
-	/// "under 1m", "4m", "1h 5m".
+	/// "under 1m", "4m", "1h 5m", "2d 1h".
 	public static func span(_ seconds: TimeInterval) -> String {
 		let minutes = Int(seconds / 60)
 		if minutes < 1 { return "under 1m" }
 		if minutes < 60 { return "\(minutes)m" }
-		let rest = minutes % 60
-		return rest == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(rest)m"
+		let hours = minutes / 60
+		if hours < 24 {
+			let rest = minutes % 60
+			return rest == 0 ? "\(hours)h" : "\(hours)h \(rest)m"
+		}
+		let rest = hours % 24
+		return rest == 0 ? "\(hours / 24)d" : "\(hours / 24)d \(rest)h"
 	}
 
 	public static func source(_ source: AlertIncidentAckSource) -> String {

@@ -30,8 +30,6 @@ public typealias AlertDeliveryStatus = Components.Schemas._MapleAlertDeliverySta
 public typealias AlertDestinationType = Components.Schemas._MapleAlertDestinationType
 public typealias AlertIncidentEvent = Components.Schemas.AlertIncidentEvent
 public typealias AlertIncidentEventType = Components.Schemas._MapleAlertIncidentEventType
-public typealias AlertIncidentEscalation = Components.Schemas.AlertIncidentEscalation
-public typealias AlertIncidentActor = Components.Schemas.AlertIncidentActor
 public typealias AlertIncidentAckSource = Components.Schemas._MapleAlertIncidentAckSource
 
 public typealias AnomalyIncident = Components.Schemas.AnomalyIncident

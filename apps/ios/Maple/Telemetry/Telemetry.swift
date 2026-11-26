@@ -642,6 +642,7 @@ extension LoadReason {
 		case .initial: "initial"
 		case .refresh: "refresh"
 		case .replace: "replace"
+		case .afterWrite: "after_write"
 		}
 	}
 }

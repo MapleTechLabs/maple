@@ -33,7 +33,7 @@ final class IncidentsListModel {
 
 	init(api: any MapleAPI, session: SessionController) {
 		self.api = api
-		self.responder = IncidentResponder(api: api, surface: "triage")
+		self.responder = IncidentResponder(api: api, surface: .triage)
 		self.loader = ScreenLoader(session: session, screen: Screen.incidents, isEmpty: { $0.isEmpty }) { [unowned self] in try await self.fetchFirstPage() }
 	}
 
@@ -63,7 +63,11 @@ final class IncidentsListModel {
 		pagingMe = Set(paging.map(\.id))
 		nextCursor = page?.nextCursor
 		hasMore = page?.hasMore ?? false
-		return (page?.items ?? paging).map(card)
+		guard let page else { return paging.map(card) }
+		// A page to this person leads even when the list is long enough that it
+		// would have arrived on a later page; that page skips it when it comes.
+		let listed = Set(page.items.map(\.id))
+		return (paging.filter { !listed.contains($0.id) } + page.items).map(card)
 	}
 
 	func loadMore() async {
@@ -80,17 +84,19 @@ final class IncidentsListModel {
 		guard generation == loader.generation else { return }
 		nextCursor = page.nextCursor
 		hasMore = page.hasMore
-		loader.update(ifGeneration: generation) { $0 + page.items.map(card) }
+		loader.update(ifGeneration: generation) { cards in
+			let shown = Set(cards.map(\.id))
+			return cards + page.items.filter { !shown.contains($0.id) }.map(card)
+		}
 	}
 
 	var canLoadMore: Bool { hasMore }
 
 	/// Acknowledge from the row: the row changes as soon as the server answers.
 	func acknowledge(_ incidentId: String) async {
-		let generation = loader.generation
-		guard let incident = await responder.perform(.acknowledge, on: incidentId) else { return }
-		loader.update(ifGeneration: generation) { cards in
-			cards.map { $0.id == incidentId ? card(incident) : $0 }
+		await responder.perform(.acknowledge, on: incidentId, in: loader) { cards, incident in
+			guard let index = cards.firstIndex(where: { $0.id == incidentId }) else { return }
+			cards[index].incident = incident
 		}
 	}
 
@@ -127,7 +133,7 @@ struct IncidentsListView: View {
 			RowSection(id: "paged", title: "Paged to you", cards: open.filter(\.pagesViewer)),
 			RowSection(
 				id: "open",
-				title: model.filter == .pagedToMe || open.contains(where: \.pagesViewer) ? "Other open" : "Open alerts",
+				title: open.contains(where: \.pagesViewer) ? "Other open" : "Open alerts",
 				cards: open.filter { !$0.pagesViewer }
 			),
 			RowSection(id: "resolved", title: "Resolved", cards: cards.filter { $0.incident.status != .open }),
@@ -179,9 +185,10 @@ struct IncidentsListView: View {
 		.incidentActionAlert(model.responder)
 		.task { await model.loader.loadIfNeeded() }
 		// Answered on the incident screen, on Overview or from a banner: the rows
-		// here must not go on saying it is waiting.
-		.onChange(of: IncidentChanges.shared.revision) {
-			Task { await model.loader.load(.refresh) }
+		// here must not go on saying it is waiting. Runs on appear too, for an
+		// answer given while another segment was showing.
+		.task(id: IncidentChanges.shared.revision) {
+			await model.responder.reloadIfAnswered(model.loader)
 		}
 		.mapleScreen(Screen.incidents)
 	}
@@ -191,13 +198,17 @@ struct IncidentsListView: View {
 	private func row(_ card: IncidentCard) -> some View {
 		VStack(alignment: .leading, spacing: 0) {
 			NavigationLink(value: Route.incident(id: card.id)) {
-				IncidentRow(card: card, viewerUserId: session.currentUserId, showsRail: false)
+				IncidentRow(card: card, viewerUserId: session.currentUserId)
 			}
 			.buttonStyle(RowButtonStyle())
 			if card.needsViewer {
 				HStack {
 					Spacer(minLength: 0)
-					AcknowledgeButton(isPending: model.responder.isPending(.acknowledge, on: card.id)) {
+					AcknowledgeButton(
+						ruleName: card.incident.ruleName,
+						isPending: model.responder.isPending(.acknowledge, on: card.id),
+						isBusy: model.responder.pending != nil
+					) {
 						Task { await model.acknowledge(card.id) }
 					}
 				}
@@ -209,20 +220,18 @@ struct IncidentsListView: View {
 	}
 }
 
-/// Rule name and severity, the breach, service and age, then who has it; a
-/// severity rail while open.
+/// Rule name and severity, the breach, service and age, then who has it. The
+/// list draws the severity rail, over this and the Acknowledge under it.
 struct IncidentRow: View {
 	let card: IncidentCard
-	var viewerUserId: String? = nil
-	/// False when the caller draws the rail over a taller row of its own.
-	var showsRail = true
+	let viewerUserId: String?
 
 	private var incident: AlertIncident { card.incident }
 	private var isOpen: Bool { incident.status == .open }
 	private var tint: Color { isOpen ? incident.severity.tint : Token.mutedForeground }
 
 	var body: some View {
-		SeverityRailRow(tint: isOpen && showsRail ? incident.severity.tint : nil) {
+		SeverityRailRow(tint: nil) {
 			VStack(alignment: .leading, spacing: 5) {
 				HStack(spacing: 8) {
 					Text(incident.ruleName)

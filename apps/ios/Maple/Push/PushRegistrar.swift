@@ -211,24 +211,61 @@ final class PushRegistrar: NSObject {
 			return
 		}
 		let scoped = organizationId.map { api.scoped(to: $0) } ?? api
-		do {
-			_ = try await Telemetry.span(
-				Telemetry.Name.incidentAction,
-				attributes: [
-					Telemetry.Key.incidentAction: .string(IncidentAction.acknowledge.rawValue),
-					Telemetry.Key.incidentActionSurface: .string("notification"),
-				]
-			) { _ in
-				try await scoped.acknowledgeIncident(id: incidentId)
+		// iOS suspends a background action after about half a minute, and a request
+		// on a weak connection outlives that: without a deadline of our own the
+		// banner would vanish and neither the acknowledgement nor the failure
+		// notice would ever happen.
+		let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<BannerAcknowledgement, Never>) in
+			// Whichever finishes first answers; the other finds the answer given.
+			let first = FirstAnswer(continuation)
+			Task { @MainActor in
+				do {
+					_ = try await IncidentResponder.send(
+						.acknowledge, on: incidentId, api: scoped, surface: .notification
+					)
+					first.give(.acknowledged)
+				} catch let error as MapleAPIError {
+					first.give(error.meansNothingToAnswer ? .nothingToAnswer : .failed)
+				} catch {
+					first.give(.failed)
+				}
 			}
-			Telemetry.track(
-				Telemetry.Event.incidentActed,
-				["action": IncidentAction.acknowledge.rawValue, "surface": "notification"]
-			)
+			Task { @MainActor in
+				try? await Task.sleep(for: Self.bannerActionDeadline)
+				first.give(.failed)
+			}
+		}
+		switch outcome {
+		case .acknowledged:
 			WidgetCenter.shared.reloadAllTimelines()
-			IncidentChanges.shared.didChange()
-		} catch {
+		case .nothingToAnswer:
+			// Resolved or gone since the banner arrived: there is no page left, so
+			// there is nothing to warn about either.
+			break
+		case .failed:
 			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
+		}
+	}
+
+	private enum BannerAcknowledgement: Sendable {
+		case acknowledged
+		case nothingToAnswer
+		case failed
+	}
+
+	private static let bannerActionDeadline: Duration = .seconds(20)
+
+	/// Resumes a continuation once, for the first of two racers on the main actor.
+	private final class FirstAnswer {
+		private var continuation: CheckedContinuation<BannerAcknowledgement, Never>?
+
+		init(_ continuation: CheckedContinuation<BannerAcknowledgement, Never>) {
+			self.continuation = continuation
+		}
+
+		func give(_ answer: BannerAcknowledgement) {
+			continuation?.resume(returning: answer)
+			continuation = nil
 		}
 	}
 
@@ -268,6 +305,17 @@ final class PushRegistrar: NSObject {
 			for organizationId in organizationIds {
 				group.addTask { try? await api.scoped(to: organizationId).unregisterDevice(token: deviceToken) }
 			}
+		}
+	}
+}
+
+extension MapleAPIError {
+	/// The incident resolved (409) or no longer exists (404): not a failure to
+	/// tell someone about, the page is simply over.
+	fileprivate var meansNothingToAnswer: Bool {
+		switch self {
+		case .api(let status, _), .unexpectedStatus(let status, _): status == 409 || status == 404
+		case .notAuthenticated, .transport, .decoding, .unknownRegion: false
 		}
 	}
 }

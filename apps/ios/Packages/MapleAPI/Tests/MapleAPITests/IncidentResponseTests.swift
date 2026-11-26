@@ -131,7 +131,8 @@ struct IncidentResponseStateTests {
 		}
 		let at = next.at
 		#expect(next.countdown(now: at.addingTimeInterval(-48)) == "48s")
-		#expect(next.countdown(now: at.addingTimeInterval(30)) == "0s")
+		#expect(next.countdown(now: at) == "now")
+		#expect(next.countdown(now: at.addingTimeInterval(30)) == "now")
 		#expect(next.countdown(now: at.addingTimeInterval(-3_725)) == "1h 2m")
 	}
 
@@ -163,7 +164,23 @@ struct IncidentResponseStateTests {
 		#expect(ack.headline(viewerUserId: "user_me") == "Acknowledged by you")
 		#expect(ack.headline(viewerUserId: "user_other") == "Acknowledged by Me Myself")
 		#expect(ack.waitedText == "2m after it opened")
+		#expect(ack.summary(viewerUserId: "user_me") == "Acknowledged by you, 2m after it opened")
 		#expect(ack.source == .mobile)
+	}
+
+	@Test("A later acknowledgement does not claim the first one's speed")
+	func laterAcknowledgement() throws {
+		let state = try incident([
+			"acknowledged_at": "2026-11-27T03:20:00.000Z",
+			"first_acknowledged_at": "2026-11-27T01:14:00.000Z",
+			"acknowledged_by": ["user_id": "user_dana", "name": "Dana Kim"],
+			"acknowledged_via": "web",
+		]).responseState
+		guard case .acknowledged(let ack) = state else {
+			Issue.record("expected an acknowledgement, got \(state)")
+			return
+		}
+		#expect(ack.summary(viewerUserId: nil) == "Acknowledged by Dana Kim · first acknowledged after 2m")
 	}
 
 	@Test("An acknowledgement nobody is named on reads as an agent or a teammate")
@@ -191,6 +208,7 @@ struct IncidentResponseStateTests {
 		])
 		#expect(closed.responseState == .resolved)
 		#expect(closed.timeToAcknowledge.map(IncidentWording.span) == "1h 5m")
+		#expect(IncidentWording.span(49 * 3_600 + 300) == "2d 1h")
 		#expect(try incident().timeToAcknowledge == nil)
 	}
 }
@@ -326,6 +344,24 @@ struct IncidentResponseWireTests {
 		#expect(request.path == "/v2/alerts/incidents/inc_tC4d9V79DCDzgbGKhAnff9/acknowledge")
 		#expect(request.headerFields[ClientIdentityMiddleware.headerName] == "ios")
 		#expect(acknowledged.acknowledgedVia == .mobile)
+	}
+
+	@Test("Unacknowledge, resolve and the event list each go to their own path")
+	func otherCalls() async throws {
+		let body = String(decoding: try JSONEncoder().encode(try incident()), as: UTF8.self)
+		let transport = CapturingTransport(responseJSON: body)
+		let api = client(transport)
+		_ = try await api.unacknowledgeIncident(id: "inc_a")
+		_ = try await api.resolveIncident(id: "inc_a")
+		#expect(transport.requests.map(\.path) == [
+			"/v2/alerts/incidents/inc_a/unacknowledge", "/v2/alerts/incidents/inc_a/resolve",
+		])
+		#expect(transport.requests.allSatisfy { $0.method == .post })
+
+		let events = CapturingTransport(responseJSON: #"{"object":"list","data":[]}"#)
+		#expect(try await client(events).alertIncidentEvents(incidentId: "inc_a").isEmpty)
+		#expect(events.requests.first?.path == "/v2/alerts/incidents/inc_a/events")
+		#expect(events.requests.first?.method == .get)
 	}
 
 	@Test("What is paging me asks for open incidents that paged the caller")

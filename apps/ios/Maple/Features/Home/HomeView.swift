@@ -75,8 +75,9 @@ struct HomeView: View {
 			}
 		}
 		// An incident answered elsewhere in the app, or from a banner.
-		.onChange(of: IncidentChanges.shared.revision) {
-			Task { await model?.loader.load(.refresh) }
+		.task(id: IncidentChanges.shared.revision) {
+			guard let model else { return }
+			await model.responder.reloadIfAnswered(model.loader)
 		}
 		.onChange(of: scenePhase) { _, phase in
 			// Coming back from the background: the board is as old as the
@@ -145,7 +146,8 @@ private struct HomeContent: View {
 							IncidentCardView(
 								card: card,
 								viewerUserId: viewerUserId,
-								isAcknowledging: responder.isPending(.acknowledge, on: card.id)
+								isAcknowledging: responder.isPending(.acknowledge, on: card.id),
+								isBusy: responder.pending != nil
 							) { acknowledge(card.id) }
 						}
 					}
@@ -194,9 +196,11 @@ private struct HomeContent: View {
 /// own Acknowledge, outside the link so the two taps cannot blur.
 struct IncidentCardView: View {
 	let card: IncidentCard
-	var viewerUserId: String? = nil
-	var isAcknowledging = false
-	var acknowledge: () -> Void = {}
+	let viewerUserId: String?
+	let isAcknowledging: Bool
+	/// Another card's action is still running.
+	let isBusy: Bool
+	let acknowledge: () -> Void
 
 	private var incident: AlertIncident { card.incident }
 
@@ -216,7 +220,7 @@ struct IncidentCardView: View {
 		.hairlineCard()
 	}
 
-	/// Who has the incident. Nothing when nobody was paged and nobody answered.
+	/// A page waiting on this person: who is next, and the button that answers it.
 	@ViewBuilder private var response: some View {
 		if card.needsViewer {
 			Hairline()
@@ -238,21 +242,16 @@ struct IncidentCardView: View {
 					}
 				}
 				Spacer(minLength: 0)
-				AcknowledgeButton(isPending: isAcknowledging, action: acknowledge)
+				AcknowledgeButton(
+					ruleName: incident.ruleName,
+					isPending: isAcknowledging,
+					isBusy: isBusy,
+					action: acknowledge
+				)
 			}
 			.padding(.leading, 16)
 			.padding(.trailing, 14)
 			.padding(.vertical, 12)
-		} else if let line = incident.responseLine(pagedViewer: card.pagesViewer, viewerUserId: viewerUserId) {
-			Text(line)
-				.font(Typo.tiny)
-				.tabularNumbers()
-				.foregroundStyle(Token.mutedForeground)
-				.lineLimit(1)
-				.padding(.leading, 16)
-				.padding(.trailing, 14)
-				.padding(.bottom, 14)
-				.padding(.top, -4)
 		}
 	}
 
@@ -301,6 +300,18 @@ struct IncidentCardView: View {
 					anchorsToZero: false
 				)
 				.frame(width: 96, height: 28)
+			}
+
+			// Inside the link: who has it is part of what the card says, and a tap
+			// on it opens the incident like the rest.
+			if !card.needsViewer,
+				let line = incident.responseLine(pagedViewer: card.pagesViewer, viewerUserId: viewerUserId)
+			{
+				Text(line)
+					.font(Typo.tiny)
+					.tabularNumbers()
+					.foregroundStyle(Token.mutedForeground)
+					.lineLimit(1)
 			}
 		}
 	}
