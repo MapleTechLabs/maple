@@ -274,7 +274,7 @@
 	"faq_limits_q": "What happens if I exceed my plan limits?",
 	"faq_limits_a": "Usage alerts tell you as you approach your included volume. On the Startup plan, additional usage is billed at $0.15 per GB, per signal, the rate shown on this page. Storage is billed at $0.15 per GB-month for as long as the data is kept. If you would rather not go over, set an overage cap per signal and ingest for that signal is rejected at the cap.",
 	"faq_retention_q": "How long is data retained?",
-	"faq_retention_a": "You choose, per signal, from 3 days to 2 years, for the whole organization or one source. By default traces, logs and session replays are kept 30 days and metrics 90 days; service charts (request rate, errors, latency and the service map) are kept 12 months. Logs, traces and metrics are billed at $0.15 per GB-month for as long as they are kept.",
+	"faq_retention_a": "You choose, per signal, from 3 days to 2 years, for the whole organization or one source. By default traces, logs and session replays are kept 30 days and metrics 90 days; service charts (request rate, errors, latency and the service map) are kept 12 months. Logs, traces, metrics and profiles are billed at $0.15 per GB-month for as long as they are kept.",
 	"faq_otel_q": "Is Maple compatible with OpenTelemetry?",
 	"faq_otel_a": "Yes. Maple ingests OpenTelemetry directly. Any application instrumented with an OTel SDK or the OTel Collector can send data to Maple without code changes. No proprietary agent is required.",
 	"faq_selfhost_q": "Can I self-host Maple?",

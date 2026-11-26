@@ -271,7 +271,7 @@
 	"faq_limits_q": "\ud50c\ub79c \ud55c\ub3c4\ub97c \ucd08\uacfc\ud558\uba74 \uc5b4\ub5bb\uac8c \ub418\ub098\uc694?",
 	"faq_limits_a": "포함 용량에 근접하면 사용량 알림으로 알려드립니다. Startup 플랜에서 초과 사용량은 이 페이지에 표시된 요금인 시그널별 $0.15/GB로 과금됩니다. 저장 데이터는 GB·월당 $0.15. 초과하고 싶지 않다면 시그널별 초과 상한을 설정하세요. 상한에 도달하면 해당 시그널의 수집이 거부됩니다.",
 	"faq_retention_q": "\ub370\uc774\ud130 \ubcf4\uc874 \uae30\uac04\uc740 \uc5bc\ub9c8\ub098 \ub418\ub098\uc694?",
-	"faq_retention_a": "Startup 플랜에서는 트레이스, 로그, 세션 리플레이를 30일, 메트릭을 90일, 서비스 차트(요청 수, 에러, 지연, 서비스 맵)를 12개월 보존합니다. Enterprise 플랜은 맞춤형 보존 기간을 제공합니다.",
+	"faq_retention_a": "시그널별로, 조직 전체 또는 소스 단위로 3일부터 2년까지 선택할 수 있습니다. 기본값으로 트레이스, 로그, 세션 리플레이는 30일, 메트릭은 90일, 서비스 차트(요청 수, 에러, 지연, 서비스 맵)는 12개월 보존합니다. 로그, 트레이스, 메트릭, 프로파일은 보존되는 동안 GB·월당 $0.15로 과금됩니다.",
 	"faq_otel_q": "Maple\uc740 OpenTelemetry\uc640 \ud638\ud658\ub418\ub098\uc694?",
 	"faq_otel_a": "네. Maple은 OpenTelemetry를 직접 수집합니다. OTel SDK 또는 OTel Collector로 계측된 애플리케이션은 코드 변경 없이 Maple로 데이터를 전송할 수 있습니다. 독점 에이전트는 필요 없습니다.",
 	"faq_selfhost_q": "Maple\uc744 \uc140\ud504 \ud638\uc2a4\ud305\ud560 \uc218 \uc788\ub098\uc694?",
