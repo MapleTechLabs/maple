@@ -24,6 +24,7 @@ struct NotificationSettingsView: View {
 				ScrollView {
 					VStack(alignment: .leading, spacing: 24) {
 						permissionSection
+						testPageSection
 						if push.authorization == .authorized {
 							prefsSection("Alerts") {
 								toggle(
@@ -147,6 +148,38 @@ struct NotificationSettingsView: View {
 				.background(Token.primary, in: .rect(cornerRadius: Token.Radius.md))
 		}
 		.buttonStyle(.plain)
+	}
+
+	// MARK: Test page
+
+	/// Shown whatever the permission is: the test goes to every phone the user
+	/// has here, and this is where what blocks this one gets put right.
+	private var testPageSection: some View {
+		VStack(alignment: .leading, spacing: 10) {
+			SectionLabel("Test page").padding(.horizontal, 16)
+			VStack(alignment: .leading, spacing: 12) {
+				if let problem = testPageProblem {
+					PageReachabilityProblemView(problem: problem)
+					Hairline()
+				}
+				TestPageControl(surface: .settings)
+			}
+			.padding(16)
+			.frame(maxWidth: .infinity, alignment: .leading)
+			.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+			.overlay(RoundedRectangle(cornerRadius: Token.Radius.lg).stroke(Token.border, lineWidth: Token.hairline))
+			.padding(.horizontal, 16)
+		}
+	}
+
+	/// What stands between a page and this phone. A permission problem the
+	/// Permission card above already states, with its own fix, is not said twice.
+	private var testPageProblem: PageReachability.Problem? {
+		guard let problem = push.pageReachability(orgId: orgId)?.problem else { return nil }
+		switch (problem, push.authorization) {
+		case (.permissionDenied, .denied), (.permissionNotAsked, .notDetermined): return nil
+		default: return problem
+		}
 	}
 
 	// MARK: Live Activities

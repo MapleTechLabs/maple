@@ -8,7 +8,9 @@ and a search tab, in the order the questions get asked (see [`PRODUCT.md`](PRODU
   shift card leads the board when the organization has on-call schedules: on
   call now and until when, or the next shift. It opens **On call** (your shifts,
   who holds each schedule, coverage gaps), and a schedule row there opens the
-  read-only **Schedule** screen with who covers the next 14 days.
+  read-only **Schedule** screen with who covers the next 14 days. Someone on
+  call, or within 7 days of a shift, is warned when a page would not reach
+  this phone.
 - **Services**: the list, and a detail that leads with a health verdict and
   its reason, one full-width scrubbable chart per golden signal (throughput,
   errors, latency percentiles), window aggregates, scoped alerts, the busiest
@@ -84,6 +86,25 @@ runs in the background without unlocking the phone
 names; if the request fails a second banner says so and opens the incident.
 **Open incident** takes the same path as a tap. The category string is shared
 with `PAGE_NOTIFICATION_CATEGORY` in `MobilePushService.ts`.
+
+**Will a page reach this phone?** `PageReachability` (in `Packages/MapleAPI`,
+with tests) takes what the phone knows (permission, banners, sound, Time
+Sensitive, and whether the server holds its registration) and answers
+`.reachable` or the one most severe problem with its fix: ask for permission,
+open Maple's notification settings, or register again. `PushRegistrar` reads
+those facts whenever the app comes to the front, so a fix made in the Settings
+app shows on return. `PageReachabilityCard` draws the problem on Overview (under
+the shift card) and at the top of On call, only for someone on call now or
+within 7 days of a shift. The notification settings sheet shows it too, above
+**Send a test page**, except a permission problem its Permission card already
+states.
+
+**Send a test page** (`POST /v2/mobile_devices/test_page`, `sendTestPage()`)
+asks the server to page the caller's own phones the way a real page is
+delivered, and one line under the button says what came of it. The push carries
+`maple_kind: "test_page"`: it shows as a banner with its sound even with the app
+open, and a tap opens the app and goes nowhere. The button is in the settings
+sheet and at the bottom of On call, and each press is a `push.test_page` span.
 
 The server side is `packages/backend/src/services/push` + `packages/backend/src/platform/Apns.ts`; it sends
 only when `APNS_TEAM_ID` / `APNS_KEY_ID` / `APNS_PRIVATE_KEY` are set on the
@@ -404,6 +425,18 @@ relative to now so timestamps always read as current, and the session is pinned
 to `.ready` without touching Clerk. This is how screens get built and
 screenshotted; it is not a test double for logic — that stays in
 `Packages/MapleAPI`.
+
+In fixture mode "Send a test page" answers as one phone reached, and nothing
+arrives. To look at the reachability warning without touching the simulator's
+notification settings, open `maple://debug/reachability/<state>` in a Debug
+build, with `denied`, `timesensitive`, `unregistered` or `ok`:
+
+```bash
+xcrun simctl openurl booted maple://debug/reachability/timesensitive
+```
+
+The state holds until the app quits; any other word returns to what the phone
+really reports.
 
 ## The API client is generated
 
