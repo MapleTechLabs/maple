@@ -162,6 +162,7 @@ describe("retention tab", () => {
 			given(own),
 			expectView(text("Your ClickHouse keeps its own retention")).toExist(),
 			expectView(role("combobox", { name: "Logs" })).not.toExist(),
+			expectView(text("Sources with their own period")).not.toExist(),
 		)
 	})
 })
