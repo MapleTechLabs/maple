@@ -5,6 +5,7 @@ import { Investigations, OrgErasures, PrReviewReplies, PrReviews, type OrgErasur
 import { prReplySessionId, prReviewSessionId } from "@maple/domain/chat-session"
 import type { OrgErasureKind } from "@maple/domain/org-erasure"
 import { WAREHOUSE_ERASURE_TARGETS, warehouseErasureRank } from "@maple/domain/tinybird/org-erasure-plan"
+import { RETENTION_PERIODS } from "@maple/domain/retention"
 import type { OrgId } from "@maple/primitives"
 import { Array as Arr, Clock, Duration, Effect, Option, Schema } from "effect"
 import {
@@ -16,6 +17,7 @@ import {
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { describeCause } from "@maple/backend/platform/describe-cause"
 import { WarehouseDeleteClient } from "@maple/backend/services/warehouse/WarehouseDeleteClient"
+import { replayRetentionPrefix } from "@maple/backend/services/session-replays/ReplayBlobStore"
 import { sourceMapOrgPrefix } from "@maple/backend/services/sourcemaps/source-map-files"
 
 /**
@@ -27,6 +29,12 @@ import { sourceMapOrgPrefix } from "@maple/backend/services/sourcemaps/source-ma
 
 /** Where the ingest gateway writes an org's replay chunks (`replayObjectKey`); the slash keeps `org_a` off `org_ab`. */
 export const replayPrefix = (orgId: OrgId): string => `v1/${orgId}/`
+
+/** Every prefix an org's replay chunks can sit under: the legacy one, then one per retention period. */
+export const replayPrefixes = (orgId: OrgId): ReadonlyArray<string> => [
+	replayPrefix(orgId),
+	...Arr.map(RETENTION_PERIODS, (days) => `${replayRetentionPrefix(days)}${replayPrefix(orgId)}`),
+]
 
 const INSERT_CHUNK = 500
 
@@ -62,7 +70,7 @@ const insertErasures = (
 export const queueOrgErasures = (db: MapleDb, orgId: OrgId, now: number) =>
 	Effect.gen(function* () {
 		const targets: ReadonlyArray<readonly [OrgErasureKind, string]> = [
-			["replay_blobs", replayPrefix(orgId)],
+			...Arr.map(replayPrefixes(orgId), (prefix) => ["replay_blobs", prefix] as const),
 			["source_maps", sourceMapOrgPrefix(orgId)],
 			...Arr.map(WAREHOUSE_ERASURE_TARGETS, (target) => ["warehouse", target.datasource] as const),
 		]

@@ -432,9 +432,9 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 					since(ORG_A, "Timestamp", 90),
 				)
 				// A source's period alone bounds the signal, with no period on the org.
-				yield* retention.setSource(ORG_B, ANA, yield* sourceOf(ORG_B), { logs: 400 })
+				yield* retention.setSource(ORG_B, ANA, yield* sourceOf(ORG_B), { logs: 365 })
 				assert.deepStrictEqual(boundedIn(yield* tokens.getOrgReadToken(ORG_B), ORG_B), {
-					logs: since(ORG_B, "TimestampTime", 400),
+					logs: since(ORG_B, "TimestampTime", 365),
 				})
 			}),
 		),

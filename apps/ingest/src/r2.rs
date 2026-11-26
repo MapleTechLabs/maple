@@ -219,8 +219,16 @@ fn key_jitter(key: &str, step: u64) -> u64 {
 /// from the ClickHouse row's `(OrgId, SessionId, ChunkSeq)` alone, and a date
 /// would couple it to the gateway's `Utc::now()` in a way that disagrees with
 /// the row's own `Timestamp` across a UTC midnight boundary.
-pub fn replay_object_key(org_id: &str, session_id: &str, chunk_seq: u32) -> String {
-    format!("{KEY_SCHEME}/{org_id}/{session_id}/{chunk_seq:08}.json.gz")
+///
+/// The `r{days}/` lead is the row's stamped `RetentionDays`: each period has its
+/// own bucket lifecycle rule, so the object expires with the row that indexes it.
+pub fn replay_object_key(
+    retention_days: u16,
+    org_id: &str,
+    session_id: &str,
+    chunk_seq: u32,
+) -> String {
+    format!("r{retention_days}/{KEY_SCHEME}/{org_id}/{session_id}/{chunk_seq:08}.json.gz")
 }
 
 /// Writes replay chunk payloads to an S3-compatible bucket.
@@ -491,25 +499,35 @@ mod tests {
     #[test]
     fn builds_the_documented_object_key() {
         assert_eq!(
-            replay_object_key("org_123", "sess_abc", 7),
-            "v1/org_123/sess_abc/00000007.json.gz"
+            replay_object_key(30, "org_123", "sess_abc", 7),
+            "r30/v1/org_123/sess_abc/00000007.json.gz"
         );
+    }
+
+    #[test]
+    fn leads_with_the_stamped_period_so_its_lifecycle_rule_matches() {
+        // `r3/` must not be a prefix of `r30/` keys: the slash keeps the rules apart.
+        assert_eq!(
+            replay_object_key(365, "o", "s", 1),
+            "r365/v1/o/s/00000001.json.gz"
+        );
+        assert!(!replay_object_key(30, "o", "s", 1).starts_with("r3/"));
     }
 
     #[test]
     fn zero_pads_chunk_seq_so_lexicographic_order_is_playback_order() {
         let mut keys = vec![
-            replay_object_key("o", "s", 10),
-            replay_object_key("o", "s", 2),
-            replay_object_key("o", "s", 1),
+            replay_object_key(30, "o", "s", 10),
+            replay_object_key(30, "o", "s", 2),
+            replay_object_key(30, "o", "s", 1),
         ];
         keys.sort();
         assert_eq!(
             keys,
             vec![
-                "v1/o/s/00000001.json.gz",
-                "v1/o/s/00000002.json.gz",
-                "v1/o/s/00000010.json.gz",
+                "r30/v1/o/s/00000001.json.gz",
+                "r30/v1/o/s/00000002.json.gz",
+                "r30/v1/o/s/00000010.json.gz",
             ]
         );
     }
@@ -521,8 +539,8 @@ mod tests {
         // (the SDK flushes at most every 5s), but assert the format doesn't
         // truncate.
         assert_eq!(
-            replay_object_key("o", "s", 123_456_789),
-            "v1/o/s/123456789.json.gz"
+            replay_object_key(30, "o", "s", 123_456_789),
+            "r30/v1/o/s/123456789.json.gz"
         );
     }
 
