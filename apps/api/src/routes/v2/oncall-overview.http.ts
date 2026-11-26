@@ -17,6 +17,7 @@ const toV2Shift = (shift: OnCallShift): V2OnCallOverviewShift => ({
 	starts_at: iso(shift.startMs),
 	ends_at: iso(shift.endMs),
 	is_override: shift.source.kind === "override",
+	continues: shift.continues,
 })
 
 /** "Weekly, hands off Mon 09:00": one line for a schedule's header. Several layers are only counted. */
@@ -72,6 +73,7 @@ const overviewOf = (schedules: OnCallSchedulesService["Service"]) =>
 				starts_at: iso(mine.shift.startMs),
 				ends_at: iso(mine.shift.endMs),
 				is_override: mine.shift.source.kind === "override",
+				continues: mine.shift.continues,
 			})),
 			people: Arr.map(overview.people, (person) => ({ user_id: person.userId, name: person.name })),
 		} satisfies V2OnCallOverview
