@@ -438,35 +438,10 @@ export const clickedRunEdit = (model: Card, env: Env): Return => {
 	}
 }
 
-/** A Method row, or the code flavour under it: the flavour toggle follows the method. */
+/** A Method row, or the code flavour under it. */
 export const clickedMethod = (model: Card, method: SetupMethod): Return => ({
-	model: withConfigure(model, (configure) => ({
-		method,
-		flavourGroup:
-			method === "terraform" || method === "alchemy"
-				? { ...configure.flavourGroup, values: [method] }
-				: configure.flavourGroup,
-	})),
+	model: withConfigure(model, () => ({ method })),
 })
-
-export const gotFlavour = (model: Card, message: ToggleGroup.Message): Return => {
-	const configure = model.configure
-	if (configure === null) return { model }
-	const step = ToggleGroup.update(configure.flavourGroup, message)
-	const flavour = configure.method === "alchemy" ? "alchemy" : "terraform"
-	const next = Arr.findFirst(FLAVOURS, (value) => value !== flavour && step.model.values.includes(value))
-	return {
-		model: withConfigure(model, () => ({
-			flavourGroup: { ...step.model, values: [Option.getOrElse(next, () => flavour)] },
-			method: Option.getOrElse(next, () => configure.method),
-		})),
-		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-			GcpMessage.GotGcpFlavourMessage({ message: inner }),
-		),
-	}
-}
-
-const FLAVOURS = ["terraform", "alchemy"] as const
 
 export const completedScripts = (
 	model: Card,

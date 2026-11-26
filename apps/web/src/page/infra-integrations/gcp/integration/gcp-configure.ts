@@ -64,7 +64,6 @@ export const initConfigure = (
 		connectionStage: "choose",
 		method: "script",
 		rerun: null,
-		flavourGroup: ToggleGroup.init({ label: "", values: ["terraform"] }),
 		sinkExisted: false,
 		manualOpen: null,
 		isManualTouched: false,

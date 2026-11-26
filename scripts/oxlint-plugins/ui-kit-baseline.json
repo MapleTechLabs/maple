@@ -95,7 +95,6 @@
 		"apps/web/src/page/infra-integrations/cloudflare/zone/view-breakdown.ts": 5,
 		"apps/web/src/page/infra-integrations/cloudflare/zone/view-filters.ts": 3,
 		"apps/web/src/page/infra-integrations/cloudflare/zone/view-rail.ts": 1,
-		"apps/web/src/page/infra-integrations/gcp/integration/view-gcp-parts.ts": 1,
 		"apps/web/src/page/infra-integrations/gcp/integration/view-gcp-setup-methods.ts": 3,
 		"apps/web/src/page/infra-integrations/gcp/integration/view-gcp-workloads.ts": 5,
 		"apps/web/src/page/infra-integrations/gcp/integration/view-gcp.ts": 2,

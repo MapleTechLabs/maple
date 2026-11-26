@@ -54,10 +54,6 @@ const staged = (nowMs: number, state: LabState): Staged => {
 					created: connector,
 					connectionStage: "method",
 					method,
-					flavourGroup: {
-						...base.flavourGroup,
-						values: [method === "alchemy" ? "alchemy" : "terraform"],
-					},
 				},
 				pinnedScripts: null,
 			}

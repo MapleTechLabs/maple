@@ -16,6 +16,7 @@ import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { codeBlock } from "../kit/code-block"
 
 // The service panel's Infrastructure tab: the platform resources the service runs as, its
 // Kubernetes workloads, and how to link either when neither matched.
@@ -168,14 +169,7 @@ const infraEmptyState = (h: H): Html =>
 				inlineCode(h, {}, ["k8s.deployment.name"]),
 				":",
 			]),
-			h.pre(
-				[
-					h.Class(
-						"text-3xs bg-muted px-2 py-1.5 rounded-sm font-mono text-foreground overflow-x-auto",
-					),
-				],
-				["kubectl label namespace <ns> maple.io/instrument=true"],
-			),
+			codeBlock(h, { code: "kubectl label namespace <ns> maple.io/instrument=true", lang: "shell" }),
 			docsLink(h, "kubernetes"),
 		],
 	)

@@ -92,7 +92,6 @@ export const GcpMessage = defineMessageUnion({
 	ClickedGcpScriptExpand: {},
 	/** The Method step: a row, or the code flavour under it. */
 	ClickedGcpMethod: { method: SetupMethod },
-	GotGcpFlavourMessage: { message: ToggleGroup.Message },
 	ClickedGcpMethodContinue: {},
 	ClickedGcpManualStep: { title: Schema.String, firstTitle: Schema.NullOr(Schema.String) },
 	ClickedGcpCopyPrompt: { prompt: Schema.String },

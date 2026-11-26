@@ -12,7 +12,8 @@ import { icon } from "@maple/views/ui/icon"
 import { relativeTime } from "../../../kit/relative-time"
 import { IAC_DOCS } from "./gcp-configure-copy"
 import type { Message } from "../../../integrations/message"
-import { openCloudShellButton, scriptBlock, type ScriptFailure, SMALL, step, toHub } from "./view-gcp-parts"
+import { openCloudShellButton, scriptBlock, type ScriptFailure, SMALL, toHub } from "./view-gcp-parts"
+import { setupStep, setupSteps } from "../../../kit/setup-steps"
 import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
 import { gcpConnectors, neverReported } from "./update-gcp"
@@ -127,16 +128,15 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 					),
 				]),
 				DialogView.dialogPanel(h, "dialog", id, [
-					h.ol(
-						[],
+					setupSteps(
+						h,
 						[
-							step(
+							setupStep(
 								h,
 								{
-									number: 1,
 									state: cleaned ? "done" : "current",
-									title: "Remove Maple's resources from Google Cloud",
-									detail:
+									title: ["Remove Maple's resources from Google Cloud"],
+									hint:
 										cleaned && connector.setup_reported_at !== null
 											? [
 													relativeTime(h, {
@@ -230,19 +230,19 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 											),
 										],
 							),
-							step(
+							setupStep(
 								h,
 								{
-									number: 2,
 									state: cleaned ? "current" : "pending",
-									title: "Disconnect from Maple",
-									detail: [
+									title: ["Disconnect from Maple"],
+									hint: [
 										"Maple stops accepting this connection's logs and reading its metrics. Data already in Maple is kept.",
 									],
 								},
 								[],
 							),
 						],
+						{ isTracked: true },
 					),
 					...(cleaned
 						? []
