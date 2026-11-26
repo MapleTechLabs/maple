@@ -8,6 +8,7 @@ import {
 	type AlertIncidentId,
 	type AlertIncidentPage,
 	type AlertPersistenceError,
+	type EscalationStep,
 	type OrgId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -33,11 +34,24 @@ export interface AlertIncidentNextStepPeople {
 	readonly people: ReadonlyArray<{ readonly userId: UserId; readonly name: string | null }>
 }
 
+/** Two steps with the same key page the same people: their user and schedule targets, in order. */
+const stepPeopleKey = (step: EscalationStep): string =>
+	Arr.join(
+		Arr.flatMap(step.targets, (target) =>
+			target.type === "user"
+				? [`user:${target.userId}`]
+				: target.type === "schedule"
+					? [`schedule:${target.scheduleId}`]
+					: [],
+		),
+		"|",
+	)
+
 /** Pages per incident the timeline shows; a chain pages at most a few people a step. */
 const MAX_PAGES_PER_READ = 500
 /** A read waits this long on the member directory for names, then answers without them. */
 const DIRECTORY_TIMEOUT = Duration.seconds(3)
-/** Steps resolved at once: a page of incidents rarely has more than a few runs waiting. */
+/** Distinct steps resolved at once: a page of incidents rarely waits on more than a few. */
 const NEXT_STEP_CONCURRENCY = 4
 
 export interface AlertIncidentPagesServiceApi {
@@ -150,7 +164,6 @@ export class AlertIncidentPagesService extends Context.Service<
 							status: $.status,
 							stepIndex: $.stepIndex,
 							stepsJson: $.stepsJson,
-							nextStepAt: $.nextStepAt,
 						}))
 						// The latest run per incident, as the escalation read picks it.
 						.distinctOn("incidentId")
@@ -162,14 +175,19 @@ export class AlertIncidentPagesService extends Context.Service<
 						]),
 				),
 			)
+			// A step that only notifies destinations pages nobody: it costs no directory read.
 			const waiting = Arr.flatMap(runs, (run) => {
 				const step = run.stepsJson[run.stepIndex]
-				return run.status === "active" && run.nextStepAt !== null && step !== undefined
-					? [{ incidentId: run.incidentId, step }]
+				return run.status === "active" &&
+					step !== undefined &&
+					Arr.some(step.targets, (target) => target.type !== "destination")
+					? [{ incidentId: run.incidentId, step, key: stepPeopleKey(step) }]
 					: []
 			})
 			yield* Effect.annotateCurrentSpan("maple.alert.waiting_runs", waiting.length)
 			if (waiting.length === 0) return []
+			// A storm's incidents wait on the same step of one chain: each distinct step is resolved once.
+			const steps = Arr.dedupeWith(waiting, (a, b) => a.key === b.key)
 			// Names and who has left, best effort: a slow or absent directory names nobody and keeps everyone.
 			const members = yield* orgMembers.listMembers(orgId).pipe(
 				Effect.timeout(DIRECTORY_TIMEOUT),
@@ -178,31 +196,37 @@ export class AlertIncidentPagesService extends Context.Service<
 			const names = new Map(Arr.map(members, (member) => [member.userId, member.name] as const))
 			const present = members.length === 0 ? null : new Set(names.keys())
 			const nowMs = yield* Clock.currentTimeMillis
-			return yield* dbExecute((db) =>
+			const resolved = yield* dbExecute((db) =>
 				Effect.forEach(
-					waiting,
-					({ incidentId, step }) =>
+					steps,
+					({ key, step }) =>
 						Effect.map(
 							loadStepPeople(db, orgId, step, nowMs, present),
-							({ directUserIds, shifts }): AlertIncidentNextStepPeople => ({
-								incidentId,
-								people: Arr.map(
-									Arr.dedupe([
-										...Arr.filter(
-											directUserIds,
-											(userId) => present?.has(userId) ?? true,
-										),
-										...Arr.flatMap(shifts, (shift) =>
-											shift.userId === null ? [] : [shift.userId],
-										),
-									]),
-									(userId) => ({ userId, name: names.get(userId) ?? null }),
-								),
-							}),
+							({ directUserIds, shifts }) =>
+								[
+									key,
+									Arr.map(
+										Arr.dedupe([
+											...Arr.filter(
+												directUserIds,
+												(userId) => present?.has(userId) ?? true,
+											),
+											...Arr.flatMap(shifts, (shift) =>
+												shift.userId === null ? [] : [shift.userId],
+											),
+										]),
+										(userId) => ({ userId, name: names.get(userId) ?? null }),
+									),
+								] as const,
 						),
 					{ concurrency: NEXT_STEP_CONCURRENCY },
 				),
 			)
+			const peopleByStep = new Map(resolved)
+			return Arr.map(waiting, ({ incidentId, key }): AlertIncidentNextStepPeople => ({
+				incidentId,
+				people: peopleByStep.get(key) ?? [],
+			}))
 		})
 
 		return { listPages, listNextStepPeople } satisfies AlertIncidentPagesServiceApi

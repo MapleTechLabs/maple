@@ -34,7 +34,13 @@ import { MobilePushService } from "@maple/backend/services/push/MobilePushServic
 import { Env } from "@maple/backend/platform/Env"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { buildAlertEmailContent } from "./alert-email"
-import { formatObservedSummary, signalCarriesDetail, signalDisplayOf, truncate } from "./alert-formatting"
+import {
+	displayGroup,
+	formatObservedSummary,
+	signalCarriesDetail,
+	signalDisplayOf,
+	truncate,
+} from "./alert-formatting"
 import { PUSH_CHANNEL } from "./alert-escalation-runs"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
@@ -72,23 +78,31 @@ const FailureMessages = {
 } as const
 
 export const LAST_RESORT_SUBJECT_PREFIX = "Nobody on call was reached: "
+/** A check's own sentence can run long; the banner shows a few lines at most. */
+const PAGE_BODY_LIMIT = 160
 
 /**
  * A page's banner: who it is for in the title, what breached in the body, so the lock screen is
  * enough to decide whether to acknowledge.
  */
-export const renderPagePush = (context: ChatAlertCardInput["context"]): { title: string; body: string } => {
+export const renderPagePush = (
+	context: ChatAlertCardInput["context"],
+): { title: string; subtitle: string | undefined; body: string } => {
 	const severity = context.severity === "critical" ? "Critical" : "Warning"
-	const observed = formatObservedSummary(context)
-	// An uptime error, an anomaly or a check's own reason is already a sentence; a metric needs its name.
+	const observed = truncate(formatObservedSummary(context), PAGE_BODY_LIMIT)
+	// An uptime error, an anomaly, a check's own reason or "No data" is already a sentence; a
+	// measured value needs its name.
 	const saysItself =
 		context.signalType === "uptime" ||
 		context.signalType === "anomaly" ||
+		context.value === null ||
 		(signalCarriesDetail(context.signalType) && context.detail != null)
 	const breach = saysItself ? observed : `${signalDisplayOf(context).label} ${observed}`
 	return {
 		title: `You are paged · ${truncate(context.ruleName, 60)}`,
-		body: `${severity}. ${/[.!?]$/u.test(breach) ? breach : `${breach}.`}`,
+		// Which group or service breached, for a rule that watches several.
+		subtitle: displayGroup(context) ?? undefined,
+		body: `${severity}. ${/[.!?…]$/u.test(breach) ? breach : `${breach}.`}`,
 	}
 }
 

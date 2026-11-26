@@ -19,7 +19,11 @@ import { makeResolveTenant } from "@maple/auth"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
-import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import {
+	CurrentAuditActor,
+	MOBILE_CLIENT_HEADER,
+	MOBILE_CLIENT_VALUE,
+} from "@maple/backend/services/auth/audit-actor"
 import { recordImpersonation } from "@maple/backend/services/auth/impersonation-audit"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
@@ -58,10 +62,6 @@ const BASIC_AUTH_ROUTE_PREFIX = "/v2/metrics/prometheus/api/v1/"
  * already lowercase, so this is a plain lookup, not a case-insensitive one. */
 const getOrgSelectionHeader = (headers: Record<string, string | undefined>): string | undefined =>
 	headers[ORG_SELECTION_HEADER]
-
-/** How the iOS app names itself on a session request; it only labels where an action came from. */
-const MOBILE_CLIENT_HEADER = "x-maple-client"
-const MOBILE_CLIENT_VALUE = "ios"
 
 /**
  * A protected v2 route the scope derivation cannot classify. Every group behind

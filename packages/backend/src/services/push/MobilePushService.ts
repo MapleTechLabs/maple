@@ -177,6 +177,8 @@ export interface MemberPagePush {
 	readonly incidentId: string
 	readonly ruleId: string
 	readonly title: string
+	/** The group or service that breached, when the rule watches several. */
+	readonly subtitle?: string | undefined
 	readonly body: string
 	readonly linkUrl: string
 	/** One notification per incident on the phone: a later step's page replaces this one. */
@@ -666,7 +668,13 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 								deviceToken: device.token,
 								environment: device.environment,
 								bundleId: device.bundleId,
-								alert: { title: page.title, body: page.body },
+								alert: {
+									title: page.title,
+									...(page.subtitle === undefined
+										? undefined
+										: { subtitle: page.subtitle }),
+									body: page.body,
+								},
 								interruptionLevel: "time-sensitive",
 								priority: 10,
 								collapseId: page.collapseId,

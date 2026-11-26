@@ -28,6 +28,10 @@ export interface AuditActorInfo {
 	readonly client?: "mobile"
 }
 
+/** How the iOS app names itself on a request. It only labels where an action came from. */
+export const MOBILE_CLIENT_HEADER = "x-maple-client"
+export const MOBILE_CLIENT_VALUE = "ios"
+
 /**
  * A reference (typed default, no handler requirement) rather than a service:
  * the auth middlewares override it per request, and handlers that never record
