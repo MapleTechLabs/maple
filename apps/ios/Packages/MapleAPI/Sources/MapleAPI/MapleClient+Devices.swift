@@ -100,6 +100,8 @@ public struct TestPageResult: Hashable, Sendable {
 	public enum Outcome: String, Hashable, Sendable {
 		case sent
 		case noPhone = "no_phone"
+		/// A phone was registered, and the push platform says it is gone.
+		case phoneGone = "phone_gone"
 		case notConfigured = "not_configured"
 		case failed
 	}
@@ -108,6 +110,8 @@ public struct TestPageResult: Hashable, Sendable {
 	public var outcome: Outcome {
 		if !configured { return .notConfigured }
 		if sent > 0 { return .sent }
+		// A dead registration is not "no phone": the app is installed and allowed, its row is stale.
+		if unregistered > 0 { return .phoneGone }
 		return failed > 0 ? .failed : .noPhone
 	}
 
@@ -117,6 +121,7 @@ public struct TestPageResult: Hashable, Sendable {
 		// Counted, never "this phone": the answer does not say which phones took it.
 		case .sent: sent > 1 ? "Sent to \(sent) phones." : "Sent to 1 phone. It should arrive in a few seconds."
 		case .noPhone: "No phone is registered for you here. Open Maple on your phone and allow notifications."
+		case .phoneGone: "The phone registered for you no longer accepts pages. Register it again, then send another test."
 		case .notConfigured: "Push is not set up on this deployment."
 		case .failed: Self.failureMessage
 		}

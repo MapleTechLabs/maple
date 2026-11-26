@@ -176,6 +176,17 @@ struct TestPageResultTests {
 		#expect(!result.mayHaveLostThisPhone)
 	}
 
+	@Test("A phone the platform dropped is not reported as no phone at all")
+	func phoneGone() {
+		let gone = TestPageResult(configured: true, sent: 0, unregistered: 1)
+		#expect(gone.outcome == .phoneGone)
+		#expect(gone.message == "The phone registered for you no longer accepts pages. Register it again, then send another test.")
+		// With nothing registered at all, the line is about installing and allowing.
+		#expect(TestPageResult(configured: true, sent: 0).outcome == .noPhone)
+		// One phone reached still counts as sent, whatever happened to another.
+		#expect(TestPageResult(configured: true, sent: 1, unregistered: 1).outcome == .sent)
+	}
+
 	@Test("A phone found gone, or no phone at all, calls for a look at this phone's registration")
 	func mayHaveLostThisPhone() {
 		#expect(TestPageResult(configured: true, sent: 1, unregistered: 1).mayHaveLostThisPhone)
@@ -198,8 +209,6 @@ struct TestPageResultTests {
 		#expect(
 			result.message == "No phone is registered for you here. Open Maple on your phone and allow notifications."
 		)
-		// A phone the push platform had dropped is no longer registered either.
-		#expect(TestPageResult(configured: true, sent: 0, unregistered: 1).outcome == .noPhone)
 	}
 
 	@Test("A deployment without push credentials says so, whatever the counts")
