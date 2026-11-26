@@ -19,17 +19,18 @@ import {
 } from "./backfill"
 import type { ClickHouseMigration } from "./migrations"
 import {
-	dropStagingTableSql,
 	dropUnkeyedColumnSql,
+	finishZeroKeyRepairSql,
 	isDropUnkeyedColumn,
 	isRepairZeroKeyColumn,
 	keyColumnProbeSql,
-	moveStagedPartitionSql,
-	stageZeroKeyRowsSql,
+	readyTableProbeSql,
+	renderRepairZeroKeyColumnFull,
 	stagedPartitionsSql,
-	stagingTableProbeSql,
 	unkeyedColumnProbeSql,
-	zeroKeyPartitionsSql,
+	zeroKeyRepairStatements,
+	zeroKeyRowsProbeSql,
+	type RepairZeroKeyColumnSpec,
 } from "./unkeyed-column"
 
 export interface ApplyStep {
@@ -45,6 +46,16 @@ export interface ApplyStep {
 	readonly onFailure?: string
 	/** Restores the pair's column DEFAULT before `onFailure` restarts merges; see {@link RestoreDefault}. */
 	readonly restoreBeforeRestart?: RestoreDefault
+	/**
+	 * A 0-row repair, decided when it runs: an executor calls {@link runZeroKeyRepair} with it in
+	 * place of running `sql`, which only describes it.
+	 */
+	readonly repair?: ZeroKeyRepair
+}
+
+export interface ZeroKeyRepair {
+	readonly spec: RepairZeroKeyColumnSpec
+	readonly database: string
 }
 
 /**
@@ -186,35 +197,13 @@ export const expandMigrationToSteps = async (
 					backfill: false,
 				})
 		} else if (isRepairZeroKeyColumn(stmt)) {
-			// The column is probed first: on a store before the migration it does not exist yet.
-			const keyed = parseFirstRow(await exec(keyColumnProbeSql(stmt, database))) !== null
-			const zeroPartitions = keyed ? partitionIds(await exec(zeroKeyPartitionsSql(stmt, database))) : []
-			const staged = parseFirstRow(await exec(stagingTableProbeSql(stmt, database))) !== null
-			if (zeroPartitions.length > 0 || staged) {
-				// Partitions holding 0s now, plus those an earlier run staged and did not move yet.
-				const stagedPartitions = staged
-					? partitionIds(await exec(stagedPartitionsSql(stmt, database)))
-					: []
-				const moves = Arr.dedupe([...zeroPartitions, ...stagedPartitions])
-				const name = `m${migration.version}:stmt${index}`
-				steps.push(
-					...Arr.map(stageZeroKeyRowsSql(stmt, database), (sql, step) => ({
-						name: `${name}:stage${step}`,
-						sql,
-						backfill: false,
-					})),
-					...Arr.map(moves, (partition) => ({
-						name: `${name}:move:${partition}`,
-						sql: moveStagedPartitionSql(stmt, database, partition),
-						backfill: false,
-					})),
-					{
-						name: `${name}:drop-staging`,
-						sql: dropStagingTableSql(stmt, database),
-						backfill: false,
-					},
-				)
-			}
+			// Always planned: the column and any 0s it holds only exist once earlier steps ran.
+			steps.push({
+				name: `m${migration.version}:stmt${index}`,
+				sql: renderRepairZeroKeyColumnFull(stmt),
+				backfill: false,
+				repair: { spec: stmt, database },
+			})
 		} else {
 			steps.push({
 				name: `m${migration.version}:stmt${index}`,
@@ -226,6 +215,30 @@ export const expandMigrationToSteps = async (
 	}
 	return restartMergesOnFailure(steps, database)
 }
+
+/**
+ * Runs a 0-row repair from the cluster's state now, so a rerun after a crash at any point resumes it
+ * (see `RepairZeroKeyColumnSpec`). Any failed statement fails the repair.
+ */
+export const runZeroKeyRepair = async (repair: ZeroKeyRepair, exec: ExecFn): Promise<void> => {
+	const { spec, database } = repair
+	const found = async (sql: string) => parseFirstRow(await exec(sql)) !== null
+	const keyed = await found(keyColumnProbeSql(spec, database))
+	const ready = keyed && (await found(readyTableProbeSql(spec, database)))
+	const zeros = keyed && !ready && (await found(zeroKeyRowsProbeSql(spec, database)))
+	const planned = zeroKeyRepairStatements(spec, database, { keyed, ready, zeros })
+	await runInOrder(planned.statements, exec)
+	if (!planned.finish) return
+	const partitions = partitionIds(await exec(stagedPartitionsSql(spec, database)))
+	await runInOrder(finishZeroKeyRepairSql(spec, database, partitions), exec)
+}
+
+const runInOrder = (statements: ReadonlyArray<string>, exec: ExecFn): Promise<void> =>
+	Arr.reduce(statements, Promise.resolve(), (previous, sql) =>
+		previous.then(async () => {
+			await exec(sql)
+		}),
+	)
 
 const STOP_MERGES = /^SYSTEM STOP MERGES (\S+)$/
 const SET_DEFAULT = /^ALTER TABLE (?:\S+\.)?`?(\w+)`? MODIFY COLUMN `?(\w+)`? \S+ DEFAULT (.+)$/

@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { RetentionOverrides } from "@maple/domain/retention"
+import { StoredRetentionOverrides } from "@maple/domain/retention"
 import {
 	OrgId,
 	SourceId,
@@ -32,7 +32,7 @@ const sourcesColumns = {
 		defaultExpr: "'[]'::jsonb",
 	}),
 	// Days per signal this source keeps instead of the org's; a signal left out inherits.
-	retentionDays: PG.column(PG.jsonb(RetentionOverrides), {
+	retentionDays: PG.column(PG.jsonb(StoredRetentionOverrides), {
 		name: "retention_days",
 		defaultExpr: "'{}'::jsonb",
 	}),

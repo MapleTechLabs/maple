@@ -65,9 +65,9 @@ const NO_BOUNDS: ReadonlyMap<string, ReadBound> = new Map()
 const isWholeDays = (days: number): boolean => Number.isSafeInteger(days) && days >= 1
 
 /**
- * The bound per datasource, for the signals the organization set a period for. An organization
- * that set nothing gets none, so its token stays as it was. None at all when a period is not a
- * whole number of days: the filter is only ever built from an integer.
+ * The bound per datasource of each bounded signal: every signal once the organization has a
+ * policy. An organization that never set retention gets none, so its token stays as it was.
+ * None at all when a period is not a whole number of days: the filter is only built from an integer.
  */
 export const readBoundsOf = (
 	horizon: RetentionReadHorizon,
@@ -93,7 +93,7 @@ export const readBoundsOf = (
 	)
 }
 
-/** Changes whenever the bounds do, for the token cache key. Empty for an organization that set nothing. */
+/** Changes whenever the bounds do, for the token cache key. Empty for an organization that never set retention. */
 export const readHorizonKey = (horizon: RetentionReadHorizon): string =>
 	Arr.join(
 		Arr.map(horizon.configured, (signal) => `${signal}=${horizon.days[signal]}`),

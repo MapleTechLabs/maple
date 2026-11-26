@@ -24,8 +24,10 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { adminOnlyNote, sectionNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import {
 	changeSentence,
+	overridingSources,
 	periodLabel,
 	periodOptions,
+	READ_ONLY_NOTE,
 	SIGNAL_DESCRIPTIONS,
 	SIGNAL_LABELS,
 } from "../../kit/retention"
@@ -35,14 +37,17 @@ import { changedSignals } from "./update"
 
 type H = HtmlBuilder<Message>
 
-export type Inputs = Readonly<{ nowMs: number; timeZone: string }>
+const isOwnWarehouse = (model: Model): boolean =>
+	Option.exists(AsyncData.getData(model.policy), (policy) => policy.storage === "own_warehouse")
 
-/** How many sources keep `signal` for a period of their own. */
-const overridingSources = (policy: V2RetentionPolicy, signal: RetentionSignal): number =>
-	Arr.filter(policy.sources, (source) => source.set[signal] !== null).length
+const isManaged = (model: Model): boolean =>
+	Option.exists(AsyncData.getData(model.policy), (policy) => policy.storage === "managed")
+
+export type Inputs = Readonly<{ timeZone: string; canOpenDataPlatform: boolean }>
 
 const rowDescription = (
 	h: H,
+	model: Model,
 	policy: V2RetentionPolicy,
 	draft: V2RetentionDays,
 	signal: RetentionSignal,
@@ -51,7 +56,13 @@ const rowDescription = (
 	const from = policy.organization.days[signal]
 	const to = draft[signal]
 	const edit = { _tag: "Organization", days: to } as const
-	const sentence = changeSentence(policy, signal, { from, to, edit }, inputs.nowMs, inputs.timeZone)
+	const sentence = changeSentence(
+		policy,
+		signal,
+		{ from, to, edit },
+		{ nowMs: model.nowMs, timeZone: inputs.timeZone },
+		model.sourceNames === null ? null : model.sourceNames.length,
+	)
 	if (sentence !== null)
 		return typography(h, { size: "sm", tone: "foreground", className: "font-prose" }, [sentence])
 	const overriding = overridingSources(policy, signal)
@@ -77,7 +88,7 @@ const signalRow = (
 	return settingRow(h, {
 		ids: { control: id, label: `${id}-label`, description: `${id}-description` },
 		label: SIGNAL_LABELS[signal],
-		description: rowDescription(h, policy, draft, signal, inputs),
+		description: rowDescription(h, model, policy, draft, signal, inputs),
 		className: "p-4",
 		control: [
 			gatedControl(h, model, "retention:manage", (isDisabled) =>
@@ -104,14 +115,22 @@ const signalRow = (
 }
 
 /** An org on its own ClickHouse keeps that cluster's retention; nothing here would apply. */
-const ownWarehouseNotice = (h: H): Html =>
+const ownWarehouseNotice = (h: H, inputs: Inputs): Html =>
 	alert(h, { variant: "info", role: "status", className: "m-4 w-auto" }, [
 		alertTitle(h, ["Your ClickHouse keeps its own retention"]),
 		alertDescription(h, [
-			"Telemetry is stored in your organization's own ClickHouse, so it is kept for as long as the tables there say. ",
-			textLink(h, { href: hrefOf(AppRoute.Settings({ search: { tab: "data-platform" } })) }, [
-				"Data platform",
-			]),
+			"Telemetry is stored in your organization's own ClickHouse, so it is kept for as long as the tables there say.",
+			// Only a viewer who can open Data platform gets the link.
+			...(inputs.canOpenDataPlatform
+				? [
+						" ",
+						textLink(
+							h,
+							{ href: hrefOf(AppRoute.Settings({ search: { tab: "data-platform" } })) },
+							["Data platform"],
+						),
+					]
+				: []),
 		]),
 	])
 
@@ -122,7 +141,9 @@ const signalsSection = (h: H, model: Model, inputs: Inputs): Html =>
 			id: "settings-retention-signals",
 			title: "Organization",
 			description: [
-				"How long Maple keeps each signal. Data keeps the period in force when it arrived, and each change says what it does before you save.",
+				isOwnWarehouse(model)
+					? "How long each signal is kept is set in your organization's own ClickHouse, not here."
+					: "How long Maple keeps each signal. Data keeps the period in force when it arrived, and each change says what it does before you save.",
 			],
 			padded: false,
 		},
@@ -135,7 +156,7 @@ const signalsSection = (h: H, model: Model, inputs: Inputs): Html =>
 				{
 					onSome: ({ policy, draft }) =>
 						policy.storage === "own_warehouse"
-							? ownWarehouseNotice(h)
+							? ownWarehouseNotice(h, inputs)
 							: h.div(
 									[h.Class("divide-y")],
 									Arr.map(RETENTION_SIGNALS, (signal) =>
@@ -170,7 +191,7 @@ const sourceName = (model: Model, id: string): string =>
 		() => encodePublicId(PublicIdPrefixes.source, id),
 	)
 
-/** "Logs 6 months, traces 1 week". */
+/** "Logs 180 days, traces 7 days". */
 const overrideSummary = (set: V2RetentionPolicy["sources"][number]["set"]): string =>
 	Arr.join(
 		Arr.flatMap(RETENTION_SIGNALS, (signal) => {
@@ -179,9 +200,6 @@ const overrideSummary = (set: V2RetentionPolicy["sources"][number]["set"]): stri
 		}),
 		", ",
 	)
-
-const isOwnWarehouse = (model: Model): boolean =>
-	Option.exists(AsyncData.getData(model.policy), (policy) => policy.storage === "own_warehouse")
 
 const sourcesSection = (h: H, model: Model): ReadonlyArray<Html> =>
 	Option.match(AsyncData.getData(model.policy), {
@@ -193,7 +211,10 @@ const sourcesSection = (h: H, model: Model): ReadonlyArray<Html> =>
 					id: "settings-retention-sources",
 					title: "Sources with their own period",
 					description: [
-						"A source can keep a signal shorter or longer than the organization, from its Settings tab. Reads reach as far back as the longest of them.",
+						// Only a viewer who can open a source's settings is pointed there.
+						Policy.can(model.grants, "sources:manage")
+							? "A source can keep a signal shorter or longer than the organization, from its Settings tab. Reads reach as far back as the longest of them."
+							: "A source can keep a signal shorter or longer than the organization. Reads reach as far back as the longest of them.",
 					],
 					padded: false,
 				},
@@ -249,13 +270,8 @@ const footnote = (h: H): Html =>
 
 export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) =>
 	settingsSections(h, [
-		...(canManage(model)
-			? []
-			: [
-					adminOnlyNote(h, [
-						"Only people with Manage retention can change these periods. Admin has it.",
-					]),
-				]),
+		// Only once the policy says the periods are Maple's: on its own ClickHouse nobody changes them here.
+		...(canManage(model) || !isManaged(model) ? [] : [adminOnlyNote(h, [READ_ONLY_NOTE])]),
 		signalsSection(h, model, inputs),
 		// On its own ClickHouse nothing set here applies, so the notice stands alone.
 		...(isOwnWarehouse(model) ? [] : [...sourcesSection(h, model), footnote(h)]),

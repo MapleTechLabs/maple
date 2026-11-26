@@ -24,6 +24,7 @@ export const initRetention = (): RetentionForm => ({
 	draft: null,
 	isSaving: false,
 	savedWithSource: false,
+	savedAlongside: false,
 })
 
 /** What `sourceId` sets, as stored: a source the policy does not list follows the organization. */

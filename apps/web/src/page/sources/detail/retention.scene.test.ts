@@ -80,6 +80,13 @@ const policy = (traces: RetentionDays | null, storage: "managed" | "own_warehous
 					],
 	})
 
+/** This source keeps logs 180 days against the organization's 90, so reads of logs reach 180. */
+const keepsLogsLonger = Schema.decodeSync(V2RetentionPolicy)({
+	...Schema.encodeSync(V2RetentionPolicy)(policy(null)),
+	read_horizon_days: { ...DEFAULTS, logs: 180 },
+	sources: [{ source_id: PUBLIC_ID, set: { ...NOTHING_SET, logs: 180 }, days: { ...DEFAULTS, logs: 180 } }],
+})
+
 const ADMIN: ReadonlyArray<Policy.Permission> = ["telemetry:read", "sources:manage", "retention:manage"]
 const SOURCE_MANAGER: ReadonlyArray<Policy.Permission> = ["telemetry:read", "sources:manage"]
 
@@ -151,7 +158,7 @@ describe("source retention", () => {
 	})
 
 	test("following the organization again says when the longer history is there", () => {
-		// Traces go from its own 1 week to the organization's 30 days.
+		// Traces go from its own 7 days to the organization's 30 days.
 		const edited = pick(loaded(7), "traces", "inherit")
 		scene(
 			{ update: pageUpdate, view },
@@ -173,7 +180,7 @@ describe("source retention", () => {
 			resolveTheme,
 			expectView(
 				text(
-					"Logs arriving from a minute after you save are kept for 2 weeks. Logs already stored keep the period they arrived under.",
+					"Logs arriving from a minute after you save are kept for 14 days. Logs already stored keep the period they arrived under.",
 				),
 			).toExist(),
 		)
@@ -262,6 +269,84 @@ describe("source retention", () => {
 		)
 	})
 
+	test("a source back from 180 days to the organization hides logs older than its 90", () => {
+		const stored = pageUpdate(
+			onSettings().model,
+			Message.CompletedFetchRetention({ result: Result.succeed(keepsLogsLonger) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pick(stored, "logs", "inherit")),
+			resolveTheme,
+			expectView(
+				text(
+					"Logs older than 90 days are hidden once you save. Switch back to see them again while they are still stored.",
+				),
+			).toExist(),
+		)
+	})
+
+	test("pinning the organization's own period changes nothing it keeps, so no sentence shows", () => {
+		const pinned = pick(loaded(7), "logs", "90")
+		expect(changedRetentionSignals(pinned.retention, pinned.sourceId)).toEqual(["logs"])
+		scene(
+			{ update: pageUpdate, view },
+			given(pinned),
+			resolveTheme,
+			expectView(text("Log records and their attributes.")).toExist(),
+		)
+	})
+
+	test("a pick reads the clock, so the date counts from the change", () => {
+		expect(
+			names(
+				pageUpdate(loaded(7), Message.ChangedRetentionPeriod({ signal: "logs", value: "14" }))
+					.commands,
+			),
+		).toEqual(["ReadSourceClock"])
+	})
+
+	test("a source save that fails after retention saved says retention was saved", () => {
+		const edited = pick(
+			pageUpdate(loaded(7), Message.ChangedSettingsName({ value: "Renamed" })).model,
+			"traces",
+			"30",
+		)
+		const saving = pageUpdate(edited, Message.SubmittedSettings()).model
+		const retentionDone = pageUpdate(
+			saving,
+			Message.CompletedSaveRetention({ result: Result.succeed(policy(30)) }),
+		)
+		expect(retentionDone.outMessage).toBeUndefined()
+		const sourceFailed = pageUpdate(
+			retentionDone.model,
+			Message.CompletedSave({ result: Result.fail(toLoadFailure(new Error("down"))) }),
+		)
+		expect(sourceFailed.outMessage).toMatchObject({
+			type: "error",
+			title: "Couldn't save source. Retention was saved.",
+		})
+	})
+
+	test("a source save that fails first leaves retention to say it saved", () => {
+		const edited = pick(
+			pageUpdate(loaded(7), Message.ChangedSettingsName({ value: "Renamed" })).model,
+			"traces",
+			"30",
+		)
+		const saving = pageUpdate(edited, Message.SubmittedSettings()).model
+		const sourceFailed = pageUpdate(
+			saving,
+			Message.CompletedSave({ result: Result.fail(toLoadFailure(new Error("down"))) }),
+		)
+		expect(sourceFailed.outMessage).toMatchObject({ type: "error", title: "Couldn't save source" })
+		const retentionDone = pageUpdate(
+			sourceFailed.model,
+			Message.CompletedSaveRetention({ result: Result.succeed(policy(30)) }),
+		)
+		expect(retentionDone.outMessage).toMatchObject({ type: "success", title: "Retention saved" })
+	})
+
 	test("without Manage retention the selects are disabled and picks do nothing", () => {
 		const member = loaded(7, SOURCE_MANAGER)
 		expect(pick(member, "logs", "7").retention?.draft).toEqual(member.retention?.draft)
@@ -271,6 +356,9 @@ describe("source retention", () => {
 			resolveTheme,
 			expectView(role("combobox", { name: "Traces" })).toBeDisabled(),
 			expectView(role("combobox", { name: "Logs" })).toBeDisabled(),
+			expectView(
+				text("Only people with Manage retention can change these periods. Admin has it."),
+			).toExist(),
 		)
 	})
 })

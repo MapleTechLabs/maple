@@ -394,10 +394,11 @@ describe("migration 0076: span projections and product events carry their retent
 				expect(create, name).toBe(drop + 1)
 				continue
 			}
-			// No insert reaches the table while its key column has no DEFAULT.
+			// No insert reaches the table while its key column has no DEFAULT, and the view is
+			// dropped only once merges stopped, so a missing SYSTEM MERGES grant leaves it intact.
 			const table = Str.replace(/_mv$/, "")(name)
 			const between = statements.slice(drop + 1, create)
-			expect(between[0], name).toBe(`SYSTEM STOP MERGES ${table}`)
+			expect(statements[drop - 1], name).toBe(`SYSTEM STOP MERGES ${table}`)
 			expect(between, name).toContain(
 				`ALTER TABLE ${table} MODIFY COLUMN RetentionDays UInt16 DEFAULT 30`,
 			)

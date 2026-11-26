@@ -9,15 +9,15 @@ Hosted Maple deletes data automatically once it passes its retention period. The
 
 ## Set your own periods
 
-Traces, logs, metrics, session replays, product events and profiles each have a period you can change in **Settings → Retention**: 3, 7, 14, 30, 60, 90 or 180 days, 1 year or 2 years. A source can keep a signal for a period of its own, shorter or longer than the organization's, from its **Settings** tab. Changing a period needs the **Manage retention** permission.
+Traces, logs, metrics, session replays, product events and profiles each have a period you can change in **Settings → Retention**: 3, 7, 14, 30, 60, 90, 180, 365 or 730 days. A source can keep a signal for a period of its own, shorter or longer than the organization's, from its **Settings** tab. Changing a period needs the **Manage retention** permission.
 
 Data is stored under the period in force when it arrived:
 
-- **A shorter period** hides older data right away, unless another source still keeps that signal longer. Hidden data is deleted when the period it was stored under ends, so switching back before then brings it back.
+- **A shorter period**, or going back to a shorter default, hides older data right away, unless another source still keeps that signal longer. Hidden data is deleted when the period it was stored under ends, so switching back before then brings it back.
 - **A longer period** applies to data received from about a minute after the change, once the ingest gateway reads it. The full history fills in over time; data already stored keeps its earlier period.
-- **Reads** reach as far back as the longest period any of your sources keeps.
+- **Reads** of each signal reach as far back as the longest period any of your sources keeps it, the default included. This holds for every signal once your organization has changed any period, even after you set them all back to their defaults.
 
-The same settings are in the API: `GET /v2/retention`, `PATCH /v2/retention` and `PATCH /v2/retention/sources/{id}`. An organization that stores telemetry in its own ClickHouse keeps the retention set in that cluster instead.
+The same settings are in the API: `GET /v2/retention`, `PATCH /v2/retention` and `PATCH /v2/retention/sources/{id}`. A patch that changes nothing writes nothing. An organization that stores telemetry in its own ClickHouse keeps the retention set in that cluster instead, and the API refuses changes with `retention_own_warehouse` (409).
 
 ## Telemetry
 
@@ -30,6 +30,7 @@ When nothing is set, each signal keeps its default:
 | Metrics (sum, gauge, histogram, exponential histogram)                                            | 90 days  |
 | Session replays (recordings and their timeline events)                                            | 30 days  |
 | Product events                                                                                    | 365 days |
+| Profiles                                                                                          | 14 days  |
 | Error occurrences (the individual events behind error issues)                                     | 90 days  |
 | Hourly rollups of traces and logs (service overview, service map edges, trace and log aggregates) | 365 days |
 | CI workflow runs and jobs (Review & CI → CI)                                                      | 365 days |

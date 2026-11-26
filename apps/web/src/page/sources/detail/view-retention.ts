@@ -12,18 +12,20 @@ import {
 	changeSentence,
 	periodLabel,
 	periodOptions,
+	READ_ONLY_NOTE,
+	type SentenceClock,
 	SIGNAL_DESCRIPTIONS,
 	SIGNAL_LABELS,
 } from "../../kit/retention"
 import { gatedControl } from "../../kit/session-grants"
-import { sectionNote, settingsSection } from "../../kit/settings-section"
+import { adminOnlyNote, sectionNote, settingsSection } from "../../kit/settings-section"
 import { Message } from "./message"
-import type { Model, RetentionForm, RetentionSet } from "./model"
+import { canManageRetention, type Model, type RetentionForm, type RetentionSet } from "./model"
 import { effectiveDays, INHERIT, signalsOf, storedSet } from "./retention"
 
 type H = HtmlBuilder<Message>
 
-export type Clock = Readonly<{ nowMs: number; timeZone: string }>
+export type Clock = SentenceClock
 
 const rowDescription = (
 	h: H,
@@ -37,7 +39,7 @@ const rowDescription = (
 	const from = effectiveDays(policy, stored, signal)
 	const to = effectiveDays(policy, draft, signal)
 	const edit = { _tag: "Source", sourceId, days: draft[signal] } as const
-	const sentence = changeSentence(policy, signal, { from, to, edit }, clock.nowMs, clock.timeZone)
+	const sentence = changeSentence(policy, signal, { from, to, edit }, clock)
 	return sentence === null
 		? typography(h, { size: "sm", tone: "muted", className: "font-prose" }, [SIGNAL_DESCRIPTIONS[signal]])
 		: typography(h, { size: "sm", tone: "foreground", className: "font-prose" }, [sentence])
@@ -118,12 +120,16 @@ export const retentionSection = (h: H, model: Model, source: V2Source, clock: Cl
 								if (policy.storage === "own_warehouse")
 									return sectionNote(h, OWN_WAREHOUSE_NOTE)
 								const stored = storedSet(policy, source.id)
-								return h.div(
+								const rows = h.div(
 									[h.Class("divide-y")],
 									Arr.map(signals, (signal) =>
 										signalRow(h, model, form, policy, stored, draft, signal, clock),
 									),
 								)
+								// Grants still loading: no note yet, the selects are disabled meanwhile.
+								return model.grants === null || canManageRetention(model)
+									? rows
+									: h.div([], [adminOnlyNote(h, [READ_ONLY_NOTE], "px-4 pt-4"), rows])
 							},
 							onNone: () =>
 								AsyncData.isFailure(form.policy)

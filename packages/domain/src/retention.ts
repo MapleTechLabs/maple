@@ -2,7 +2,7 @@
 // show the same numbers the backend resolves.
 
 import { SourceSignal } from "@maple/primitives"
-import { Array as Arr, Option, Schema } from "effect"
+import { Array as Arr, Option, Predicate, Record as Rec, Schema, SchemaTransformation } from "effect"
 
 /** A signal with a retention period: the same families a source can be limited to. */
 export const RetentionSignal = SourceSignal
@@ -131,7 +131,7 @@ export const RETENTION_TIME_COLUMNS = {
  * only holds `RETENTION_PERIODS`, so this is the identity for one; the gateway applies the
  * same rounding to whatever it reads.
  */
-export const retentionStampDays = (days: number): number =>
+export const retentionStampDays = (days: number): RetentionDays =>
 	Option.getOrElse(
 		Arr.findFirst(RETENTION_PERIODS, (period) => period >= days),
 		() => MAX_RETENTION_DAYS,
@@ -140,3 +140,42 @@ export const retentionStampDays = (days: number): number =>
 /** Whether a set of overrides sets anything at all. */
 export const hasRetentionOverrides = (overrides: RetentionOverrides): boolean =>
 	Arr.some(RETENTION_SIGNALS, (signal) => overrides[signal] !== undefined)
+
+/** The fewest days the gateway reads from a stored policy (its `MIN_RETENTION_DAYS`). */
+const MIN_STORED_DAYS = 1
+
+const decodeOverridesOption = Schema.decodeUnknownOption(RetentionOverrides)
+
+/**
+ * A stored policy as the gateway reads it (`RetentionOverrides::parse` in apps/ingest): a whole
+ * number of days from 1 to 730 is rounded up to its period, and any other value, above 730
+ * included, sets nothing for its signal, which then inherits.
+ */
+export const readStoredRetentionOverrides = (stored: unknown): RetentionOverrides => {
+	const periods = Predicate.isObject(stored)
+		? Arr.flatMap(RETENTION_SIGNALS, (signal) => {
+				const days = stored[signal]
+				return Predicate.isNumber(days) &&
+					Number.isInteger(days) &&
+					days >= MIN_STORED_DAYS &&
+					days <= MAX_RETENTION_DAYS
+					? [[signal, retentionStampDays(days)] as const]
+					: []
+			})
+		: []
+	return Option.getOrElse(decodeOverridesOption(Rec.fromEntries(periods)), () => ({}))
+}
+
+/**
+ * A `retention_days` jsonb column: decodes any stored value with `readStoredRetentionOverrides`,
+ * so one off-list row never fails a read, and writes `RetentionOverrides` unchanged.
+ */
+export const StoredRetentionOverrides = Schema.Unknown.pipe(
+	Schema.decodeTo(
+		RetentionOverrides,
+		SchemaTransformation.transform<RetentionOverrides, unknown>({
+			decode: readStoredRetentionOverrides,
+			encode: (overrides) => overrides,
+		}),
+	),
+)

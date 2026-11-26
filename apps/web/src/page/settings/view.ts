@@ -118,7 +118,10 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					model: tab.model,
 					view: RetentionView.view,
 					toParentMessage: (message) => Message.GotRetentionMessage({ message }),
-					viewInputs: { nowMs: model.nowMs, timeZone: inputs.context.timeZone },
+					viewInputs: {
+						timeZone: inputs.context.timeZone,
+						canOpenDataPlatform: visibilityOf(model).canAccessDataPlatform,
+					},
 				}),
 			]
 		case "Automation":

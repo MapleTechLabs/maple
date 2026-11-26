@@ -5,6 +5,7 @@ import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Array as Arr, Effect, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
+import { readClock } from "@maple/views/data/timing"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { parsePeriod } from "../../kit/retention"
@@ -33,6 +34,8 @@ const FetchSourceNames = Command.define("FetchRetentionSourceNames", {
 	}).pipe(settleTo((result) => Message.CompletedFetchSources({ result }))),
 })
 
+const ReadRetentionClock = readClock("ReadRetentionClock", Message.ReadClock)
+
 const SaveRetention = Command.define("SaveRetention", {
 	args: { payload: V2RetentionUpdateParams },
 	messages: [Message.CompletedSave],
@@ -43,7 +46,14 @@ const SaveRetention = Command.define("SaveRetention", {
 })
 
 export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
-	model: { grants, policy: AsyncData.Loading(), draft: null, isSaving: false, sourceNames: null },
+	model: {
+		grants,
+		policy: AsyncData.Loading(),
+		draft: null,
+		isSaving: false,
+		sourceNames: null,
+		nowMs: null,
+	},
 	commands: [FetchRetention(), FetchSourceNames()],
 })
 
@@ -118,8 +128,10 @@ export const update = (model: Model, message: Message): Return =>
 								model.draft === null
 									? model
 									: { ...model, draft: { ...model.draft, [signal]: days } },
+							commands: [ReadRetentionClock()],
 						}),
 					}),
+		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		ClickedDiscard: () => ({ model: { ...model, draft: storedDays(model) } }),
 		ClickedSave: () => {
 			const policy = Option.getOrNull(AsyncData.getData(model.policy))

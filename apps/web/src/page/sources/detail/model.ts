@@ -54,6 +54,8 @@ export const RetentionForm = Schema.Struct({
 	isSaving: Schema.Boolean,
 	/** The save also sent the source's own PATCH, whose toast covers both. */
 	savedWithSource: Schema.Boolean,
+	/** Retention saved while the source's answer was still due, so a failed source says so. */
+	savedAlongside: Schema.Boolean,
 })
 export type RetentionForm = typeof RetentionForm.Type
 

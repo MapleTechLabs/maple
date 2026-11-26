@@ -4,6 +4,7 @@ import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { encodePublicId, MapleApiV2, PublicIdPrefixes } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -207,6 +208,35 @@ describe("v2 retention", () => {
 		await harness.dispose()
 	})
 
+	it("a role limited to namespaces reads retention, and one without a telemetry read does not", async () => {
+		const harness = makeHarness()
+		const keyWith = (permissions: Policy.Grants) =>
+			harness.key({
+				source: "maple_cli",
+				roles: [Policy.CUSTOM_ROLE_CLERK_KEY],
+				permissions: [...Policy.encodePermissions(permissions)],
+				deviceName: "laptop",
+			})
+		const scoped = await keyWith([Policy.SCOPED_READ])
+		expect((await harness.request("GET", "/v2/retention", scoped)).status).toBe(200)
+		const billingOnly = await keyWith(["billing:manage"])
+		expect((await harness.request("GET", "/v2/retention", billingOnly)).status).toBe(403)
+		await harness.dispose()
+	})
+
+	it("a PATCH that changes nothing is not audited, and a period back at the default reads to the default", async () => {
+		const harness = makeHarness()
+		const token = await harness.key()
+		await harness.request("PATCH", "/v2/retention", token, { logs: 90 })
+		const same = await harness.request("PATCH", "/v2/retention", token, { logs: 90 })
+		expect(same.status).toBe(200)
+		expect(harness.auditActions()).toEqual(["retention.updated"])
+		const back = await harness.request("PATCH", "/v2/retention", token, { logs: null })
+		// Back at the default, reads of logs reach 30 days, not the 90 kept before.
+		expect(back.body.read_horizon_days).toEqual(back.body.defaults)
+		await harness.dispose()
+	})
+
 	it("a source of another organization is not found, and is left as it was", async () => {
 		const harness = makeHarness()
 		const token = await harness.key()
@@ -228,7 +258,7 @@ describe("v2 retention", () => {
 		const read = await harness.request("GET", "/v2/retention", token)
 		expect(read.body.storage).toBe("own_warehouse")
 		const refused = await harness.request("PATCH", "/v2/retention", token, { logs: 90 })
-		expect(refused.status).toBe(400)
+		expect([refused.status, refused.body.error.code]).toEqual([409, "retention_own_warehouse"])
 		expect(harness.auditActions()).toEqual([])
 		await harness.dispose()
 	})
@@ -238,7 +268,7 @@ describe("v2 retention", () => {
 		const token = await harness.key()
 		const read = await harness.request("GET", "/v2/retention", token)
 		expect(read.body.storage).toBe("own_warehouse")
-		expect((await harness.request("PATCH", "/v2/retention", token, { logs: 90 })).status).toBe(400)
+		expect((await harness.request("PATCH", "/v2/retention", token, { logs: 90 })).status).toBe(409)
 		await harness.dispose()
 	})
 })
