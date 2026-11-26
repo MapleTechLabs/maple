@@ -65,6 +65,8 @@ const storeBadge = (h: HtmlBuilder<Message>): Html =>
 
 const panel = (h: HtmlBuilder<Message>, userId: string): ReadonlyArray<Html> => [
 	vstack(h, { gap: "3", align: "center", className: "w-52 text-center" }, [
+		// The dialog's name; the row that opened it already says it on screen.
+		Popover.popoverTitle(h, IOS_PROMPT_POPOVER_ID, ROW_LABEL, "sr-only"),
 		qrCode(h, {
 			value: IOS_APP_STORE_URL,
 			label: `QR code to ${IOS_APP_NAME} on the App Store`,

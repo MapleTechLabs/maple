@@ -51,6 +51,10 @@ describe("iPhone app prompt", () => {
 			expect(row).toHaveAttr("aria-expanded", "false"),
 			expect(code).toBeAbsent(),
 			...opened,
+			expect(role("heading", { name: "Get the iPhone app" })).toHaveAttr(
+				"id",
+				"shell-ios-app-prompt-title",
+			),
 			expect(code).toExist(),
 			expect(store).toHaveAttr("href", IOS_APP_STORE_URL),
 			click(dismiss),
