@@ -494,6 +494,11 @@ struct OnCallSnapshotTests {
 			for: try #require(snapshot.schedule(id: "onc_pay1")), at: at("2026-12-09T12:00:00.000Z"), style: utc
 		)
 		#expect("\(late.whoLabel) \(late.detail)" == "Dana Kim until Fri \(hm(2, 14))")
+		// Past the last shift that was read, the line still reads as a sentence.
+		let empty = snapshot.scheduleLine(
+			for: try #require(snapshot.schedule(id: "onc_pipeline")), at: at("2027-01-15T12:00:00.000Z"), style: utc
+		)
+		#expect("\(empty.whoLabel) \(empty.detail)" == "Nobody · no shift ahead")
 	}
 
 	@Test("The Lock Screen and the Pages widget's quiet line")

@@ -810,7 +810,8 @@ extension OnCallSnapshot {
 			let detail = next.map {
 				"until \(WidgetTime.handoffTime($0.start, now: now, style: style)) · then \(name(of: $0.userId, midSentence: true))"
 			}
-			return ScheduleLine(who: .nobody, whoLabel: "Nobody", detail: detail ?? "no shift ahead")
+			// Led by the separator, as the covered case's is: the view joins who and detail with a space.
+			return ScheduleLine(who: .nobody, whoLabel: "Nobody", detail: detail ?? "· no shift ahead")
 		}
 	}
 }
