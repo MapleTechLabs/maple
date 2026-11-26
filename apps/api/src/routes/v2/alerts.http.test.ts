@@ -1985,6 +1985,16 @@ describe("v2 alerts over HTTP", () => {
 		})
 		const olderBuild = { "user-agent": "Maple/7 CFNetwork/3860.100.1 Darwin/25.0.0" }
 
+		await executeSql(
+			harness.testDb,
+			`insert into alert_escalation_runs (
+				id, org_id, incident_id, chain_id, chain_name, severity, steps_json, repeat_count,
+				step_index, pass_index, next_step_at, status, payload_json, steps_sent, created_at, updated_at
+			) values ('00000000-0000-4000-8000-000000000f02', 'default', '00000000-0000-4000-8000-000000000f01',
+				'00000000-0000-4000-8000-0000000000e2', 'Checkout on-call', 'critical', '[]'::jsonb, 0,
+				0, 0, now(), 'acknowledged', '{}'::jsonb, 1, now(), now())`,
+		)
+
 		const toOlderBuild = await harness.request(
 			"GET",
 			`/v2/alerts/incidents/${openId}`,
@@ -1993,6 +2003,9 @@ describe("v2 alerts over HTTP", () => {
 			olderBuild,
 		)
 		expect(toOlderBuild.body.acknowledged_via).toBe("api")
+		// Its decoder refuses a key it does not know, so the escalation block is the one it shipped with.
+		expect(toOlderBuild.body.escalation).toMatchObject({ status: "acknowledged" })
+		expect(toOlderBuild.body.escalation).not.toHaveProperty("next_step_people")
 		const listed = await harness.request(
 			"GET",
 			"/v2/alerts/incidents?status=open",
@@ -2013,6 +2026,7 @@ describe("v2 alerts over HTTP", () => {
 			},
 		)
 		expect(toThisBuild.body.acknowledged_via).toBe("mobile")
+		expect(toThisBuild.body.escalation.next_step_people).toEqual([])
 		const toBrowser = await harness.request("GET", `/v2/alerts/incidents/${openId}`, session)
 		expect(toBrowser.body.acknowledged_via).toBe("mobile")
 
@@ -2027,7 +2041,8 @@ describe("v2 alerts over HTTP", () => {
 		const theirs = "00000000-0000-4000-8000-000000000a02"
 		const nobody = "00000000-0000-4000-8000-000000000a03"
 		await insertOpenIncidents(harness, "org_alerts_e2e", [mine, theirs, nobody])
-		// Two channels for the caller on one incident, and someone else's page on another.
+		// Two channels for the caller on one incident, someone else's page on another, and on the
+		// third a page to the caller that was skipped and one that never got through.
 		await executeSql(
 			harness.testDb,
 			`insert into alert_member_notifications (
@@ -2036,7 +2051,9 @@ describe("v2 alerts over HTTP", () => {
 			) values
 				('page-1', 'org_alerts_e2e', '${mine}', 'run-1', 'user_alerts_e2e', 'email', 'sent', now(), '{}'::jsonb, 'page-1', now(), now()),
 				('page-2', 'org_alerts_e2e', '${mine}', 'run-1', 'user_alerts_e2e', 'push', 'sent', now(), '{}'::jsonb, 'page-2', now(), now()),
-				('page-3', 'org_alerts_e2e', '${theirs}', 'run-2', 'user_someone_else', 'email', 'sent', now(), '{}'::jsonb, 'page-3', now(), now())`,
+				('page-3', 'org_alerts_e2e', '${theirs}', 'run-2', 'user_someone_else', 'email', 'sent', now(), '{}'::jsonb, 'page-3', now(), now()),
+				('page-4', 'org_alerts_e2e', '${nobody}', 'run-3', 'user_alerts_e2e', 'email', 'skipped', now(), '{}'::jsonb, 'page-4', now(), now()),
+				('page-5', 'org_alerts_e2e', '${nobody}', 'run-3', 'user_alerts_e2e', 'push', 'failed', now(), '{}'::jsonb, 'page-5', now(), now())`,
 		)
 
 		const all = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)

@@ -657,7 +657,12 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					yield* Effect.annotateCurrentSpan({ "maple.push.devices_unreadable": true })
 					return { ...empty, failed: 1 }
 				}
-				const targets = Arr.filter(registered, (device) => device.enabled)
+				// The banner names the rule and what it measured, so someone who no longer reads
+				// telemetry is not sent it, as with an incident push.
+				const targets = yield* ownedByReaders(
+					page.orgId,
+					Arr.filter(registered, (device) => device.enabled),
+				)
 				yield* Effect.annotateCurrentSpan({ "maple.push.devices": targets.length })
 				if (targets.length === 0) return empty
 				const results = yield* Effect.forEach(

@@ -110,10 +110,12 @@ export const V2AlertIncidentEscalation = Schema.Struct({
 	next_step_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the next step pages, or `null` while paused or once the run has ended.",
 	}),
-	next_step_people: Schema.Array(V2AlertIncidentActor).annotate({
-		description:
-			"Who the next step would page if it ran now: the people it names and whoever its on-call schedules have on call. Empty while `next_step_at` is `null`, when the step only notifies destinations, and when its schedules have nobody on call (the run then moves straight on to the step after).",
-	}),
+	next_step_people: Schema.optionalKey(
+		Schema.Array(V2AlertIncidentActor).annotate({
+			description:
+				"Who the next step would page if it ran now: the people it names and whoever its on-call schedules have on call. Empty while `next_step_at` is `null`, when the step only notifies destinations, and when its schedules have nobody on call (the run then moves straight on to the step after).",
+		}),
+	),
 }).annotate({
 	identifier: "AlertIncidentEscalation",
 	title: "Alert incident escalation",
@@ -352,7 +354,7 @@ const IncidentsQuery = Schema.Struct({
 	paged: Schema.optional(
 		Schema.Literal("me").annotate({
 			description:
-				"`me` for incidents an escalation step paged the calling user for, on any channel: with an API key, the user who created the key. Combine with `status=open` for what is paging you now.",
+				"`me` for incidents an escalation step paged the calling user for, on any channel that delivered: with an API key, the user who created the key. Combine with `status=open` for what is paging you now.",
 			examples: ["me"],
 		}),
 	),
