@@ -1,9 +1,10 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { RETENTION_PERIODS, RetentionDays } from "../../retention"
-import { RetentionInvalidError, RetentionPersistenceError } from "../retention"
+import { RetentionInvalidError, RetentionOwnWarehouseError, RetentionPersistenceError } from "../retention"
 import { SourceNotFoundError } from "../sources"
 import { EndpointAccess, requires } from "../endpoint-access"
+import { V2InsufficientPermissions } from "./errors"
 import { AuthorizationV2 } from "./auth"
 import { wireExample } from "./envelopes"
 import { publicError } from "./public-error"
@@ -148,23 +149,25 @@ export type V2SourceRetentionUpdateParams = typeof V2SourceRetentionUpdateParams
 
 const persistence = publicError(RetentionPersistenceError)
 const invalid = publicError(RetentionInvalidError)
+const ownWarehouse = publicError(RetentionOwnWarehouseError)
 
 const WRITE_NOTE =
-	"Data keeps the period in force when it arrived. Reads reach as far back as the longest period any source keeps, so a shorter period hides older data only when nothing keeps it longer; a longer one applies to data received from about a minute after the change, once the ingest gateway reads the new policy. Requires the `retention:write` scope and the Manage retention permission."
+	"Data keeps the period in force when it arrived. Once an organization has set any period, reads of every signal reach back as far as the longest period any source keeps it, the default included: a shorter period (or going back to a shorter default) hides older data unless another source keeps it longer, and a longer one applies to data received from about a minute after the change, once the ingest gateway reads the new policy. A patch that changes nothing writes nothing. Refused with `retention_own_warehouse` (409) for an organization on its own ClickHouse. Requires the `retention:write` scope and the Manage retention permission."
 
 export class V2RetentionApiGroup extends HttpApiGroup.make("retention")
 	.add(
 		HttpApiEndpoint.get("retrieve", "/", {
 			success: V2RetentionPolicy,
-			error: persistence,
+			error: [V2InsufficientPermissions.schema, persistence],
 		})
-			.annotate(EndpointAccess, requires("telemetry:read"))
+			// Not telemetry: a role limited to namespaces reads it too. The handler asks for either read.
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "getRetention",
 					summary: "Retrieve retention",
 					description:
-						"Returns how long the organization keeps each signal, and every source that sets a period of its own. Requires the `retention:read` scope.",
+						"Returns how long the organization keeps each signal, and every source that sets a period of its own. Requires the `retention:read` scope and a telemetry read permission, all telemetry or namespace-limited.",
 				}),
 			),
 	)
@@ -172,7 +175,7 @@ export class V2RetentionApiGroup extends HttpApiGroup.make("retention")
 		HttpApiEndpoint.patch("update", "/", {
 			payload: V2RetentionUpdateParams,
 			success: V2RetentionPolicy,
-			error: [invalid, persistence],
+			error: [invalid, ownWarehouse, persistence],
 		})
 			.annotate(EndpointAccess, requires("retention:manage"))
 			.annotateMerge(
@@ -188,7 +191,7 @@ export class V2RetentionApiGroup extends HttpApiGroup.make("retention")
 			params: { id: SourcePublicId },
 			payload: V2SourceRetentionUpdateParams,
 			success: V2RetentionPolicy,
-			error: [invalid, publicError(SourceNotFoundError), persistence],
+			error: [invalid, ownWarehouse, publicError(SourceNotFoundError), persistence],
 		})
 			.annotate(EndpointAccess, requires("retention:manage"))
 			.annotateMerge(

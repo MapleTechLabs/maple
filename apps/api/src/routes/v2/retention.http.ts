@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
 	type OrgId,
-	RetentionInvalidError,
+	RetentionOwnWarehouseError,
 	RetentionPersistenceError,
 } from "@maple/domain/http"
 import {
@@ -12,7 +12,9 @@ import {
 	type V2RetentionDays,
 	type V2RetentionPolicy,
 	type V2SourceRetentionUpdateParams,
+	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import {
 	DEFAULT_RETENTION_DAYS,
 	RETENTION_PERIODS,
@@ -108,7 +110,7 @@ export const HttpV2RetentionLive = HttpApiBuilder.group(MapleApiV2, "retention",
 				Effect.filterOrFail(
 					(storage) => storage === "managed",
 					() =>
-						new RetentionInvalidError({
+						new RetentionOwnWarehouseError({
 							message:
 								"This organization stores telemetry in its own ClickHouse, which keeps its own retention. Change it there.",
 						}),
@@ -119,6 +121,15 @@ export const HttpV2RetentionLive = HttpApiBuilder.group(MapleApiV2, "retention",
 			.handle("retrieve", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					// The policy is not telemetry: any read of it, all or limited to namespaces, may see it.
+					if (
+						!Policy.can(tenant.permissions, "telemetry:read") &&
+						!Policy.can(tenant.permissions, Policy.SCOPED_READ)
+					) {
+						return yield* V2InsufficientPermissions.make(
+							Policy.denialFor("telemetry:read").message,
+						)
+					}
 					const policy = yield* retention.get(tenant.orgId)
 					const storage = yield* storageOf(tenant.orgId)
 					return toV2RetentionPolicy(policy, storage)
