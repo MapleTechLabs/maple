@@ -90,7 +90,16 @@ export interface ClickHouseMigration {
 	readonly statements: ReadonlyArray<MigrationStatement>
 	/** Performance-only migrations are applied normally but do not gate direct ingest. */
 	readonly requiredForIngest?: boolean
+	/**
+	 * A failure fails the apply instead of being skipped, though the migration does not gate
+	 * ingest: set on one that drops a view it recreates, so a view is never left missing silently.
+	 */
+	readonly failureIsFatal?: boolean
 }
+
+/** Whether an apply may record a failed `migration` as skipped and retry it on the next apply. */
+export const migrationFailureIsSkippable = (migration: ClickHouseMigration): boolean =>
+	migration.requiredForIngest === false && migration.failureIsFatal !== true
 
 /**
  * Ordered list of every ClickHouse schema migration.

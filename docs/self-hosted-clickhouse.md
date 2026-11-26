@@ -45,7 +45,7 @@ For any given query the API resolves the upstream in this order:
 Settings → "Bring your own ClickHouse" exposes:
 
 - **ClickHouse URL:** the HTTP interface (e.g. `https://your-clickhouse.example.com:8123`).
-- **User:** defaults to `default`. Applying the schema from the UI needs DDL privileges (CREATE TABLE / CREATE MATERIALIZED VIEW).
+- **User:** defaults to `default`. Applying the schema from the UI needs DDL privileges (CREATE TABLE / CREATE MATERIALIZED VIEW), and `SYSTEM MERGES` on the Maple database (migration 76 stops merges on `trace_index` while it changes the sorting key).
 - **Database:** defaults to `default`.
 - **Password:** optional; encrypted at rest. Leave it blank to keep the stored password when re-saving. Changing the URL, user or database requires re-entering it.
 
@@ -66,7 +66,7 @@ Settings → "Bring your own ClickHouse" → Schema → **Apply schema**. The AP
 
 If the connection fails or the user lacks DDL privileges, the apply fails and the settings row shows the error.
 
-Re-applying is safe. Already-applied migrations are skipped, and every statement uses `IF NOT EXISTS` as a second line of defense. Future schema upgrades land the same way: pull a new Maple API release, then apply again to pick up new migrations.
+Re-applying is safe. Already-applied migrations are skipped, and every statement uses `IF NOT EXISTS` as a second line of defense. Future schema upgrades land the same way: pull a new Maple API release, then apply again to pick up new migrations. Between the release and the apply, reads that need a column a pending migration adds degrade instead of failing (replay chunks before migration 75 read the default retention period, for example); apply promptly to restore the full read.
 
 ### Via the standalone CLI
 

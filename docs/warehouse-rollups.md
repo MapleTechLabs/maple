@@ -38,7 +38,10 @@ partition holds one period and expires whole. The 30d in the table above is the 
 The row-level projections of `traces` (`trace_index`, `trace_list_mv`, `service_map_spans`,
 `service_map_children`, `service_overview_spans`, `ai_trace_index`, `ai_crawler_requests`,
 `scanner_requests`) copy the span's `RetentionDays` and expire the same way, so a trace never
-outlives its index or the other way round. Rollups keep their fixed periods. `product_events`
+outlives its index or the other way round. Rollups keep their fixed periods, except
+`trace_facets_hourly`: it keeps one row per `RetentionDays` (in its sorting key) and expires each at
+`least(RetentionDays, 30)` days, so the traces sidebar never counts a span the list has dropped;
+hours past 30 days read `trace_list_mv`. `product_events`
 expires at the source's `events` period: direct rows carry the gateway's stamp, and the two views
 copy `EventsRetentionDays` from the `session_events` or `traces` row, which the gateway stamps
 with the source's events period (`events_retention_days`), never that row's own `RetentionDays`.
@@ -49,7 +52,7 @@ The deploy that partitions the raw tables by `RetentionDays` carries one-shot co
 `RETENTION_ROLLOUT_PENDING` in `packages/domain/src/tinybird/retention-rollout.ts`:
 
 - `SELECT *` forward queries on every datasource fed from a raw table,
-- `SELECT *, toUInt16(30) AS RetentionDays` on the span projections and
+- `SELECT *, toUInt16(30) AS RetentionDays` on the span projections and `trace_facets_hourly`, and
   `SELECT *, toUInt16(365) AS RetentionDays` on `product_events`,
 - no `deploymentMethod: "alter"` on `service_overview_spans_mv`, `ai_trace_index_mv` and
   `scanner_requests_mv`.

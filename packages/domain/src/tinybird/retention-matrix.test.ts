@@ -72,8 +72,8 @@ const RETENTION_DAYS = {
 	session_replays: 30,
 	span_metrics_calls_hourly: 90,
 	trace_index: 30,
-	// Matches its source, trace_list_mv: facet counts past the list's own window
-	// would offer values that filter the list down to nothing.
+	// Capped at its source trace_list_mv's default and expiring each row with its span's
+	// period: facet counts past the list's own window would filter the list down to nothing.
 	trace_facets_hourly: 30,
 	trace_list_mv: 30,
 	traces: 30,
@@ -105,9 +105,14 @@ const SPAN_PROJECTIONS = [
 	"trace_list_mv",
 ] as const
 
-/** Days a datasource keeps a row: its fixed TTL, or for a row-level TTL the period an unstamped row gets. */
+/**
+ * Days a datasource keeps a row: its fixed TTL or cap, or for a row-level TTL the period an
+ * unstamped row gets.
+ */
 const keptDays = (content: string): number | undefined => {
-	const fixed = /ENGINE_TTL "[^"]+ \+ INTERVAL (\d+) DAY"/.exec(content)
+	const fixed =
+		/ENGINE_TTL "[^"]+ \+ INTERVAL (\d+) DAY"/.exec(content) ??
+		/ENGINE_TTL "[^"]+ \+ toIntervalDay\(least\(RetentionDays, (\d+)\)\)"/.exec(content)
 	const perRow = /ENGINE_TTL "[^"]+ \+ toIntervalDay\(RetentionDays\)"/.test(content)
 		? /\bRetentionDays UInt16 [^\n]*DEFAULT (\d+)/.exec(content)
 		: null

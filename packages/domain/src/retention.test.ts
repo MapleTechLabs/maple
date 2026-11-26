@@ -153,6 +153,11 @@ describe("retention resolution", () => {
 		expect(horizon.logs).toBe(DEFAULT_RETENTION_DAYS.logs)
 	})
 
+	it("reaches as far as the period a stored off-list value is stamped with", () => {
+		expect(readHorizonDays({ traces: 550 }, []).traces).toBe(730)
+		expect(readHorizonDays({}, [{ logs: 45 }]).logs).toBe(60)
+	})
+
 	it("shortening the organization shortens reads when no source keeps more", () => {
 		expect(readHorizonDays({ logs: 7 }, [{ traces: 3 }]).logs).toBe(7)
 	})

@@ -13,6 +13,7 @@ import {
 	clickHouseSchemaFeatures,
 	featureSupportedByVersion,
 	migrations as clickHouseMigrations,
+	migrationFailureIsSkippable,
 	renderStatementFull,
 	createSchemaFeaturesTableSql,
 	createSchemaMigrationsTableSql,
@@ -180,7 +181,7 @@ export async function applyMigrations(config: ClickHouseConfig): Promise<ApplyRe
 			await recordMigration(config, migration.version, migration.description)
 			applied.push({ version: migration.version, description: migration.description })
 		} catch (error) {
-			if (migration.requiredForIngest !== false) throw error
+			if (!migrationFailureIsSkippable(migration)) throw error
 			skipped.push({
 				version: migration.version,
 				description: migration.description,

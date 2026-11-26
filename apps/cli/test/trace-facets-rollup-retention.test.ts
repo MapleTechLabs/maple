@@ -71,3 +71,64 @@ describeWithChdb("trace facets past the rollup's retention", () => {
 		expect(Number(stats?.maxDurationMs)).toBe(900)
 	})
 })
+
+const decodePeriods = decodeJsonEachRow(Schema.Struct({ days: CH.CHNumber, traces: CH.CHNumber }))
+
+// The rollup keeps one row per period, so a short-period source's counts expire with its spans.
+describeWithChdb("trace facets keep each source's period", () => {
+	let root = ""
+	let db: Chdb
+	const nowMs = Date.now()
+	const hourMs = Math.floor((nowMs - 2 * DAY_MS) / 3_600_000) * 3_600_000
+	const params = { orgId: ORG, startTime: iso(nowMs - 7 * DAY_MS), endTime: iso(nowMs) }
+	const insertRoots = (rows: ReadonlyArray<readonly [ms: number, traceId: string, days: number]>) =>
+		db.exec(
+			`INSERT INTO trace_list_mv (OrgId, TraceId, Timestamp, ServiceName, SpanName, SpanKind, Duration, StatusCode, HttpMethod, HttpRoute, HttpStatusCode, DeploymentEnv, HasError, TraceState, ServiceNamespace, RetentionDays) VALUES ${Arr.join(
+				Arr.map(
+					rows,
+					([ms, traceId, days]) =>
+						`('${ORG}', '${traceId}', '${iso(ms)}', 'api', 'GET /users', 'Server', 1000000, 'Ok', 'GET', '/users', '200', 'production', 0, '', '', ${days})`,
+				),
+				", ",
+			)}`,
+		)
+	const periods = () =>
+		decodePeriods(
+			db.query(
+				`SELECT RetentionDays AS days, sum(TraceCount) AS traces FROM trace_facets_hourly WHERE OrgId = '${ORG}' GROUP BY days ORDER BY days FORMAT JSONEachRow`,
+			),
+		)
+
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), "maple-facets-periods-"))
+		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
+		// Same hour, two periods; and a 3-day span five days back, past its period.
+		insertRoots([
+			[hourMs + 60_000, "t-short", 7],
+			[hourMs + 120_000, "t-long", 30],
+		])
+		insertRoots([[nowMs - 5 * DAY_MS, "t-expired", 3]])
+		db.exec("OPTIMIZE TABLE trace_facets_hourly FINAL")
+		db.exec("ALTER TABLE trace_facets_hourly MATERIALIZE TTL SETTINGS mutations_sync = 1")
+	})
+
+	afterAll(() => {
+		db?.close()
+		if (root) rmSync(root, { recursive: true, force: true })
+	})
+
+	test("a merge keeps one row per period, and an expired period's counts are gone", () => {
+		expect(Arr.map(periods(), (row) => [Number(row.days), Number(row.traces)])).toEqual([
+			[7, 1],
+			[30, 1],
+		])
+	})
+
+	test("facets sum the period rows of an hour", () => {
+		const sql = CH.compileUnionUnsafe(CH.tracesFacetsQuery({ facet: "service" }), params).sql
+		const rows = decodeFacets(db.query(asJsonEachRow(sql)))
+		// t-expired still sits in the local trace_list_mv, whose TTL is fixed at 30 days, but its
+		// whole hour reads the rollup, which no longer counts it.
+		expect(Arr.map(rows, (r) => [r.name, Number(r.count)])).toEqual([["api", 2]])
+	})
+})

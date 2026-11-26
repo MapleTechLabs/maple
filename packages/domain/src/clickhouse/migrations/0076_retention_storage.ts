@@ -1,30 +1,46 @@
 /**
  * Migration 0076: `RetentionDays` on the row-level projections of `traces` and on `product_events`,
  * and `EventsRetentionDays` on `traces` and `session_events` (the source's events period the two
- * product_events views copy). The ten views that fill them are recreated to select the columns.
+ * product_events views copy), and on `trace_facets_hourly`, rolled up from trace_list_mv. The
+ * eleven views that fill them are recreated to select the columns.
  *
- * trace_index is aggregating, so its new column joins the sorting key in the ALTER that adds it
+ * trace_index and trace_facets_hourly are aggregating, so the new column joins the sorting key in the ALTER that adds it
  * (ClickHouse 26 refuses a plain column outside it), and gets its DEFAULT after, which ClickHouse
- * refuses on a column added to the key; old parts read the DEFAULT. No TTL or partition change: self-managed inserts never stamp these columns
+ * refuses on a column added to the key; old parts read the DEFAULT. Merges on each table stop
+ * around the pair so none writes the column's 0 into a part first (needs the SYSTEM MERGES grant).
+ * A failure between them leaves merges stopped until a rerun or a server restart (the stop is not
+ * persisted). trace_facets_hourly's TTL reads the column, capped at 30 days, so it stays 30
+ * here. No other TTL or partition change: self-managed inserts never stamp these columns
  * (`SELF_MANAGED_INSERT_OMITTED_COLUMNS`), so every row holds its default and each table keeps
  * one period. `requiredForIngest: false` for the same reason. Frozen v76 DDL.
  *
  * A view's SELECT is frozen at creation, so each is dropped and IMMEDIATELY recreated, as in 0020
- * and 0028: a span or session event inserted in that gap never reaches that one target. Creating
- * the new view first would write the overlap twice, worse than the gap. Pause ingest to close it.
+ * and 0028: a span or session event inserted in that gap never reaches that one target, and
+ * nothing backfills it. Creating the new view first would write the overlap twice, worse than the
+ * gap. Nothing pauses ingest for it; an operator who needs the gap closed stops their own writers.
+ * `failureIsFatal`: a failed statement fails the apply rather than being skipped, so a dropped view
+ * is never left missing silently, and a rerun (DROP IF EXISTS, CREATE IF NOT EXISTS) recreates it.
  */
 export const migration_0076_retention_storage = {
 	version: 76,
 	description:
 		"Add RetentionDays to the span projections and product_events, EventsRetentionDays to traces and session_events, and recreate their views",
 	requiredForIngest: false,
+	failureIsFatal: true,
 	statements: [
 		"ALTER TABLE service_map_spans ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE service_map_children ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE service_overview_spans ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE trace_list_mv ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
+		"SYSTEM STOP MERGES trace_index",
 		"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
 		"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+		"SYSTEM START MERGES trace_index",
+		"SYSTEM STOP MERGES trace_facets_hourly",
+		"ALTER TABLE trace_facets_hourly ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, RetentionDays)",
+		"ALTER TABLE trace_facets_hourly MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+		"SYSTEM START MERGES trace_facets_hourly",
+		"ALTER TABLE trace_facets_hourly MODIFY TTL toDate(Hour) + toIntervalDay(least(RetentionDays, 30))",
 		"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE ai_crawler_requests ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE scanner_requests ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
@@ -51,5 +67,7 @@ export const migration_0076_retention_storage = {
 		"CREATE MATERIALIZED VIEW IF NOT EXISTS product_events_mv TO product_events AS\nSELECT\n          OrgId,\n          Timestamp,\n          'browser' AS Source,\n          SessionId,\n          Seq,\n          VisitorId,\n          UserId,\n          GroupId,\n          Type AS Kind,\n          if(Type = 'navigation', '$pageview', Message) AS EventName,\n          domain(Url) AS Host,\n          path(Url) AS PagePath,\n          Url,\n          '' AS ServiceName,\n          Attributes,\n          '' AS TraceId,\n          '' AS SpanId,\n          EventsRetentionDays AS RetentionDays\n        FROM session_events\n        WHERE Type IN ('navigation', 'custom')",
 		"DROP VIEW IF EXISTS product_events_traces_mv",
 		"CREATE MATERIALIZED VIEW IF NOT EXISTS product_events_traces_mv TO product_events AS\nSELECT\n          OrgId,\n  Timestamp,\n  'trace' AS Source,\n  SpanAttributes['session.id'] AS SessionId,\n  0 AS Seq,\n  SpanAttributes['maple.product_event.visitor_id'] AS VisitorId,\n  SpanAttributes['maple.product_event.user_id'] AS UserId,\n  SpanAttributes['maple.product_event.group_id'] AS GroupId,\n  'custom' AS Kind,\n  SpanAttributes['maple.product_event.name'] AS EventName,\n  domain(SpanAttributes['maple.product_event.url']) AS Host,\n  path(SpanAttributes['maple.product_event.url']) AS PagePath,\n  SpanAttributes['maple.product_event.url'] AS Url,\n  ServiceName,\n  mapUpdate(\n    CAST(\n      mapFilter(\n        (k, v) -> NOT startsWith(k, 'maple.product_event.')\n          AND (\n            NOT has(mapKeys(SpanAttributes), 'maple.product_event.include')\n            OR has(\n              arrayMap(\n                key -> trimBoth(key),\n                splitByChar(',', SpanAttributes['maple.product_event.include'])\n              ),\n              k\n            )\n          ),\n        SpanAttributes\n      ),\n      'Map(String, String)'\n    ),\n    mapApply(\n      (k, v) -> (substring(k, 26), v),\n      mapFilter((k, v) -> startsWith(k, 'maple.product_event.prop.'), SpanAttributes)\n    )\n  ) AS Attributes,\n  TraceId,\n  SpanId,\n  EventsRetentionDays AS RetentionDays\n        FROM traces\n        WHERE SpanAttributes['maple.product_event.name'] != ''",
+		"DROP VIEW IF EXISTS trace_facets_hourly_mv",
+		"CREATE MATERIALIZED VIEW IF NOT EXISTS trace_facets_hourly_mv TO trace_facets_hourly AS\nSELECT\n          OrgId,\n          toStartOfHour(Timestamp) AS Hour,\n          ServiceName,\n          SpanName,\n          HttpMethod,\n          HttpStatusCode,\n          DeploymentEnv,\n          ServiceNamespace,\n          HasError,\n          count() AS TraceCount,\n          min(Duration) AS DurationMin,\n          max(Duration) AS DurationMax,\n          quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles,\n          RetentionDays\n        FROM trace_list_mv\n        GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, RetentionDays",
 	],
 } as const

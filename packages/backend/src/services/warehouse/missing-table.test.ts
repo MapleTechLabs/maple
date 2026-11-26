@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { WarehouseConfigError, WarehouseQueryError, WarehouseSchemaDriftError } from "@maple/domain/http"
 import {
 	isMissingErrorEventsUserId,
+	isMissingReplayRetentionDays,
 	isMissingServiceApiColumns,
 	isMissingAwsMetricsHourly,
 	isMissingServiceEndpointDetails,
@@ -112,6 +113,18 @@ describe("migration 0048 degrade detectors", () => {
 		expect(isMissingUserActivityHourly(missing("user_activity_hourly"))).toBe(true)
 		expect(isMissingUserActivityHourly(missing("session_replays"))).toBe(false)
 		expect(isMissingUserActivityHourly(drift("user_activity_hourly"))).toBe(false)
+	})
+
+	it("reads replay chunks without RetentionDays only when the column is missing", () => {
+		expect(
+			isMissingReplayRetentionDays(drift("Unknown expression identifier `RetentionDays` in scope")),
+		).toBe(true)
+		expect(isMissingReplayRetentionDays(drift("Unknown expression identifier `ChunkSeq`"))).toBe(false)
+		expect(
+			isMissingReplayRetentionDays(
+				new WarehouseQueryError({ message: "RetentionDays overflowed", pipeName: "replayEvents" }),
+			),
+		).toBe(false)
 	})
 
 	it("degrades the issue reads only when error_events lacks UserId", () => {

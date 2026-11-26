@@ -60,6 +60,8 @@ interface ParsedDatasourceSchema {
 	readonly engine: string
 	readonly partitionKey: string
 	readonly sortingKey: string
+	/** Empty when the primary key is the sorting key. */
+	readonly primaryKey: string
 	readonly ttl: string | undefined
 	readonly indexes: ReadonlyArray<string>
 }
@@ -80,6 +82,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 	let engine = ""
 	let partitionKey = ""
 	let sortingKey = ""
+	let primaryKey = ""
 	let ttl: string | undefined
 	const indexLines: string[] = []
 
@@ -159,6 +162,9 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 				case "ENGINE_SORTING_KEY":
 					sortingKey = stripQuotes(valueRaw)
 					continue
+				case "ENGINE_PRIMARY_KEY":
+					primaryKey = stripQuotes(valueRaw)
+					continue
 				case "ENGINE_TTL":
 					ttl = stripQuotes(valueRaw)
 					continue
@@ -193,6 +199,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 		engine,
 		partitionKey,
 		sortingKey,
+		primaryKey,
 		ttl,
 		indexes: indexLines,
 	}
@@ -364,6 +371,9 @@ export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOp
 
 	if (parsed.partitionKey.length > 0) {
 		lines.push(`PARTITION BY ${parsed.partitionKey}`)
+	}
+	if (parsed.primaryKey.length > 0) {
+		lines.push(`PRIMARY KEY (${parsed.primaryKey})`)
 	}
 	if (parsed.sortingKey.length > 0) {
 		lines.push(`ORDER BY (${parsed.sortingKey})`)
