@@ -1,4 +1,6 @@
+import { cn } from "@maple/ui/lib/utils"
 import { docsUrl } from "../../kit/docs"
+import { String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -9,15 +11,22 @@ import { inputGroup, inputGroupAddon, inputGroupButton } from "@maple/views/ui/i
 import { skeleton } from "@maple/views/ui/skeleton"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { textarea } from "@maple/views/ui/textarea"
-import { Message, type Model, MountInstallModal, type Snippet } from "./install-modal"
+import { kubernetesMethod, Message, type Model, MountInstallModal, type Snippet } from "./install-modal"
 import {
+	ALCHEMY_FILE,
+	alchemyDeployCommand,
+	alchemyStack,
 	dockerCommand,
 	helmCommand,
 	HOST_CONFIG,
 	hostCommand,
 	isCustomEndpoint,
 	maskToken,
+	TERRAFORM_FILE,
+	terraformApplyCommand,
+	terraformConfig,
 } from "./install-snippets"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { typography } from "@maple/views/ui/typography"
 
 // The install modal's dialog, rendered only while open or closing.
@@ -32,6 +41,8 @@ type SnippetPanel = Readonly<{
 	rows: number
 	hasReveal: boolean
 	copyLabel?: string
+	/** A whole file: capped in height and scrolled, since the textarea grows to its content. */
+	isFile?: boolean
 }>
 
 const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
@@ -41,7 +52,10 @@ const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 				textarea(h, {
 					id: `${model.id}-${panel.snippet}`,
 					isUnstyled: true,
-					controlClassName: "font-mono text-xs select-all leading-relaxed",
+					controlClassName: cn(
+						"font-mono text-xs select-all leading-relaxed",
+						panel.isFile === true && "max-h-64 overflow-y-auto",
+					),
 					defaultValue: panel.display,
 					attributes: [h.Readonly(true), h.Attribute("wrap", "off"), h.Rows(panel.rows)],
 				}),
@@ -92,19 +106,88 @@ const keyed = (model: Model, build: (token: string) => string) => {
 	}
 }
 
-const panelFor = (h: H, model: Model, value: string): ReadonlyArray<Html> => {
-	if (value === "kubernetes")
+const lineCount = (text: string): number => Str.split("\n")(text).length
+
+/** A file with no key in it: shown as is, with no reveal. */
+const filePanel = (h: H, model: Model, snippet: Snippet, file: string, text: string): Html =>
+	snippetPanel(h, model, {
+		snippet,
+		isLoading: false,
+		value: text,
+		display: text,
+		rows: Math.min(lineCount(text), 14),
+		hasReveal: false,
+		copyLabel: file,
+		isFile: true,
+	})
+
+const methodToggle = (h: H, model: Model): Html =>
+	ToggleGroup.view(h, {
+		model: model.methods,
+		toParentMessage: (message) => Message.GotMethodMessage({ message }),
+		items: [
+			{ value: "helm", label: "Helm" },
+			{ value: "alchemy", label: "Alchemy" },
+			{ value: "terraform", label: "Terraform" },
+		],
+		variant: "outline",
+		size: "sm",
+	})
+
+const kubernetesPanel = (h: H, model: Model): ReadonlyArray<Html> => {
+	const method = kubernetesMethod(model)
+	const chart =
+		"The Maple Helm chart deploys a DaemonSet for per-node host + kubelet metrics and a single-replica deployment for cluster-wide signals."
+	if (method === "alchemy")
 		return [
+			methodToggle(h, model),
 			note(h, [
-				"The Maple Helm chart deploys a DaemonSet for per-node host + kubelet metrics and a single-replica deployment for cluster-wide signals. Run the command against your cluster. For production, prefer an existing Secret over an inline value. See the docs.",
+				`${chart} Save this as `,
+				code(h, ALCHEMY_FILE),
+				" and deploy it with the command below; it targets your kubeconfig's current context. Pod auto-instrumentation stays off: it needs Helm's install hooks.",
 			]),
+			filePanel(h, model, "alchemy", ALCHEMY_FILE, alchemyStack()),
 			snippetPanel(h, model, {
-				snippet: "helm",
-				...keyed(model, helmCommand),
-				rows: isCustomEndpoint ? 6 : 5,
+				snippet: "alchemyDeploy",
+				...keyed(model, alchemyDeployCommand),
+				rows: 1,
 				hasReveal: true,
+				copyLabel: "Deploy command",
 			}),
 		]
+	if (method === "terraform")
+		return [
+			methodToggle(h, model),
+			note(h, [
+				`${chart} Save this as `,
+				code(h, TERRAFORM_FILE),
+				" (or merge it into a module of yours) and apply it with the command below. Pod auto-instrumentation stays off.",
+			]),
+			filePanel(h, model, "terraform", TERRAFORM_FILE, terraformConfig()),
+			snippetPanel(h, model, {
+				snippet: "terraformApply",
+				...keyed(model, terraformApplyCommand),
+				rows: 1,
+				hasReveal: true,
+				copyLabel: "Apply command",
+			}),
+		]
+	return [
+		methodToggle(h, model),
+		note(h, [
+			`${chart} Run the command against your cluster. For production, prefer an existing Secret over an inline value. See the docs.`,
+		]),
+		snippetPanel(h, model, {
+			snippet: "helm",
+			...keyed(model, helmCommand),
+			rows: isCustomEndpoint ? 6 : 5,
+			hasReveal: true,
+		}),
+	]
+}
+
+const panelFor = (h: H, model: Model, value: string): ReadonlyArray<Html> => {
+	if (value === "kubernetes") return kubernetesPanel(h, model)
 	if (value === "docker")
 		return [
 			note(h, [

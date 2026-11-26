@@ -7,7 +7,18 @@ import {
 	sdkSnippets,
 } from "../../kit/sdk-snippets"
 import { ingestUrl } from "../../../platform/ingest-url"
-import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
+import {
+	ALCHEMY_FILE,
+	alchemyDeployCommand,
+	alchemyStack,
+	dockerCommand,
+	HOST_CONFIG,
+	helmCommand,
+	hostCommand,
+	TERRAFORM_FILE,
+	terraformApplyCommand,
+	terraformConfig,
+} from "../../infra/kit/install-snippets"
 import { Array as Arr, String as Str, Option } from "effect"
 
 export interface SourceSnippet {
@@ -110,7 +121,33 @@ export const sourceSnippets = (
 	const serviceName = serviceNameOf(name)
 	switch (platform) {
 		case "kubernetes":
-			return [{ id: "helm", label: "Helm", language: "shell", code: helmCommand(token) }]
+			return [
+				{ id: "helm", label: "Helm", language: "shell", code: helmCommand(token) },
+				{
+					id: "alchemy",
+					label: `Alchemy ${ALCHEMY_FILE}`,
+					language: "typescript",
+					code: alchemyStack(),
+				},
+				{
+					id: "alchemy-deploy",
+					label: "Alchemy deploy",
+					language: "shell",
+					code: alchemyDeployCommand(token),
+				},
+				{
+					id: "terraform",
+					label: `Terraform ${TERRAFORM_FILE}`,
+					language: "hcl",
+					code: terraformConfig(),
+				},
+				{
+					id: "terraform-apply",
+					label: "Terraform apply",
+					language: "shell",
+					code: terraformApplyCommand(token),
+				},
+			]
 		case "docker":
 			return [{ id: "docker", label: "docker run", language: "shell", code: dockerCommand(token) }]
 		case "host":

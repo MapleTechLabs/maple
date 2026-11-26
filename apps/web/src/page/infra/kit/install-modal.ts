@@ -1,5 +1,5 @@
 import { retrieveIngestKeys } from "../../../data/ingest-keys"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema } from "effect"
 import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
@@ -7,8 +7,9 @@ import type { Resources } from "../../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tabs from "@maple/views/ui/tabs"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 
-// Kubernetes, Docker and Host install snippets carrying the org's private ingest key, masked until
+// Kubernetes (Helm, Alchemy or Terraform), Docker and Host install snippets carrying the org's private ingest key, masked until
 // revealed. Mounted closed on every collector-fed infra page, so the key is fetched on entry.
 
 export const InstallTab = Schema.Literals(["kubernetes", "docker", "hosts"])
@@ -16,8 +17,25 @@ export type InstallTab = typeof InstallTab.Type
 export const INSTALL_TABS: ReadonlyArray<InstallTab> = ["kubernetes", "docker", "hosts"]
 
 /** Which snippet a copy button copies. */
-export const Snippet = Schema.Literals(["helm", "docker", "hostConfig", "host"])
+export const Snippet = Schema.Literals([
+	"helm",
+	"alchemy",
+	"alchemyDeploy",
+	"terraform",
+	"terraformApply",
+	"docker",
+	"hostConfig",
+	"host",
+])
 export type Snippet = typeof Snippet.Type
+
+/** How the Kubernetes tab installs the chart. */
+export const KubernetesMethod = Schema.Literals(["helm", "alchemy", "terraform"])
+export type KubernetesMethod = typeof KubernetesMethod.Type
+export const KUBERNETES_METHODS: ReadonlyArray<KubernetesMethod> = ["helm", "alchemy", "terraform"]
+
+const initMethods = (): ToggleGroup.Model =>
+	ToggleGroup.init({ label: "Kubernetes install method", values: ["helm"] })
 
 export const IngestKeyData = AsyncData.Schema(Schema.String, LoadFailure)
 
@@ -26,10 +44,15 @@ export const Model = Schema.Struct({
 	defaultTab: InstallTab,
 	dialog: Dialog.Model,
 	tabs: Tabs.Model,
+	methods: ToggleGroup.Model,
 	isRevealed: Schema.Boolean,
 	ingestKey: IngestKeyData.schema,
 	copies: Schema.Struct({
 		helm: CopyButton.Model,
+		alchemy: CopyButton.Model,
+		alchemyDeploy: CopyButton.Model,
+		terraform: CopyButton.Model,
+		terraformApply: CopyButton.Model,
 		docker: CopyButton.Model,
 		hostConfig: CopyButton.Model,
 		host: CopyButton.Model,
@@ -43,10 +66,15 @@ export const init = (id: string, defaultTab: InstallTab): Model => ({
 	defaultTab,
 	dialog: Dialog.init(id, "dialog"),
 	tabs: Tabs.init({ idBase: 0, values: INSTALL_TABS, selected: defaultTab }),
+	methods: initMethods(),
 	isRevealed: false,
 	ingestKey: IngestKeyData.Idle(),
 	copies: {
 		helm: CopyButton.init(),
+		alchemy: CopyButton.init(),
+		alchemyDeploy: CopyButton.init(),
+		terraform: CopyButton.init(),
+		terraformApply: CopyButton.init(),
 		docker: CopyButton.init(),
 		hostConfig: CopyButton.init(),
 		host: CopyButton.init(),
@@ -60,6 +88,7 @@ export const Message = defineMessageUnion({
 	MountedInstallModal: {},
 	GotDialogMessage: { message: Dialog.Message },
 	GotTabsMessage: { message: Tabs.Message },
+	GotMethodMessage: { message: ToggleGroup.Message },
 	GotCopyMessage: { snippet: Snippet, message: CopyButton.Message },
 })
 export type Message = typeof Message.Type
@@ -73,6 +102,13 @@ export const FetchIngestKey = Command.define("FetchInstallIngestKey", {
 })
 
 export type Return = Update.Return<Model, Message, Resources>
+
+/** The selected Kubernetes install method. */
+export const kubernetesMethod = (model: Model): KubernetesMethod =>
+	Option.getOrElse(
+		Arr.findFirst(KUBERNETES_METHODS, (method) => model.methods.values.includes(method)),
+		(): KubernetesMethod => "helm",
+	)
 
 /** The ingest key, fetched once, when the modal first mounts. */
 export const load = (model: Model): Return =>
@@ -92,6 +128,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	const reset = {
 		isRevealed: false,
 		tabs: Tabs.init({ idBase: model.tabs.idBase, values: INSTALL_TABS, selected: model.defaultTab }),
+		methods: initMethods(),
 	}
 	return {
 		model: isClosed ? { ...model, ...reset, dialog: result.model } : { ...model, dialog: result.model },
@@ -116,6 +153,17 @@ export const update = (model: Model, message: Message): Return =>
 				model: { ...model, tabs: next.model },
 				commands: Command.mapMessages(next.commands ?? [], (message) =>
 					Message.GotTabsMessage({ message }),
+				),
+			}
+		},
+		GotMethodMessage: ({ message: inner }) => {
+			const next = ToggleGroup.update(model.methods, inner)
+			// One method stays selected: pressing the selected one again keeps it.
+			const values = next.model.values.length === 0 ? model.methods.values : next.model.values
+			return {
+				model: { ...model, methods: { ...next.model, values } },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotMethodMessage({ message }),
 				),
 			}
 		},

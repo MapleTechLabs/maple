@@ -286,6 +286,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/install-modal",
+		title: "Install a collector",
+		description:
+			"The collector install dialog on the infra pages, open on a fixture key: Kubernetes (Helm, Alchemy or Terraform), Docker and Host (`?tab=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/ios-app-prompt",
 		title: "iPhone app prompt",
 		description:
