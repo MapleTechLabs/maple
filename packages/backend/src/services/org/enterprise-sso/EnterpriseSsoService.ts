@@ -280,13 +280,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			const entitlements = (orgId: OrgId): Effect.Effect<Entitlements> => {
 				const all = (state: Entitlement): Entitlements => ({ sso: state, scim: state })
 				return billingCustomers.customerFor(orgId).pipe(
-					Effect.flatMap((customerId) =>
-						readCustomerCached(
-							edgeCache,
-							customerId,
-							autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
-						),
-					),
+					Effect.flatMap((customerId) => readCustomerCached(edgeCache, autumn, customerId)),
 					Effect.flatMap(({ result }) => ensureOk(result)),
 					Effect.map((customer): Entitlements => ({
 						sso: customerHasFlag(customer, ADD_ON_FEATURES.sso) ? "entitled" : "not_entitled",

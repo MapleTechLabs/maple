@@ -4,6 +4,7 @@ import {
 	aiCardGateOf,
 	cycleSpend,
 	hasHadPlan,
+	hasPlanHistory,
 	isActivePlanSubscription,
 	isPlanSubscription,
 	isPricedPlan,
@@ -284,21 +285,34 @@ describe("the no-card trial", () => {
 	})
 
 	it("carries the trial's days left, rounded up, onto a Startup attach", () => {
-		expect(startupTrialDays([trial(NOW + 8.5 * DAY)], NOW)).toBe(9)
+		expect(startupTrialDays([trial(NOW + 8.5 * DAY)], [], NOW)).toBe(9)
 		// The last hours still give a whole day: the first charge lands when the trial ends.
-		expect(startupTrialDays([trial(NOW + 60_000)], NOW)).toBe(1)
+		expect(startupTrialDays([trial(NOW + 60_000)], [], NOW)).toBe(1)
 	})
 
 	it("bills a Startup attach now once the trial ended, and leaves a never-trialed org to the plan", () => {
-		expect(startupTrialDays([trial(NOW - DAY, "expired")], NOW)).toBeNull()
-		expect(startupTrialDays([trial(null)], NOW)).toBeUndefined()
+		expect(startupTrialDays([trial(NOW - DAY, "expired")], [], NOW)).toBeNull()
+		expect(startupTrialDays([trial(null)], [], NOW)).toBeUndefined()
 		expect(
-			startupTrialDays([{ planId: "startup", status: "expired", trialEndsAt: NOW + DAY }], NOW),
+			startupTrialDays([{ planId: "startup", status: "expired", trialEndsAt: NOW + DAY }], [], NOW),
 		).toBeUndefined()
 	})
 
+	it("bills a Startup attach now when the ended trial's row is gone but trials_used has it", () => {
+		expect(startupTrialDays([], [{ planId: "trial" }], NOW)).toBeNull()
+		// A Startup card trial alone leaves the attach to the plan's own terms.
+		expect(startupTrialDays([], [{ planId: "startup" }], NOW)).toBeUndefined()
+	})
+
+	it("counts a recorded trial as plan history once Autumn drops the row", () => {
+		expect(hasPlanHistory([], [{ planId: "trial" }])).toBe(true)
+		expect(hasPlanHistory([], null)).toBe(false)
+		expect(hasPlanHistory([{ planId: "openrouter_byok", addOn: true, status: "active" }], [])).toBe(false)
+		expect(hasPlanHistory([{ planId: "startup", status: "expired" }], undefined)).toBe(true)
+	})
+
 	it("reads the latest trial row when Autumn kept several", () => {
-		expect(startupTrialDays([trial(NOW - DAY, "expired"), trial(NOW + 2 * DAY)], NOW)).toBe(2)
+		expect(startupTrialDays([trial(NOW - DAY, "expired"), trial(NOW + 2 * DAY)], [], NOW)).toBe(2)
 	})
 
 	it("holds Maple AI for a card while the trial runs, and for a plan once it ended", () => {

@@ -236,6 +236,9 @@ describe("AutumnClient.updateCustomerName", () => {
 	})
 })
 
+// The one Autumn call a cached read makes, answered by `run`.
+const autumnOf = (run: Effect.Effect<AutumnResult>) => ({ getOrCreateCustomer: () => run })
+
 describe("readCustomerCached", () => {
 	it.effect("caches a 200 response: 2nd call hits the cache, upstream runs once", () =>
 		Effect.gen(function* () {
@@ -246,8 +249,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { customer: ORG, calls } }
 			})
 
-			const first = yield* readCustomerCached(cache, CUSTOMER, run)
-			const second = yield* readCustomerCached(cache, CUSTOMER, run)
+			const first = yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
+			const second = yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
 
 			assert.strictEqual(calls, 1)
 			assert.isFalse(first.hit)
@@ -265,8 +268,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 500, response: { error: "boom" } }
 			})
 
-			const first = yield* readCustomerCached(cache, CUSTOMER, run)
-			const second = yield* readCustomerCached(cache, CUSTOMER, run)
+			const first = yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
+			const second = yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
 
 			assert.strictEqual(calls, 2)
 			assert.isFalse(first.hit)
@@ -284,10 +287,10 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { calls } }
 			})
 
-			yield* readCustomerCached(cache, CUSTOMER, run)
-			yield* readCustomerCached(cache, CUSTOMER, run) // served from cache
+			yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
+			yield* readCustomerCached(cache, autumnOf(run), CUSTOMER) // served from cache
 			yield* cache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: ORG })
-			const after = yield* readCustomerCached(cache, CUSTOMER, run)
+			const after = yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
 
 			assert.strictEqual(calls, 2)
 			assert.isFalse(after.hit)
@@ -304,8 +307,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { calls } }
 			})
 
-			yield* readCustomerCached(cache, BillingCustomerId.make("org_a"), run)
-			yield* readCustomerCached(cache, BillingCustomerId.make("org_b"), run)
+			yield* readCustomerCached(cache, autumnOf(run), BillingCustomerId.make("org_a"))
+			yield* readCustomerCached(cache, autumnOf(run), BillingCustomerId.make("org_b"))
 
 			assert.strictEqual(calls, 2)
 		}),
@@ -315,7 +318,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: activePlanResponse })
-			yield* readCustomerCached(cache, CUSTOMER, run)
+			yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_TTL_SECONDS])
 		}),
 	)
@@ -324,7 +327,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: noPlanResponse })
-			yield* readCustomerCached(cache, CUSTOMER, run)
+			yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
 		}),
 	)
@@ -333,7 +336,20 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: lapsedPlanResponse })
-			yield* readCustomerCached(cache, CUSTOMER, run)
+			yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
+			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_LAPSED_TTL_SECONDS])
+		}),
+	)
+
+	it.effect("caches an ended no-card trial as lapsed: Autumn drops its row but keeps trials_used", () =>
+		Effect.gen(function* () {
+			const { cache, puts } = makeRecordingBackend()
+			// The payload Autumn returned for a sandbox customer once its 1-day trial ended.
+			const run = Effect.succeed({
+				statusCode: 200,
+				response: { id: ORG, subscriptions: [], balances: {}, trialsUsed: [{ planId: "trial" }] },
+			})
+			yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_LAPSED_TTL_SECONDS])
 		}),
 	)
@@ -342,7 +358,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: { error: "autumn_api_error" } })
-			yield* readCustomerCached(cache, CUSTOMER, run)
+			yield* readCustomerCached(cache, autumnOf(run), CUSTOMER)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
 		}),
 	)
@@ -523,6 +539,7 @@ describe("summariseSubscriptions", () => {
 				"maple.billing.subscription_statuses": "expired,active,active",
 				"maple.billing.subscription_plan_ids": "startup,byoc,free",
 				"maple.billing.subscription_excluded": "-,addon,auto",
+				"maple.billing.trials_used": "",
 				"maple.billing.has_active_plan": false,
 				"maple.billing.has_plan_history": true,
 			},
@@ -535,6 +552,7 @@ describe("summariseSubscriptions", () => {
 			"maple.billing.subscription_statuses": "",
 			"maple.billing.subscription_plan_ids": "",
 			"maple.billing.subscription_excluded": "",
+			"maple.billing.trials_used": "",
 			"maple.billing.has_active_plan": false,
 			"maple.billing.has_plan_history": false,
 		})
@@ -556,6 +574,7 @@ describe("summariseSubscriptions", () => {
 				"maple.billing.subscription_statuses": "expired,-",
 				"maple.billing.subscription_plan_ids": "-,pro",
 				"maple.billing.subscription_excluded": "-,-",
+				"maple.billing.trials_used": "",
 				"maple.billing.has_active_plan": false,
 				"maple.billing.has_plan_history": true,
 			},
@@ -885,7 +904,8 @@ describe("billing writes over HTTP", () => {
 				{ planId: "trial", status: "expired", trialEndsAt: Date.now() - DAY_MS },
 			])
 			const neverTrialed = await attachWith("startup", [])
-			// A trial Autumn remembers, or a plan held before, gets no second one.
+			// A plan held before gets no second trial. A no-card trial Autumn remembers with its row
+			// gone (Autumn deletes it at the end) bills now, like one whose row is still there.
 			const trialRemembered = await attachWith("startup", [], { trialsUsed: ["trial"] })
 			const lapsed = await attachWith("startup", [{ planId: "startup", status: "expired" }])
 			assert.deepStrictEqual(
@@ -898,7 +918,7 @@ describe("billing writes over HTTP", () => {
 					[200, 1, 9],
 					[200, 1, null],
 					[200, 1, 14],
-					[200, 1, undefined],
+					[200, 1, null],
 					[200, 1, undefined],
 				],
 			)

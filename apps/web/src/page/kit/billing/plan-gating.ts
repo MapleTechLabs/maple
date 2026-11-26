@@ -1,6 +1,7 @@
 import {
 	type AiCardGate,
 	aiCardGateOf,
+	hasPlanHistory,
 	isActivePlanSubscription,
 	isPlanSubscription,
 	TRIAL_PLAN_ID,
@@ -97,15 +98,9 @@ export function hasPaidPlan(customer: Customer | null | undefined): boolean {
 }
 
 /**
- * The plan this org used to hold and no longer does — cancelled, expired, or
- * otherwise lapsed. Non-null only when there is no active plan, so a returning
- * customer is distinguishable from a brand-new org whose customer carries no
- * plan history at all. That distinction is the whole point: without it the
- * `__root` gate bounces a lapsed subscriber into the new-user onboarding wizard.
- *
- * Autumn keeps lapsed subscription rows on the customer, so this reads history
- * straight off the payload. When several have lapsed, the one that ended last
- * wins — it's the plan the customer actually remembers being on.
+ * The lapsed subscription row, when Autumn kept one: the plan's name for the "ended" banner.
+ * When several lapsed, the one that ended last wins. Null for an ended no-card trial, whose row
+ * Autumn deletes; `hasLapsedPlan` is the gate, not this.
  */
 export function getLapsedPlan(customer: Customer | null | undefined): Subscription | null {
 	if (!isUsableCustomer(customer)) return null
@@ -125,8 +120,17 @@ export function getLapsedPlan(customer: Customer | null | undefined): Subscripti
 	return lapsed
 }
 
+/**
+ * Held a plan or started a trial, and holds no plan now. This separates a returning customer from
+ * a brand-new org: without it the `__root` gate bounces a lapsed one into new-user onboarding.
+ * `trialsUsed` counts because Autumn deletes an ended no-card trial's row.
+ */
 export function hasLapsedPlan(customer: Customer | null | undefined): boolean {
-	return getLapsedPlan(customer) !== null
+	return (
+		isUsableCustomer(customer) &&
+		getActivePlan(customer) === null &&
+		hasPlanHistory(customer.subscriptions, customer.trialsUsed)
+	)
 }
 
 /**
@@ -226,9 +230,19 @@ export function getNoCardTrial(customer: Customer | null | undefined, nowMs: num
 	return { endsAt: sub.trialEndsAt, daysRemaining: daysLeft(sub.trialEndsAt, nowMs) }
 }
 
-/** The no-card trial ended without a card: the plan the org lapsed from is the trial. */
+/**
+ * The no-card trial ended without a card: the plan the org lapsed from is the trial. With no
+ * lapsed row left, it is when the trial is the only one Autumn recorded.
+ */
 export function hasEndedNoCardTrial(customer: Customer | null | undefined): boolean {
-	return getLapsedPlan(customer)?.planId === TRIAL_PLAN_ID
+	if (!isUsableCustomer(customer) || !hasLapsedPlan(customer)) return false
+	const lapsed = getLapsedPlan(customer)
+	if (lapsed !== null) return lapsed.planId === TRIAL_PLAN_ID
+	const trialsUsed = customer.trialsUsed ?? []
+	return (
+		Arr.isReadonlyArrayNonEmpty(trialsUsed) &&
+		Arr.every(trialsUsed, (trial) => trial.planId === TRIAL_PLAN_ID)
+	)
 }
 
 /**

@@ -34,10 +34,12 @@ const STATES: ReadonlyArray<readonly [string, BillingCustomer]> = [
 	["Last days", onTrial(2, { logs: 30, traces: 12, metrics: 5 })],
 	["Traces nearing the cap", onTrial(9, { logs: 30, traces: 86, metrics: 5 })],
 	[
+		// As Autumn returns it: the ended trial's row deleted, the trial kept in `trialsUsed`.
 		"Trial ended",
 		Schema.decodeSync(BillingCustomer)({
 			id: "org_lab",
-			subscriptions: [{ planId: "trial", status: "expired", trialEndsAt: NOW_MS - DAY }],
+			subscriptions: [],
+			trialsUsed: [{ planId: "trial" }],
 		}),
 	],
 ]
