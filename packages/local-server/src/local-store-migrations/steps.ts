@@ -68,6 +68,20 @@ const RETENTION_STORAGE_VIEWS = [
 	"scanner_requests_mv",
 	"product_events_mv",
 	"product_events_traces_mv",
+	"trace_facets_hourly_mv",
+] as const
+
+/** trace_facets_hourly's dimensions: its primary key, and its sorting key before RetentionDays. */
+const TRACE_FACETS_HOURLY_DIMENSIONS = [
+	"OrgId",
+	"Hour",
+	"ServiceName",
+	"SpanName",
+	"HttpMethod",
+	"HttpStatusCode",
+	"DeploymentEnv",
+	"ServiceNamespace",
+	"HasError",
 ] as const
 
 const TRACES_UNDER_REPLACED_VIEWS: StateDispositionEntry = {
@@ -2367,6 +2381,13 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				["RetentionDays", "UInt16", "30"],
 				["OrgId", "TraceId", "ServiceName", "Bucket", "RetentionDays"],
 			),
+			// The facet rollup keeps one row per period, so its counts expire with their spans.
+			addSortingColumn(
+				"trace_facets_hourly",
+				["RetentionDays", "UInt16", "30"],
+				[...TRACE_FACETS_HOURLY_DIMENSIONS, "RetentionDays"],
+			),
+			modifyTtl("trace_facets_hourly", "toDate(Hour) + toIntervalDay(least(RetentionDays, 30))"),
 			addColumns("product_events", [["RetentionDays", "UInt16 DEFAULT 365"]]),
 			addColumns("traces", [["EventsRetentionDays", "UInt16 DEFAULT 365"]]),
 			addColumns("session_events", [["EventsRetentionDays", "UInt16 DEFAULT 365"]]),
@@ -2375,11 +2396,11 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 		plan: [
 			[
 				"add-retention-storage-columns",
-				"Add RetentionDays to eight span projections and product_events, and EventsRetentionDays to traces and session_events",
+				"Add RetentionDays to eight span projections, trace_facets_hourly and product_events, and EventsRetentionDays to traces and session_events",
 			],
 			[
 				"recreate-retention-storage-views",
-				"Recreate the ten views that fill them so new rows carry the columns",
+				"Recreate the eleven views that fill them so new rows carry the columns",
 			],
 		],
 		verifies: "Verify the v68 physical schema and retained raw telemetry counts",
@@ -2397,6 +2418,13 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				disposition: "preserve-exact",
 				guarantee:
 					"One column is added as a metadata-only default and every existing row keeps its TTL; only the view definitions change.",
+			},
+			{
+				name: "trace_facets_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"RetentionDays joins the sorting key as a metadata-only default of 30; its TTL reads the column, capped at 30 days, so every existing row keeps its 30-day TTL.",
 			},
 		],
 	},

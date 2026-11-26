@@ -20,7 +20,7 @@ import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
 import { migration_0076_retention_storage } from "./0076_retention_storage"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
-import { migrations } from "./index"
+import { migrationFailureIsSkippable, migrations } from "./index"
 
 const indexWhere = <A>(xs: ReadonlyArray<A>, predicate: (a: A) => boolean): number =>
 	Option.getOrElse(Arr.findFirstIndex(xs, predicate), () => -1)
@@ -349,11 +349,14 @@ describe("migration 0034: trace_facets_hourly", () => {
 		expect(drop).toBe("DROP VIEW IF EXISTS trace_facets_hourly_mv")
 		expect(truncate).toBe("TRUNCATE TABLE IF EXISTS trace_facets_hourly")
 		expect(backfill).toBe(traceFacetsHourlyBackfill)
-		// 0045 later moved its TTL onto the partition's day.
-		expect(latestSnapshotStatements).toContain(
-			Str.replace("TTL Hour + INTERVAL", "TTL toDate(Hour) + INTERVAL")(String(table)),
+		// 0045 moved its TTL onto the partition's day and 0076 added RetentionDays, so the table and
+		// view are checked for what this one created.
+		expect(table).toContain("CREATE TABLE IF NOT EXISTS trace_facets_hourly (")
+		expect(table).toContain("TTL Hour + INTERVAL 30 DAY")
+		expect(view).toContain(
+			"CREATE MATERIALIZED VIEW IF NOT EXISTS trace_facets_hourly_mv TO trace_facets_hourly",
 		)
-		expect(latestSnapshotStatements).toContain(view)
+		expect(view).toContain("FROM trace_list_mv")
 	})
 })
 
@@ -378,7 +381,10 @@ describe("migration 0076: span projections and product events carry their retent
 	const viewName = (stmt: string) => Arr.getUnsafe(Str.split(" ")(stmt), 6)
 
 	it("adds the columns, then drops each view right before creating it as the schema ships it", () => {
-		const alters = Arr.takeWhile(statements, (stmt) => Str.startsWith("ALTER TABLE")(stmt))
+		const alters = Arr.takeWhile(
+			statements,
+			(stmt) => Str.startsWith("ALTER TABLE")(stmt) || Str.startsWith("SYSTEM ")(stmt),
+		)
 		// Each view is recreated in the next statement, so its gap is one statement wide.
 		const pairs = Arr.chunksOf(Arr.drop(statements, alters.length), 2)
 		expect(
@@ -392,21 +398,32 @@ describe("migration 0076: span projections and product events carry their retent
 	it("copies each span's RetentionDays, and the events period into product_events", () => {
 		for (const create of creates) {
 			const fromTraces = Str.includes("FROM traces")(create)
+			const fromTraceList = Str.includes("FROM trace_list_mv")(create)
 			const intoEvents = Str.includes(" TO product_events AS")(create)
 			expect(create, viewName(create)).toMatch(
-				intoEvents ? /EventsRetentionDays AS RetentionDays/ : /\bRetentionDays\n\s+FROM traces/,
+				intoEvents
+					? /EventsRetentionDays AS RetentionDays/
+					: /\bRetentionDays\n\s+FROM trace(s|_list_mv)\n/,
 			)
-			expect(fromTraces || intoEvents, viewName(create)).toBe(true)
+			expect(fromTraces || fromTraceList || intoEvents, viewName(create)).toBe(true)
 		}
 		expect(migration_0076_retention_storage.requiredForIngest).toBe(false)
 	})
+	it("fails the apply when a statement fails, so a dropped view is never left missing", () => {
+		expect(migrationFailureIsSkippable(migration_0076_retention_storage)).toBe(false)
+		expect(migrationFailureIsSkippable(migration_0068_service_usage_profiles)).toBe(true)
+	})
 	it("adds trace_index's column to its sorting key, then its default, as the schema ships it", () => {
-		const traceIndexAlters = Arr.filter(statements, (stmt) =>
-			Str.startsWith("ALTER TABLE trace_index ")(stmt),
+		const traceIndexAlters = Arr.filter(
+			statements,
+			(stmt) =>
+				Str.startsWith("ALTER TABLE trace_index ")(stmt) || Str.endsWith(" MERGES trace_index")(stmt),
 		)
 		expect(traceIndexAlters).toEqual([
+			"SYSTEM STOP MERGES trace_index",
 			"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
 			"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+			"SYSTEM START MERGES trace_index",
 		])
 		const createTraceIndex = Arr.findFirst(latestSnapshotStatements, (stmt) =>
 			Str.includes("CREATE TABLE IF NOT EXISTS trace_index ")(stmt),
@@ -478,7 +495,13 @@ describe("migration 0045: TTL eviction drops whole parts", () => {
 					partition === undefined
 						? undefined
 						: firstGroup(/^to(?:Date|YYYYMM)\((\w+)\)$/)(partition)
-				return column === undefined || !Str.startsWith(`toDate(${column}) + INTERVAL `)(ttl)
+				return (
+					column === undefined ||
+					!(
+						Str.startsWith(`toDate(${column}) + INTERVAL `)(ttl) ||
+						Str.startsWith(`toDate(${column}) + toIntervalDay(`)(ttl)
+					)
+				)
 			}),
 			({ name }) => name,
 		)

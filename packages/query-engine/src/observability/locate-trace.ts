@@ -8,12 +8,15 @@ const HOUR_MS = 60 * 60 * 1000
 
 /**
  * How far back a trace lookup reaches when its caller does not know the org's traces read
- * horizon: the longest any source can keep traces. A miss still costs one wide probe.
+ * horizon: the longest any source can keep traces. A miss costs one probe per tier.
  */
 export const TRACE_LOOKUP_MAX_HOURS = MAX_RETENTION_DAYS * 24
 
-/** Probe tier edges, newest first: most lookups land in the last day or week. */
-const PROBE_TIER_HOURS = [24, 7 * 24] as const
+/**
+ * Probe tier edges, newest first: most lookups land in the last day or week, and no older tier
+ * spans more than about a year, so a miss is several bounded probes rather than one ~2-year scan.
+ */
+const PROBE_TIER_HOURS = [24, 7 * 24, 30 * 24, 90 * 24, 365 * 24] as const
 
 const DAY_MS = 24 * HOUR_MS
 
@@ -25,7 +28,7 @@ export interface ProbeWindow {
 
 /**
  * Non-overlapping probe windows from now (open-ended) back to `oldestMs`, so a recent
- * trace costs a few partitions and a miss no more than one wide scan.
+ * trace costs a few partitions and a miss a probe per tier.
  */
 export const traceProbeWindows = (opts: {
 	readonly nowMs: number
@@ -71,6 +74,23 @@ const probeWindow = Effect.fnUntraced(function* (traceId: string, window: ProbeW
 	}))
 })
 
+/** A probe past its `discovery` budget: the lookup ends as not-found instead of failing. */
+const OVER_BUDGET = "over-budget" as const
+
+/** `probeWindow`, with a probe that exceeded its time or memory budget reported as `OVER_BUDGET`. */
+const probeWithinBudget = (traceId: string, window: ProbeWindow) =>
+	probeWindow(traceId, window).pipe(
+		Effect.catchTag("@maple/http/errors/WarehouseQuotaExceededError", (error) =>
+			Effect.as(
+				Effect.annotateCurrentSpan({
+					"maple.query.probe_over_budget": true,
+					"maple.query.probe_budget_setting": error.setting,
+				}),
+				OVER_BUDGET,
+			),
+		),
+	)
+
 const merge = (newer: TraceBounds, older: TraceBounds): TraceBounds => ({
 	startMs: Math.min(older.startMs, newer.startMs),
 	endMs: Math.max(older.endMs, newer.endMs),
@@ -89,12 +109,15 @@ const extendBack = (
 ): Effect.Effect<TraceBounds, WarehouseExecutorError, WarehouseExecutor> => {
 	if (edgeMs <= oldestMs) return Effect.succeed(bounds)
 	const below = { startMs: Math.max(oldestMs, edgeMs - DAY_MS), endMs: edgeMs }
-	return probeWindow(traceId, below).pipe(
+	// Over budget, the bounds found so far stand.
+	return probeWithinBudget(traceId, below).pipe(
 		Effect.flatMap((hit) =>
-			Option.match(hit, {
-				onNone: () => Effect.succeed(bounds),
-				onSome: (older) => extendBack(traceId, merge(bounds, older), below.startMs, oldestMs),
-			}),
+			hit === OVER_BUDGET
+				? Effect.succeed(bounds)
+				: Option.match(hit, {
+						onNone: () => Effect.succeed(bounds),
+						onSome: (older) => extendBack(traceId, merge(bounds, older), below.startMs, oldestMs),
+					}),
 		),
 	)
 }
@@ -106,19 +129,24 @@ const probeTiers = (
 ): Effect.Effect<Option.Option<TraceBounds>, WarehouseExecutorError, WarehouseExecutor> => {
 	const [head, ...rest] = windows
 	if (head === undefined) return Effect.succeedNone
-	return probeWindow(traceId, head).pipe(
+	// Over budget, the older (wider) tiers would be too: the trace counts as not found.
+	return probeWithinBudget(traceId, head).pipe(
 		Effect.flatMap((hit) =>
-			Option.match(hit, {
-				onNone: () => probeTiers(traceId, rest, oldestMs),
-				onSome: (bounds) => Effect.asSome(extendBack(traceId, bounds, head.startMs, oldestMs)),
-			}),
+			hit === OVER_BUDGET
+				? Effect.succeedNone
+				: Option.match(hit, {
+						onNone: () => probeTiers(traceId, rest, oldestMs),
+						onSome: (bounds) =>
+							Effect.asSome(extendBack(traceId, bounds, head.startMs, oldestMs)),
+					}),
 		),
 	)
 }
 
 /**
  * Where a trace's spans are, from `trace_index` (written with the spans, so a trace it
- * does not hold is not stored). Tiers newest first, each pruned to its own days.
+ * does not hold is not stored). Tiers newest first, each pruned to its own days, stopping at
+ * the first that holds the trace. A probe past its budget ends the lookup as not found.
  */
 export const locateTrace = Effect.fn("Observability.locateTrace")(function* (
 	traceId: string,

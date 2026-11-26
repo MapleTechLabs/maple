@@ -17,6 +17,7 @@ export {
 	migrations,
 	latestMigrationVersion,
 	clickHouseSchemaVersion,
+	migrationFailureIsSkippable,
 	type ClickHouseMigration,
 	type MigrationStatement,
 } from "./migrations"

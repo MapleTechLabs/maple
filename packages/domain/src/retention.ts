@@ -90,7 +90,8 @@ export const sourceRetentionDays = (
 
 /**
  * How far back a read of each signal may reach: the longest any of the organization's sources
- * keeps it. A source that keeps less is cut by its own rows expiring, not by the read.
+ * keeps it, rounded to the period its rows are stamped with. A source that keeps less is cut
+ * by its own rows expiring, not by the read.
  */
 export const readHorizonDays = (
 	organization: RetentionDaysSet,
@@ -99,8 +100,10 @@ export const readHorizonDays = (
 ): RetentionDaysBySignal => {
 	const inherited = organizationRetentionDays(organization, defaults)
 	return bySignal((signal) =>
-		Arr.reduce(sources, inherited[signal], (longest, source) =>
-			Math.max(longest, source[signal] ?? longest),
+		retentionStampDays(
+			Arr.reduce(sources, inherited[signal], (longest, source) =>
+				Math.max(longest, source[signal] ?? longest),
+			),
 		),
 	)
 }

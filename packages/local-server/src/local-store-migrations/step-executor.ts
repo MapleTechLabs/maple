@@ -94,7 +94,10 @@ export const modifyTtl = (table: string, ttl: string): StepOperation => ({ op: "
 /**
  * Adds a column and appends it to the sorting key in the ALTER that adds it (the only way a column
  * joins an existing key), then sets its DEFAULT, which ClickHouse refuses on a column added to the
- * key. Old parts read the DEFAULT. `sortingKey` is the full new key. Rerunning it is a no-op.
+ * key. Old parts read the DEFAULT. Merges on the table stop around the pair, so none can write the
+ * column's 0 into a part before the DEFAULT exists. A failure between them leaves merges stopped
+ * only on the staged target, which is never cut over; the stop lives in the chDB session, and a
+ * resumed apply reruns all four statements. `sortingKey` is the full new key. Rerunning is a no-op.
  */
 export const addSortingColumn = (
 	table: string,
@@ -125,8 +128,10 @@ const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 		case "add-sorting-column": {
 			const [name, type, defaultExpression] = operation.column
 			return [
+				`SYSTEM STOP MERGES ${operation.table}`,
 				`ALTER TABLE ${operation.table} ADD COLUMN IF NOT EXISTS ${name} ${type}, MODIFY ORDER BY (${Arr.join(operation.sortingKey, ", ")})`,
 				`ALTER TABLE ${operation.table} MODIFY COLUMN ${name} ${type} DEFAULT ${defaultExpression}`,
+				`SYSTEM START MERGES ${operation.table}`,
 			]
 		}
 	}
