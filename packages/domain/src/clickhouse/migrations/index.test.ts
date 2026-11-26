@@ -351,8 +351,9 @@ describe("migration 0034: trace_facets_hourly", () => {
 		expect(backfill).toBe(traceFacetsHourlyBackfill)
 		// 0045 moved its TTL onto the partition's day and 0076 added RetentionDays, so the table and
 		// view are checked for what this one created.
-		expect(table).toContain("CREATE TABLE IF NOT EXISTS trace_facets_hourly (")
+		// 0034 predates per-row retention: its table has the fixed TTL and no RetentionDays column.
 		expect(table).toContain("TTL Hour + INTERVAL 30 DAY")
+		expect(table).not.toContain("RetentionDays")
 		expect(view).toContain(
 			"CREATE MATERIALIZED VIEW IF NOT EXISTS trace_facets_hourly_mv TO trace_facets_hourly",
 		)
