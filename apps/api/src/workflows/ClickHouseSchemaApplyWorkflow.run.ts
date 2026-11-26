@@ -612,9 +612,22 @@ export const runPlannedStep = <A, E, R, E2, R2>(
 					confirmed,
 					(restored): Effect.Effect<never, E | SchemaApplyMergesLeftStoppedError, R2> =>
 						restored
-							? Effect.exit(cleanup("restart-merges", restart)).pipe(
-									Effect.andThen(Effect.failCause(cause)),
-								)
+							? Effect.exit(
+									cleanup("restart-merges", restart).pipe(
+										// The step's failure is what the run reports; a failed restart is logged so it is not lost.
+										Effect.tapCause((restartCause) =>
+											Effect.logError(
+												"Restarting merges after a failed schema step failed",
+											).pipe(
+												Effect.annotateLogs({
+													"maple.clickhouse.restart_sql": restart,
+													"maple.clickhouse.restart_error":
+														causeMessage(restartCause),
+												}),
+											),
+										),
+									),
+								).pipe(Effect.andThen(Effect.failCause(cause)))
 							: Effect.fail(
 									new SchemaApplyMergesLeftStoppedError({
 										message: `${causeMessage(cause)}\n${restore?.recovery ?? ""}`,
