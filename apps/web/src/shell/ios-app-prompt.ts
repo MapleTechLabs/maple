@@ -1,19 +1,18 @@
 import { IOS_APP_NAME, IOS_APP_STORE_URL } from "@maple/domain/mobile-app"
 import { writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { button } from "@maple/views/ui/button"
+import { iconButton } from "@maple/views/ui/icon-button"
 import { icon } from "@maple/views/ui/icon"
-import * as Popover from "@maple/views/ui/popover"
 import { qrCode } from "@maple/views/ui/qr-code"
-import { sidebarMenuButton, sidebarMenuItem } from "@maple/views/ui/sidebar"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./message"
-import { IOS_PROMPT_POPOVER_ID, type Model, type ShellClerk } from "./model"
+import type { Model, ShellClerk } from "./model"
 
-// The sidebar's nudge to install the iPhone app: one footer row. On a desktop it opens a popover
-// with a QR code and Apple's badge; on a phone it is a link to the listing. Dismissed per user.
+// The sidebar's nudge to install the iPhone app: a small card over the footer rows, on the rows'
+// own inset, with a QR code (desktop only) beside Apple's badge. Dismissed once per user, in this browser.
 
 /** `maple.ios-app-prompt.dismissed.<userId>`: that user closed the card here. */
 export const IOS_PROMPT_STORAGE_PREFIX = "maple.ios-app-prompt.dismissed."
@@ -28,20 +27,14 @@ export const SaveIosPromptDismissed = Command.define("SaveIosPromptDismissed", {
 		}),
 })
 
-/** The signed-in user the row is for: none self-hosted, before Clerk answers, or once they dismissed it. */
+/** The signed-in user the card is for: none self-hosted, before Clerk answers, or once they closed it. */
 export const iosPromptUser = (model: Model, clerk: ShellClerk | null): Option.Option<string> =>
 	Option.filter(
 		clerk === null ? Option.none() : clerk.maybeUserId,
 		(userId) => !Arr.contains(model.iosPromptDismissedUsers, userId),
 	)
 
-const ROW_LABEL = "Get the iPhone app"
 const STORE_LABEL = "Download on the App Store"
-
-const rowContent = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
-	icon(h, "MobileIcon", { size: 18 }),
-	h.span([], [ROW_LABEL]),
-]
 
 const storeBadge = (h: HtmlBuilder<Message>): Html =>
 	h.a(
@@ -63,34 +56,7 @@ const storeBadge = (h: HtmlBuilder<Message>): Html =>
 		],
 	)
 
-const panel = (h: HtmlBuilder<Message>, userId: string): ReadonlyArray<Html> => [
-	vstack(h, { gap: "3", align: "center", className: "w-52 text-center" }, [
-		// The dialog's name; the row that opened it already says it on screen.
-		Popover.popoverTitle(h, IOS_PROMPT_POPOVER_ID, ROW_LABEL, "sr-only"),
-		qrCode(h, {
-			value: IOS_APP_STORE_URL,
-			label: `QR code to ${IOS_APP_NAME} on the App Store`,
-			className: "size-36",
-		}),
-		Popover.popoverDescription(
-			h,
-			IOS_PROMPT_POPOVER_ID,
-			"Scan with your iPhone to get critical alerts on your Lock Screen.",
-		),
-		storeBadge(h),
-		button(
-			h,
-			{
-				variant: "ghost",
-				size: "sm",
-				attributes: [h.OnClick(Message.ClickedDismissIosPrompt({ userId }))],
-			},
-			["Don't show again"],
-		),
-	]),
-]
-
-/** The footer row, or nothing; the collapsed rail has no room for a nudge. */
+/** The card, or nothing; the collapsed rail and a short window have no room for it. */
 export const iosAppPrompt = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -99,43 +65,54 @@ export const iosAppPrompt = (
 	Option.match(iosPromptUser(model, clerk), {
 		onNone: () => [],
 		onSome: (userId) => [
-			sidebarMenuItem(h, "group-data-[collapsible=icon]:hidden", [
-				// A phone is the device: the row goes straight to the listing, with no code to scan.
-				model.isMobile
-					? sidebarMenuButton(
+			vstack(
+				h,
+				{
+					as: "section",
+					gap: "2",
+					// The Search row's surface. The footer does not scroll, so a short window drops the card.
+					className:
+						"mt-2 rounded-lg border border-sidebar-border bg-background p-3 group-data-[collapsible=icon]:hidden [@media(max-height:700px)]:hidden",
+					attributes: [h.AriaLabel(IOS_APP_NAME)],
+				},
+				[
+					hstack(h, { align: "start", justify: "between", gap: "2" }, [
+						typography(h, { size: "ui", weight: "medium" }, ["Maple on your iPhone"]),
+						iconButton(
 							h,
 							{
-								href: IOS_APP_STORE_URL,
-								attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+								label: "Dismiss",
+								size: "icon-2xs",
+								className: "-mr-1 shrink-0",
+								attributes: [h.OnClick(Message.ClickedDismissIosPrompt({ userId }))],
 							},
-							rowContent(h),
-						)
-					: h.submodel({
-							slotId: IOS_PROMPT_POPOVER_ID,
-							model: model.iosPromptPopover,
-							view: Popover.view,
-							viewInputs: {
-								className: "w-auto",
-								toContent: () => (model.iosPromptPopover.isOpen ? panel(h, userId) : []),
-								toView: ({ trigger, withTrigger }) =>
+							[icon(h, "XmarkIcon", { size: 12 })],
+						),
+					]),
+					hstack(h, { gap: "3", align: "stretch" }, [
+						// A phone opens the listing from the badge; a code to scan is for the desktop.
+						...(model.isMobile
+							? []
+							: [
 									h.div(
-										[],
-										withTrigger(
-											sidebarMenuButton(
-												h,
-												{
-													className:
-														"data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground",
-													slot: "popover-trigger",
-													attributes: trigger,
-												},
-												rowContent(h),
-											),
-										),
+										[h.Class("shrink-0 rounded-md border border-sidebar-border p-1")],
+										[
+											qrCode(h, {
+												value: IOS_APP_STORE_URL,
+												label: `QR code to ${IOS_APP_NAME} on the App Store`,
+												className: "block size-16",
+											}),
+										],
 									),
-							},
-							toParentMessage: (message) => Message.GotIosPromptPopoverMessage({ message }),
-						}),
-			]),
+								]),
+						vstack(h, { justify: "between", gap: "1.5", className: "min-w-0" }, [
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								"Critical alerts on your Lock Screen.",
+							]),
+							storeBadge(h),
+						]),
+					]),
+				],
+			),
 		],
 	})

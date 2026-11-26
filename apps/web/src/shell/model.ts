@@ -7,7 +7,6 @@ import { Array as Arr, Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { PopupPosition } from "@maple/views/ui/anchor"
 import * as Dialog from "@maple/views/ui/dialog"
-import * as Popover from "@maple/views/ui/popover"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
@@ -112,9 +111,7 @@ export const Model = Schema.Struct({
 	supportChannel: SupportChannel.Model,
 	/** `quota-banner-approaching` in sessionStorage: the approaching-quota banner was dismissed. */
 	isQuotaApproachingDismissed: Schema.Boolean,
-	/** The popover of the sidebar's iPhone app row. */
-	iosPromptPopover: Popover.Model,
-	/** `maple.ios-app-prompt.dismissed.<userId>`: the users who dismissed the iPhone app row here. */
+	/** `maple.ios-app-prompt.dismissed.<userId>`: the users who closed the iPhone app card here. */
 	iosPromptDismissedUsers: Schema.Array(Schema.String),
 	/** The server serves a newer build than this tab. */
 	isAppOutdated: Schema.Boolean,
@@ -163,12 +160,6 @@ export const initRailTooltip = (): Tooltip.Model =>
 
 export const FILTER_SHEET_ID = "page-filter-sheet"
 export const RIGHT_SHEET_ID = "page-right-sheet"
-
-export const IOS_PROMPT_POPOVER_ID = "shell-ios-app-prompt"
-
-/** The iPhone app row's popover: beside the row, its foot level with it. */
-export const initIosPromptPopover = (): Popover.Model =>
-	Popover.init(IOS_PROMPT_POPOVER_ID, { side: "right", align: "end", sideOffset: 8 })
 
 /** A page change starts the page's sheets closed. */
 export const initFilterSheet = (): Dialog.Model => Dialog.init(FILTER_SHEET_ID, "sheet")
@@ -228,7 +219,6 @@ export const init = (flags: ShellFlags): Model => ({
 	connect: ConnectPanel.init(),
 	supportChannel: SupportChannel.init(),
 	isQuotaApproachingDismissed: flags.isQuotaApproachingDismissed ?? false,
-	iosPromptPopover: initIosPromptPopover(),
 	iosPromptDismissedUsers: flags.iosPromptDismissedUsers ?? [],
 	palette: null,
 	shortcutsDialog: null,

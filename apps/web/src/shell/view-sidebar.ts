@@ -403,10 +403,10 @@ export const shellSidebarFooter = (
 			],
 			[],
 		),
+		...iosAppPrompt(h, model, clerk),
 		sidebarMenu(h, undefined, [
 			// A row of the footer's list, so it keeps the list's 4px rhythm.
 			...onCallPill(h, shellOnCallStatus(model), tip, !model.isSidebarOpen && !model.isMobile),
-			...iosAppPrompt(h, model, clerk),
 			// An analyst, or a role limited to namespaces, sets nothing up: their account is in the user menu below.
 			...(shellAudience(clerk) !== "operator"
 				? []
