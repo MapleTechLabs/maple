@@ -37,11 +37,34 @@ describe("sourceSnippets", () => {
 		expect(code("terraform")).not.toContain("maple_src_test")
 		expect(code("alchemy")).toContain('chart: "oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra"')
 		expect(code("terraform")).toContain('resource "helm_release" "maple_k8s_infra"')
-		expect(code("alchemy-deploy")).toBe(
+		expect(code("alchemy-deploy")).toContain(
 			"MAPLE_INGEST_KEY=maple_src_test bunx alchemy deploy maple.ts --stage maple",
 		)
-		expect(code("terraform-apply")).toBe(
+		expect(code("terraform-apply")).toContain(
 			"terraform init && TF_VAR_maple_ingest_key=maple_src_test terraform apply",
 		)
+	})
+
+	it("pins both IaC installs to one cluster and leaves the namespace outside the Alchemy stack", () => {
+		const snippets = sourceSnippets("kubernetes", "maple_src_test", "Cluster")
+		const code = (id: string): string =>
+			Option.match(
+				Arr.findFirst(snippets, (snippet) => snippet.id === id),
+				{ onNone: () => "", onSome: (snippet) => snippet.code },
+			)
+		// A destroy reads the context back from the stack or the tfvars file, not the shell's current one.
+		expect(code("alchemy")).toContain("Kubernetes.KubeConfig({ path: kubeconfig, context })")
+		expect(code("alchemy-deploy")).toContain('export KUBE_CONTEXT="$(kubectl config current-context)"')
+		expect(code("terraform")).toContain("config_context = var.kube_context")
+		// A rerun after switching context keeps the first apply's cluster.
+		expect(code("terraform-apply")).toContain("test -f maple.auto.tfvars ||")
+		// A failed context lookup writes nothing, so the next run asks again rather than pinning "".
+		expect(code("terraform-apply")).toContain('context="$(kubectl config current-context)" &&')
+		// Read inside the program, which a destroy skips: a fresh shell can still destroy.
+		expect(code("alchemy")).toContain('yield* Config.NonEmptyString("KUBE_CONTEXT")')
+		expect(code("alchemy")).toContain('Config.schema(Schema.Redacted(Schema.NonEmptyString), "MAPLE_INGEST_KEY")')
+		// Tracking the namespace would make a destroy delete everything else in it.
+		expect(code("alchemy")).not.toContain("createNamespace")
+		expect(code("alchemy-deploy")).toContain("create namespace maple")
 	})
 })
