@@ -55,6 +55,8 @@ type ExecutorOpts = {
 	readonly boundedHit?: boolean
 	/** The probe at this index, and every later one, runs past its time limit. */
 	readonly overBudgetFromProbe?: number
+	/** The span starts here, before the probed bounds: a bounded lookup hits only if it reaches back. */
+	readonly spanStart?: string
 }
 
 const makeExecutor = (sqls: string[], opts: ExecutorOpts = {}): WarehouseExecutorApi => ({
@@ -80,8 +82,10 @@ const makeExecutor = (sqls: string[], opts: ExecutorOpts = {}): WarehouseExecuto
 				.decodeFirstRow(opts.indexed === false || !probeHits(query.sql) ? [] : [probeRow])
 				.pipe(Effect.orDie)
 		const bounded = Str.includes("Timestamp >=")(query.sql)
+		const lower = probeBound(query.sql, ">=")
+		const reaches = opts.spanStart === undefined || (lower !== undefined && lower <= opts.spanStart)
 		return query
-			.decodeFirstRow(!bounded || opts.boundedHit === true ? [detailRow] : [])
+			.decodeFirstRow(!bounded || (opts.boundedHit === true && reaches) ? [detailRow] : [])
 			.pipe(Effect.orDie)
 	},
 	query: () => Effect.succeed({ data: [] }),
@@ -158,11 +162,27 @@ describe("spanDetail", () => {
 		}),
 	)
 
-	it.effect("keeps the bounds found so far when the walk back runs past its budget", () =>
+	it.effect("reads back to the lookback edge when the walk back runs past its budget", () =>
 		Effect.gen(function* () {
 			const sqls: string[] = []
-			// The week tier finds the trace; the day below its edge times out.
-			const result = yield* run(sqls, undefined, { boundedHit: true, overBudgetFromProbe: 2 })
+			// The week tier finds the trace; the day below its edge times out, so the trace's start
+			// is unknown. The span sits in an older day no probe reached.
+			const result = yield* run(sqls, undefined, {
+				boundedHit: true,
+				overBudgetFromProbe: 2,
+				spanStart: "2026-01-10 00:00:00",
+			})
+			assert.isTrue(result.found)
+			assert.lengthOf(sqls, 4)
+			assert.include(sqls[3], "Timestamp >= '2024-03-24 23:59:59'")
+			assert.include(sqls[3], "Timestamp <= '2026-03-20 08:00:04'")
+		}),
+	)
+
+	it.effect("keeps the found bounds when the walk back completes", () =>
+		Effect.gen(function* () {
+			const sqls: string[] = []
+			const result = yield* run(sqls, undefined, { boundedHit: true, spanStart: "2026-03-20 07:59:57" })
 			assert.isTrue(result.found)
 			assert.include(sqls[3], "Timestamp >= '2026-03-20 07:59:57'")
 		}),
