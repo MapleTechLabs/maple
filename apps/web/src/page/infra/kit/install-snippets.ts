@@ -43,7 +43,8 @@ export const TERRAFORM_FILE = "maple.tf"
 // certificate, and the chart's Instrumentation resource fails a first install before the operator's
 // CRDs exist. Both files leave pod auto-instrumentation off; the collectors are unaffected.
 export const alchemyStack =
-	(): string => `// Maple's Kubernetes collector, deployed by Alchemy onto your kubeconfig's current context.
+	(): string => `// Maple's Kubernetes collector, deployed by Alchemy into the kubeconfig context in KUBE_CONTEXT.
+// The stack keeps that file and context, so a later destroy reaches the same cluster.
 // Written for alchemy ${ALCHEMY_VERSION}:
 //   bun add alchemy@${ALCHEMY_VERSION} @alchemy.run/kubernetes@${ALCHEMY_VERSION} effect@^4.1.4
 // Needs the helm CLI. Alchemy's state keeps the ingest key, so keep .alchemy/ private.
@@ -51,21 +52,26 @@ import * as Alchemy from "alchemy"
 import * as Kubernetes from "@alchemy.run/kubernetes"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
+import { homedir } from "node:os"
+import { join } from "node:path"
 
 const ingestKey = process.env.MAPLE_INGEST_KEY
 if (!ingestKey) throw new Error("Set MAPLE_INGEST_KEY to your Maple ingest key.")
+const context = process.env.KUBE_CONTEXT
+if (!context) throw new Error("Set KUBE_CONTEXT to the kubeconfig context to deploy into.")
+const kubeconfig = process.env.KUBECONFIG?.split(":")[0] || join(homedir(), ".kube", "config")
 
 export default Alchemy.Stack(
   "maple-k8s-infra",
   { providers: Kubernetes.providers(), state: Alchemy.localState() },
   Effect.gen(function* () {
     const collector = yield* Kubernetes.HelmChart("maple-k8s-infra", {
-      cluster: Kubernetes.KubeConfig(),
+      cluster: Kubernetes.KubeConfig({ path: kubeconfig, context }),
       chart: "oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra",
       version: "${CHART_VERSION}",
       releaseName: "maple-k8s-infra",
+      // Made by the deploy command, not the stack: a destroy then leaves the namespace and the rest of it alone.
       namespace: "maple",
-      createNamespace: true,
       values: {
         global: { clusterName: "production" },
         maple: { ingestKey: { value: Redacted.make(ingestKey) }${isCustomEndpoint ? `, ingest: { endpoint: "${ingestUrl}" }` : ""} },
@@ -78,10 +84,19 @@ export default Alchemy.Stack(
 )`
 
 export const alchemyDeployCommand = (token: string): string =>
-	`MAPLE_INGEST_KEY=${token} bunx alchemy deploy ${ALCHEMY_FILE} --stage maple`
+	Arr.join(
+		[
+			'export KUBE_CONTEXT="$(kubectl config current-context)"',
+			'kubectl --context "$KUBE_CONTEXT" create namespace maple --dry-run=client -o yaml \\',
+			'  | kubectl --context "$KUBE_CONTEXT" apply -f -',
+			`MAPLE_INGEST_KEY=${token} bunx alchemy deploy ${ALCHEMY_FILE} --stage maple`,
+		],
+		"\n",
+	)
 
 export const terraformConfig =
-	(): string => `# Maple's Kubernetes collector, installed as a Helm release onto your kubeconfig's current context.
+	(): string => `# Maple's Kubernetes collector, installed as a Helm release into the kubeconfig context in kube_context.
+# The state file holds the ingest key: keep terraform.tfstate out of git, or use an encrypted backend.
 terraform {
   required_providers {
     helm = {
@@ -93,8 +108,19 @@ terraform {
 
 provider "helm" {
   kubernetes = {
-    config_path = "~/.kube/config"
+    config_paths   = split(":", var.kubeconfig)
+    config_context = var.kube_context
   }
+}
+
+# The apply command writes both to maple.auto.tfvars, so plan and destroy reach the same cluster.
+variable "kubeconfig" {
+  type    = string
+  default = "~/.kube/config"
+}
+
+variable "kube_context" {
+  type = string
 }
 
 variable "maple_ingest_key" {
@@ -128,7 +154,14 @@ resource "helm_release" "maple_k8s_infra" {
 }`
 
 export const terraformApplyCommand = (token: string): string =>
-	`terraform init && TF_VAR_maple_ingest_key=${token} terraform apply`
+	Arr.join(
+		[
+			`printf 'kubeconfig = "%s"\\nkube_context = "%s"\\n' \\`,
+			'  "${KUBECONFIG:-$HOME/.kube/config}" "$(kubectl config current-context)" > maple.auto.tfvars',
+			`terraform init && TF_VAR_maple_ingest_key=${token} terraform apply`,
+		],
+		"\n",
+	)
 
 export const dockerCommand = (token: string): string =>
 	Arr.join(
