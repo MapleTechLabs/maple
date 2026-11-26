@@ -6973,7 +6973,7 @@ async fn handle_replay_blob_inner(
     // bucket's lifecycle rule.
     let events_json = match (&state.replay_blob_store, events_json) {
         (Some(store), _) => {
-            let key = replay_object_key(&org_id, &session_id, chunk_seq);
+            let key = replay_object_key(retention_days, &org_id, &session_id, chunk_seq);
             Span::current().record("maple.replay.storage", "r2");
             Span::current().record("maple.replay.object_key", key.as_str());
             let started = Instant::now();
@@ -7028,8 +7028,8 @@ async fn handle_replay_blob_inner(
             // degrading before it starts losing chunks outright.
             span.record("maple.replay.blob_attempts", outcome.attempts);
             span.record("maple.replay.blob_status", 200u16);
-            // The index row carries the chunk's metadata; the payload lives in
-            // R2 under a key derived from (OrgId, SessionId, ChunkSeq). An empty
+            // The index row carries the chunk's metadata; the payload lives in R2
+            // under a key derived from (RetentionDays, OrgId, SessionId, ChunkSeq). An empty
             // `events` is what marks the row as blob-backed on read — the SDK
             // never posts an empty chunk, so it cannot occur otherwise.
             String::new()
@@ -15411,11 +15411,11 @@ mod tests {
 
         let captured = rx.recv().await.expect("the blob store should see a PUT");
 
-        // Key scheme: bucket first, then the v1/{org}/{session}/{seq}.json.gz
-        // that the API side reconstructs from the ClickHouse row.
+        // Key scheme: bucket first, then the r{days}/v1/{org}/{session}/{seq}.json.gz
+        // the API side reconstructs from the ClickHouse row; no policy stamps 30 days.
         assert_eq!(
             captured.path,
-            "replays/v1/org_replay_blob/sess_42/00000007.json.gz"
+            "replays/r30/v1/org_replay_blob/sess_42/00000007.json.gz"
         );
         // Stored verbatim — not re-gzipped, not the decompressed text. A
         // recompression here would silently double ingest CPU and break the
