@@ -139,8 +139,11 @@ private struct HomeContent: View {
 	var body: some View {
 		VStack(alignment: .leading, spacing: 28) {
 			if let onCall {
-				OnCallShiftCard(overview: onCall)
-					.transition(.opacity)
+				VStack(spacing: 8) {
+					OnCallShiftCard(overview: onCall)
+					PageReachabilityCard(overview: onCall)
+				}
+				.transition(.opacity)
 			}
 
 			OverviewStats(snapshot: snapshot)

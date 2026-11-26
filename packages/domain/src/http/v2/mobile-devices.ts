@@ -167,6 +167,31 @@ export const V2LiveActivityDeleteResponse = Schema.Struct({
 	deleted: Schema.Literal(true),
 }).annotate({ identifier: "LiveActivityDeleteResponse", title: "Live Activity delete response" })
 
+export const V2MobileTestPage = Schema.Struct({
+	object: Schema.Literal("mobile_test_page").annotate({ description: 'Always `"mobile_test_page"`.' }),
+	configured: Schema.Boolean.annotate({
+		description:
+			"False on a deployment without push credentials: nothing was tried, whatever phones are registered.",
+	}),
+	sent: Schema.Int.annotate({ description: "Phones the push platform accepted the test page for." }),
+	failed: Schema.Int.annotate({
+		description: "Phones the test page could not be sent to, or 1 when the phones could not be read.",
+	}),
+	unregistered: Schema.Int.annotate({
+		description:
+			"Phones the push platform called gone. They are switched off until the app registers again.",
+	}),
+}).annotate({
+	identifier: "MobileTestPage",
+	title: "Mobile test page",
+	description:
+		"What a test page came to. All counts zero with `configured` true means no phone of the caller's is registered and enabled here.",
+	examples: [
+		wireExample({ object: "mobile_test_page", configured: true, sent: 1, failed: 0, unregistered: 0 }),
+	],
+})
+export type V2MobileTestPage = Schema.Schema.Type<typeof V2MobileTestPage>
+
 const persistence = publicError(MobileDevicePersistenceError)
 const notFound = publicError(MobileDeviceNotFoundError)
 
@@ -254,6 +279,20 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 					summary: "Forget a Live Activity",
 					description:
 						"Called when the activity ended on the device — dismissed by the user or ended by the app — so Maple stops pushing to a dead token. Requires the `mobile_devices:write` scope.",
+				}),
+			),
+	)
+	.add(
+		HttpApiEndpoint.post("testPage", "/test_page", {
+			success: V2MobileTestPage,
+		})
+			.annotate(EndpointAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "sendMobileTestPage",
+					summary: "Send myself a test page",
+					description:
+						"Sends a test page to the current user's own phones in the current organization, delivered exactly as an escalation step's page is (time sensitive, top priority) and saying it is a test. Use it to see that a page reaches the phone through Focus and notification settings. Requires the `mobile_devices:write` scope.",
 				}),
 			),
 	)

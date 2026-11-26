@@ -1,4 +1,5 @@
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
 export { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { Effect, Layer } from "effect"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
@@ -29,6 +30,15 @@ export const OrgMembersServiceStubLayer = Layer.succeed(OrgMembersService, {
 })
 
 const die = () => Effect.die(new Error("This service is not available in this test harness"))
+
+/** For a harness that mounts the device routes and sends no push: every method is a defect. */
+export const MobilePushServiceUnusedLayer = Layer.succeed(MobilePushService, {
+	notifyIncident: () => Effect.die("MobilePushService is not part of this test"),
+	notifyIncidentDigest: () => Effect.die("MobilePushService is not part of this test"),
+	pageMember: () => Effect.die("MobilePushService is not part of this test"),
+	testPage: () => Effect.die("MobilePushService is not part of this test"),
+	refreshWidgets: () => Effect.die("MobilePushService is not part of this test"),
+})
 
 export const ApiV2RateLimiterAllowAllLayer = Layer.succeed(ApiV2RateLimiter, {
 	check: () => Effect.succeed("allowed" as const),

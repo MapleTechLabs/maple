@@ -35,6 +35,12 @@ the last hour` (liveness — an org that stopped sending is _not_ healthy).
   with no end in sight reads `no handoff scheduled` and draws no progress. It has
   its own read (`getOnCallOverview`) beside the board's, so it never delays the
   board, and a failed read shows no card. Tap → On call.
+- **Reachability warning**, under the shift card, only when the viewer is on
+  call now or has a shift starting within 7 days and a page would not reach
+  this phone. One card in the warn colour, one problem, one button that fixes
+  it: `Focus can hold back a page · Time Sensitive notifications are off for
+  Maple. · Open settings`. Nothing is drawn when the phone is fine, and never
+  for someone with no shifts.
 - **Open incidents**, critical first, each a card: rule name · service(s) ·
   `observed vs threshold` in the rule's unit · how long open · a 1h sparkline
   of the signal. Tap → Incident detail. Empty state is a real sentence, not
@@ -141,11 +147,30 @@ Pushed from the Overview shift card, read-only, and drawn from one document:
 Times are shown in the device's time zone. Creating overrides and editing
 layers stay on the web.
 
+The On call screen opens with the same reachability warning as Overview, under
+the same rule, and ends with a quiet **Send a test page**. The problems, most
+severe first: notifications denied, never asked for, delivered quietly, banners
+off, sound off, Time Sensitive off (Focus would hold a page back), and a phone
+the server does not hold. The fix is asking for permission in the app, opening
+Maple's notification settings, or registering again. The check runs again each
+time the app comes back to the front, since the fix is usually made in the
+Settings app.
+
 ### Profile sheet
 
 Org switcher (existing), **Notifications** (per-org toggles: critical
 incidents · warning incidents · resolved · new error issues · anomalies), sign
 out. Nothing else.
+
+The notifications sheet also has a **Test page** section: **Send a test page**
+sends a page with nothing behind it to the person's own phones (the v2
+`sendMobileTestPage` operation) and one line says what came of it: `Sent to
+this phone. It should arrive in a few seconds.`, `Sent to 2 phones.`, `No phone
+is registered for you here. Open Maple on your phone and allow notifications.`,
+`Push is not set up on this deployment.` or `The test page could not be sent.`
+A reachability problem shows above the button with its fix, so the sheet is the
+one place to sort out why a page did not arrive. Denied or never asked for
+permission is the Permission card's to say, at the top, and is not said twice.
 
 ## Health model
 

@@ -406,6 +406,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 				Effect.gen(function* () {
 					const context = input.context
 					const nowMs = yield* runtime.now
+					const openForMs = Math.max(0, nowMs - incident.firstTriggeredAt)
 					// What the phone's Lock Screen card is drawn from, as an incident push draws it.
 					const subject: LiveActivitySubject = {
 						orgId: row.orgId,
@@ -416,7 +417,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 						signalType: context.signalType,
 						signalDisplay: signalDisplayOf(context),
 						serviceNames: [],
-						openForMs: Math.max(0, nowMs - incident.firstTriggeredAt),
+						openForMs,
 						// The latest reading, not the one the step was queued with: the banner is what the
 						// page said, the card is what the incident says now.
 						value: incident.lastObservedValue ?? context.value,
@@ -435,6 +436,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 						collapseId: `page:${row.incidentId}`,
 						// The incident's severity now, which a tier change may have moved since the page was queued.
 						severity: Option.getOrElse(decodeSeverity(incident.severity), () => context.severity),
+						openForMs,
 						liveActivity: {
 							attributes: renderLiveActivityAttributes(subject, nowMs),
 							contentState: renderLiveActivityState(subject, incident.lastEvaluatedAt ?? nowMs),

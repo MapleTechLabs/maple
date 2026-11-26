@@ -215,6 +215,9 @@ struct MainTabView: View {
 		.onChange(of: scenePhase) { _, phase in
 			switch phase {
 			case .active:
+				// Notification settings are changed in the Settings app, and people come
+				// straight back: the reachability warning and the sheet read this.
+				Task { await push.refreshAuthorization() }
 				// Coming back to the app is the cheapest fresh data there is —
 				// the throttle inside `refresh` keeps this from being a request
 				// per app switch.
