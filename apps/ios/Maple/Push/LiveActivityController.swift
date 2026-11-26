@@ -173,7 +173,10 @@ final class LiveActivityController {
 	/// After an org switch: the tokens are unchanged, but the new org's server
 	/// rows know nothing about them.
 	private func resubmitRunningActivities() async {
-		for activity in Activity<IncidentActivityAttributes>.activities {
+		// Only the cards being watched. A second card for an incident is on its
+		// way out, and the server keeps one token per phone and incident: sending
+		// its token would route the updates to a card that is about to go.
+		for activity in Activity<IncidentActivityAttributes>.activities where activityObservers[activity.id] != nil {
 			guard let data = activity.pushToken else { continue }
 			await submit(
 				activityId: activity.id,

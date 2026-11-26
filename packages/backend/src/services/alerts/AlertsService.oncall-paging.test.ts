@@ -795,19 +795,29 @@ describe("escalation pages the on-call", () => {
 				})
 				yield* registerPhone(testDb, orgId, ben)
 				yield* registerPhone(testDb, orgId, chen, true)
-				yield* ticks(alerts, 10)
+				yield* ticks(alerts, 2)
+				// The breach gets worse before the second step pages anyone.
+				state.tracesAggregateRows = errorRate(12)
+				yield* ticks(alerts, 8)
 
+				// The banner is the reading the escalation started with.
 				assert.deepStrictEqual(
 					Arr.map(memberPages, (page) => [page.userId, page.title, page.body]),
 					[[ben, "You are paged · Checkout error rate", "Critical. Error Rate 1000% > 500%."]],
 				)
-				// The page carries the incident's Lock Screen card, drawn as an incident push draws it.
+				// The page carries the incident's Lock Screen card, drawn as an incident push draws it,
+				// from the incident's latest reading.
 				const card = memberPages[0]?.liveActivity
 				assert.strictEqual(memberPages[0]?.severity, "critical")
 				assert.match(String(card?.attributes.incident_id), /^inc_/)
 				assert.deepStrictEqual(
-					[card?.attributes.rule_name, card?.attributes.organization_id, card?.contentState.status],
-					["Checkout error rate", orgId, "firing"],
+					[
+						card?.attributes.rule_name,
+						card?.attributes.organization_id,
+						card?.contentState.status,
+						card?.contentState.value,
+					],
+					["Checkout error rate", orgId, "firing", "1200%"],
 				)
 				const pushRows = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "push")
 				assert.deepStrictEqual(

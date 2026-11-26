@@ -81,24 +81,36 @@ export interface ApnsPush {
  * the content state. Getting the token/event pairing wrong is a 400 from Apple
  * with `BadDeviceToken`, not a no-op.
  */
-export interface ApnsLiveActivityPush {
+interface ApnsLiveActivityCommon {
 	/** Push-to-start token for `start`; the activity's update token otherwise. */
 	readonly pushToken: string
 	readonly environment: MobilePushEnvironment
 	readonly bundleId: string
-	readonly event: "start" | "update" | "end"
-	/** Required for `start`; ignored by Apple otherwise. */
-	readonly attributesType?: string | undefined
-	readonly attributes?: Record<string, unknown> | undefined
 	readonly contentState: Record<string, unknown>
 	/** Seconds. After this the activity renders as stale rather than as current. */
 	readonly staleAfterSeconds?: number | undefined
-	/** Seconds from now at which an ended activity leaves the Lock Screen. */
-	readonly dismissAfterSeconds?: number | undefined
-	/** Optional banner alongside the activity — `start` only, in practice. */
-	readonly alert?: ApnsAlert | undefined
 	readonly priority?: 5 | 10 | undefined
 }
+
+export interface ApnsLiveActivityStart extends ApnsLiveActivityCommon {
+	readonly event: "start"
+	readonly attributesType: string
+	readonly attributes: Record<string, unknown>
+	/** ActivityKit starts nothing from a push without one. It carries no sound of its own. */
+	readonly alert: ApnsAlert
+	readonly dismissAfterSeconds?: undefined
+}
+
+export interface ApnsLiveActivityChange extends ApnsLiveActivityCommon {
+	readonly event: "update" | "end"
+	/** Seconds from now at which an ended activity leaves the Lock Screen. */
+	readonly dismissAfterSeconds?: number | undefined
+	readonly attributesType?: undefined
+	readonly attributes?: undefined
+	readonly alert?: undefined
+}
+
+export type ApnsLiveActivityPush = ApnsLiveActivityStart | ApnsLiveActivityChange
 
 /**
  * A background push: no alert, no sound, no badge — just `content-available`,
@@ -462,8 +474,8 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 						timestamp: nowSeconds,
 						event: push.event,
 						"content-state": push.contentState,
-						...(push.event === "start" && push.attributesType !== undefined
-							? { "attributes-type": push.attributesType, attributes: push.attributes ?? {} }
+						...(push.event === "start"
+							? { "attributes-type": push.attributesType, attributes: push.attributes }
 							: undefined),
 						...(push.staleAfterSeconds !== undefined
 							? { "stale-date": nowSeconds + push.staleAfterSeconds }
@@ -471,7 +483,7 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 						...(push.event === "end" && push.dismissAfterSeconds !== undefined
 							? { "dismissal-date": nowSeconds + push.dismissAfterSeconds }
 							: undefined),
-						...(push.alert !== undefined
+						...(push.event === "start"
 							? {
 									alert: {
 										title: push.alert.title,

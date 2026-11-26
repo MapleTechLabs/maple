@@ -90,9 +90,11 @@ struct IncidentActivityWidget: Widget {
 						.font(Typo.tinyMedium)
 						.monospacedDigit()
 						.foregroundStyle(context.state.status.tint)
-						// Fixed: a timer otherwise takes the island's full width.
+						// Fixed: a timer otherwise takes the island's full width. An hour
+						// or more reads `1:02:03`, which needs the wider of the two.
 						.multilineTextAlignment(.trailing)
-						.frame(width: 38)
+						.minimumScaleFactor(0.8)
+						.frame(width: at.timeIntervalSinceNow >= 3600 ? 52 : 38)
 				} else {
 					Text(context.state.value)
 						.font(Typo.tinyMedium)

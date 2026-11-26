@@ -12,7 +12,7 @@ import { AuthorizationUnavailableError } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { membershipGrants } from "@maple/auth"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
-import { ApnsClient, type ApnsPush } from "@maple/backend/platform/Apns"
+import { ApnsClient, type ApnsAlert, type ApnsPush } from "@maple/backend/platform/Apns"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
 	displayGroup,
@@ -667,6 +667,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 			const startLiveActivities = (
 				starters: ReadonlyArray<{ readonly device: MobileDevice; readonly startToken: string }>,
 				payload: LiveActivityPayload,
+				alert: ApnsAlert,
 				incident: { readonly orgId: OrgId; readonly incidentId: string },
 			) =>
 				Effect.forEach(
@@ -681,6 +682,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 								attributesType: LIVE_ACTIVITY_ATTRIBUTES_TYPE,
 								attributes: payload.attributes,
 								contentState: payload.contentState,
+								alert,
 								staleAfterSeconds: LIVE_ACTIVITY_STALE_SECONDS,
 							})
 							.pipe(
@@ -739,6 +741,11 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				)
 				yield* Effect.annotateCurrentSpan({ "maple.push.devices": targets.length })
 				if (targets.length === 0) return empty
+				const pageAlert: ApnsAlert = {
+					title: page.title,
+					...(page.subtitle === undefined ? undefined : { subtitle: page.subtitle }),
+					body: page.body,
+				}
 				const results = yield* Effect.forEach(
 					targets,
 					(device) =>
@@ -747,13 +754,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 								deviceToken: device.token,
 								environment: device.environment,
 								bundleId: device.bundleId,
-								alert: {
-									title: page.title,
-									...(page.subtitle === undefined
-										? undefined
-										: { subtitle: page.subtitle }),
-									body: page.body,
-								},
+								alert: pageAlert,
 								interruptionLevel: "time-sensitive",
 								priority: 10,
 								collapseId: page.collapseId,
@@ -817,18 +818,28 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 						deviceCount: pushed.length,
 					}),
 				)
-				// The card that carries Acknowledge. A critical incident already started one on every
-				// phone that asked for critical incidents, so those are left alone; the app takes a
-				// second card for the same incident down again if both ever reach a phone.
-				if (page.liveActivity !== undefined) {
-					yield* startLiveActivities(
-						Arr.flatMap(targets, (device) =>
-							device.liveActivityStartToken !== null &&
-							!(page.severity === "critical" && device.preferences.criticalIncidents)
-								? [{ device, startToken: device.liveActivityStartToken }]
-								: [],
+				// The card that carries Acknowledge, on every phone that is not already showing one for
+				// this incident. A start still in flight is not known here, so two can reach a phone:
+				// the app takes the second down again.
+				const starters = Arr.flatMap(targets, (device) =>
+					device.liveActivityStartToken !== null
+						? [{ device, startToken: device.liveActivityStartToken }]
+						: [],
+				)
+				if (page.liveActivity !== undefined && starters.length > 0) {
+					const showing = yield* activities.listActive(page.orgId, page.incidentId).pipe(
+						Effect.map((running) => new Set(Arr.map(running, (one) => one.deviceId))),
+						Effect.catch((error) =>
+							Effect.logWarning("Live Activity: could not list running activities").pipe(
+								Effect.annotateLogs({ orgId: page.orgId, error: error.message }),
+								Effect.as(new Set<string>()),
+							),
 						),
+					)
+					yield* startLiveActivities(
+						Arr.filter(starters, ({ device }) => !showing.has(device.id)),
 						page.liveActivity,
+						pageAlert,
 						{ orgId: page.orgId, incidentId: page.incidentId },
 					)
 				}
@@ -1200,6 +1211,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 							attributes: renderLiveActivityAttributes(event, nowMs),
 							contentState: yield* contentStateFor(),
 						},
+						renderIncidentPush(event).alert,
 						{ orgId: event.orgId, incidentId: event.incidentId },
 					)
 					return
