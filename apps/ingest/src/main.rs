@@ -6911,7 +6911,12 @@ async fn handle_replay_blob_inner(
     // bucket's lifecycle rule.
     let events_json = match (&state.replay_blob_store, events_json) {
         (Some(store), _) => {
-            let key = replay_object_key(retention_days, &org_id, &session_id, chunk_seq);
+            let key = replay_object_key(
+                replay_key_retention_days(destination, retention_days),
+                &org_id,
+                &session_id,
+                chunk_seq,
+            );
             Span::current().record("maple.replay.storage", "r2");
             Span::current().record("maple.replay.object_key", key.as_str());
             let started = Instant::now();
@@ -9831,6 +9836,16 @@ fn upsert_string_attribute(attributes: &mut Vec<KeyValue>, key: &str, value: &st
             value: Some(any_value::Value::StringValue(value.to_owned())),
         }),
     });
+}
+
+/// The period a replay chunk's object key carries: the one its row will read back, since the
+/// reader finds the object from the row. Rows bound for an org's own ClickHouse omit
+/// `RetentionDays`, so they hold the column default, not the resolved period.
+fn replay_key_retention_days(destination: ExportDestination, resolved_days: u16) -> u16 {
+    match destination {
+        ExportDestination::ClickHouse => RetentionSignal::Sessions.default_stamp(),
+        ExportDestination::Tinybird => resolved_days,
+    }
 }
 
 fn native_destination_for(resolved_key: &ResolvedIngestKey) -> ExportDestination {
@@ -13289,6 +13304,19 @@ fn parse_fleet_size(raw: Option<String>) -> Result<u32, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn replay_blob_key_matches_the_period_its_row_stores() {
+        // An org on its own ClickHouse: the row holds the column default, so the key does too.
+        let own_clickhouse = replay_key_retention_days(ExportDestination::ClickHouse, 180);
+        assert_eq!(own_clickhouse, RetentionSignal::Sessions.default_stamp());
+        assert_eq!(
+            replay_object_key(own_clickhouse, "org_a", "sess", 3),
+            "r30/v1/org_a/sess/00000003.json.gz"
+        );
+        // Tinybird rows store the resolved period.
+        assert_eq!(replay_key_retention_days(ExportDestination::Tinybird, 180), 180);
+    }
+
     #[test]
     fn clickhouse_private_endpoints_are_opt_in_or_self_hosted() {
         let allow = |raw: Option<&str>, mode: Option<&str>| {

@@ -8,6 +8,8 @@ import {
 	isDropUnkeyedColumn,
 	isRepairZeroKeyColumn,
 	migrations,
+	runZeroKeyRepair,
+	type ExecFn,
 } from "@maple/domain/clickhouse"
 import { latestSnapshotStatements } from "@maple/domain/generated/clickhouse-schema"
 import { Chdb } from "@maple/local-server/chdb"
@@ -15,7 +17,6 @@ import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import {
 	addSortingColumn,
 	applyStepOperations,
-	stepStatements,
 } from "@maple/local-server/local-store-migrations/step-executor"
 import { describeWithChdb } from "./libchdb-test-support"
 
@@ -73,11 +74,38 @@ const keyedColumn = (db: Chdb, table: string) =>
 		),
 	)[0]
 
-const applyKeyPart = async (db: Chdb) => {
+/** Plans and runs the key part as the CLI does, every statement through `exec`. */
+const applyKeyPart = async (db: Chdb, exec: ExecFn = async (sql) => db.query(sql)) => {
 	const steps = await expandMigrationToSteps(sortingKeyPart, "default", async (sql) => db.query(sql))
-	for (const step of steps) db.exec(step.sql)
+	await Arr.reduce(steps, Promise.resolve(), (previous, step) =>
+		previous.then(async () => {
+			await (step.repair === undefined ? exec(step.sql) : runZeroKeyRepair(step.repair, exec))
+		}),
+	)
 	return steps
 }
+
+/** Runs each statement, and fails the apply right after the first one `crashedAfter` matches. */
+const crashingAfter = (db: Chdb, crashedAfter: (sql: string) => boolean): ExecFn => {
+	let crashed = false
+	return async (sql) => {
+		const out = db.query(sql)
+		if (crashed || !crashedAfter(sql)) return out
+		crashed = true
+		return Promise.reject(new Error(`crashed after ${sql}`))
+	}
+}
+
+/** What an apply that must fail failed with. */
+const failureOf = (apply: Promise<unknown>): Promise<string> =>
+	apply.then(
+		() => "it succeeded",
+		(error: unknown) => String(error),
+	)
+
+/** A copy into the staging table that commits only its first row. */
+const isCopy = (sql: string) => /^INSERT INTO \S+_retention_repair`? SELECT/.test(sql)
+const shortCopy = (sql: string) => (isCopy(sql) ? `${sql} LIMIT 1` : sql)
 
 describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", () => {
 	let root = ""
@@ -160,7 +188,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 	const expectNoStaging = (db: Chdb) =>
 		expect(
 			db.query(
-				"SELECT name FROM system.tables WHERE name LIKE '%_retention_repair' FORMAT JSONEachRow",
+				"SELECT name FROM system.tables WHERE name LIKE '%retention\\_repair%' FORMAT JSONEachRow",
 			),
 		).toBe("")
 
@@ -173,31 +201,84 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 		db.close()
 	}, 60_000)
 
-	// The repair's crash points: after staging the copies, after deleting the 0s, after the moves.
+	// The repair's crash points, in the order it runs them.
 	const crashPoints = [
-		["the copy", (sql: string) => /_retention_repair`? SELECT/.test(sql)],
+		["the copy", isCopy],
+		[
+			"the copy's check",
+			(sql: string) => /^SELECT throwIf\(\(SELECT count\(\) FROM \S+_retention_repair`?\)/.test(sql),
+		],
+		["the rename", (sql: string) => Str.startsWith("RENAME TABLE")(sql)],
 		["the delete", (sql: string) => Str.includes("DELETE WHERE RetentionDays = 0")(sql)],
-		["the moves", (sql: string) => Str.includes("MOVE PARTITION")(sql)],
+		["a move", (sql: string) => Str.includes("MOVE PARTITION")(sql)],
+		["the ready table's check", (sql: string) => Str.includes("FROM system.parts")(sql)],
 	] as const
 
 	for (const [point, crashedAfter] of crashPoints)
 		test(`a rerun after a crash after ${point} neither duplicates nor leaves a 0`, async () => {
 			const db = await open(`crash-${point}`, v75Table)
 			failBeforeDefault(db, keyAlter)
-			const steps = await expandMigrationToSteps(sortingKeyPart, "default", async (sql) =>
-				db.query(sql),
+			expect(await failureOf(applyKeyPart(db, crashingAfter(db, crashedAfter)))).toContain(
+				"crashed after",
 			)
-			// Every step up to the last one matching `crashedAfter`, for both tables, then the crash.
-			const last = Arr.reduce(steps, -1, (found, step, index) =>
-				crashedAfter(step.sql) ? index : found,
-			)
-			expect(last, point).toBeGreaterThan(0)
-			for (const step of Arr.take(steps, last + 1)) db.exec(step.sql)
 			await applyKeyPart(db)
 			expectKeyed(db, "2")
 			expectNoStaging(db)
 			db.close()
 		}, 60_000)
+
+	test("a copy that fails partway is copied again on the rerun, and no row is lost", async () => {
+		const db = await open("partial-copy", v75Table)
+		failBeforeDefault(db, keyAlter)
+		const partial = crashingAfter(db, isCopy)
+		expect(await failureOf(applyKeyPart(db, async (sql) => partial(shortCopy(sql))))).toContain(
+			"crashed after",
+		)
+		await applyKeyPart(db)
+		expectKeyed(db, "2")
+		expectNoStaging(db)
+		db.close()
+	}, 60_000)
+
+	test("a short copy fails its check before any 0 row is deleted", async () => {
+		const db = await open("short-copy", v75Table)
+		failBeforeDefault(db, keyAlter)
+		expect(await failureOf(applyKeyPart(db, async (sql) => db.query(shortCopy(sql))))).toContain(
+			"trace_index_retention_repair does not hold every 0 row of trace_index",
+		)
+		expect(keyedColumn(db, "trace_index")?.days).toBe("[0]")
+		expect(keyedColumn(db, "trace_index")?.rows).toBe("2")
+		await applyKeyPart(db)
+		expectKeyed(db, "2")
+		expectNoStaging(db)
+		db.close()
+	}, 60_000)
+
+	test("0s a merge writes during the run itself are repaired before it ends", async () => {
+		const db = await open("zeros-mid-run", v75Table)
+		// A server restart between the stop and the DEFAULT: merges run, and a row lands as 0.
+		await applyKeyPart(db, async (sql) => {
+			const out = db.query(sql)
+			const table = Arr.findFirst(TABLES, (name) =>
+				Str.startsWith(`ALTER TABLE ${name} ADD COLUMN`)(sql),
+			)
+			if (Option.isSome(table)) {
+				db.exec(`SYSTEM START MERGES ${table.value}`)
+				db.exec(
+					table.value === "trace_index"
+						? "INSERT INTO trace_index (OrgId, TraceId, ServiceName, Bucket, MinTimestamp, MaxTimestamp) VALUES ('o', 'u', 's', now(), now(), now())"
+						: "INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HasError, TraceCount) VALUES ('o', toStartOfHour(now()), 's', 'GET /', 0, 1)",
+				)
+				db.exec(`OPTIMIZE TABLE ${table.value} FINAL`)
+				expect(keyedColumn(db, table.value)?.days, table.value).toBe("[0]")
+				db.exec(`SYSTEM STOP MERGES ${table.value}`)
+			}
+			return out
+		})
+		expectKeyed(db, "2")
+		expectNoStaging(db)
+		db.close()
+	}, 60_000)
 
 	const localOperations = () => {
 		const sortingKey = (table: string) =>
@@ -225,18 +306,17 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 		test(`the local v68 step resumed after a crash after ${point} neither duplicates nor leaves a 0`, async () => {
 			const db = await open(`local-crash-${point}`, v75Table)
 			failBeforeDefault(db, keyAlter)
-			const statements = stepStatements(localOperations())
-			if (point === "the moves") {
-				// The moves run after the statements: all of them, then one table's moves.
-				for (const statement of statements) db.exec(statement)
-				applyStepOperations(db, Arr.take(localOperations(), 1))
-			} else {
-				const last = Arr.reduce(statements, -1, (found, sql, index) =>
-					crashedAfter(sql) ? index : found,
-				)
-				expect(last, point).toBeGreaterThan(0)
-				for (const statement of Arr.take(statements, last + 1)) db.exec(statement)
+			let crashed = false
+			const crashing = {
+				query: (sql: string) => db.query(sql),
+				exec: (sql: string) => {
+					db.exec(sql)
+					if (crashed || !crashedAfter(sql)) return
+					crashed = true
+					throw new Error(`crashed after ${sql}`)
+				},
 			}
+			expect(() => applyStepOperations(crashing, localOperations())).toThrow("crashed after")
 			applyStepOperations(db, localOperations())
 			expectKeyed(db, "2")
 			expectNoStaging(db)

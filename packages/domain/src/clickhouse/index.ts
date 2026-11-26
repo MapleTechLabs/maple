@@ -28,10 +28,13 @@ export {
 	type RepairZeroKeyColumnSpec,
 	isDropUnkeyedColumn,
 	isRepairZeroKeyColumn,
-	dropStagingTableSql,
-	moveStagedPartitionSql,
+	type ZeroKeyRepairState,
+	finishZeroKeyRepairSql,
+	keyColumnProbeSql,
+	readyTableProbeSql,
 	stagedPartitionsSql,
-	stageZeroKeyRowsSql,
+	zeroKeyRepairStatements,
+	zeroKeyRowsProbeSql,
 } from "./unkeyed-column"
 export {
 	type BackfillSpec,
@@ -47,6 +50,8 @@ export {
 	type ApplyStep,
 	type ExecFn,
 	type RestoreDefault,
+	runZeroKeyRepair,
+	type ZeroKeyRepair,
 } from "./apply-plan"
 export { qualifyStatementForDatabase } from "./qualify"
 export * from "./bookkeeping"

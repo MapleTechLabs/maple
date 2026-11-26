@@ -8,17 +8,18 @@
  * (ClickHouse 26 refuses a plain column outside it), and gets its DEFAULT after, which ClickHouse
  * refuses on a column added to the key; old parts read the DEFAULT. Merges on each table stop
  * around the pair so none writes the column's 0 into a part first (needs the SYSTEM MERGES grant),
- * and each table's feeding view is dropped before the stop and recreated after the start, so no
- * insert lands in the window either: a 0 there would expire a facet row at once under
- * `least(RetentionDays, 30)`. Spans written while a view is dropped never reach that table, as with
+ * and each table's feeding view is dropped right after the stop (so a missing grant fails with the
+ * view intact) and recreated after the start, so no insert lands in the window either: a 0
+ * there would expire a facet row at once under `least(RetentionDays, 30)`. Spans written while a view is dropped never reach that table, as with
  * every view below, but here the gap spans the key change rather than one statement.
  * A failure between them sets the DEFAULT again and reads it back before restarting merges (the
  * apply's `onFailure` steps), and still fails the apply; unconfirmed, merges stay stopped and the
  * error names the two statements to run. A merge after a server restart in the window can still
- * write 0s, and an operator restarting merges by hand can too. A rerun repairs
+ * write 0s, and an operator restarting merges by hand can too. The repair step fixes
  * them: `repair-zero-key-column` moves the 0 rows to RetentionDays = 30 through a staging table
  * (ClickHouse refuses UPDATE on a key column), before the TTL change and before the view returns.
- * It is planned only when 0s exist or a staging table is left, and is safe to rerun after a crash.
+ * It is decided when it runs, so it also catches 0s written during the same apply, and is safe to
+ * rerun after a crash. STOP MERGES acts on the server receiving it (docs/self-hosted-clickhouse.md).
  * The snapshot pass leaves both columns to this migration (`sortingKeyMigrationColumns`); one an
  * older apply added outside the key holds only its default, so it is dropped first and re-added
  * in the key. trace_facets_hourly's TTL reads the column, capped at 30 days, so it stays 30
@@ -54,16 +55,16 @@ export const migration_0076_retention_storage = {
 		"ALTER TABLE service_overview_spans ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		"ALTER TABLE trace_list_mv ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
 		{ kind: "drop-unkeyed-column", table: "trace_index", column: "RetentionDays" },
-		"DROP VIEW IF EXISTS trace_index_mv",
 		"SYSTEM STOP MERGES trace_index",
+		"DROP VIEW IF EXISTS trace_index_mv",
 		"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
 		"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
 		"SYSTEM START MERGES trace_index",
 		{ kind: "repair-zero-key-column", table: "trace_index", column: "RetentionDays", value: 30 },
 		"CREATE MATERIALIZED VIEW IF NOT EXISTS trace_index_mv TO trace_index AS\nSELECT\n          OrgId,\n          TraceId,\n          ServiceName,\n          toStartOfFiveMinutes(Timestamp) AS Bucket,\n          min(Timestamp) AS MinTimestamp,\n          max(Timestamp) AS MaxTimestamp,\n          RetentionDays\n        FROM traces\n        GROUP BY OrgId, TraceId, ServiceName, Bucket, RetentionDays",
 		{ kind: "drop-unkeyed-column", table: "trace_facets_hourly", column: "RetentionDays" },
-		"DROP VIEW IF EXISTS trace_facets_hourly_mv",
 		"SYSTEM STOP MERGES trace_facets_hourly",
+		"DROP VIEW IF EXISTS trace_facets_hourly_mv",
 		"ALTER TABLE trace_facets_hourly ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, RetentionDays)",
 		"ALTER TABLE trace_facets_hourly MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
 		"SYSTEM START MERGES trace_facets_hourly",

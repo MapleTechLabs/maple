@@ -4,10 +4,12 @@
 import { resolve } from "node:path"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
-	dropStagingTableSql,
-	moveStagedPartitionSql,
+	finishZeroKeyRepairSql,
+	keyColumnProbeSql,
+	readyTableProbeSql,
 	stagedPartitionsSql,
-	stageZeroKeyRowsSql,
+	zeroKeyRepairStatements,
+	zeroKeyRowsProbeSql,
 	type RepairZeroKeyColumnSpec,
 } from "@maple/domain/clickhouse"
 import { readRawTelemetryRetentionDays, type Chdb } from "../chdb"
@@ -127,20 +129,27 @@ const zeroKeyRepair = (
 })
 
 /**
- * Moves each partition the repair staged back into its table, then drops the staging table. The
- * partitions are read here, after staging, since `stepStatements` is fixed before the store opens.
+ * Runs each `add-sorting-column` repair from the store's state now, after `stepStatements`: what it
+ * runs depends on the 0 rows and staging tables found, so it resumes from any crash point.
  */
-const finishZeroKeyRepairs = (
+const runZeroKeyRepairs = (
 	db: Pick<Chdb, "query" | "exec">,
 	operations: ReadonlyArray<StepOperation>,
 ): void => {
+	const found = (sql: string) => decodeJsonObjectRows(db.query(sql)).length > 0
 	for (const operation of operations) {
 		if (operation.op !== "add-sorting-column") continue
 		const spec = zeroKeyRepair(operation)
-		const staged = decodeJsonObjectRows(db.query(stagedPartitionsSql(spec, "")))
-		for (const row of staged)
-			if (typeof row.p === "string") db.exec(moveStagedPartitionSql(spec, "", row.p))
-		db.exec(dropStagingTableSql(spec, ""))
+		const keyed = found(keyColumnProbeSql(spec, ""))
+		const ready = keyed && found(readyTableProbeSql(spec, ""))
+		const zeros = keyed && !ready && found(zeroKeyRowsProbeSql(spec, ""))
+		const planned = zeroKeyRepairStatements(spec, "", { keyed, ready, zeros })
+		for (const statement of planned.statements) db.exec(statement)
+		if (!planned.finish) continue
+		const partitions = Arr.flatMap(decodeJsonObjectRows(db.query(stagedPartitionsSql(spec, ""))), (row) =>
+			typeof row.p === "string" ? [row.p] : [],
+		)
+		for (const statement of finishZeroKeyRepairSql(spec, "", partitions)) db.exec(statement)
 	}
 }
 
@@ -171,22 +180,21 @@ const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 				`ALTER TABLE ${operation.table} ADD COLUMN IF NOT EXISTS ${name} ${type}, MODIFY ORDER BY (${Arr.join(operation.sortingKey, ", ")})`,
 				`ALTER TABLE ${operation.table} MODIFY COLUMN ${name} ${type} DEFAULT ${defaultExpression}`,
 				`SYSTEM START MERGES ${operation.table}`,
-				...stageZeroKeyRowsSql(zeroKeyRepair(operation), ""),
 			]
 		}
 	}
 }
 
-/** Runs a list of operations: their statements, then any 0-row repair's moves. */
+/** Runs a list of operations: their statements, then any 0-row repair. */
 export const applyStepOperations = (
 	db: Pick<Chdb, "query" | "exec">,
 	operations: ReadonlyArray<StepOperation>,
 ): void => {
 	for (const statement of stepStatements(operations)) db.exec(statement)
-	finishZeroKeyRepairs(db, operations)
+	runZeroKeyRepairs(db, operations)
 }
 
-/** The exact statements a list of operations runs, in order (a 0-row repair's moves come after). */
+/** The exact statements a list of operations runs, in order (a 0-row repair runs after). */
 export const stepStatements = (operations: ReadonlyArray<StepOperation>): ReadonlyArray<string> =>
 	Arr.flatMap(operations, operationSql)
 

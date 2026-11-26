@@ -12,10 +12,14 @@ import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bind
 //   - **No bucket.** Self-hosted installs and the Docker image of this API have
 //     no R2, so no host provides `ReplayBlobBucket` and hydration becomes a
 //     no-op.
-//   - **Non-empty `events` on a row.** That row predates the R2 cutover (or came
-//     from a BYO-ClickHouse org, which never stops writing inline). It passes
-//     through untouched. This is the dual-read, and it is the whole migration
-//     strategy: no backfill, the old rows age out on their own TTL.
+//   - **Non-empty `events` on a row.** That row predates the R2 cutover, or was
+//     written by a gateway with no bucket. It passes through untouched. This is
+//     the dual-read, and it is the whole migration strategy: no backfill, the old
+//     rows age out on their own TTL.
+//
+// An org on its own ClickHouse still has its chunks stored as objects by the
+// hosted gateway. Its rows omit `RetentionDays` and read the column default, so
+// the gateway keys those objects under the default period to match.
 
 /**
  * Object key for one replay chunk.

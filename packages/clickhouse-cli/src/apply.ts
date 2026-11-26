@@ -23,6 +23,7 @@ import {
 	selectAppliedVersionsSql,
 	selectFeatureRevisionsSql,
 	defaultRestored,
+	runZeroKeyRepair,
 	type ApplyStep,
 	type RestoreDefault,
 } from "@maple/domain/clickhouse"
@@ -161,6 +162,7 @@ export async function reconcileSchemaFeatures(
  * restarts merges first (`onFailure`); the step's own error is the one thrown. When the pair sets a
  * key column's DEFAULT, that DEFAULT is restored and checked first: if it cannot be confirmed,
  * merges stay stopped (a merge would store 0) and the error names the statements to run by hand.
+ * A 0-row repair step runs the statements it decides on from the server's state.
  */
 export async function applyMigrationSteps(
 	steps: ReadonlyArray<ApplyStep>,
@@ -168,7 +170,7 @@ export async function applyMigrationSteps(
 ): Promise<void> {
 	for (const step of steps) {
 		try {
-			await execute(step.sql)
+			await (step.repair === undefined ? execute(step.sql) : runZeroKeyRepair(step.repair, execute))
 		} catch (error) {
 			if (step.onFailure === undefined) throw error
 			const restore = step.restoreBeforeRestart
