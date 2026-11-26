@@ -69,19 +69,33 @@ describe("expandMigrationToSteps", () => {
 
 describe("migration 0076's plan against the cluster", () => {
 	/**
-	 * A cluster where the column sits outside the key on `unkeyed` tables, and in the key holding
-	 * `zeros` rows at 0 on `keyed` ones.
+	 * A cluster where the column sits outside the key on `unkeyed` tables, and in the key on `keyed`
+	 * ones with 0 rows in `zeroPartitions`; `staged` lists the partitions a staging table left by an
+	 * earlier run holds (`undefined`: no staging table).
 	 */
 	const clusterWith =
-		(unkeyed: ReadonlyArray<string>, keyed: ReadonlyArray<string> = [], zeros = "0"): ExecFn =>
+		(
+			unkeyed: ReadonlyArray<string>,
+			keyed: ReadonlyArray<string> = [],
+			zeroPartitions: ReadonlyArray<string> = [],
+			staged?: ReadonlyArray<string>,
+		): ExecFn =>
 		async (sql) => {
 			const names = (tables: ReadonlyArray<string>) =>
 				Arr.some(tables, (table) => Str.includes(`table = '${table}'`)(sql))
+			const rows = (partitions: ReadonlyArray<string>) =>
+				Arr.join(
+					Arr.map(partitions, (p) => `{"p":"${p}"}\n`),
+					"",
+				)
 			if (Str.includes("is_in_sorting_key = 0")(sql))
 				return names(unkeyed) ? `{"name":"RetentionDays"}\n` : ""
 			if (Str.includes("is_in_sorting_key = 1")(sql))
 				return names(keyed) ? `{"name":"RetentionDays"}\n` : ""
-			if (Str.includes("count()")(sql)) return `{"zeros":"${zeros}"}\n`
+			if (Str.includes("_partition_id")(sql)) return rows(zeroPartitions)
+			if (Str.includes("FROM system.tables")(sql))
+				return staged === undefined ? "" : `{"name":"staging"}\n`
+			if (Str.includes("FROM system.parts")(sql)) return rows(staged ?? [])
 			return ""
 		}
 	const sqlOf = (steps: ReadonlyArray<{ readonly sql: string }>) => Arr.map(steps, (step) => step.sql)
@@ -112,33 +126,53 @@ describe("migration 0076's plan against the cluster", () => {
 		expect(Arr.filter(sql, (statement) => Str.includes("DROP COLUMN")(statement))).toEqual([])
 	})
 
-	it("moves stored 0s to the default once merges run again, before the view returns", async () => {
+	it("moves stored 0s to the default through a staging table, once merges run again", async () => {
 		const sql = sqlOf(
 			await expandMigrationToSteps(
 				migration_0076_retention_storage,
 				"maple",
-				clusterWith([], ["trace_facets_hourly"], "3"),
+				clusterWith([], ["trace_facets_hourly"], ["20261126", "20261125"]),
 			),
 		)
 		const start = sql.indexOf("SYSTEM START MERGES trace_facets_hourly")
-		expect(sql.slice(start + 1, start + 3)).toEqual([
-			"INSERT INTO `maple`.`trace_facets_hourly` SELECT * REPLACE (toUInt16(30) AS RetentionDays) FROM (SELECT * FROM `maple`.`trace_facets_hourly` WHERE RetentionDays = 0)",
+		expect(sql.slice(start + 1, start + 7)).toEqual([
+			"CREATE TABLE IF NOT EXISTS `maple`.`trace_facets_hourly_retention_repair` AS `maple`.`trace_facets_hourly`",
+			"INSERT INTO `maple`.`trace_facets_hourly_retention_repair` SELECT * REPLACE (toUInt16(30) AS RetentionDays) FROM (SELECT * FROM `maple`.`trace_facets_hourly` WHERE RetentionDays = 0) WHERE (SELECT count() FROM `maple`.`trace_facets_hourly_retention_repair`) = 0",
 			"ALTER TABLE `maple`.`trace_facets_hourly` DELETE WHERE RetentionDays = 0 SETTINGS mutations_sync = 2",
+			"ALTER TABLE `maple`.`trace_facets_hourly_retention_repair` MOVE PARTITION ID '20261126' TO TABLE `maple`.`trace_facets_hourly`",
+			"ALTER TABLE `maple`.`trace_facets_hourly_retention_repair` MOVE PARTITION ID '20261125' TO TABLE `maple`.`trace_facets_hourly`",
+			"DROP TABLE IF EXISTS `maple`.`trace_facets_hourly_retention_repair`",
 		])
 		expect(Arr.filter(sql, (statement) => Str.includes("DELETE WHERE")(statement))).toHaveLength(1)
 	})
 
-	it("plans no repair when no row holds 0, or the column is not in the key yet", async () => {
+	it("finishes a repair an earlier run left staged, even once no 0 remains", async () => {
+		const sql = sqlOf(
+			await expandMigrationToSteps(
+				migration_0076_retention_storage,
+				"maple",
+				clusterWith([], ["trace_index"], [], ["20261124"]),
+			),
+		)
+		expect(
+			Arr.filter(sql, (statement) => Str.includes("trace_index_retention_repair")(statement)),
+		).toEqual([
+			"CREATE TABLE IF NOT EXISTS `maple`.`trace_index_retention_repair` AS `maple`.`trace_index`",
+			"INSERT INTO `maple`.`trace_index_retention_repair` SELECT * REPLACE (toUInt16(30) AS RetentionDays) FROM (SELECT * FROM `maple`.`trace_index` WHERE RetentionDays = 0) WHERE (SELECT count() FROM `maple`.`trace_index_retention_repair`) = 0",
+			"ALTER TABLE `maple`.`trace_index_retention_repair` MOVE PARTITION ID '20261124' TO TABLE `maple`.`trace_index`",
+			"DROP TABLE IF EXISTS `maple`.`trace_index_retention_repair`",
+		])
+	})
+
+	it("plans no repair when no row holds 0 and nothing is staged, or the column is not in the key yet", async () => {
 		for (const cluster of [
-			clusterWith([], ["trace_index", "trace_facets_hourly"], "0"),
-			clusterWith([], [], "5"),
+			clusterWith([], ["trace_index", "trace_facets_hourly"], []),
+			clusterWith([], [], ["20261126"]),
 		]) {
 			const sql = sqlOf(
 				await expandMigrationToSteps(migration_0076_retention_storage, "maple", cluster),
 			)
-			expect(
-				Arr.filter(sql, (statement) => Str.includes("WHERE RetentionDays = 0")(statement)),
-			).toEqual([])
+			expect(Arr.filter(sql, (statement) => Str.includes("_retention_repair")(statement))).toEqual([])
 		}
 	})
 

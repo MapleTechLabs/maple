@@ -137,19 +137,24 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	type TraceWindowRead = Effect.Success<ReturnType<typeof read>>
 	// The trace's own bounds, padded like a hint so logs written after the last span start stay in.
 	const locateThenRead = (widened: boolean, onMiss: TraceWindowRead) =>
-		Effect.flatMap(locateTrace(traceId, { nowMs, oldestMs }), (found) =>
-			Option.match(found, {
-				onNone: () => Effect.succeed(onMiss),
-				onSome: (bounds) =>
-					read(
+		Effect.flatMap(locateTrace(traceId, { nowMs, oldestMs }), (found) => {
+			switch (found._tag) {
+				case "Missing":
+					return Effect.succeed(onMiss)
+				// A tier ran past its budget before the trace was found: read the whole lookback
+				// window rather than report a miss; that read's own budget error surfaces as itself.
+				case "Incomplete":
+					return read({ start_time: probed.startTime, end_time: probed.endTime }, widened)
+				case "Found":
+					return read(
 						{
-							start_time: formatWarehouseDateTime(bounds.startMs - rangeHours * HOUR_MS),
-							end_time: formatWarehouseDateTime(bounds.endMs + rangeHours * HOUR_MS),
+							start_time: formatWarehouseDateTime(found.bounds.startMs - rangeHours * HOUR_MS),
+							end_time: formatWarehouseDateTime(found.bounds.endMs + rangeHours * HOUR_MS),
 						},
 						widened,
-					),
-			}),
-		)
+					)
+			}
+		})
 
 	// An explicit window is read as given. A hint reads the hour around it and locates the trace
 	// in `trace_index` only on a miss. Without either, the trace is located first: reading a

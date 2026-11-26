@@ -16,9 +16,9 @@
  * apply's `onFailure` steps), and still fails the apply; unconfirmed, merges stay stopped and the
  * error names the two statements to run. A merge after a server restart in the window can still
  * write 0s, and an operator restarting merges by hand can too. A rerun repairs
- * them: `repair-zero-key-column` copies each 0 row with RetentionDays = 30 and deletes the 0s
+ * them: `repair-zero-key-column` moves the 0 rows to RetentionDays = 30 through a staging table
  * (ClickHouse refuses UPDATE on a key column), before the TTL change and before the view returns.
- * It is planned only when 0s exist; a crash between its copy and its delete counts those rows twice.
+ * It is planned only when 0s exist or a staging table is left, and is safe to rerun after a crash.
  * The snapshot pass leaves both columns to this migration (`sortingKeyMigrationColumns`); one an
  * older apply added outside the key holds only its default, so it is dropped first and re-added
  * in the key. trace_facets_hourly's TTL reads the column, capped at 30 days, so it stays 30

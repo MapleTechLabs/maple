@@ -58,17 +58,24 @@ const PROBE_PAD_MS = 1_000
 
 const probedTraceRange = Effect.fnUntraced(function* (traceId: string, lookbackHours: number) {
 	const nowMs = yield* Clock.currentTimeMillis
-	const found = yield* locateTrace(traceId, {
-		nowMs,
-		oldestMs: nowMs - lookbackHours * 60 * 60 * 1000,
-	})
-	return Option.match(found, {
-		onNone: () => undefined,
-		onSome: (bounds) => ({
-			startTime: formatWarehouseDateTime(bounds.startMs - PROBE_PAD_MS),
-			endTime: formatWarehouseDateTime(bounds.endMs + PROBE_PAD_MS),
-		}),
-	})
+	const oldestMs = nowMs - lookbackHours * 60 * 60 * 1000
+	const found = yield* locateTrace(traceId, { nowMs, oldestMs })
+	switch (found._tag) {
+		case "Missing":
+			return undefined
+		// A tier ran past its budget before the trace was found: read the whole lookback window,
+		// so a miss there is a real one, and that read's own budget error surfaces as itself.
+		case "Incomplete":
+			return {
+				startTime: formatWarehouseDateTime(oldestMs),
+				endTime: formatWarehouseDateTime(nowMs + PROBE_PAD_MS),
+			}
+		case "Found":
+			return {
+				startTime: formatWarehouseDateTime(found.bounds.startMs - PROBE_PAD_MS),
+				endTime: formatWarehouseDateTime(found.bounds.endMs + PROBE_PAD_MS),
+			}
+	}
 })
 
 /**

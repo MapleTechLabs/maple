@@ -12,7 +12,11 @@ import {
 import { latestSnapshotStatements } from "@maple/domain/generated/clickhouse-schema"
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
-import { addSortingColumn, stepStatements } from "@maple/local-server/local-store-migrations/step-executor"
+import {
+	addSortingColumn,
+	applyStepOperations,
+	stepStatements,
+} from "@maple/local-server/local-store-migrations/step-executor"
 import { describeWithChdb } from "./libchdb-test-support"
 
 const TABLES = ["trace_index", "trace_facets_hourly"] as const
@@ -152,17 +156,50 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 		db.close()
 	}, 60_000)
 
+	/** No staging table is left behind. */
+	const expectNoStaging = (db: Chdb) =>
+		expect(
+			db.query(
+				"SELECT name FROM system.tables WHERE name LIKE '%_retention_repair' FORMAT JSONEachRow",
+			),
+		).toBe("")
+
 	test("0s an earlier failed run stored are moved to 30, and no row is lost", async () => {
 		const db = await open("zeros", v75Table)
 		failBeforeDefault(db, keyAlter)
 		await applyKeyPart(db)
 		expectKeyed(db, "2")
+		expectNoStaging(db)
 		db.close()
 	}, 60_000)
 
-	test("the local v68 step moves 0s a resumed store holds to 30, and no row is lost", async () => {
-		const db = await open("local-zeros", v75Table)
-		failBeforeDefault(db, keyAlter)
+	// The repair's crash points: after staging the copies, after deleting the 0s, after the moves.
+	const crashPoints = [
+		["the copy", (sql: string) => /_retention_repair`? SELECT/.test(sql)],
+		["the delete", (sql: string) => Str.includes("DELETE WHERE RetentionDays = 0")(sql)],
+		["the moves", (sql: string) => Str.includes("MOVE PARTITION")(sql)],
+	] as const
+
+	for (const [point, crashedAfter] of crashPoints)
+		test(`a rerun after a crash after ${point} neither duplicates nor leaves a 0`, async () => {
+			const db = await open(`crash-${point}`, v75Table)
+			failBeforeDefault(db, keyAlter)
+			const steps = await expandMigrationToSteps(sortingKeyPart, "default", async (sql) =>
+				db.query(sql),
+			)
+			// Every step up to the last one matching `crashedAfter`, for both tables, then the crash.
+			const last = Arr.reduce(steps, -1, (found, step, index) =>
+				crashedAfter(step.sql) ? index : found,
+			)
+			expect(last, point).toBeGreaterThan(0)
+			for (const step of Arr.take(steps, last + 1)) db.exec(step.sql)
+			await applyKeyPart(db)
+			expectKeyed(db, "2")
+			expectNoStaging(db)
+			db.close()
+		}, 60_000)
+
+	const localOperations = () => {
 		const sortingKey = (table: string) =>
 			pipe(
 				Arr.getUnsafe(keyAlter(table), 0),
@@ -170,15 +207,41 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 				Str.split(","),
 				Arr.map(Str.trim),
 			)
-		for (const statement of stepStatements(
-			Arr.map(TABLES, (table) =>
-				addSortingColumn(table, ["RetentionDays", "UInt16", "30"], sortingKey(table)),
-			),
-		))
-			db.exec(statement)
+		return Arr.map(TABLES, (table) =>
+			addSortingColumn(table, ["RetentionDays", "UInt16", "30"], sortingKey(table)),
+		)
+	}
+
+	test("the local v68 step moves 0s a resumed store holds to 30, and no row is lost", async () => {
+		const db = await open("local-zeros", v75Table)
+		failBeforeDefault(db, keyAlter)
+		applyStepOperations(db, localOperations())
 		expectKeyed(db, "2")
+		expectNoStaging(db)
 		db.close()
 	}, 60_000)
+
+	for (const [point, crashedAfter] of crashPoints)
+		test(`the local v68 step resumed after a crash after ${point} neither duplicates nor leaves a 0`, async () => {
+			const db = await open(`local-crash-${point}`, v75Table)
+			failBeforeDefault(db, keyAlter)
+			const statements = stepStatements(localOperations())
+			if (point === "the moves") {
+				// The moves run after the statements: all of them, then one table's moves.
+				for (const statement of statements) db.exec(statement)
+				applyStepOperations(db, Arr.take(localOperations(), 1))
+			} else {
+				const last = Arr.reduce(statements, -1, (found, sql, index) =>
+					crashedAfter(sql) ? index : found,
+				)
+				expect(last, point).toBeGreaterThan(0)
+				for (const statement of Arr.take(statements, last + 1)) db.exec(statement)
+			}
+			applyStepOperations(db, localOperations())
+			expectKeyed(db, "2")
+			expectNoStaging(db)
+			db.close()
+		}, 60_000)
 
 	test("a store created from the snapshot runs 0076 unchanged", async () => {
 		const db = await open("fresh", snapshotTable)

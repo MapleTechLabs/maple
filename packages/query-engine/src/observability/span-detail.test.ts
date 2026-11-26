@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Effect, Exit, Layer, Option, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { spanDetail } from "./span-detail"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
@@ -57,6 +57,8 @@ type ExecutorOpts = {
 	readonly overBudgetFromProbe?: number
 	/** The span starts here, before the probed bounds: a bounded lookup hits only if it reaches back. */
 	readonly spanStart?: string
+	/** The span read itself runs past its time limit. */
+	readonly readOverBudget?: boolean
 }
 
 const makeExecutor = (sqls: string[], opts: ExecutorOpts = {}): WarehouseExecutorApi => ({
@@ -81,6 +83,14 @@ const makeExecutor = (sqls: string[], opts: ExecutorOpts = {}): WarehouseExecuto
 			return query
 				.decodeFirstRow(opts.indexed === false || !probeHits(query.sql) ? [] : [probeRow])
 				.pipe(Effect.orDie)
+		if (opts.readOverBudget === true)
+			return Effect.fail(
+				new WarehouseQuotaExceededError({
+					message: "spanDetail ran past its time limit",
+					pipeName: "spanDetail",
+					setting: "max_execution_time",
+				}),
+			)
 		const bounded = Str.includes("Timestamp >=")(query.sql)
 		const lower = probeBound(query.sql, ">=")
 		const reaches = opts.spanStart === undefined || (lower !== undefined && lower <= opts.spanStart)
@@ -152,14 +162,34 @@ describe("spanDetail", () => {
 		}),
 	)
 
-	it.effect("reports not found when a probe runs past its budget, without probing older tiers", () =>
-		Effect.gen(function* () {
-			const sqls: string[] = []
-			// The trace sits in the week tier; the probe of that tier times out.
-			const result = yield* run(sqls, undefined, { boundedHit: true, overBudgetFromProbe: 1 })
-			assert.isFalse(result.found)
-			assert.lengthOf(sqls, 2)
-		}),
+	it.effect(
+		"reads the whole lookback window when the newest tier runs past its budget, and finds the span",
+		() =>
+			Effect.gen(function* () {
+				const sqls: string[] = []
+				// The trace is five days old; the newest-day probe times out, so no tier confirms a miss.
+				const result = yield* run(sqls, undefined, { boundedHit: true, overBudgetFromProbe: 0 })
+				assert.isTrue(result.found)
+				assert.lengthOf(sqls, 2)
+				assert.isTrue(isProbe(Arr.getUnsafe(sqls, 0)))
+				assert.include(sqls[1], "Timestamp >= '2024-03-25 00:00:00'")
+				assert.include(sqls[1], "Timestamp <= '2026-03-25 00:00:01'")
+			}),
+	)
+
+	it.effect(
+		"surfaces the read's own budget error, not a miss, when the whole-window read runs past it too",
+		() =>
+			Effect.gen(function* () {
+				const exit = yield* Effect.exit(
+					run([], undefined, { boundedHit: true, overBudgetFromProbe: 1, readOverBudget: true }),
+				)
+				assert.isTrue(Exit.isFailure(exit))
+				assert.deepStrictEqual(
+					Option.map(Exit.findErrorOption(exit), (error) => error._tag),
+					Option.some("@maple/http/errors/WarehouseQuotaExceededError"),
+				)
+			}),
 	)
 
 	it.effect("reads back to the lookback edge when the walk back runs past its budget", () =>
