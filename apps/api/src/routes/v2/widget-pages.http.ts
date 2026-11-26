@@ -82,7 +82,7 @@ export const HttpV2WidgetPagesLive = HttpApiBuilder.group(MapleApiV2, "widgetPag
 					const tenant = yield* CurrentTenant.Context
 					const nowMs = yield* Clock.currentTimeMillis
 					// Two reads, so answered incidents can never crowd an unanswered page out of the
-					// limit. One past it says whether there are more than a widget lists.
+					// limit. One past it says whether unanswered ones were left out.
 					const half = (acknowledged: boolean) =>
 						readModels.listIncidents(tenant.orgId, {
 							acknowledged,
@@ -99,7 +99,9 @@ export const HttpV2WidgetPagesLive = HttpApiBuilder.group(MapleApiV2, "widgetPag
 						object: "widget_pages" as const,
 						generated_at: timestamp(DateTime.formatIso(DateTime.makeUnsafe(nowMs))),
 						organization_id: tenant.orgId,
-						has_more: incidents.length > WIDGET_PAGES_LIMIT,
+						// The widget counts what is unanswered, so only those being cut makes its
+						// count a floor; answered incidents left out change nothing it says.
+						has_more: waiting.incidents.length > WIDGET_PAGES_LIMIT,
 						data: yield* rowsOf(
 							tenant.orgId,
 							tenant.userId,

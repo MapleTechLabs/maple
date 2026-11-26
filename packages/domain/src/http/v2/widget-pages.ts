@@ -71,7 +71,8 @@ export const V2WidgetPages = Schema.Struct({
 	generated_at: Timestamp,
 	organization_id: OrgId,
 	has_more: Schema.Boolean.annotate({
-		description: "More incidents are paging the user than `data` carries.",
+		description:
+			"More unacknowledged incidents are paging the user than `data` carries, so a count of them is a floor. Acknowledged incidents left out do not set it.",
 	}),
 	data: Schema.Array(V2WidgetPage),
 }).annotate({

@@ -2179,12 +2179,23 @@ describe("v2 alerts over HTTP", () => {
 
 		const listed = await harness.request("GET", "/v2/widget_summary/pages", reader.secret)
 		expect(listed.status).toBe(200)
-		expect(listed.body.has_more).toBe(true)
+		// Only answered incidents were left out, so the count of unanswered ones is exact.
+		expect(listed.body.has_more).toBe(false)
 		expect(listed.body.data).toHaveLength(10)
 		expect(listed.body.data[0]).toMatchObject({
 			incident_id: encodePublicId("inc", waiting),
 			acknowledged_by: null,
 		})
+
+		// With more unanswered than a widget lists, the count becomes a floor.
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = null, acknowledged_by_user_id = null,
+				acknowledged_by_name = null, acknowledged_via = null where org_id = 'org_alerts_e2e'`,
+		)
+		const crowded = await harness.request("GET", "/v2/widget_summary/pages", reader.secret)
+		expect(crowded.body.has_more).toBe(true)
+		expect(crowded.body.data).toHaveLength(10)
 
 		await harness.dispose()
 	})
