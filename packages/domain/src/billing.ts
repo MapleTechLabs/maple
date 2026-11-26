@@ -122,14 +122,6 @@ export const hasPlanHistory = (
 	trialsUsed: ReadonlyArray<TrialUse> | null | undefined,
 ): boolean => hasHadPlan(subscriptions) || Arr.isReadonlyArrayNonEmpty(trialsUsed ?? [])
 
-/** The org started the no-card trial, running, ended or with its row gone. */
-export const hasUsedNoCardTrial = (
-	subscriptions: ReadonlyArray<TrialSubscription>,
-	trialsUsed: ReadonlyArray<TrialUse> | null | undefined,
-): boolean =>
-	Arr.some(subscriptions, (sub) => sub.planId === TRIAL_PLAN_ID) ||
-	Arr.some(trialsUsed ?? [], (trial) => trial.planId === TRIAL_PLAN_ID)
-
 /** When the org's no-card trial ends (or ended); none if it never had one. */
 export const trialEndOf = (subscriptions: ReadonlyArray<TrialSubscription>): Option.Option<number> => {
 	const ends = Arr.flatMap(subscriptions, (sub) =>

@@ -28,6 +28,7 @@ import {
 	decodeUpstream,
 	ensureOk,
 	readCustomerCached,
+	readCustomerFresh,
 	resolveAttachConflict,
 	summariseSubscriptions,
 } from "@maple/backend/services/billing/autumn-client"
@@ -459,9 +460,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// the classified 4xx survives to the client instead of a blanket 502.
 						yield* classifyAutumn(result)
 						yield* invalidateCustomer(customerId, result)
-						const refreshed = yield* autumn.getOrCreateCustomer(customerId, {
-							expand: ["subscriptions.plan"],
-						})
+						const refreshed = yield* readCustomerFresh(autumn, customerId)
 						return yield* ensureOk(refreshed).pipe(
 							Effect.flatMap((response) => decodeUpstream(BillingCustomer, response)),
 						)
@@ -525,9 +524,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 								// plan is this a success; any other conflict still surfaces.
 								(conflict) =>
 									resolveAttachConflict(
-										autumn.getOrCreateCustomer(customerId, {
-											expand: ["subscriptions.plan"],
-										}),
+										readCustomerFresh(autumn, customerId),
 										attachedPlanId,
 										conflict,
 									),
