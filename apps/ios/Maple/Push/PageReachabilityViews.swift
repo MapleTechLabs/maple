@@ -136,16 +136,19 @@ struct TestPageControl: View {
 		let api = session.api
 		// Not tied to the view: a send under way finishes, and its span closes.
 		Task {
-			let line = await Self.send(api: api, surface: surface)
+			let sent = await Self.send(api: api, surface: surface)
+			let line = sent?.message ?? TestPageResult.failureMessage
 			result = line
 			isSending = false
 			AccessibilityNotification.Announcement(line).post()
+			// The warning card and its Try again follow from what the server now holds.
+			if sent?.mayHaveLostThisPhone == true { await PushRegistrar.shared.reconcileRegistration(api: api) }
 		}
 	}
 
-	/// The request with its span and event. Always answers with a line to show:
+	/// The request with its span and event. Nil is a request that never answered:
 	/// a failure is a result like the others, never a state to wait in.
-	private static func send(api: any MapleAPI, surface: Surface) async -> String {
+	private static func send(api: any MapleAPI, surface: Surface) async -> TestPageResult? {
 		let result = await Telemetry.span(
 			Telemetry.Name.testPage,
 			attributes: [Telemetry.Key.testPageSurface: .string(surface.rawValue)]
@@ -165,6 +168,6 @@ struct TestPageControl: View {
 		}
 		let outcome = result?.outcome ?? .failed
 		Telemetry.track(Telemetry.Event.testPageSent, ["outcome": outcome.rawValue, "surface": surface.rawValue])
-		return result?.message ?? TestPageResult.failureMessage
+		return result
 	}
 }

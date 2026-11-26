@@ -114,11 +114,18 @@ public struct TestPageResult: Hashable, Sendable {
 	/// The line under the button once the request has answered.
 	public var message: String {
 		switch outcome {
-		case .sent: sent > 1 ? "Sent to \(sent) phones." : "Sent to this phone. It should arrive in a few seconds."
+		// Counted, never "this phone": the answer does not say which phones took it.
+		case .sent: sent > 1 ? "Sent to \(sent) phones." : "Sent to 1 phone. It should arrive in a few seconds."
 		case .noPhone: "No phone is registered for you here. Open Maple on your phone and allow notifications."
 		case .notConfigured: "Push is not set up on this deployment."
 		case .failed: Self.failureMessage
 		}
+	}
+
+	/// The server found a phone gone, or none at all: this phone may be the one it
+	/// stopped pushing to, which only a look at the registered devices can tell.
+	public var mayHaveLostThisPhone: Bool {
+		configured && (unregistered > 0 || outcome == .noPhone)
 	}
 
 	/// Also the line for a request that never answered.

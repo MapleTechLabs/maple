@@ -168,11 +168,20 @@ struct PageReachabilityWarningTests {
 
 @Suite("Test page result")
 struct TestPageResultTests {
-	@Test("One phone reached reads as this phone")
+	@Test("One phone reached is counted, not called this phone: the answer does not say which")
 	func sentToOne() {
 		let result = TestPageResult(configured: true, sent: 1)
 		#expect(result.outcome == .sent)
-		#expect(result.message == "Sent to this phone. It should arrive in a few seconds.")
+		#expect(result.message == "Sent to 1 phone. It should arrive in a few seconds.")
+		#expect(!result.mayHaveLostThisPhone)
+	}
+
+	@Test("A phone found gone, or no phone at all, calls for a look at this phone's registration")
+	func mayHaveLostThisPhone() {
+		#expect(TestPageResult(configured: true, sent: 1, unregistered: 1).mayHaveLostThisPhone)
+		#expect(TestPageResult(configured: true, sent: 0).mayHaveLostThisPhone)
+		#expect(!TestPageResult(configured: true, sent: 0, failed: 1).mayHaveLostThisPhone)
+		#expect(!TestPageResult(configured: false, sent: 0).mayHaveLostThisPhone)
 	}
 
 	@Test("Several phones reached are counted, even when another failed")

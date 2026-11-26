@@ -162,6 +162,19 @@ final class PushRegistrar: NSObject {
 		}
 	}
 
+	/// Ask the server whether it still pushes to this phone. A test page that found a
+	/// phone gone does not say which one, and a token the platform called dead is
+	/// switched off there while this phone still believes it is registered.
+	func reconcileRegistration(api: any MapleAPI) async {
+		guard let registered, let devices = try? await api.myDevices() else { return }
+		// Only a read that confirms it: the phone that was gone may be another one.
+		guard self.registered == registered else { return }
+		if devices.first(where: { $0.token == registered.token })?.enabled != true {
+			self.registered = nil
+			registrationFailed = true
+		}
+	}
+
 	/// The one thing a reachability problem's button does.
 	func perform(_ fix: PageReachability.Fix, api: any MapleAPI, orgId: String?) async {
 		switch fix {
