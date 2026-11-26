@@ -62,8 +62,11 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const ingestKey = yield* Config.Redacted("MAPLE_INGEST_KEY")
     const context = yield* Config.NonEmptyString("KUBE_CONTEXT")
-    const kubeconfigs = yield* Config.String("KUBECONFIG").pipe(Config.withDefault(""))
-    const kubeconfig = kubeconfigs.split(":")[0] || join(homedir(), ".kube", "config")
+    // The stack keeps one kubeconfig file, so it must be the one that defines the context.
+    const kubeconfigs = (yield* Config.String("KUBECONFIG").pipe(Config.withDefault(""))).split(":").filter(Boolean)
+    if (kubeconfigs.length > 1)
+      return yield* Effect.die(new Error("KUBECONFIG lists several files: set it to the one that defines KUBE_CONTEXT."))
+    const kubeconfig = kubeconfigs[0] ?? join(homedir(), ".kube", "config")
     const collector = yield* Kubernetes.HelmChart("maple-k8s-infra", {
       cluster: Kubernetes.KubeConfig({ path: kubeconfig, context }),
       chart: "oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra",
@@ -160,8 +163,8 @@ resource "helm_release" "maple_k8s_infra" {
 export const terraformApplyCommand = (token: string): string =>
 	Arr.join(
 		[
-			`test -f maple.auto.tfvars || printf 'kubeconfig = "%s"\\nkube_context = "%s"\\n' \\`,
-			'  "${KUBECONFIG:-$HOME/.kube/config}" "$(kubectl config current-context)" > maple.auto.tfvars',
+			'test -f maple.auto.tfvars || { context="$(kubectl config current-context)" &&',
+			`  printf 'kubeconfig = "%s"\\nkube_context = "%s"\\n' "\${KUBECONFIG:-$HOME/.kube/config}" "$context" > maple.auto.tfvars; }`,
 			`terraform init && TF_VAR_maple_ingest_key=${token} terraform apply`,
 		],
 		"\n",
