@@ -64,6 +64,11 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"queryDashboardWidgetData",
 	"listAlertIncidents",
 	"getAlertIncident",
+	// Answering a page, as the signed-in user.
+	"acknowledgeAlertIncident",
+	"unacknowledgeAlertIncident",
+	"resolveAlertIncident",
+	"listAlertIncidentEvents",
 	"listAlertRules",
 	"getAlertRule",
 	// Charts an incident's own signal, the read the dashboard's incident page draws from.

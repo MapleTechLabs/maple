@@ -11,11 +11,17 @@ struct IncidentCard: Identifiable, Hashable, Codable {
 	/// loaded, and stays empty for a rule whose checks failed to load: the
 	/// card is still worth showing.
 	var observations: [Double]
+	/// An escalation step paged the person holding the phone for this incident.
+	var pagesViewer = false
 
 	var id: String { incident.id }
 
+	/// Paged to the viewer and still waiting on an answer: what leads every list.
+	var needsViewer: Bool { pagesViewer && incident.responseState.isUnacknowledged }
+
 	static func == (lhs: IncidentCard, rhs: IncidentCard) -> Bool {
 		lhs.incident == rhs.incident && lhs.observations == rhs.observations && lhs.serviceNames == rhs.serviceNames
+			&& lhs.pagesViewer == rhs.pagesViewer
 	}
 
 	func hash(into hasher: inout Hasher) {
@@ -151,7 +157,12 @@ struct HomeSnapshot: Codable {
 			parts.append(services.count == 1 ? "Your service is healthy" : "All \(services.count) services healthy")
 		case .degraded, .critical:
 			let critical = criticalIncidents.count
-			if critical > 0 {
+			// A page waiting on this person outranks every other fact on the board.
+			let paging = incidents.filter(\.needsViewer)
+			if !paging.isEmpty {
+				let kind = paging.allSatisfy { $0.incident.severity == .critical } ? "critical alert" : "alert"
+				parts.append(paging.count == 1 ? "1 \(kind) is paging you" : "\(paging.count) \(kind)s are paging you")
+			} else if critical > 0 {
 				parts.append(critical == 1 ? "1 critical alert" : "\(critical) critical alerts")
 			} else if !incidents.isEmpty {
 				parts.append(incidents.count == 1 ? "1 open alert" : "\(incidents.count) open alerts")
@@ -186,6 +197,7 @@ final class HomeModel {
 	/// while the next one loads.
 	let scope: SessionController.DataScope
 
+	let responder: IncidentResponder
 	private let api: any MapleAPI
 	/// The cache key's stable half. `scope.generation` moves every sign-in, so
 	/// the persisted board is keyed on the organization itself.
@@ -204,10 +216,32 @@ final class HomeModel {
 		self.api = api
 		self.scope = scope
 		self.organizationId = session.currentOrganizationId
+		self.responder = IncidentResponder(api: api, surface: "overview")
 		self.loader = ScreenLoader(session: session, screen: Screen.home) { [unowned self] in try await self.fetch() }
 	}
 
 	var state: LoadState<HomeSnapshot> { loader.state }
+
+	/// Acknowledge from the card: it changes as soon as the server answers.
+	func acknowledge(_ incidentId: String) async {
+		let generation = loader.generation
+		guard let incident = await responder.perform(.acknowledge, on: incidentId) else { return }
+		loader.update(ifGeneration: generation) { snapshot in
+			var next = snapshot
+			next.incidents = next.incidents.map { card in
+				guard card.id == incidentId else { return card }
+				return IncidentCard(
+					incident: incident,
+					serviceNames: card.serviceNames,
+					display: card.display,
+					observations: card.observations,
+					pagesViewer: card.pagesViewer
+				)
+			}
+			return next
+		}
+		persist()
+	}
 
 	/// First appearance for this scope: paint the persisted board if there is
 	/// one and revalidate it, otherwise load cold. The seeded path refreshes
@@ -244,6 +278,9 @@ final class HomeModel {
 		// decoration in the failure sense: a card without its rule falls back
 		// to the signal type rather than taking the screen down.
 		async let rulesTask = api.alertRules(limit: 100, cursor: nil)
+		// Also decoration: without it the cards list, they just do not lead with
+		// what is paging this person.
+		async let pagingTask = api.alertIncidentsPagingMe(limit: 50)
 
 		let health = try await healthTask
 		let previousServices = health.previous.map { ServiceSummary.aggregate($0) }
@@ -253,6 +290,7 @@ final class HomeModel {
 			((try? await rulesTask.items) ?? []).map { ($0.id, $0) },
 			uniquingKeysWith: { first, _ in first }
 		)
+		let pagingMe = Set(((try? await pagingTask) ?? []).map(\.id))
 
 		var cards = incidents.map { incident in
 			let rule = rules[incident.ruleId]
@@ -260,11 +298,13 @@ final class HomeModel {
 				incident: incident,
 				serviceNames: rule?.serviceNames ?? [],
 				display: rule.map(SignalDisplay.init(rule:)) ?? SignalDisplay(signal: incident.signalType),
-				observations: []
+				observations: [],
+				pagesViewer: pagingMe.contains(incident.id)
 			)
 		}
-		// Critical first, then most recently triggered.
+		// What is waiting on this person first, then critical, then most recently triggered.
 		cards.sort { a, b in
+			if a.needsViewer != b.needsViewer { return a.needsViewer }
 			if a.incident.severity != b.incident.severity { return a.incident.severity == .critical }
 			return a.incident.lastTriggeredAt > b.incident.lastTriggeredAt
 		}

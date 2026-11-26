@@ -197,6 +197,56 @@ final class PushRegistrar: NSObject {
 		}
 	}
 
+	// MARK: Answering a page from its banner
+
+	/// Acknowledge without opening the app. The request names the organization
+	/// the page came from, which need not be the one the app last showed.
+	///
+	/// A failure cannot be an alert, there is no screen: it becomes a second
+	/// banner that opens the incident, because a page that looks answered and is
+	/// not is the one outcome worse than no button at all.
+	func acknowledgeFromNotification(incidentId: String, organizationId: String?) async {
+		guard let api = opener?.session?.api else {
+			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
+			return
+		}
+		let scoped = organizationId.map { api.scoped(to: $0) } ?? api
+		do {
+			_ = try await Telemetry.span(
+				Telemetry.Name.incidentAction,
+				attributes: [
+					Telemetry.Key.incidentAction: .string(IncidentAction.acknowledge.rawValue),
+					Telemetry.Key.incidentActionSurface: .string("notification"),
+				]
+			) { _ in
+				try await scoped.acknowledgeIncident(id: incidentId)
+			}
+			Telemetry.track(
+				Telemetry.Event.incidentActed,
+				["action": IncidentAction.acknowledge.rawValue, "surface": "notification"]
+			)
+			WidgetCenter.shared.reloadAllTimelines()
+			IncidentChanges.shared.didChange()
+		} catch {
+			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
+		}
+	}
+
+	private func notifyAcknowledgeFailed(incidentId: String, organizationId: String?) async {
+		let content = UNMutableNotificationContent()
+		content.title = "Couldn't acknowledge"
+		content.body = "The page is still unanswered. Open the incident to try again."
+		content.sound = .default
+		content.interruptionLevel = .timeSensitive
+		// The same keys a page carries, so a tap opens the incident it is about.
+		var userInfo: [String: String] = ["maple_kind": "alert_incident", "maple_incident_id": incidentId]
+		if let organizationId { userInfo["maple_org_id"] = organizationId }
+		content.userInfo = userInfo
+		try? await center.add(
+			UNNotificationRequest(identifier: "page-ack-failed:\(incidentId)", content: content, trigger: nil)
+		)
+	}
+
 	/// Sign-out: remove this phone from every org the user belongs to, each in its
 	/// own region. Best effort: a row left behind means stray pushes until APNs
 	/// reports the token dead.
@@ -219,6 +269,30 @@ final class PushRegistrar: NSObject {
 				group.addTask { try? await api.scoped(to: organizationId).unregisterDevice(token: deviceToken) }
 			}
 		}
+	}
+}
+
+/// A page's banner: its category and the two buttons under it.
+enum PageNotification {
+	/// Must match `PAGE_NOTIFICATION_CATEGORY` in `MobilePushService.ts`. A rename
+	/// on one side leaves the banner without its buttons, with no error anywhere.
+	static let categoryId = "MAPLE_PAGE"
+	static let acknowledgeActionId = "MAPLE_PAGE_ACKNOWLEDGE"
+	static let openActionId = "MAPLE_PAGE_OPEN"
+
+	static var category: UNNotificationCategory {
+		UNNotificationCategory(
+			identifier: categoryId,
+			actions: [
+				// Neither `.foreground` nor `.authenticationRequired`: answering a page
+				// must not wait on the phone being unlocked or the app coming up.
+				UNNotificationAction(identifier: acknowledgeActionId, title: "Acknowledge", options: []),
+				// Handled as a tap on the banner is: it opens the incident.
+				UNNotificationAction(identifier: openActionId, title: "Open incident", options: [.foreground]),
+			],
+			intentIdentifiers: [],
+			options: []
+		)
 	}
 }
 
@@ -270,6 +344,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 		didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
 	) -> Bool {
 		UNUserNotificationCenter.current().delegate = self
+		// Registered at every launch, including the background one a page's own
+		// action causes: iOS forgets categories it is not told about again.
+		UNUserNotificationCenter.current().setNotificationCategories([PageNotification.category])
 		// Must happen before `didFinishLaunching` returns — registering a
 		// BGTaskScheduler handler later throws.
 		WidgetRefreshScheduler.register()
@@ -353,6 +430,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 		// nothing on the device read it, so a tap on another org's alert opened
 		// an incident id the active token could not fetch.
 		let organizationId = userInfo["maple_org_id"] as? String
+		// The banner's Acknowledge: answered in the background, with no screen to
+		// open. iOS keeps the app alive until the completion handler runs, so it
+		// is called only once the request has landed or failed.
+		if response.actionIdentifier == PageNotification.acknowledgeActionId, let incidentId {
+			nonisolated(unsafe) let done = completionHandler
+			Task { @MainActor in
+				await PushRegistrar.shared.acknowledgeFromNotification(
+					incidentId: incidentId,
+					organizationId: organizationId
+				)
+				done()
+			}
+			return
+		}
 		Task { @MainActor in
 			switch kind {
 			case "alert_incident":

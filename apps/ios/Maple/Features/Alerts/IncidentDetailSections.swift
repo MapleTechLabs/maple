@@ -382,10 +382,11 @@ struct LikelyCauseSection: View {
 
 // MARK: - Timeline
 
-/// Triggered, notified, renotified, resolved: a vertical rail of what happened
-/// and where each notification went.
+/// Triggered, notified, paged, acknowledged, resolved: a vertical rail of what
+/// happened, who was told and who answered.
 struct IncidentTimeline: View {
 	let detail: IncidentDetail
+	let viewerUserId: String?
 
 	private struct Event: Identifiable {
 		let id: String
@@ -443,14 +444,31 @@ struct IncidentTimeline: View {
 			)
 		}
 
+		// Pages, acknowledgements and on-call gaps, in the web timeline's words. A
+		// resolve by hand names the closing entry below instead of appearing twice.
+		for event in detail.events where event._type != .resolved {
+			let line = event.line(viewerUserId: viewerUserId)
+			events.append(
+				Event(
+					id: event.id,
+					at: event.createdAt,
+					title: line.title,
+					detail: line.detail,
+					detailTint: line.tone == .critical ? Token.destructive : Token.mutedForeground,
+					dot: line.tone.dot
+				)
+			)
+		}
+
 		if let resolved = incident.resolvedAt {
 			let sent = detail.deliveries.filter { $0.eventType == .resolve }.map(\.destinationName)
 			let lasted = "lasted \(Format.duration(from: incident.firstTriggeredAt, to: resolved))"
+			let byHand = detail.events.last { $0._type == .resolved }?.line(viewerUserId: viewerUserId)
 			events.append(
 				Event(
 					id: "resolved",
 					at: resolved,
-					title: "Resolved",
+					title: byHand?.title ?? "Resolved",
 					detail: sent.isEmpty ? lasted : "\(lasted) · \(sent.joined(separator: ", "))",
 					dot: Token.success
 				)
@@ -493,7 +511,7 @@ struct IncidentTimeline: View {
 					}
 					.accessibilityElement(children: .combine)
 				}
-				if detail.deliveries.isEmpty {
+				if detail.deliveries.isEmpty, !detail.events.contains(where: { $0._type == .paged }) {
 					Text("No notifications were sent for this incident.")
 						.font(Typo.tiny)
 						.foregroundStyle(Token.mutedForeground)
@@ -510,5 +528,18 @@ struct IncidentTimeline: View {
 			}
 		}
 		.padding(.horizontal, 16)
+	}
+}
+
+extension IncidentEventLine.Tone {
+	/// The timeline dot for an activity entry.
+	fileprivate var dot: Color {
+		switch self {
+		case .neutral: Token.mutedForeground
+		case .info: Token.foreground
+		case .warn: Token.severityWarn
+		case .critical: Token.destructive
+		case .good: Token.success
+		}
 	}
 }

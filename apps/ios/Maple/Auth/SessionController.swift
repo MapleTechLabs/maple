@@ -97,6 +97,12 @@ final class SessionController {
 		Clerk.shared.session?.lastActiveOrganizationId
 	}
 
+	/// Who is signed in, to tell "paged you" from "paged Priya". The server's
+	/// user ids are Clerk's.
+	var currentUserId: String? {
+		isFixture ? FixtureSession.userId : Clerk.shared.user?.id
+	}
+
 	/// The organization the screens are showing — from the phase, not from
 	/// Clerk, so fixture mode has one too.
 	var currentOrganizationId: String? {

@@ -350,16 +350,16 @@ struct FixtureAPI: MapleAPI {
 		)
 	}
 
-	var incidents: [AlertIncident] {
+	private var seededIncidents: [AlertIncident] {
 		[
 			AlertIncident(
 				comparator: .gt,
 				dedupeKey: "alrt_checkout_errors:__total__",
 				errorIssueId: "iss_checkout_timeout",
-				firstTriggeredAt: stamp(-32 * 60),
+				firstTriggeredAt: stamp(-Self.checkoutOpenFor),
 				id: "inc_checkout_now",
 				lastDeliveredEventType: .trigger,
-				lastNotifiedAt: stamp(-32 * 60 + 5),
+				lastNotifiedAt: stamp(-Self.checkoutOpenFor + 5),
 				lastObservedValue: 0.091,
 				lastSampleCount: 1_260,
 				lastTriggeredAt: stamp(-60),
@@ -427,6 +427,110 @@ struct FixtureAPI: MapleAPI {
 			throw MapleAPIError.decoding(NSError(domain: "fixtures", code: 404))
 		}
 		return incident
+	}
+
+	// MARK: Answering a page
+
+	/// The checkout incident opened this long ago: step 1 paged the fixture
+	/// user, and step 2 pages Priya Shah in a little under four minutes.
+	private static let checkoutOpenFor: TimeInterval = 161
+	private static let pagingIncidentId = "inc_checkout_now"
+
+	/// The seeded incidents as the fixture world now holds them: who is being
+	/// paged, who acknowledged, and whatever was done from the phone since launch.
+	var incidents: [AlertIncident] {
+		seededIncidents.map { seeded in
+			var incident = seeded
+			switch incident.id {
+			case Self.pagingIncidentId:
+				incident.escalation = .init(
+					chainId: "esc_platform_primary",
+					chainName: "Platform primary",
+					nextStepAt: stamp(228),
+					nextStepPeople: [.init(name: "Priya Shah", userId: "user_priya")],
+					pass: 1,
+					passCount: 1,
+					status: .active,
+					step: 2,
+					stepCount: 3,
+					stepsSent: 1
+				)
+			case "inc_search_now":
+				let acknowledgedAt = stamp(-2 * 3600 - 10 * 60)
+				incident.acknowledgedAt = acknowledgedAt
+				incident.firstAcknowledgedAt = acknowledgedAt
+				incident.acknowledgedBy = .init(name: "Dana Kim", userId: "user_dana")
+				incident.acknowledgedVia = .slack
+			default:
+				incident.firstAcknowledgedAt = stamp(-2 * 86_400 - 3_000 + 60)
+			}
+			return FixtureIncidentLog.shared.apply(to: incident)
+		}
+	}
+
+	func alertIncidentsPagingMe(limit: Int) async throws -> [AlertIncident] {
+		try await pause()
+		return incidents.filter { $0.id == Self.pagingIncidentId && $0.status == .open }
+	}
+
+	func alertIncidentEvents(incidentId: String) async throws -> [AlertIncidentEvent] {
+		try await pause()
+		guard let incident = incidents.first(where: { $0.id == incidentId }) else { return [] }
+		func paged(_ suffix: String, _ userId: String, _ name: String, by channel: String) -> AlertIncidentEvent {
+			AlertIncidentEvent(
+				createdAt: incident.lastNotifiedAt ?? incident.firstTriggeredAt,
+				id: "aie_\(incident.id)_\(suffix)",
+				incidentId: incident.id,
+				object: .alertIncidentEvent,
+				page: .init(channel: channel, name: name, status: .sent, userId: userId),
+				_type: .paged
+			)
+		}
+		var events: [AlertIncidentEvent] = []
+		switch incident.id {
+		case Self.pagingIncidentId:
+			events = [
+				paged("push", FixtureSession.userId, "Alex Chen", by: "push"),
+				paged("email", FixtureSession.userId, "Alex Chen", by: "email"),
+			]
+		case "inc_search_now":
+			events = [
+				paged("slack", "user_dana", "Dana Kim", by: "slack"),
+				AlertIncidentEvent(
+					actor: .init(name: "Dana Kim", userId: "user_dana"),
+					createdAt: stamp(-2 * 3600 - 10 * 60),
+					id: "aie_\(incident.id)_ack",
+					incidentId: incident.id,
+					object: .alertIncidentEvent,
+					source: .slack,
+					_type: .acknowledged
+				),
+			]
+		default:
+			break
+		}
+		return events + FixtureIncidentLog.shared.events(for: incident.id)
+	}
+
+	func acknowledgeIncident(id: String) async throws -> AlertIncident {
+		try await respond(.acknowledged, to: id)
+	}
+
+	func unacknowledgeIncident(id: String) async throws -> AlertIncident {
+		try await respond(.unacknowledged, to: id)
+	}
+
+	func resolveIncident(id: String) async throws -> AlertIncident {
+		try await respond(.resolved, to: id)
+	}
+
+	private func respond(_ type: AlertIncidentEventType, to id: String) async throws -> AlertIncident {
+		try await pause()
+		guard incidents.contains(where: { $0.id == id && $0.status == .open }) else {
+			throw MapleAPIError.decoding(NSError(domain: "fixtures", code: 409))
+		}
+		FixtureIncidentLog.shared.record(type, incidentId: id, at: ResolvedTimeWindow.format(Date()))
+		return try await alertIncident(id: id)
 	}
 
 	func alertRules(limit: Int, cursor: String?) async throws -> Page<AlertRule> {
@@ -899,6 +1003,71 @@ struct FixtureAPI: MapleAPI {
 			let due = count % every == 0
 			lock.unlock()
 			if due { throw MapleAPIError.transport(URLError(.notConnectedToInternet)) }
+		}
+	}
+}
+
+/// What was done to the fixture incidents since launch, so an acknowledgement
+/// made in fixture mode sticks across screens the way a real one does.
+///
+/// A process-wide log rather than state on `FixtureAPI`: the fixture is a value
+/// handed to every screen, and each copy has to see the same world.
+final class FixtureIncidentLog: @unchecked Sendable {
+	static let shared = FixtureIncidentLog()
+
+	private let lock = NSLock()
+	private var entries: [AlertIncidentEvent] = []
+
+	func record(_ type: AlertIncidentEventType, incidentId: String, at timestamp: String) {
+		lock.withLock {
+			entries.append(
+				AlertIncidentEvent(
+					actor: .init(name: "Alex Chen", userId: FixtureSession.userId),
+					createdAt: timestamp,
+					id: "aie_\(incidentId)_\(entries.count)",
+					incidentId: incidentId,
+					object: .alertIncidentEvent,
+					source: .mobile,
+					_type: type
+				)
+			)
+		}
+	}
+
+	func events(for incidentId: String) -> [AlertIncidentEvent] {
+		lock.withLock { entries.filter { $0.incidentId == incidentId } }
+	}
+
+	/// The incident after everything recorded for it, oldest first.
+	func apply(to seeded: AlertIncident) -> AlertIncident {
+		events(for: seeded.id).reduce(into: seeded) { incident, event in
+			switch event._type {
+			case .acknowledged:
+				incident.acknowledgedAt = event.createdAt
+				incident.acknowledgedBy = event.actor
+				incident.acknowledgedVia = event.source
+				incident.firstAcknowledgedAt = incident.firstAcknowledgedAt ?? event.createdAt
+				incident.escalation?.status = .acknowledged
+				incident.escalation?.nextStepAt = nil
+				incident.escalation?.nextStepPeople = []
+			case .unacknowledged:
+				incident.acknowledgedAt = nil
+				incident.acknowledgedBy = nil
+				incident.acknowledgedVia = nil
+				// The run picks up where it was waiting.
+				incident.escalation = seeded.escalation
+			case .resolved:
+				incident.status = .resolved
+				incident.resolvedAt = event.createdAt
+				incident.acknowledgedAt = nil
+				incident.acknowledgedBy = nil
+				incident.acknowledgedVia = nil
+				incident.escalation?.status = .resolved
+				incident.escalation?.nextStepAt = nil
+				incident.escalation?.nextStepPeople = []
+			case .ackCleared, .paged, .onCallGap:
+				break
+			}
 		}
 	}
 }

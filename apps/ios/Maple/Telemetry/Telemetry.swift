@@ -59,6 +59,8 @@ enum Telemetry {
 		static let widgetCredential = "widget.credential"
 		static let liveActivitySubmit = "live_activity.submit"
 		static let liveActivityEnd = "live_activity.end"
+		/// Acknowledge, unacknowledge or resolve, from any surface that offers one.
+		static let incidentAction = "incident.action"
 	}
 
 	enum Key {
@@ -80,6 +82,9 @@ enum Telemetry {
 		static let authHasToken = "maple.app.auth.has_token"
 		static let membershipCount = "maple.app.auth.membership_count"
 		static let pushKind = "maple.app.push.kind"
+		static let incidentAction = "maple.app.incident.action"
+		/// Where it was taken: `incident`, `triage`, `overview`, `notification`.
+		static let incidentActionSurface = "maple.app.incident.action_surface"
 		static let pushColdStart = "maple.app.push.cold_start"
 		static let widgetTrigger = "maple.app.widget.trigger"
 		static let widgetOrganizationCount = "maple.app.widget.organization_count"
@@ -150,6 +155,7 @@ enum Telemetry {
 		static let serviceOperationsSorted = "service.operations.sorted"
 		static let notificationsPrompted = "notifications.prompted"
 		static let pushOpened = "push.opened"
+		static let incidentActed = "incident.acted"
 		static let widgetOpened = "widget.opened"
 		static let apiFailed = "api.failed"
 	}

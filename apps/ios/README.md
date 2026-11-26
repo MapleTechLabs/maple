@@ -73,6 +73,14 @@ incident is opened (or from the bell on Home), receives the APNs token via
 tab root. Registration is per organization; sign-out unregisters. A tapped
 notification lands on the incident (`AppNavigation.openIncident`).
 
+A page (an escalation step reaching you) arrives in the `MAPLE_PAGE` category,
+which `AppDelegate` registers at every launch with two actions. **Acknowledge**
+runs in the background without unlocking the phone
+(`PushRegistrar.acknowledgeFromNotification`), against the organization the page
+names; if the request fails a second banner says so and opens the incident.
+**Open incident** takes the same path as a tap. The category string is shared
+with `PAGE_NOTIFICATION_CATEGORY` in `MobilePushService.ts`.
+
 The server side is `packages/backend/src/services/push` + `packages/backend/src/platform/Apns.ts`; it sends
 only when `APNS_TEAM_ID` / `APNS_KEY_ID` / `APNS_PRIVATE_KEY` are set on the
 alerting worker. `aps-environment` in the entitlements is `development` and

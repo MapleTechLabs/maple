@@ -28,9 +28,18 @@ struct HomeView: View {
 					},
 					skeleton: { HomeSkeleton() }
 				) { snapshot in
-					HomeContent(snapshot: snapshot)
+					if let model {
+						HomeContent(
+							snapshot: snapshot,
+							viewerUserId: session.currentUserId,
+							responder: model.responder
+						) { incidentId in
+							Task { await model.acknowledge(incidentId) }
+						}
+					}
 				}
 			}
+			.incidentActionAlert(model?.responder)
 			// Hidden on the root; it names the back button on pushed screens.
 			.navigationTitle("Overview")
 			.tabRootChrome()
@@ -64,6 +73,10 @@ struct HomeView: View {
 				guard !Task.isCancelled, scenePhase == .active else { continue }
 				await model.loader.load(.refresh)
 			}
+		}
+		// An incident answered elsewhere in the app, or from a banner.
+		.onChange(of: IncidentChanges.shared.revision) {
+			Task { await model?.loader.load(.refresh) }
 		}
 		.onChange(of: scenePhase) { _, phase in
 			// Coming back from the background: the board is as old as the
@@ -112,6 +125,9 @@ extension HomeView {
 
 private struct HomeContent: View {
 	let snapshot: HomeSnapshot
+	let viewerUserId: String?
+	let responder: IncidentResponder
+	let acknowledge: (String) -> Void
 	@Environment(AppNavigation.self) private var navigation
 
 	var body: some View {
@@ -126,10 +142,11 @@ private struct HomeContent: View {
 				) {
 					VStack(spacing: 8) {
 						ForEach(snapshot.incidents) { card in
-							NavigationLink(value: Route.incident(id: card.id)) {
-								IncidentCardView(card: card)
-							}
-							.buttonStyle(.plain)
+							IncidentCardView(
+								card: card,
+								viewerUserId: viewerUserId,
+								isAcknowledging: responder.isPending(.acknowledge, on: card.id)
+							) { acknowledge(card.id) }
 						}
 					}
 				}
@@ -173,13 +190,73 @@ private struct HomeContent: View {
 
 /// An open incident: severity rail, rule name and age, the services it covers
 /// with a severity badge, then the breach beside what the rule saw against its
-/// threshold.
+/// threshold. Under that, who has it: a page waiting on this person carries its
+/// own Acknowledge, outside the link so the two taps cannot blur.
 struct IncidentCardView: View {
 	let card: IncidentCard
+	var viewerUserId: String? = nil
+	var isAcknowledging = false
+	var acknowledge: () -> Void = {}
 
 	private var incident: AlertIncident { card.incident }
 
 	var body: some View {
+		VStack(alignment: .leading, spacing: 0) {
+			NavigationLink(value: Route.incident(id: card.id)) {
+				summary
+					.padding(.leading, 16)
+					.padding(.trailing, 14)
+					.padding(.vertical, 14)
+					.contentShape(.rect)
+			}
+			.buttonStyle(.plain)
+			response
+		}
+		.severityRail(incident.severity.tint)
+		.hairlineCard()
+	}
+
+	/// Who has the incident. Nothing when nobody was paged and nobody answered.
+	@ViewBuilder private var response: some View {
+		if card.needsViewer {
+			Hairline()
+				.padding(.leading, 16)
+				.padding(.trailing, 14)
+			HStack(alignment: .center, spacing: 12) {
+				VStack(alignment: .leading, spacing: 3) {
+					Text("Paged to you")
+						.font(Typo.tiny)
+						.foregroundStyle(Token.mutedForeground)
+					if case .unacknowledged(let next?) = incident.responseState {
+						HStack(spacing: 4) {
+							Text("\(next.headline(viewerUserId: viewerUserId)) in")
+								.lineLimit(1)
+							PageCountdown(next: next)
+						}
+						.font(Typo.tiny)
+						.foregroundStyle(Token.foreground)
+					}
+				}
+				Spacer(minLength: 0)
+				AcknowledgeButton(isPending: isAcknowledging, action: acknowledge)
+			}
+			.padding(.leading, 16)
+			.padding(.trailing, 14)
+			.padding(.vertical, 12)
+		} else if let line = incident.responseLine(pagedViewer: card.pagesViewer, viewerUserId: viewerUserId) {
+			Text(line)
+				.font(Typo.tiny)
+				.tabularNumbers()
+				.foregroundStyle(Token.mutedForeground)
+				.lineLimit(1)
+				.padding(.leading, 16)
+				.padding(.trailing, 14)
+				.padding(.bottom, 14)
+				.padding(.top, -4)
+		}
+	}
+
+	private var summary: some View {
 		VStack(alignment: .leading, spacing: 10) {
 			HStack(alignment: .firstTextBaseline, spacing: 8) {
 				Text(incident.ruleName)
@@ -226,12 +303,6 @@ struct IncidentCardView: View {
 				.frame(width: 96, height: 28)
 			}
 		}
-		.padding(.leading, 16)
-		.padding(.trailing, 14)
-		.padding(.vertical, 14)
-		.severityRail(incident.severity.tint)
-		.hairlineCard()
-		.contentShape(.rect)
 	}
 
 	/// The covered services, then the group the incident fired for.

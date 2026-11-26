@@ -28,6 +28,11 @@ public typealias AlertCheckStatus = Components.Schemas._MapleAlertCheckStatus
 public typealias AlertEventType = Components.Schemas._MapleAlertEventType
 public typealias AlertDeliveryStatus = Components.Schemas._MapleAlertDeliveryStatus
 public typealias AlertDestinationType = Components.Schemas._MapleAlertDestinationType
+public typealias AlertIncidentEvent = Components.Schemas.AlertIncidentEvent
+public typealias AlertIncidentEventType = Components.Schemas._MapleAlertIncidentEventType
+public typealias AlertIncidentEscalation = Components.Schemas.AlertIncidentEscalation
+public typealias AlertIncidentActor = Components.Schemas.AlertIncidentActor
+public typealias AlertIncidentAckSource = Components.Schemas._MapleAlertIncidentAckSource
 
 public typealias AnomalyIncident = Components.Schemas.AnomalyIncident
 public typealias AnomalyIncidentTimeseries = Components.Schemas.AnomalyIncidentTimeseries
@@ -162,6 +167,14 @@ public protocol MapleAPI: Sendable {
 	func alertIncidents(status: AlertIncidentStatus?, ruleId: String?, limit: Int, cursor: String?) async throws
 		-> Page<AlertIncident>
 	func alertIncident(id: String) async throws -> AlertIncident
+	/// Open incidents an escalation step paged the caller for, on any channel.
+	func alertIncidentsPagingMe(limit: Int) async throws -> [AlertIncident]
+	/// Acknowledgements, pages and on-call gaps, oldest first.
+	func alertIncidentEvents(incidentId: String) async throws -> [AlertIncidentEvent]
+	// Answering a page, as the signed-in user. Each returns the incident as the server now holds it.
+	func acknowledgeIncident(id: String) async throws -> AlertIncident
+	func unacknowledgeIncident(id: String) async throws -> AlertIncident
+	func resolveIncident(id: String) async throws -> AlertIncident
 	func alertRules(limit: Int, cursor: String?) async throws -> Page<AlertRule>
 	func alertRule(id: String) async throws -> AlertRule
 	func alertRuleChecks(ruleId: String, groupKey: String?, since: Date?, limit: Int) async throws -> [AlertCheck]
@@ -319,7 +332,7 @@ public struct MapleClient: MapleAPI {
 		// the request is for. Coalescing runs innermost so its key is computed
 		// over the finished request (token, organization header and host), and
 		// every waiter still gets its own typed error from the mapper above it.
-		var middlewares: [any ClientMiddleware] = [BearerAuthMiddleware(tokens: tokens)]
+		var middlewares: [any ClientMiddleware] = [BearerAuthMiddleware(tokens: tokens), ClientIdentityMiddleware()]
 		if let organizationId {
 			middlewares.append(OrganizationMiddleware(organizationId: organizationId))
 		}

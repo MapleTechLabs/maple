@@ -67,9 +67,10 @@ the web for that.
 The triage hub. Segmented control at the top: **Incidents · Errors ·
 Anomalies**. Default segment is whichever has open items, incidents first.
 
-- Incidents: open then resolved, grouped by rule; severity badge, service,
-  duration, observed/threshold. Filter chips: open · critical · mine
-  (rules for services I follow — later).
+- Incidents: open then resolved; severity badge, service, duration,
+  observed/threshold, and who has it. Incidents that paged you
+  (`listAlertIncidents?paged=me`) lead in their own section and carry
+  Acknowledge on the row. Filter chips: open · paged to you · all.
 - Errors: the current Issues list, unchanged in content, restyled as rows
   (title · service · count · last seen · sparkline).
 - Anomalies: `GET /v2/anomalies/incidents`, same row shape.
@@ -93,9 +94,17 @@ Anomalies**. Default segment is whichever has open items, incidents first.
 5. **Timeline**: trigger / renotify / resolve events and where they went
    (`GET /v2/alerts/deliveries?incident_id=`).
 6. Actions: **Open on web** (deep link into the same incident), **Share**
-   (link + headline). Incidents can't be closed via the API — no fake
-   "acknowledge" button. Mute-rule is a later addition once we decide it
+   (link + headline). Mute-rule is a later addition once we decide it
    belongs on the phone.
+
+An open incident is also answered here. A card under the headline says who
+has it: nobody yet, with who the next escalation step pages and a countdown to
+it, or the person who acknowledged and how long that took. A bar where the tab
+bar would be holds the one thing to do next: **Acknowledge**, then **Resolve**
+(confirmed, with the web's wording), with the other of the two and
+**Unacknowledge** under its menu. These are the v2 `acknowledgeAlertIncident`,
+`unacknowledgeAlertIncident` and `resolveAlertIncident` operations the web
+incident page calls, and they need `incidents:respond`.
 
 **Error issue detail** stays roughly as-is: title, message, service, first/
 last seen, occurrence sparkline, stack, linked incidents. Actions: open on
