@@ -22,7 +22,9 @@ import {
 	selectAppliedMigrationsSql,
 	selectAppliedVersionsSql,
 	selectFeatureRevisionsSql,
+	defaultRestored,
 	type ApplyStep,
+	type RestoreDefault,
 } from "@maple/domain/clickhouse"
 import { exec, type ClickHouseConfig } from "./client"
 
@@ -156,7 +158,9 @@ export async function reconcileSchemaFeatures(
 
 /**
  * Run a migration's planned steps in order. A step that fails inside a STOP/START MERGES pair
- * restarts merges first (`onFailure`); the step's own error is the one thrown.
+ * restarts merges first (`onFailure`); the step's own error is the one thrown. When the pair sets a
+ * key column's DEFAULT, that DEFAULT is restored and checked first: if it cannot be confirmed,
+ * merges stay stopped (a merge would store 0) and the error names the statements to run by hand.
  */
 export async function applyMigrationSteps(
 	steps: ReadonlyArray<ApplyStep>,
@@ -166,10 +170,26 @@ export async function applyMigrationSteps(
 		try {
 			await execute(step.sql)
 		} catch (error) {
-			if (step.onFailure !== undefined) await execute(step.onFailure).catch(() => "")
+			if (step.onFailure === undefined) throw error
+			const restore = step.restoreBeforeRestart
+			if (restore !== undefined && !(await restoreDefault(restore, execute))) {
+				const message = error instanceof Error ? error.message : String(error)
+				throw new Error(`${message}\n${restore.recovery}`, { cause: error })
+			}
+			await execute(step.onFailure).catch(() => "")
 			throw error
 		}
 	}
+}
+
+/** Sets the DEFAULT again, then reads it back; any failure leaves it unconfirmed. */
+async function restoreDefault(
+	restore: RestoreDefault,
+	execute: (sql: string) => Promise<string>,
+): Promise<boolean> {
+	await execute(restore.sql).catch(() => "")
+	const response = await execute(restore.verifySql).catch(() => undefined)
+	return response !== undefined && defaultRestored(restore, response)
 }
 
 /**

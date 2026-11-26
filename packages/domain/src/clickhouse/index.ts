@@ -36,7 +36,14 @@ export {
 	renderStatementFull,
 	compileBackfillChunk,
 } from "./backfill"
-export { expandMigrationToSteps, expandBackfill, type ApplyStep, type ExecFn } from "./apply-plan"
+export {
+	defaultRestored,
+	expandMigrationToSteps,
+	expandBackfill,
+	type ApplyStep,
+	type ExecFn,
+	type RestoreDefault,
+} from "./apply-plan"
 export { qualifyStatementForDatabase } from "./qualify"
 export * from "./bookkeeping"
 export {

@@ -22,6 +22,7 @@ import {
 	migrations,
 	parseEmittedStatement,
 	type ActualTable,
+	type ApplyStep,
 	type DesiredTable,
 } from "@maple/domain/clickhouse"
 import { latestSnapshotStatements } from "@maple/domain/generated/clickhouse-schema"
@@ -385,36 +386,78 @@ describe("snapshotDiffStatements", () => {
 })
 
 describe("runPlannedStep", () => {
-	it.effect("restarts merges when 0076's key ALTER fails, and the run still sees the ALTER's failure", () =>
-		Effect.gen(function* () {
-			const migration = Option.getOrThrow(
-				Arr.findFirst(migrations, (candidate) => candidate.version === 76),
-			)
-			const steps = yield* Effect.promise(() =>
-				expandMigrationToSteps(migration, "maple", async () => ""),
-			)
-			const executed: string[] = []
-			const exec = (sql: string) =>
-				Effect.suspend(() => {
-					executed.push(sql)
-					return Str.startsWith("ALTER TABLE trace_index ADD COLUMN")(sql)
-						? Effect.fail(new ClickHouseDenied({ message: "BAD_ARGUMENTS" }))
-						: Effect.void
-				})
-			const exit = yield* Effect.exit(
-				Effect.forEach(steps, (step) => runPlannedStep(step, exec(step.sql), exec), {
+	const retentionStorageSteps = Effect.promise(() =>
+		expandMigrationToSteps(
+			Option.getOrThrow(Arr.findFirst(migrations, (candidate) => candidate.version === 76)),
+			"maple",
+			async () => "",
+		),
+	)
+	/** A cluster that rejects `failing`, and answers the DEFAULT read-back with `defaultNow`. */
+	const cluster = (failing: string, defaultNow: string) => {
+		const executed: string[] = []
+		const exec = (sql: string) =>
+			Effect.suspend(() => {
+				executed.push(sql)
+				if (Str.startsWith(failing)(sql))
+					return Effect.fail(new ClickHouseDenied({ message: "BAD_ARGUMENTS" }))
+				return Effect.succeed(
+					Str.startsWith("SELECT default_expression")(sql)
+						? `{"default_expression":"${defaultNow}"}\n`
+						: "",
+				)
+			})
+		return { executed, exec }
+	}
+	const applyAll = (
+		steps: ReadonlyArray<ApplyStep>,
+		exec: (sql: string) => Effect.Effect<string, ClickHouseDenied>,
+	) =>
+		Effect.exit(
+			Effect.forEach(
+				steps,
+				(step) => runPlannedStep(step, exec(step.sql), (_label, sql) => exec(sql)),
+				{
 					discard: true,
-				}),
-			)
+				},
+			),
+		)
+
+	it.effect(
+		"restores the DEFAULT, then restarts merges, when 0076's key ALTER fails; the ALTER's failure stands",
+		() =>
+			Effect.gen(function* () {
+				const steps = yield* retentionStorageSteps
+				const { executed, exec } = cluster("ALTER TABLE trace_index ADD COLUMN", "30")
+				const exit = yield* applyAll(steps, exec)
+				assert.deepStrictEqual(
+					Option.map(Exit.findErrorOption(exit), (error) => error.message),
+					Option.some("BAD_ARGUMENTS"),
+				)
+				assert.deepStrictEqual(executed.slice(-4), [
+					"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
+					"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+					"SELECT default_expression FROM system.columns WHERE database = 'maple' AND table = 'trace_index' AND name = 'RetentionDays' FORMAT JSONEachRow",
+					"SYSTEM START MERGES trace_index",
+				])
+			}),
+	)
+
+	it.effect("leaves merges stopped when the DEFAULT cannot be restored, and says what to run", () =>
+		Effect.gen(function* () {
+			const steps = yield* retentionStorageSteps
+			const { executed, exec } = cluster("ALTER TABLE trace_index MODIFY COLUMN", "")
+			const exit = yield* applyAll(steps, exec)
+			const failure = Exit.findErrorOption(exit)
 			assert.deepStrictEqual(
-				Option.map(Exit.findErrorOption(exit), (error) => error.message),
-				Option.some("BAD_ARGUMENTS"),
+				Option.map(failure, (error) => error._tag),
+				Option.some("@maple/api/workflows/SchemaApplyMergesLeftStoppedError"),
 			)
-			assert.deepStrictEqual(executed.slice(-3), [
-				"SYSTEM STOP MERGES trace_index",
-				"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
-				"SYSTEM START MERGES trace_index",
-			])
+			const message = Option.getOrThrow(Option.map(failure, (error) => error.message))
+			assert.isTrue(Str.startsWith("BAD_ARGUMENTS\n")(message))
+			assert.include(message, "`ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30`")
+			assert.include(message, "`SYSTEM START MERGES trace_index`")
+			assert.notInclude(executed, "SYSTEM START MERGES trace_index")
 		}),
 	)
 
@@ -422,7 +465,7 @@ describe("runPlannedStep", () => {
 		Effect.gen(function* () {
 			const restarts: string[] = []
 			const step = { onFailure: "SYSTEM START MERGES t" }
-			const restart = (sql: string) =>
+			const restart = (_label: string, sql: string) =>
 				Effect.sync(() => restarts.push(sql)).pipe(
 					Effect.andThen(Effect.fail(new ClickHouseDenied({ message: "START denied" }))),
 				)

@@ -39,6 +39,32 @@ export interface ApplyStep {
 	 * `SYSTEM STOP MERGES` an earlier step ran, so a failed apply never leaves merges stopped.
 	 */
 	readonly onFailure?: string
+	/** Restores the pair's column DEFAULT before `onFailure` restarts merges; see {@link RestoreDefault}. */
+	readonly restoreBeforeRestart?: RestoreDefault
+}
+
+/**
+ * A pair that stops merges while a key column has no DEFAULT: a merge then would store the type's
+ * 0 in every row it writes. On failure the DEFAULT is set again and checked before merges restart;
+ * if it cannot be confirmed, merges stay stopped and the failure carries `recovery`.
+ */
+export interface RestoreDefault {
+	/** The pair's own `MODIFY COLUMN ... DEFAULT` statement. */
+	readonly sql: string
+	/** One JSONEachRow row with the column's `default_expression`; no row when it does not exist. */
+	readonly verifySql: string
+	readonly expected: string
+	/** What an operator runs by hand when merges were left stopped. */
+	readonly recovery: string
+}
+
+/**
+ * Whether merges may restart after `verifySql` answered `response`: the column is absent (the
+ * key ALTER never ran, so no row can hold its 0) or its DEFAULT is back.
+ */
+export const defaultRestored = (restore: RestoreDefault, response: string): boolean => {
+	const row = parseFirstRow(response)
+	return row === null || row.default_expression === restore.expected
 }
 
 export type ExecFn = (sql: string) => Promise<string>
@@ -168,25 +194,64 @@ export const expandMigrationToSteps = async (
 		}
 		index += 1
 	}
-	return restartMergesOnFailure(steps)
+	return restartMergesOnFailure(steps, database)
 }
 
 const STOP_MERGES = /^SYSTEM STOP MERGES (\S+)$/
+const SET_DEFAULT = /^ALTER TABLE (?:\S+\.)?`?(\w+)`? MODIFY COLUMN `?(\w+)`? \S+ DEFAULT (.+)$/
 
-/** Every step between a `SYSTEM STOP MERGES <t>` and its `SYSTEM START MERGES <t>` restarts them on failure. */
-const restartMergesOnFailure = (steps: ReadonlyArray<ApplyStep>): ReadonlyArray<ApplyStep> => {
-	let restart: string | undefined
-	return Arr.map(steps, (step) => {
+/** The pair's `MODIFY COLUMN ... DEFAULT`, as a restore an executor runs before restarting merges. */
+const restoreFor = (
+	pair: ReadonlyArray<ApplyStep>,
+	restart: string,
+	database: string,
+): RestoreDefault | undefined => {
+	for (const step of pair) {
 		const sql = Str.trim(step.sql)
-		if (restart !== undefined && sql === restart) {
-			restart = undefined
-			return step
+		const match = SET_DEFAULT.exec(sql)
+		const [, table, column, expected] = match ?? []
+		if (table === undefined || column === undefined || expected === undefined) continue
+		const db = database.length === 0 ? "currentDatabase()" : `'${Str.replace(/'/g, "''")(database)}'`
+		return {
+			sql,
+			verifySql: `SELECT default_expression FROM system.columns WHERE database = ${db} AND table = '${table}' AND name = '${column}' FORMAT JSONEachRow`,
+			expected: Str.trim(expected),
+			recovery: `Merges on ${table} were left stopped because ${column}'s DEFAULT could not be restored; a merge would store 0 in it. Run \`${sql}\`, then \`${restart}\`.`,
 		}
-		const stopped = Option.fromNullishOr(STOP_MERGES.exec(sql)?.[1])
-		if (Option.isSome(stopped)) {
-			restart = `SYSTEM START MERGES ${stopped.value}`
-			return step
-		}
-		return restart === undefined ? step : { ...step, onFailure: restart }
-	})
+	}
+	return undefined
+}
+
+/**
+ * Every step between a `SYSTEM STOP MERGES <t>` and its `SYSTEM START MERGES <t>` restarts them on
+ * failure, after restoring the pair's column DEFAULT when it sets one.
+ */
+const restartMergesOnFailure = (
+	steps: ReadonlyArray<ApplyStep>,
+	database: string,
+): ReadonlyArray<ApplyStep> => {
+	const out: ApplyStep[] = []
+	let index = 0
+	while (index < steps.length) {
+		const step = Arr.getUnsafe(steps, index)
+		const stopped = Option.fromNullishOr(STOP_MERGES.exec(Str.trim(step.sql))?.[1])
+		out.push(step)
+		index += 1
+		if (Option.isNone(stopped)) continue
+		const restart = `SYSTEM START MERGES ${stopped.value}`
+		const end = Option.getOrElse(
+			Arr.findFirstIndex(Arr.drop(steps, index), (candidate) => Str.trim(candidate.sql) === restart),
+			() => steps.length - index,
+		)
+		const pair = Arr.take(Arr.drop(steps, index), end)
+		const restore = restoreFor(pair, restart, database)
+		for (const inside of pair)
+			out.push(
+				restore === undefined
+					? { ...inside, onFailure: restart }
+					: { ...inside, onFailure: restart, restoreBeforeRestart: restore },
+			)
+		index += end
+	}
+	return out
 }

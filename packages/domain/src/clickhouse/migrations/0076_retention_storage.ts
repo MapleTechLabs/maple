@@ -12,8 +12,10 @@
  * insert lands in the window either: a 0 there would expire a facet row at once under
  * `least(RetentionDays, 30)`. Spans written while a view is dropped never reach that table, as with
  * every view below, but here the gap spans the key change rather than one statement.
- * A failure between them restarts merges (the apply's `onFailure` step) and still fails the apply,
- * so a merge can then write 0s, as can one after a server restart in the window. A rerun repairs
+ * A failure between them sets the DEFAULT again and reads it back before restarting merges (the
+ * apply's `onFailure` steps), and still fails the apply; unconfirmed, merges stay stopped and the
+ * error names the two statements to run. A merge after a server restart in the window can still
+ * write 0s, and an operator restarting merges by hand can too. A rerun repairs
  * them: `repair-zero-key-column` copies each 0 row with RetentionDays = 30 and deletes the 0s
  * (ClickHouse refuses UPDATE on a key column), before the TTL change and before the view returns.
  * It is planned only when 0s exist; a crash between its copy and its delete counts those rows twice.

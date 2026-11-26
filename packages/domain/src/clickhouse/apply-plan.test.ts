@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 import type { BackfillSpec } from "./backfill"
-import { expandBackfill, expandMigrationToSteps, type ExecFn } from "./apply-plan"
+import { defaultRestored, expandBackfill, expandMigrationToSteps, type ExecFn } from "./apply-plan"
 import type { ClickHouseMigration } from "./migrations"
 import { migration_0076_retention_storage } from "./migrations/0076_retention_storage"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const spec: BackfillSpec = {
 	kind: "backfill",
@@ -155,5 +155,27 @@ describe("migration 0076's plan against the cluster", () => {
 			["ALTER TABLE trace_facets_hourly ADD COLUMN", "SYSTEM START MERGES trace_facets_hourly"],
 			["ALTER TABLE trace_facets_hourly MODIFY COLUMN", "SYSTEM START MERGES trace_facets_hourly"],
 		])
+	})
+
+	it("restores each pair's DEFAULT before restarting, and lets merges restart only once it reads back", async () => {
+		const steps = await expandMigrationToSteps(migration_0076_retention_storage, "maple", clusterWith([]))
+		const restores = Arr.flatMap(steps, (step) =>
+			step.restoreBeforeRestart === undefined ? [] : [step.restoreBeforeRestart.sql],
+		)
+		expect(restores).toEqual([
+			"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+			"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+			"ALTER TABLE trace_facets_hourly MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+			"ALTER TABLE trace_facets_hourly MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+		])
+		const restore = Option.getOrThrow(
+			Arr.findFirst(steps, (step) => step.restoreBeforeRestart !== undefined).pipe(
+				Option.flatMapNullishOr((step) => step.restoreBeforeRestart),
+			),
+		)
+		expect(defaultRestored(restore, '{"default_expression":"30"}\n')).toBe(true)
+		// No column: the key ALTER never ran, so nothing can store its 0.
+		expect(defaultRestored(restore, "")).toBe(true)
+		expect(defaultRestored(restore, '{"default_expression":""}\n')).toBe(false)
 	})
 })

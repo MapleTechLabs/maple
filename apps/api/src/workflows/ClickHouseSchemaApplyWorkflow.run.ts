@@ -33,6 +33,7 @@ import {
 	selectFeatureRevisionsSql,
 	sortingKeyMigrationColumns,
 	createSchemaFeaturesTableSql,
+	defaultRestored,
 	createSchemaMigrationsTableSql,
 	type ActualTable,
 	type ApplyStep,
@@ -570,22 +571,56 @@ const reconcileSchemaSnapshot = (
 		})
 	})
 
+/** A failed step left merges stopped because its key column's DEFAULT could not be restored. */
+export class SchemaApplyMergesLeftStoppedError extends Schema.TaggedError<SchemaApplyMergesLeftStoppedError>()(
+	"@maple/api/workflows/SchemaApplyMergesLeftStoppedError",
+	{ message: Schema.String },
+) {}
+
+/** What a planned step's failure cleanup runs, each through the run fence. */
+export type MergeCleanupStep = "restore-default" | "verify-default" | "restart-merges"
+
 /**
  * Runs one planned step. When it fails inside a STOP/START MERGES pair, merges restart first and the
- * step's own failure is what the run reports. Skipped when the run was lost: an interrupted run
- * replays the step with merges still stopped, and a superseded one must not restart merges a newer
- * run may have stopped. `restartMerges` goes through the run fence for the same reason.
+ * step's own failure is what the run reports. A pair that sets a key column's DEFAULT has it set
+ * again and read back first; unconfirmed, merges stay stopped (a merge would store 0) and the run
+ * fails with the step's message and the statements to run by hand. Skipped when the run was lost:
+ * an interrupted run replays the step with merges still stopped, and a superseded one must not
+ * restart merges a newer run may have stopped. `cleanup` goes through the run fence for the same reason.
  */
-export const runPlannedStep = <A, E, R, B, E2, R2>(
-	step: Pick<ApplyStep, "onFailure">,
+export const runPlannedStep = <A, E, R, E2, R2>(
+	step: Pick<ApplyStep, "onFailure" | "restoreBeforeRestart">,
 	run: Effect.Effect<A, E, R>,
-	restartMerges: (sql: string) => Effect.Effect<B, E2, R2>,
-): Effect.Effect<A, E, R | R2> => {
+	cleanup: (label: MergeCleanupStep, sql: string) => Effect.Effect<string, E2, R2>,
+): Effect.Effect<A, E | SchemaApplyMergesLeftStoppedError, R | R2> => {
 	const restart = step.onFailure
 	if (restart === undefined) return run
+	const restore = step.restoreBeforeRestart
+	const confirmed =
+		restore === undefined
+			? Effect.succeed(true)
+			: Effect.exit(cleanup("restore-default", restore.sql)).pipe(
+					Effect.andThen(cleanup("verify-default", restore.verifySql)),
+					Effect.map((response) => defaultRestored(restore, response)),
+					Effect.catchCause(() => Effect.succeed(false)),
+				)
 	return run.pipe(
-		Effect.onError((cause) =>
-			runWasLost(cause) ? Effect.void : Effect.asVoid(Effect.exit(restartMerges(restart))),
+		Effect.catchCauseIf(
+			(cause) => !runWasLost(cause),
+			(cause) =>
+				Effect.flatMap(
+					confirmed,
+					(restored): Effect.Effect<never, E | SchemaApplyMergesLeftStoppedError, R2> =>
+						restored
+							? Effect.exit(cleanup("restart-merges", restart)).pipe(
+									Effect.andThen(Effect.failCause(cause)),
+								)
+							: Effect.fail(
+									new SchemaApplyMergesLeftStoppedError({
+										message: `${causeMessage(cause)}\n${restore?.recovery ?? ""}`,
+									}),
+								),
+				),
 		),
 	)
 }
@@ -603,7 +638,11 @@ export const runClickHouseSchemaApply = (
 	payload: SchemaApplyWorkflowPayload,
 ): Effect.Effect<
 	SchemaApplyWorkflowResult,
-	SchemaApplyPayloadError | SchemaApplyConfigError | ClickHouseExecError | DatabaseError,
+	| SchemaApplyPayloadError
+	| SchemaApplyConfigError
+	| ClickHouseExecError
+	| DatabaseError
+	| SchemaApplyMergesLeftStoppedError,
 	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
@@ -760,9 +799,9 @@ const applySchema = (fence: RunFence) =>
 									),
 									STEP,
 								),
-								(sql) =>
+								(label, sql) =>
 									durableStep(
-										`m${migration.version}:${s.name}:restart-merges`,
+										`m${migration.version}:${s.name}:${label}`,
 										fencedExec(fence, cfg, { phase: "restarting merges" }, sql),
 										STEP,
 									),
@@ -847,9 +886,9 @@ const applySchema = (fence: RunFence) =>
 										),
 										STEP,
 									),
-									(sql) =>
+									(label, sql) =>
 										durableStep(
-											`performance-m${migration.version}:${migrationStep.name}:restart-merges`,
+											`performance-m${migration.version}:${migrationStep.name}:${label}`,
 											fencedExec(fence, cfg, { phase: "restarting merges" }, sql),
 											STEP,
 										),
