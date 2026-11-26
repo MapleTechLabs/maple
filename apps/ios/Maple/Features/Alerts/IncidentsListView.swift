@@ -30,6 +30,9 @@ final class IncidentsListModel {
 	private var pagingMe: Set<String> = []
 
 	private let api: any MapleAPI
+	/// One read, no paging: this many open incidents paging one person at once
+	/// is past the point where a list helps.
+	private static let pagingLimit = 100
 
 	init(api: any MapleAPI, session: SessionController) {
 		self.api = api
@@ -45,7 +48,7 @@ final class IncidentsListModel {
 		async let rulesTask = api.alertRules(limit: 100, cursor: nil)
 		// Decoration in the failure sense: without it the rows still list, they
 		// just do not lead with what is paging this person.
-		async let pagingTask = api.alertIncidentsPagingMe(limit: 50)
+		async let pagingTask = api.alertIncidentsPagingMe(limit: Self.pagingLimit)
 		let filter = self.filter
 		let page: Page<AlertIncident>? =
 			filter == .pagedToMe ? nil : try await api.alertIncidents(status: status, ruleId: nil, limit: 30, cursor: nil)
@@ -175,8 +178,10 @@ struct IncidentsListView: View {
 							if card.id != section.cards.last?.id || (isLast && model.canLoadMore) { Hairline() }
 						}
 						if isLast, model.canLoadMore {
+							// Keyed on the load, so the next page is asked for again after
+							// a reload put the first page back under the same skeleton.
 							SkeletonList(rowHeight: 84, rows: 1)
-								.task { await model.loadMore() }
+								.task(id: model.loader.generation) { await model.loadMore() }
 						}
 					}
 				}

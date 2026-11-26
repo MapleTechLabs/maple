@@ -349,7 +349,7 @@ struct AcknowledgeButton: View {
 		}
 		.buttonStyle(.plain)
 		.disabled(isPending || isBusy)
-		.accessibilityLabel("Acknowledge \(ruleName)")
+		.accessibilityLabel(isPending ? "Acknowledging \(ruleName)" : "Acknowledge \(ruleName)")
 	}
 }
 

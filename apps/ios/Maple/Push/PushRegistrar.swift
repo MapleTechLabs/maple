@@ -207,7 +207,7 @@ final class PushRegistrar: NSObject {
 	/// not is the one outcome worse than no button at all.
 	func acknowledgeFromNotification(incidentId: String, organizationId: String?) async {
 		guard let api = opener?.session?.api else {
-			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
+			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId, confirmed: true)
 			return
 		}
 		let scoped = organizationId.map { api.scoped(to: $0) } ?? api
@@ -218,7 +218,7 @@ final class PushRegistrar: NSObject {
 		let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<BannerAcknowledgement, Never>) in
 			// Whichever finishes first answers; the other finds the answer given.
 			let first = FirstAnswer(continuation)
-			Task { @MainActor in
+			let request = Task { @MainActor in
 				do {
 					_ = try await IncidentResponder.send(
 						.acknowledge, on: incidentId, api: scoped, surface: .notification
@@ -232,7 +232,11 @@ final class PushRegistrar: NSObject {
 			}
 			Task { @MainActor in
 				try? await Task.sleep(for: Self.bannerActionDeadline)
-				first.give(.failed)
+				// Stop the request rather than leave it to land after the banner has
+				// said otherwise. It may still have reached the server, which is why
+				// this outcome is worded as not known.
+				request.cancel()
+				first.give(.unconfirmed)
 			}
 		}
 		switch outcome {
@@ -243,14 +247,19 @@ final class PushRegistrar: NSObject {
 			// there is nothing to warn about either.
 			break
 		case .failed:
-			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
+			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId, confirmed: true)
+		case .unconfirmed:
+			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId, confirmed: false)
 		}
 	}
 
 	private enum BannerAcknowledgement: Sendable {
 		case acknowledged
 		case nothingToAnswer
+		/// The server refused, or could not be reached.
 		case failed
+		/// The deadline passed with the request still out.
+		case unconfirmed
 	}
 
 	private static let bannerActionDeadline: Duration = .seconds(20)
@@ -269,10 +278,14 @@ final class PushRegistrar: NSObject {
 		}
 	}
 
-	private func notifyAcknowledgeFailed(incidentId: String, organizationId: String?) async {
+	/// `confirmed` is false when the request ran out of time: it may have landed.
+	private func notifyAcknowledgeFailed(incidentId: String, organizationId: String?, confirmed: Bool) async {
 		let content = UNMutableNotificationContent()
-		content.title = "Couldn't acknowledge"
-		content.body = "The page is still unanswered. Open the incident to try again."
+		content.title = confirmed ? "Couldn't acknowledge" : "Acknowledgement not confirmed"
+		content.body =
+			confirmed
+			? "The page is still unanswered. Open the incident to try again."
+			: "Maple did not hear back in time. Open the incident to check."
 		content.sound = .default
 		content.interruptionLevel = .timeSensitive
 		// The same keys a page carries, so a tap opens the incident it is about.
