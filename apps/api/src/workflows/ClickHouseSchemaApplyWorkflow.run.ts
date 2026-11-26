@@ -135,15 +135,18 @@ const causeMessage = (cause: Cause.Cause<unknown>): string => {
 	return error instanceof Error ? error.message : String(error)
 }
 
-/** An optional step may be skipped, but a lost fence must still stop the run. */
-const isSkippable = <E>(cause: Cause.Cause<E>): boolean =>
-	!Cause.hasInterrupts(cause) &&
-	!Arr.some(
+/** The run stopped owning the cluster: interrupted (it replays) or superseded by a newer run. */
+const runWasLost = <E>(cause: Cause.Cause<E>): boolean =>
+	Cause.hasInterrupts(cause) ||
+	Arr.some(
 		cause.reasons,
 		(reason) =>
 			Cause.isFailReason(reason) &&
 			Predicate.isTagged(reason.error, "@maple/api/workflows/SchemaApplyRunSupersededError"),
 	)
+
+/** An optional step may be skipped, but a lost fence must still stop the run. */
+const isSkippable = <E>(cause: Cause.Cause<E>): boolean => !runWasLost(cause)
 
 /**
  * Optional feature metadata must never decide whether the correctness schema
@@ -569,8 +572,9 @@ const reconcileSchemaSnapshot = (
 
 /**
  * Runs one planned step. When it fails inside a STOP/START MERGES pair, merges restart first and the
- * step's own failure is what the run reports. Skipped on an interrupt: the run replays and resumes
- * the step with merges still stopped.
+ * step's own failure is what the run reports. Skipped when the run was lost: an interrupted run
+ * replays the step with merges still stopped, and a superseded one must not restart merges a newer
+ * run may have stopped. `restartMerges` goes through the run fence for the same reason.
  */
 export const runPlannedStep = <A, E, R, B, E2, R2>(
 	step: Pick<ApplyStep, "onFailure">,
@@ -581,7 +585,7 @@ export const runPlannedStep = <A, E, R, B, E2, R2>(
 	if (restart === undefined) return run
 	return run.pipe(
 		Effect.onError((cause) =>
-			Cause.hasInterrupts(cause) ? Effect.void : Effect.asVoid(Effect.exit(restartMerges(restart))),
+			runWasLost(cause) ? Effect.void : Effect.asVoid(Effect.exit(restartMerges(restart))),
 		),
 	)
 }
@@ -759,7 +763,7 @@ const applySchema = (fence: RunFence) =>
 								(sql) =>
 									durableStep(
 										`m${migration.version}:${s.name}:restart-merges`,
-										execClickHouse(cfg, sql),
+										fencedExec(fence, cfg, { phase: "restarting merges" }, sql),
 										STEP,
 									),
 							),
@@ -846,7 +850,7 @@ const applySchema = (fence: RunFence) =>
 									(sql) =>
 										durableStep(
 											`performance-m${migration.version}:${migrationStep.name}:restart-merges`,
-											execClickHouse(cfg, sql),
+											fencedExec(fence, cfg, { phase: "restarting merges" }, sql),
 											STEP,
 										),
 								),

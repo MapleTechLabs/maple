@@ -29,6 +29,7 @@ import {
 	loadOptionalFeatureState,
 	runClickHouseSchemaApply,
 	runPlannedStep,
+	SchemaApplyRunSupersededError,
 	snapshotDiffStatements,
 	withRunHeartbeat,
 } from "./ClickHouseSchemaApplyWorkflow.run"
@@ -417,7 +418,7 @@ describe("runPlannedStep", () => {
 		}),
 	)
 
-	it.effect("keeps the step's failure when the restart fails, and restarts nothing on an interrupt", () =>
+	it.effect("keeps the step's failure when the restart fails, and restarts nothing for a lost run", () =>
 		Effect.gen(function* () {
 			const restarts: string[] = []
 			const step = { onFailure: "SYSTEM START MERGES t" }
@@ -434,6 +435,26 @@ describe("runPlannedStep", () => {
 			)
 			const interrupted = yield* Effect.exit(runPlannedStep(step, Effect.interrupt, restart))
 			assert.isTrue(Exit.hasInterrupts(interrupted))
+			assert.deepStrictEqual(restarts, ["SYSTEM START MERGES t"])
+
+			// A newer run owns the cluster and may have merges stopped for its own key change.
+			const superseded = yield* Effect.exit(
+				runPlannedStep(
+					step,
+					Effect.fail(
+						new SchemaApplyRunSupersededError({
+							message: "run reclaimed",
+							orgId: Schema.decodeSync(OrgId)("org_superseded"),
+							runId: "run-old",
+						}),
+					),
+					restart,
+				),
+			)
+			assert.deepStrictEqual(
+				Option.map(Exit.findErrorOption(superseded), (error) => error._tag),
+				Option.some("@maple/api/workflows/SchemaApplyRunSupersededError"),
+			)
 			assert.deepStrictEqual(restarts, ["SYSTEM START MERGES t"])
 		}),
 	)
