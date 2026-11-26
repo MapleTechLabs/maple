@@ -92,11 +92,10 @@ describe("the session retention note", () => {
 	const funnelFrom = async (days: number) =>
 		markdown(await call("query_funnel", { steps_json: steps, start_time: daysAgo(days), country: "DE" }))
 
-	it("names the org's own period, and stays quiet inside it", async () => {
-		await setRetention({ sessions: 90 })
-		// Sixty days back is past the default 30 and inside what this org keeps.
-		expect(await funnelFrom(60)).not.toContain("Sessions are kept")
-		expect(await funnelFrom(120)).toContain("Sessions are kept 90 days")
+	it("stays quiet inside the period, for an org that changed another signal's", async () => {
+		await setRetention({ traces: 90 })
+		expect(await funnelFrom(20)).not.toContain("Sessions are kept")
+		expect(await funnelFrom(60)).toContain("Sessions are kept 30 days")
 	})
 
 	it("says 30 days for an org that set no period", async () => {

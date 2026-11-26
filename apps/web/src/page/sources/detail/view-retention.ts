@@ -1,5 +1,5 @@
 import type { V2RetentionPolicy, V2Source } from "@maple/domain/http/v2"
-import type { RetentionSignal } from "@maple/domain/retention"
+import { isAdjustableRetentionSignal, type RetentionSignal } from "@maple/domain/retention"
 import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,6 +10,7 @@ import { skeletonList } from "@maple/views/ui/skeleton"
 import { typography } from "@maple/views/ui/typography"
 import {
 	changeSentence,
+	FIXED_PERIOD_NOTE,
 	periodLabel,
 	periodOptions,
 	READ_ONLY_NOTE,
@@ -41,7 +42,10 @@ const rowDescription = (
 	const edit = { _tag: "Source", sourceId, days: draft[signal] } as const
 	const sentence = changeSentence(policy, signal, { from, to, edit }, clock)
 	return sentence === null
-		? typography(h, { size: "sm", tone: "muted", className: "font-prose" }, [SIGNAL_DESCRIPTIONS[signal]])
+		? typography(h, { size: "sm", tone: "muted", className: "font-prose" }, [
+				SIGNAL_DESCRIPTIONS[signal],
+				...(isAdjustableRetentionSignal(signal) ? [] : [FIXED_PERIOD_NOTE]),
+			])
 		: typography(h, { size: "sm", tone: "foreground", className: "font-prose" }, [sentence])
 }
 
@@ -63,29 +67,35 @@ const signalRow = (
 		description: rowDescription(h, policy, stored, draft, signal, clock, model.sourceId ?? ""),
 		className: "p-4",
 		control: [
-			gatedControl(h, { grants: model.grants ?? [] }, "retention:manage", (isDisabled) =>
-				nativeSelect(
-					h,
-					{
-						size: "sm",
-						className: "w-48",
-						value: own === null ? INHERIT : String(own),
-						isDisabled: isDisabled || form.isSaving,
-						attributes: [
-							h.Id(id),
-							h.AriaDescribedBy(`${id}-description`),
-							h.OnChange((value) => Message.ChangedRetentionPeriod({ signal, value })),
-						],
-					},
-					[
-						nativeOption(
-							INHERIT,
-							`Organization (${periodLabel(policy.organization.days[signal])})`,
+			!isAdjustableRetentionSignal(signal)
+				? typography(h, { size: "sm", tone: "muted", attributes: [h.Id(id)] }, [
+						periodLabel(policy.organization.days[signal]),
+					])
+				: gatedControl(h, { grants: model.grants ?? [] }, "retention:manage", (isDisabled) =>
+						nativeSelect(
+							h,
+							{
+								size: "sm",
+								className: "w-48",
+								value: own === null ? INHERIT : String(own),
+								isDisabled: isDisabled || form.isSaving,
+								attributes: [
+									h.Id(id),
+									h.AriaDescribedBy(`${id}-description`),
+									h.OnChange((value) => Message.ChangedRetentionPeriod({ signal, value })),
+								],
+							},
+							[
+								nativeOption(
+									INHERIT,
+									`Organization (${periodLabel(policy.organization.days[signal])})`,
+								),
+								...Arr.map(periodOptions(), (option) =>
+									nativeOption(option.value, option.label),
+								),
+							],
 						),
-						...Arr.map(periodOptions(), (option) => nativeOption(option.value, option.label)),
-					],
-				),
-			),
+					),
 		],
 	})
 }
