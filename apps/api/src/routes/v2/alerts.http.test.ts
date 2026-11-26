@@ -2643,7 +2643,12 @@ describe("v2 alerts over HTTP", () => {
 		expect(pair).toContain(checkout.on_call_now.user_id)
 		expect(Arr.filter(pair, (id) => id !== checkout.on_call_now.user_id)).toEqual([checkout.next.user_id])
 		expect(checkout.next.starts_at).toBe(checkout.on_call_now.ends_at)
-		// The shift that is running keeps its real start, not the moment of the read.
+		// The stretch that is running keeps its real start, a handoff on the hour some time ago,
+		// not the millisecond of the read that a render clipped to "now" would report.
+		expect(checkout.on_call_now.starts_at).toMatch(/:00:00\.000Z$/)
+		expect(Date.parse(checkout.on_call_now.starts_at)).toBeLessThan(
+			Date.parse(overview.body.generated_at),
+		)
 		expect(checkout.shifts[0].starts_at).toBe(checkout.on_call_now.starts_at)
 		// The window is 14 days, and its last shift is cut where the window ends.
 		expect(checkout.shifts.length).toBeGreaterThanOrEqual(2)
