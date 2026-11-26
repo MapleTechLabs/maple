@@ -34,6 +34,7 @@ import { MobilePushService } from "@maple/backend/services/push/MobilePushServic
 import { Env } from "@maple/backend/platform/Env"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { buildAlertEmailContent } from "./alert-email"
+import { formatObservedSummary, signalCarriesDetail, signalDisplayOf, truncate } from "./alert-formatting"
 import { PUSH_CHANNEL } from "./alert-escalation-runs"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
@@ -71,6 +72,25 @@ const FailureMessages = {
 } as const
 
 export const LAST_RESORT_SUBJECT_PREFIX = "Nobody on call was reached: "
+
+/**
+ * A page's banner: who it is for in the title, what breached in the body, so the lock screen is
+ * enough to decide whether to acknowledge.
+ */
+export const renderPagePush = (context: ChatAlertCardInput["context"]): { title: string; body: string } => {
+	const severity = context.severity === "critical" ? "Critical" : "Warning"
+	const observed = formatObservedSummary(context)
+	// An uptime error, an anomaly or a check's own reason is already a sentence; a metric needs its name.
+	const saysItself =
+		context.signalType === "uptime" ||
+		context.signalType === "anomaly" ||
+		(signalCarriesDetail(context.signalType) && context.detail != null)
+	const breach = saysItself ? observed : `${signalDisplayOf(context).label} ${observed}`
+	return {
+		title: `You are paged · ${truncate(context.ruleName, 60)}`,
+		body: `${severity}. ${/[.!?]$/u.test(breach) ? breach : `${breach}.`}`,
+	}
+}
 
 /** The stored step payload, read leniently: only what the email and the card show. */
 const MemberPayload = Schema.Struct({
@@ -335,8 +355,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 						userId: row.userId,
 						incidentId: row.incidentId,
 						ruleId: context.ruleId,
-						title: `You are paged · ${context.ruleName}`,
-						body: `${context.severity === "critical" ? "Critical" : "Warning"} incident, unacknowledged. Open it to acknowledge.`,
+						...renderPagePush(context),
 						linkUrl: input.linkUrl,
 						collapseId: `page:${row.incidentId}`,
 					})

@@ -320,13 +320,28 @@ const makeHarness = (
 			}),
 		)
 
-	const request = async (method: string, path: string, token: string, body?: unknown) => {
+	const bootstrapSession = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* AuthService
+				return (yield* service.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
+	const request = async (
+		method: string,
+		path: string,
+		token: string,
+		body?: unknown,
+		headers?: Record<string, string>,
+	) => {
 		const response = await handler(
 			new Request(`http://maple.test${path}`, {
 				method,
 				headers: {
 					authorization: `Bearer ${token}`,
 					...(body !== undefined ? { "content-type": "application/json" } : undefined),
+					...headers,
 				},
 				body: body === undefined ? undefined : JSON.stringify(body),
 			}),
@@ -338,6 +353,7 @@ const makeHarness = (
 
 	return {
 		bootstrapKey,
+		bootstrapSession,
 		request,
 		testDb,
 		dispose: async () => {
@@ -1769,6 +1785,8 @@ describe("v2 alerts over HTTP", () => {
 			pass_count: 2,
 			steps_sent: 1,
 			next_step_at: "2026-11-06T14:25:00.000Z",
+			// The next step only notifies a destination.
+			next_step_people: [],
 		}
 		expect(withRun.escalation).toEqual(expected)
 
@@ -1791,6 +1809,179 @@ describe("v2 alerts over HTTP", () => {
 		)
 		const paused = await harness.request("GET", `/v2/alerts/incidents/${withRun.id}`, key.secret)
 		expect(paused.body.escalation).toMatchObject({ status: "acknowledged", next_step_at: null })
+
+		await harness.dispose()
+	})
+
+	/** Open incidents on the org's first rule, one per id. */
+	const insertOpenIncidents = (
+		harness: ReturnType<typeof makeHarness>,
+		org: string,
+		ids: ReadonlyArray<string>,
+	) =>
+		executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				created_at, updated_at
+			)
+			select v.id, rules.org_id, rules.id, v.id, 'Checkout error rate', v.id, 'error_rate',
+				'critical', 'open', 'gt', 0.05, now(), now(), null, v.id, now(), now()
+			from (values ${Arr.join(
+				Arr.map(ids, (id) => `('${id}')`),
+				", ",
+			)}) as v(id)
+			cross join lateral (
+				select id, org_id from alert_rules where org_id = '${org}' limit 1
+			) as rules`,
+		)
+
+	it("names who the next escalation step would page, and nobody once the incident is acknowledged", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		await createWebhookAndRule(harness, key.secret)
+		const incidentId = "00000000-0000-4000-8000-0000000000f1"
+		await insertOpenIncidents(harness, "org_alerts_e2e", [incidentId])
+		const steps = JSON.stringify([
+			{ targets: [{ type: "user", userId: "user_first" }], waitMinutes: 5 },
+			{
+				targets: [
+					{ type: "user", userId: "user_next" },
+					{ type: "destination", destinationId: "00000000-0000-4000-8000-0000000000d1" },
+					{ type: "user", userId: "user_next" },
+				],
+				waitMinutes: 5,
+			},
+		])
+		await executeSql(
+			harness.testDb,
+			`insert into alert_escalation_runs (
+				id, org_id, incident_id, chain_id, chain_name, severity, steps_json, repeat_count,
+				step_index, pass_index, next_step_at, status, payload_json, steps_sent, created_at, updated_at
+			) values ('00000000-0000-4000-8000-0000000000f2', 'org_alerts_e2e', '${incidentId}',
+				'00000000-0000-4000-8000-0000000000e2', 'Checkout on-call', 'critical', '${steps}'::jsonb, 0,
+				1, 0, now() + interval '5 minutes', 'active', '{}'::jsonb, 1, now(), now())`,
+		)
+
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		expect(list.body.data[0].escalation.next_step_people).toEqual([{ user_id: "user_next", name: null }])
+		const retrieved = await harness.request(
+			"GET",
+			`/v2/alerts/incidents/${list.body.data[0].id}`,
+			key.secret,
+		)
+		expect(retrieved.body.escalation).toMatchObject({
+			step: 2,
+			next_step_people: [{ user_id: "user_next", name: null }],
+		})
+
+		const acked = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${list.body.data[0].id}/acknowledge`,
+			key.secret,
+		)
+		expect(acked.body.escalation).toMatchObject({ next_step_at: null, next_step_people: [] })
+
+		await harness.dispose()
+	})
+
+	it("lists the incidents that paged the caller", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:read", "alerts:write"])
+		await createWebhookAndRule(harness, key.secret)
+		const mine = "00000000-0000-4000-8000-000000000a01"
+		const theirs = "00000000-0000-4000-8000-000000000a02"
+		const nobody = "00000000-0000-4000-8000-000000000a03"
+		await insertOpenIncidents(harness, "org_alerts_e2e", [mine, theirs, nobody])
+		// Two channels for the caller on one incident, and someone else's page on another.
+		await executeSql(
+			harness.testDb,
+			`insert into alert_member_notifications (
+				id, org_id, incident_id, run_id, user_id, channel, status, scheduled_at, payload_json,
+				dedupe_key, created_at, updated_at
+			) values
+				('page-1', 'org_alerts_e2e', '${mine}', 'run-1', 'user_alerts_e2e', 'email', 'sent', now(), '{}'::jsonb, 'page-1', now(), now()),
+				('page-2', 'org_alerts_e2e', '${mine}', 'run-1', 'user_alerts_e2e', 'push', 'sent', now(), '{}'::jsonb, 'page-2', now(), now()),
+				('page-3', 'org_alerts_e2e', '${theirs}', 'run-2', 'user_someone_else', 'email', 'sent', now(), '{}'::jsonb, 'page-3', now(), now())`,
+		)
+
+		const all = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		expect(all.body.data).toHaveLength(3)
+		const paged = await harness.request("GET", "/v2/alerts/incidents?status=open&paged=me", key.secret)
+		expect(paged.status).toBe(200)
+		expect(Arr.map(paged.body.data, (incident: { dedupe_key: string }) => incident.dedupe_key)).toEqual([
+			mine,
+		])
+
+		const malformed = await harness.request("GET", "/v2/alerts/incidents?paged=everyone", key.secret)
+		expect(malformed.status).toBe(400)
+
+		await harness.dispose()
+	})
+
+	it("lets only a role that responds to incidents resolve one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		// Reads everything and manages nothing, as the analyst preset does.
+		const reader = await harness.bootstrapKey(["alerts:write"], ["telemetry:read"])
+		const responder = await harness.bootstrapKey(
+			["alerts:write"],
+			["telemetry:read", "incidents:respond"],
+		)
+		await createWebhookAndRule(harness, key.secret)
+		await insertOpenIncidents(harness, "org_alerts_e2e", ["00000000-0000-4000-8000-000000000b01"])
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		const openId: string = list.body.data[0]?.id ?? ""
+
+		const refused = await harness.request("POST", `/v2/alerts/incidents/${openId}/resolve`, reader.secret)
+		expect(refused.status).toBe(403)
+		const stillOpen = await harness.request("GET", `/v2/alerts/incidents/${openId}`, key.secret)
+		expect(stillOpen.body.status).toBe("open")
+
+		const resolved = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/resolve`,
+			responder.secret,
+		)
+		expect(resolved.status).toBe(200)
+		expect(resolved.body.status).toBe("resolved")
+
+		await harness.dispose()
+	})
+
+	it("records an acknowledgement from the mobile app as mobile, and a plain session as web", async () => {
+		const harness = makeHarness()
+		const session = await harness.bootstrapSession()
+		await createWebhookAndRule(harness, session)
+		await insertOpenIncidents(harness, "default", ["00000000-0000-4000-8000-000000000c01"])
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", session)
+		const openId: string = list.body.data[0]?.id ?? ""
+
+		const fromPhone = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/acknowledge`,
+			session,
+			undefined,
+			{ "x-maple-client": "ios" },
+		)
+		expect(fromPhone.status).toBe(200)
+		expect(fromPhone.body.acknowledged_via).toBe("mobile")
+
+		await harness.request("POST", `/v2/alerts/incidents/${openId}/unacknowledge`, session)
+		const fromBrowser = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/acknowledge`,
+			session,
+		)
+		expect(fromBrowser.body.acknowledged_via).toBe("web")
+
+		const events = await harness.request("GET", `/v2/alerts/incidents/${openId}/events`, session)
+		expect(Arr.map(events.body.data, (event: { source: string }) => event.source)).toEqual([
+			"mobile",
+			"web",
+			"web",
+		])
 
 		await harness.dispose()
 	})

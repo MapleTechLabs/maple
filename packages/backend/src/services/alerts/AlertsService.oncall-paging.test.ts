@@ -798,8 +798,8 @@ describe("escalation pages the on-call", () => {
 				yield* ticks(alerts, 10)
 
 				assert.deepStrictEqual(
-					Arr.map(memberPages, (page) => [page.userId, page.title]),
-					[[ben, "You are paged · Checkout error rate"]],
+					Arr.map(memberPages, (page) => [page.userId, page.title, page.body]),
+					[[ben, "You are paged · Checkout error rate", "Critical. Error Rate 1000% > 500%."]],
 				)
 				const pushRows = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "push")
 				assert.deepStrictEqual(

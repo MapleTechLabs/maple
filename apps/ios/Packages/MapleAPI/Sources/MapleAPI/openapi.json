@@ -317,6 +317,7 @@
               "chain_id": "esc_gQtGH2s65G6a7sJmuayXL6",
               "chain_name": "Checkout on-call",
               "next_step_at": null,
+              "next_step_people": [],
               "pass": 1,
               "pass_count": 2,
               "status": "acknowledged",
@@ -360,7 +361,7 @@
           },
           "acknowledged_via": {
             "$ref": "#/components/schemas/_maple_AlertIncidentAckSource",
-            "description": "Where the acknowledgement came from (`web`, `api`, `mcp`, `slack`, `discord`), or `null` when not acknowledged.",
+            "description": "Where the acknowledgement came from (`web`, `api`, `mcp`, `slack`, `discord`, or `mobile` for the Maple app and its widgets), or `null` when not acknowledged.",
             "examples": [
               "slack"
             ]
@@ -561,6 +562,13 @@
             "description": "When the next step pages, or `null` while paused or once the run has ended.",
             "type": "string"
           },
+          "next_step_people": {
+            "description": "Who the next step would page if it ran now: the people it names and whoever its on-call schedules have on call. Empty while `next_step_at` is `null`, and when the step only notifies destinations or its schedules have nobody on call.",
+            "items": {
+              "$ref": "#/components/schemas/AlertIncidentActor"
+            },
+            "type": "array"
+          },
           "pass": {
             "description": "The pass the next step belongs to, from 1.",
             "examples": [
@@ -618,7 +626,8 @@
           "step_count",
           "pass",
           "pass_count",
-          "steps_sent"
+          "steps_sent",
+          "next_step_people"
         ],
         "title": "Alert incident escalation",
         "type": "object"
@@ -7404,7 +7413,8 @@
           "api",
           "mcp",
           "slack",
-          "discord"
+          "discord",
+          "mobile"
         ],
         "title": "Alert Incident Acknowledgement Source",
         "type": "string"
@@ -8010,7 +8020,7 @@
     },
     "/v2/alerts/incidents": {
       "get": {
-        "description": "Returns your organization's alert incidents, most recently triggered first, optionally filtered by `status` or `rule_id`. Cursor-paginated. Requires the `alerts:read` scope.",
+        "description": "Returns your organization's alert incidents, most recently triggered first, optionally filtered by `status`, `rule_id`, `acknowledged` or `paged`. Cursor-paginated. Requires the `alerts:read` scope.",
         "operationId": "listAlertIncidents",
         "parameters": [
           {
@@ -8062,6 +8072,21 @@
               ],
               "examples": [
                 "false"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "paged",
+            "required": false,
+            "schema": {
+              "description": "`me` for incidents an escalation step paged the calling user for, on any channel. Combine with `status=open` for what is paging you now.",
+              "enum": [
+                "me"
+              ],
+              "examples": [
+                "me"
               ],
               "type": "string"
             }

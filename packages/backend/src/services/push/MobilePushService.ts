@@ -183,6 +183,12 @@ export interface MemberPagePush {
 	readonly collapseId: string
 }
 
+/**
+ * The notification category of a page. The iOS app registers its Acknowledge action under this
+ * exact string (`PushRegistrar.swift`); a rename on one side leaves the banner without a button.
+ */
+export const PAGE_NOTIFICATION_CATEGORY = "MAPLE_PAGE"
+
 const SEND_CONCURRENCY = 8
 /** How long a push waits on one device owner's role before sending anyway. */
 const OWNER_LOOKUP_TIMEOUT = Duration.seconds(2)
@@ -664,6 +670,9 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 								interruptionLevel: "time-sensitive",
 								priority: 10,
 								collapseId: page.collapseId,
+								category: PAGE_NOTIFICATION_CATEGORY,
+								// With the rule's other banners, as an incident push threads them.
+								threadId: page.ruleId,
 								data: {
 									maple_kind: "alert_incident",
 									maple_event: "page",

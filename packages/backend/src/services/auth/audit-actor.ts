@@ -21,6 +21,11 @@ export interface AuditActorInfo {
 	readonly label?: string
 	/** The surface the request arrived through, recorded as the entry's `source`. */
 	readonly source: AuditLogSource
+	/**
+	 * Set when the request comes from the Maple mobile app: a device credential, or a session whose
+	 * client says so. A label for what was done where, never a reason to allow anything.
+	 */
+	readonly client?: "mobile"
 }
 
 /**

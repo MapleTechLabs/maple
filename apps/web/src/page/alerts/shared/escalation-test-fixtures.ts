@@ -124,4 +124,5 @@ export const runOf = (
 					? new Date(NOW + 10 * 60_000).toISOString()
 					: null
 				: fields.nextStepAt,
+		next_step_people: [],
 	})

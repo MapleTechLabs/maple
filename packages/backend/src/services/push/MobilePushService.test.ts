@@ -565,7 +565,7 @@ describe("MobilePushService.pageMember", () => {
 		incidentId: "00000000-0000-4000-8000-0000000000a1",
 		ruleId: "00000000-0000-4000-8000-0000000000b1",
 		title: "You are paged · Checkout error rate",
-		body: "Critical incident, unacknowledged. Open it to acknowledge.",
+		body: "Critical. Error Rate 9.1% > 5%.",
 		linkUrl: "https://app.maple.test/alerts/incidents/x",
 		collapseId: "page:x",
 	}
@@ -597,6 +597,8 @@ describe("MobilePushService.pageMember", () => {
 			)
 			// Opens the incident by its public id, as an incident push does.
 			assert.match(String(sent[0]?.data?.maple_incident_id), /^inc_/)
+			// The category is what gives the banner its Acknowledge button; the thread is the rule's.
+			assert.deepStrictEqual([sent[0]?.category, sent[0]?.threadId], ["MAPLE_PAGE", page.ruleId])
 			assert.deepStrictEqual(deviceWrites, [`pushed:${ORG}:${deviceId(1)}`])
 		}).pipe(
 			Effect.provide(

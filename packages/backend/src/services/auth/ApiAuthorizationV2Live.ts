@@ -59,6 +59,10 @@ const BASIC_AUTH_ROUTE_PREFIX = "/v2/metrics/prometheus/api/v1/"
 const getOrgSelectionHeader = (headers: Record<string, string | undefined>): string | undefined =>
 	headers[ORG_SELECTION_HEADER]
 
+/** How the iOS app names itself on a session request; it only labels where an action came from. */
+const MOBILE_CLIENT_HEADER = "x-maple-client"
+const MOBILE_CLIENT_VALUE = "ios"
+
 /**
  * A protected v2 route the scope derivation cannot classify. Every group behind
  * `AuthorizationV2` is prefixed `/v2/<family>`, so this is unreachable by
@@ -191,7 +195,12 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						const label = "Device credential"
 						return yield* httpEffect.pipe(
 							provideRequestTenant(tenant),
-							Effect.provideService(CurrentAuditActor, { type: "user", label, source: "api" }),
+							Effect.provideService(CurrentAuditActor, {
+								type: "user",
+								label,
+								source: "api",
+								client: "mobile",
+							}),
 							withAuditedRead(audit, request, options, {
 								orgId: resolved.orgId,
 								actor: { type: "user", userId: resolved.userId, label },
@@ -371,7 +380,13 @@ export const ApiAuthorizationV2Live = Layer.effect(
 					yield* checkEndpointAccessV2(tenant.permissions, options, route.path)
 					return yield* httpEffect.pipe(
 						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
-						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
+						Effect.provideService(CurrentAuditActor, {
+							type: "user",
+							source: "dashboard",
+							...(request.headers[MOBILE_CLIENT_HEADER] === MOBILE_CLIENT_VALUE
+								? { client: "mobile" as const }
+								: undefined),
+						}),
 						withAuditedRead(audit, request, options, {
 							orgId: tenant.orgId,
 							actor: { type: "user", userId: tenant.userId },

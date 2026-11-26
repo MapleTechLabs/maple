@@ -36,9 +36,11 @@ import {
 	AlertDestinations,
 	AlertEscalationRuns,
 	AlertIncidents,
+	AlertMemberNotifications,
 	AlertRules,
 	type AlertIncidentRow,
 } from "@maple/db/tables"
+import type { UserId } from "@maple/primitives"
 import { Array as Arr, Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -79,6 +81,8 @@ export interface ListAlertIncidentsOptions {
 	readonly ruleId?: AlertRuleId
 	/** Open incidents only, split by whether someone has acknowledged them. */
 	readonly acknowledged?: boolean
+	/** Only incidents an escalation step paged this person for, on any channel. */
+	readonly pagedUserId?: UserId
 	readonly limit?: number
 	readonly offset?: number
 }
@@ -269,8 +273,15 @@ export class AlertReadModelsService extends Context.Service<
 				...(options.status !== undefined ? { status: options.status } : undefined),
 				...(options.ruleId !== undefined ? { ruleId: options.ruleId } : undefined),
 				...(options.acknowledged !== undefined ? { acknowledged: options.acknowledged } : undefined),
+				"maple.alert.paged_filter": options.pagedUserId !== undefined,
 			})
-			const { status, ruleId, acknowledged } = options
+			const { status, ruleId, acknowledged, pagedUserId } = options
+			const pagedIncidents =
+				pagedUserId === undefined
+					? undefined
+					: PG.from(AlertMemberNotifications)
+							.select(($) => ({ incidentId: $.incidentId }))
+							.where(($) => [$.orgId.eq(orgId), $.userId.eq(pagedUserId)])
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertIncidents)
@@ -285,6 +296,7 @@ export class AlertReadModelsService extends Context.Service<
 								: acknowledged
 									? $.acknowledgedAt.isNotNull()
 									: $.acknowledgedAt.isNull(),
+							pagedIncidents === undefined ? undefined : PG.inSubquery($.id, pagedIncidents),
 						])
 						.orderBy(["lastTriggeredAt", "desc"], ["id", "desc"])
 						.limit(options.limit ?? 100)

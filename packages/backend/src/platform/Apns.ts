@@ -59,6 +59,8 @@ export interface ApnsPush {
 	/** Deep-link and grouping data delivered to the app alongside the alert. */
 	readonly data: Record<string, string>
 	readonly threadId?: string | undefined
+	/** The notification category the app registered, which is what puts its action buttons on the banner. */
+	readonly category?: string | undefined
 	/**
 	 * `undefined` plays the default sound, an explicit `null` plays none.
 	 *
@@ -328,6 +330,7 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 						},
 						...(push.sound === null ? undefined : { sound: push.sound ?? "default" }),
 						...(push.threadId !== undefined ? { "thread-id": push.threadId } : undefined),
+						...(push.category !== undefined ? { category: push.category } : undefined),
 						...(push.interruptionLevel !== undefined
 							? { "interruption-level": push.interruptionLevel }
 							: undefined),
