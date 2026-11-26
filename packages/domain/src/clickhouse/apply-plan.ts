@@ -19,13 +19,17 @@ import {
 } from "./backfill"
 import type { ClickHouseMigration } from "./migrations"
 import {
+	dropStagingTableSql,
 	dropUnkeyedColumnSql,
 	isDropUnkeyedColumn,
 	isRepairZeroKeyColumn,
 	keyColumnProbeSql,
-	repairZeroKeyColumnSql,
+	moveStagedPartitionSql,
+	stageZeroKeyRowsSql,
+	stagedPartitionsSql,
+	stagingTableProbeSql,
 	unkeyedColumnProbeSql,
-	zeroKeyRowsProbeSql,
+	zeroKeyPartitionsSql,
 } from "./unkeyed-column"
 
 export interface ApplyStep {
@@ -110,6 +114,13 @@ const parseFirstRow = (text: string): Record<string, unknown> | null => {
 	return null
 }
 
+/** The `p` of each JSONEachRow row, as a partition id. */
+const partitionIds = (text: string): ReadonlyArray<string> =>
+	Arr.flatMap(Str.split("\n")(text), (line) => {
+		const row = decodeJsonRow(Str.trim(line))
+		return Option.isSome(row) && typeof row.value.p === "string" ? [row.value.p] : []
+	})
+
 /**
  * Expand one backfill into day-aligned chunk steps by reading the source's
  * `[min,max]` of `tsColumn`. Empty source → a single full (zero-row) step so the
@@ -177,12 +188,31 @@ export const expandMigrationToSteps = async (
 		} else if (isRepairZeroKeyColumn(stmt)) {
 			// The column is probed first: on a store before the migration it does not exist yet.
 			const keyed = parseFirstRow(await exec(keyColumnProbeSql(stmt, database))) !== null
-			const zeros = keyed ? parseFirstRow(await exec(zeroKeyRowsProbeSql(stmt, database))) : null
-			if (zeros !== null && zeros.zeros !== "0") {
-				const [copy, remove] = repairZeroKeyColumnSql(stmt, database)
+			const zeroPartitions = keyed ? partitionIds(await exec(zeroKeyPartitionsSql(stmt, database))) : []
+			const staged = parseFirstRow(await exec(stagingTableProbeSql(stmt, database))) !== null
+			if (zeroPartitions.length > 0 || staged) {
+				// Partitions holding 0s now, plus those an earlier run staged and did not move yet.
+				const stagedPartitions = staged
+					? partitionIds(await exec(stagedPartitionsSql(stmt, database)))
+					: []
+				const moves = Arr.dedupe([...zeroPartitions, ...stagedPartitions])
+				const name = `m${migration.version}:stmt${index}`
 				steps.push(
-					{ name: `m${migration.version}:stmt${index}:copy`, sql: copy, backfill: false },
-					{ name: `m${migration.version}:stmt${index}:delete`, sql: remove, backfill: false },
+					...Arr.map(stageZeroKeyRowsSql(stmt, database), (sql, step) => ({
+						name: `${name}:stage${step}`,
+						sql,
+						backfill: false,
+					})),
+					...Arr.map(moves, (partition) => ({
+						name: `${name}:move:${partition}`,
+						sql: moveStagedPartitionSql(stmt, database, partition),
+						backfill: false,
+					})),
+					{
+						name: `${name}:drop-staging`,
+						sql: dropStagingTableSql(stmt, database),
+						backfill: false,
+					},
 				)
 			}
 		} else {

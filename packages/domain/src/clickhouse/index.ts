@@ -28,6 +28,10 @@ export {
 	type RepairZeroKeyColumnSpec,
 	isDropUnkeyedColumn,
 	isRepairZeroKeyColumn,
+	dropStagingTableSql,
+	moveStagedPartitionSql,
+	stagedPartitionsSql,
+	stageZeroKeyRowsSql,
 } from "./unkeyed-column"
 export {
 	type BackfillSpec,

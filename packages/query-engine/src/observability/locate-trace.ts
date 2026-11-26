@@ -74,7 +74,7 @@ const probeWindow = Effect.fnUntraced(function* (traceId: string, window: ProbeW
 	}))
 })
 
-/** A probe past its `discovery` budget: the lookup ends as not-found instead of failing. */
+/** A probe past its `discovery` budget: the lookup ends incomplete instead of failing. */
 const OVER_BUDGET = "over-budget" as const
 
 /** `probeWindow`, with a probe that exceeded its time or memory budget reported as `OVER_BUDGET`. */
@@ -126,22 +126,38 @@ const extendBack = (
 	)
 }
 
+/**
+ * Where a lookup ended: the trace's bounds, a confirmed miss (every tier probed empty), or
+ * incomplete, when a tier probe ran past its budget before the trace was found. Incomplete is
+ * never a miss: the caller reads the whole lookback window instead.
+ */
+export type TraceLocation =
+	| { readonly _tag: "Found"; readonly bounds: TraceBounds }
+	| { readonly _tag: "Missing" }
+	| { readonly _tag: "Incomplete" }
+
+const MISSING: TraceLocation = { _tag: "Missing" }
+const INCOMPLETE: TraceLocation = { _tag: "Incomplete" }
+
 const probeTiers = (
 	traceId: string,
 	windows: ReadonlyArray<ProbeWindow>,
 	oldestMs: number,
-): Effect.Effect<Option.Option<TraceBounds>, WarehouseExecutorError, WarehouseExecutor> => {
+): Effect.Effect<TraceLocation, WarehouseExecutorError, WarehouseExecutor> => {
 	const [head, ...rest] = windows
-	if (head === undefined) return Effect.succeedNone
-	// Over budget, the older (wider) tiers would be too: the trace counts as not found.
+	if (head === undefined) return Effect.succeed(MISSING)
+	// Over budget, the older (wider) tiers would be too: stop probing, but report no miss.
 	return probeWithinBudget(traceId, head).pipe(
 		Effect.flatMap((hit) =>
 			hit === OVER_BUDGET
-				? Effect.succeedNone
+				? Effect.succeed(INCOMPLETE)
 				: Option.match(hit, {
 						onNone: () => probeTiers(traceId, rest, oldestMs),
 						onSome: (bounds) =>
-							Effect.asSome(extendBack(traceId, bounds, head.startMs, oldestMs)),
+							Effect.map(
+								extendBack(traceId, bounds, head.startMs, oldestMs),
+								(found): TraceLocation => ({ _tag: "Found", bounds: found }),
+							),
 					}),
 		),
 	)
@@ -150,7 +166,7 @@ const probeTiers = (
 /**
  * Where a trace's spans are, from `trace_index` (written with the spans, so a trace it
  * does not hold is not stored). Tiers newest first, each pruned to its own days, stopping at
- * the first that holds the trace. A tier probe past its budget ends the lookup as not found;
+ * the first that holds the trace. A tier probe past its budget ends the lookup as incomplete;
  * one past it while walking back from a found trace widens its start to `oldestMs`.
  */
 export const locateTrace = Effect.fn("Observability.locateTrace")(function* (
@@ -161,7 +177,8 @@ export const locateTrace = Effect.fn("Observability.locateTrace")(function* (
 	const found = yield* probeTiers(traceId, windows, opts.oldestMs)
 	yield* Effect.annotateCurrentSpan({
 		"maple.query.probe_tiers": windows.length,
-		"maple.query.trace_located": Option.isSome(found),
+		"maple.query.trace_located": found._tag === "Found",
+		"maple.query.trace_locate_incomplete": found._tag === "Incomplete",
 	})
 	return found
 })
