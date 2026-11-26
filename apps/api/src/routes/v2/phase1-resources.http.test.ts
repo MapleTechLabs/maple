@@ -1653,6 +1653,7 @@ describe("v2 session_replays over HTTP", () => {
 			byteSize: 100_000,
 			events: "[]",
 			isCheckpoint: seq % 20 === 0 ? 1 : 0,
+			retentionDays: 30,
 		}))
 
 		/** Serves rows honouring the ChunkSeq predicates + LIMIT/OFFSET in the SQL. */
