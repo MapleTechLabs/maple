@@ -72,6 +72,7 @@ const IOS_OPERATIONS = [
 	"listMobileDevices",
 	"registerMobileDevice",
 	"unregisterMobileDevice",
+	"sendMobileTestPage",
 	"registerLiveActivity",
 	"endLiveActivity",
 	"mintWidgetCredential",

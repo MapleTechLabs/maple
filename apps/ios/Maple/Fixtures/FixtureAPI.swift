@@ -959,6 +959,12 @@ struct FixtureAPI: MapleAPI {
 		return []
 	}
 
+	/// One phone reached. Nothing arrives: fixture mode has no server to send it.
+	func sendTestPage() async throws -> TestPageResult {
+		try await pause()
+		return TestPageResult(configured: true, sent: 1)
+	}
+
 	func registerLiveActivity(
 		deviceToken: String,
 		incidentId: String,

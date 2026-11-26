@@ -81,7 +81,73 @@ public struct DeviceRegistration: Hashable, Sendable {
 	}
 }
 
+/// What a test page came to: how many of the caller's phones it was sent to.
+public struct TestPageResult: Hashable, Sendable {
+	/// False on a deployment without push credentials: nothing was tried.
+	public let configured: Bool
+	public let sent: Int
+	public let failed: Int
+	/// Phones the push platform no longer knows, dropped by the server.
+	public let unregistered: Int
+
+	public init(configured: Bool, sent: Int, failed: Int = 0, unregistered: Int = 0) {
+		self.configured = configured
+		self.sent = sent
+		self.failed = failed
+		self.unregistered = unregistered
+	}
+
+	public enum Outcome: String, Hashable, Sendable {
+		case sent
+		case noPhone = "no_phone"
+		/// A phone was registered, and the push platform says it is gone.
+		case phoneGone = "phone_gone"
+		case notConfigured = "not_configured"
+		case failed
+	}
+
+	/// One phone reached counts as sent, whatever happened to the others.
+	public var outcome: Outcome {
+		if !configured { return .notConfigured }
+		if sent > 0 { return .sent }
+		// A dead registration is not "no phone": the app is installed and allowed, its row is stale.
+		if unregistered > 0 { return .phoneGone }
+		return failed > 0 ? .failed : .noPhone
+	}
+
+	/// The line under the button once the request has answered.
+	public var message: String {
+		switch outcome {
+		// Counted, never "this phone": the answer does not say which phones took it.
+		case .sent: sent > 1 ? "Sent to \(sent) phones." : "Sent to 1 phone. It should arrive in a few seconds."
+		case .noPhone: "No phone is registered for you here. Open Maple on your phone and allow notifications."
+		case .phoneGone: "The phone registered for you no longer accepts pages. Register it again, then send another test."
+		case .notConfigured: "Push is not set up on this deployment."
+		case .failed: Self.failureMessage
+		}
+	}
+
+	/// The server found a phone gone, or none at all: this phone may be the one it
+	/// stopped pushing to, which only a look at the registered devices can tell.
+	public var mayHaveLostThisPhone: Bool {
+		configured && (unregistered > 0 || outcome == .noPhone)
+	}
+
+	/// Also the line for a request that never answered.
+	public static let failureMessage = "The test page could not be sent."
+}
+
 extension MapleClient {
+	/// A page with nothing behind it, to the caller's own phones in this organization.
+	public func sendTestPage() async throws -> TestPageResult {
+		try await mapping {
+			let page = try await client.sendMobileTestPage(.init()).ok.body.json
+			return TestPageResult(
+				configured: page.configured, sent: page.sent, failed: page.failed, unregistered: page.unregistered
+			)
+		}
+	}
+
 	public func registerDevice(_ registration: DeviceRegistration) async throws -> MobileDevice {
 		try await mapping {
 			let output = try await client.registerMobileDevice(

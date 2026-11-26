@@ -192,6 +192,8 @@ public protocol MapleAPI: Sendable {
 	func registerDevice(_ registration: DeviceRegistration) async throws -> MobileDevice
 	func unregisterDevice(token: String) async throws
 	func myDevices() async throws -> [MobileDevice]
+	/// Sends a test page to the caller's own phones, the way a real page is delivered.
+	func sendTestPage() async throws -> TestPageResult
 	func registerLiveActivity(deviceToken: String, incidentId: String, activityId: String, pushToken: String)
 		async throws
 	func endLiveActivity(deviceToken: String, incidentId: String) async throws

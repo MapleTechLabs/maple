@@ -207,9 +207,17 @@ struct MainTabView: View {
 		.task(id: "\(IncidentChanges.shared.revision)|\(session.currentOrganizationId ?? "")") {
 			await PagesWidgetPublisher.refresh(session: session)
 		}
+		// A switch of organization: the On call and Schedule widgets follow the
+		// one on screen, and the last one's rotations must not stay under its name.
+		.task(id: session.currentOrganizationId) {
+			await OnCallWidgetPublisher.refresh(session: session)
+		}
 		.onChange(of: scenePhase) { _, phase in
 			switch phase {
 			case .active:
+				// Notification settings are changed in the Settings app, and people come
+				// straight back: the reachability warning and the sheet read this.
+				Task { await push.refreshAuthorization() }
 				// Coming back to the app is the cheapest fresh data there is —
 				// the throttle inside `refresh` keeps this from being a request
 				// per app switch.
@@ -218,6 +226,8 @@ struct MainTabView: View {
 				// while the app was away, and no push says so.
 				Task { await liveActivities.refreshRunningActivities() }
 				Task { await PagesWidgetPublisher.refresh(session: session, reason: .foreground) }
+				// Rotations move slowly, but an override made an hour ago is news.
+				Task { await OnCallWidgetPublisher.refresh(session: session, reason: .foreground) }
 			case .background:
 				// Queue the next opportunistic refresh on the way out, which is
 				// the only moment iOS accepts one.

@@ -156,6 +156,13 @@ final class AppNavigation {
 		case .servicesList:
 			servicesPath = []
 			tab = .services
+		case .onCall:
+			homePath = [.onCall()]
+			tab = .home
+		case .schedule(let id):
+			// Under the On call screen, so back goes where a tap would have come from.
+			homePath = [.onCall(), .schedule(id: id)]
+			tab = .home
 		}
 	}
 }

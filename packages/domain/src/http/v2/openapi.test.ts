@@ -342,6 +342,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/metrics/prometheus/api/v1/query_range",
 			"POST /v2/metrics/prometheus/api/v1/series",
 			"POST /v2/metrics/timeseries",
+			"POST /v2/mobile_devices/test_page",
 			"POST /v2/onboarding/agent_run",
 			"POST /v2/onboarding/agent_run/status",
 			"POST /v2/onboarding/checklist/claim",

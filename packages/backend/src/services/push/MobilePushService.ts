@@ -154,6 +154,8 @@ export interface MobilePushServiceApi {
 	 * notification preferences: those tune what the org's incidents tell them, a page is for them.
 	 */
 	readonly pageMember: (page: MemberPagePush) => Effect.Effect<MemberPageSummary>
+	/** A test page to the caller's own phones, delivered the way a real page is. */
+	readonly testPage: (orgId: OrgId, userId: UserId) => Effect.Effect<MemberPageSummary>
 	/**
 	 * Wake the organization's phones so their Home Screen widgets can refresh.
 	 *
@@ -184,6 +186,8 @@ export interface MemberPagePush {
 	/** One notification per incident on the phone: a later step's page replaces this one. */
 	readonly collapseId: string
 	readonly severity: AlertSeverity
+	/** How long the incident has been open, which tells a first page from a later step's. */
+	readonly openForMs: number
 	/**
 	 * The Lock Screen card for the incident, started on the member's phones with the page. Left
 	 * out when there is nothing to draw one from.
@@ -241,6 +245,12 @@ const LIVE_ACTIVITY_ATTRIBUTES_TYPE = "IncidentActivityAttributes"
  * and a value nobody has refreshed in 20 minutes is not "now".
  */
 const LIVE_ACTIVITY_STALE_SECONDS = 20 * 60
+
+/**
+ * How long after a critical incident opens its own card may still be on the way to a phone. The
+ * first page goes out in the same tick, before the phone has reported the card it was sent.
+ */
+const TRIGGER_START_IN_FLIGHT_MS = 2 * 60_000
 
 /** A resolved incident stays on the Lock Screen briefly, then clears itself. */
 const LIVE_ACTIVITY_DISMISS_SECONDS = 5 * 60
@@ -704,12 +714,15 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					{ concurrency: SEND_CONCURRENCY, discard: true },
 				)
 
-			const pageMember = Effect.fn("MobilePushService.pageMember")(function* (page: MemberPagePush) {
-				yield* Effect.annotateCurrentSpan({
-					orgId: page.orgId,
-					"maple.alert.rule_id": page.ruleId,
-					"maple.alert.incident_id": page.incidentId,
-				})
+			/**
+			 * One banner to one person's own phones: the delivery a page and a test page share, so a
+			 * test goes exactly the way a page would. Not filtered by notification preferences.
+			 */
+			const deliverToMember = Effect.fn("MobilePushService.deliverToMember")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				banner: Omit<ApnsPush, "deviceToken" | "environment" | "bundleId">,
+			) {
 				const empty: MemberPageSummary = {
 					sent: 0,
 					failed: 0,
@@ -717,61 +730,40 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					skipped: 0,
 					configured: true,
 				}
-				if (!apns.isConfigured) return { ...empty, configured: false }
+				const none: ReadonlyArray<MobileDevice> = []
+				if (!apns.isConfigured) return { summary: { ...empty, configured: false }, targets: none }
 				// A read that failed is not "no phone": the page counts as failed, so it is tried again.
 				// The member's own devices only: a page is one person's, whatever the org's size.
-				const registered = yield* devices.listForUser(page.orgId, page.userId).pipe(
+				const registered = yield* devices.listForUser(orgId, userId).pipe(
 					Effect.map((listed): ReadonlyArray<MobileDevice> | null => listed),
 					Effect.catch((error) =>
 						Effect.logWarning("Mobile push: could not list devices for a page").pipe(
-							Effect.annotateLogs({ orgId: page.orgId, error: error.message }),
+							Effect.annotateLogs({ orgId, error: error.message }),
 							Effect.as(null),
 						),
 					),
 				)
 				if (registered === null) {
 					yield* Effect.annotateCurrentSpan({ "maple.push.devices_unreadable": true })
-					return { ...empty, failed: 1 }
+					return { summary: { ...empty, failed: 1 }, targets: none }
 				}
 				// The banner names the rule and what it measured, so someone who no longer reads
 				// telemetry is not sent it, as with an incident push.
 				const targets = yield* ownedByReaders(
-					page.orgId,
+					orgId,
 					Arr.filter(registered, (device) => device.enabled),
 				)
 				yield* Effect.annotateCurrentSpan({ "maple.push.devices": targets.length })
-				if (targets.length === 0) return empty
-				const pageAlert: ApnsAlert = {
-					title: page.title,
-					...(page.subtitle === undefined ? undefined : { subtitle: page.subtitle }),
-					body: page.body,
-				}
+				if (targets.length === 0) return { summary: empty, targets }
 				const results = yield* Effect.forEach(
 					targets,
 					(device) =>
 						apns
 							.send({
+								...banner,
 								deviceToken: device.token,
 								environment: device.environment,
 								bundleId: device.bundleId,
-								alert: pageAlert,
-								interruptionLevel: "time-sensitive",
-								priority: 10,
-								collapseId: page.collapseId,
-								category: PAGE_NOTIFICATION_CATEGORY,
-								// With the rule's other banners, as an incident push threads them.
-								threadId: page.ruleId,
-								data: {
-									maple_kind: "alert_incident",
-									maple_event: "page",
-									maple_incident_id: encodePublicId(
-										PublicIdPrefixes.alertIncident,
-										page.incidentId,
-									),
-									maple_rule_id: encodePublicId(PublicIdPrefixes.alertRule, page.ruleId),
-									maple_org_id: page.orgId,
-									maple_url: page.linkUrl,
-								},
 							})
 							.pipe(
 								Effect.timeout(SEND_TIMEOUT),
@@ -783,7 +775,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 								Effect.catch((error) =>
 									Effect.logWarning("Mobile push: a page could not be sent").pipe(
 										Effect.annotateLogs({
-											orgId: page.orgId,
+											orgId,
 											deviceId: device.id,
 											error: error.message,
 										}),
@@ -803,26 +795,69 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				yield* Effect.forEach(
 					withOutcome("unregistered"),
 					({ device, reason }) =>
-						devices.disable(page.orgId, device.id, reason).pipe(
+						devices.disable(orgId, device.id, reason).pipe(
 							ignoreLogged("Mobile push: could not disable a dead device", {
-								orgId: page.orgId,
+								orgId,
 								deviceId: device.id,
 							}),
 						),
 					{ discard: true },
 				)
 				const pushed = Arr.map(withOutcome("sent"), ({ device }) => device.id)
-				yield* devices.markPushed(page.orgId, pushed).pipe(
+				yield* devices.markPushed(orgId, pushed).pipe(
 					ignoreLogged("Mobile push: could not record which devices were pushed", {
-						orgId: page.orgId,
+						orgId,
 						deviceCount: pushed.length,
 					}),
 				)
+				return {
+					summary: {
+						sent: pushed.length,
+						failed: withOutcome("failed").length,
+						unregistered: withOutcome("unregistered").length,
+						skipped: 0,
+						configured: true,
+					} satisfies MemberPageSummary,
+					targets,
+				}
+			})
+
+			const pageMember = Effect.fn("MobilePushService.pageMember")(function* (page: MemberPagePush) {
+				yield* Effect.annotateCurrentSpan({
+					orgId: page.orgId,
+					"maple.alert.rule_id": page.ruleId,
+					"maple.alert.incident_id": page.incidentId,
+				})
+				const pageAlert: ApnsAlert = {
+					title: page.title,
+					...(page.subtitle === undefined ? undefined : { subtitle: page.subtitle }),
+					body: page.body,
+				}
+				const { summary, targets } = yield* deliverToMember(page.orgId, page.userId, {
+					alert: pageAlert,
+					interruptionLevel: "time-sensitive",
+					priority: 10,
+					collapseId: page.collapseId,
+					category: PAGE_NOTIFICATION_CATEGORY,
+					// With the rule's other banners, as an incident push threads them.
+					threadId: page.ruleId,
+					data: {
+						maple_kind: "alert_incident",
+						maple_event: "page",
+						maple_incident_id: encodePublicId(PublicIdPrefixes.alertIncident, page.incidentId),
+						maple_rule_id: encodePublicId(PublicIdPrefixes.alertRule, page.ruleId),
+						maple_org_id: page.orgId,
+						maple_url: page.linkUrl,
+					},
+				})
 				// The card that carries Acknowledge, on every phone that is not already showing one for
-				// this incident. A start still in flight is not known here, so two can reach a phone:
-				// the app takes the second down again.
+				// this incident. A critical incident that just opened sent its own card to the phones
+				// that take those; a second start would leave a card nothing ever ends.
+				const startInFlight =
+					page.severity === "critical" && page.openForMs < TRIGGER_START_IN_FLIGHT_MS
 				const starters = Arr.flatMap(targets, (device) =>
-					device.liveActivityStartToken !== null
+					device.liveActivityStartToken !== null &&
+					!(startInFlight && device.preferences.criticalIncidents)
 						? [{ device, startToken: device.liveActivityStartToken }]
 						: [],
 				)
@@ -843,13 +878,29 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 						{ orgId: page.orgId, incidentId: page.incidentId },
 					)
 				}
-				return {
-					sent: pushed.length,
-					failed: withOutcome("failed").length,
-					unregistered: withOutcome("unregistered").length,
-					skipped: 0,
-					configured: true,
-				}
+				return summary
+			})
+
+			/**
+			 * A page with nothing behind it, to the caller's own phones, so they can see that one
+			 * reaches them. Sent as a page is (time sensitive, top priority) and saying it is a test.
+			 */
+			const testPage = Effect.fn("MobilePushService.testPage")(function* (
+				orgId: OrgId,
+				userId: UserId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const { summary } = yield* deliverToMember(orgId, userId, {
+					alert: {
+						title: "Test page",
+						body: "This is how a page from Maple reaches this phone. Nothing is wrong.",
+					},
+					interruptionLevel: "time-sensitive",
+					priority: 10,
+					collapseId: `test-page:${userId}`,
+					data: { maple_kind: "test_page", maple_org_id: orgId },
+				})
+				return summary
 			})
 
 			const notifyIncident = Effect.fn("MobilePushService.notifyIncident")(function* (
@@ -1367,6 +1418,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				notifyIncident,
 				notifyIncidentDigest,
 				pageMember,
+				testPage,
 				refreshWidgets,
 			} satisfies MobilePushServiceApi
 		}),

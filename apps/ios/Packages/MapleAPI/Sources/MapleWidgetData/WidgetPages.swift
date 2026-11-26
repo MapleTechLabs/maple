@@ -353,7 +353,10 @@ public actor WidgetPagesClient {
 
 	/// Read what is paging the person this credential belongs to, and store it.
 	public func refresh(organizationId: String, organizationName: String?, now: Date = Date()) async -> Refresh {
-		let answer = await read(organizationId: organizationId, organizationName: organizationName, now: now)
+		guard let answer = await read(organizationId: organizationId, organizationName: organizationName, now: now) else {
+			// The answer was dropped, and so is its record: there is no read to report.
+			return credentials.loadDevice(organizationId: organizationId) == nil ? .noCredential : .failed
+		}
 		let outcome: PagesReadRecord.Outcome =
 			switch answer {
 			case .fetched: .fetched
@@ -368,7 +371,10 @@ public actor WidgetPagesClient {
 		return answer
 	}
 
-	private func read(organizationId: String, organizationName: String?, now: Date) async -> Refresh {
+	/// Nil when the credential the request was signed with is no longer the one
+	/// on file: the account signed out, or the key was replaced, while it was in
+	/// flight. Nothing of that answer is stored.
+	private func read(organizationId: String, organizationName: String?, now: Date) async -> Refresh? {
 		guard let (device, key) = signer(organizationId: organizationId, now: now) else {
 			return credentials.loadDevice(organizationId: organizationId) == nil ? .noCredential : .needsApp
 		}
@@ -378,6 +384,7 @@ public actor WidgetPagesClient {
 			{ Self.request(url, method: "GET") },
 			credential: device, key: key, session: session, tokens: tokens, now: now
 		)
+		guard credentials.holds(device) else { return nil }
 		guard case .response(let response) = sent else {
 			return rejected(sent, organizationId: organizationId, now: now) ? .needsApp : .failed
 		}
@@ -390,7 +397,14 @@ public actor WidgetPagesClient {
 				payload.organizationId == organizationId
 			else { return .failed }
 			let snapshot = payload.snapshot(organizationName: organizationName)
-			store(organizationId).save(snapshot)
+			let store = store(organizationId)
+			store.save(snapshot)
+			// A sign-out that ran between the check and the write cleared the
+			// store first: take the pages back out.
+			guard credentials.holds(device) else {
+				store.clear()
+				return nil
+			}
 			return .fetched(snapshot)
 		case 401, 403:
 			return .needsApp
@@ -401,7 +415,11 @@ public actor WidgetPagesClient {
 
 	/// Acknowledge one incident, and write the answer into the stored snapshot.
 	public func acknowledge(organizationId: String, incidentId: String, now: Date = Date()) async -> Acknowledgement {
-		let answer = await sendAcknowledgement(organizationId: organizationId, incidentId: incidentId, now: now)
+		guard let answer = await sendAcknowledgement(organizationId: organizationId, incidentId: incidentId, now: now)
+		else {
+			// Signed by a credential that is gone: only the app can register the next one.
+			return .needsApp
+		}
 		let outcome: PagesTapRecord.Outcome =
 			switch answer {
 			case .acknowledged: .acknowledged
@@ -415,7 +433,8 @@ public actor WidgetPagesClient {
 		return answer
 	}
 
-	private func sendAcknowledgement(organizationId: String, incidentId: String, now: Date) async -> Acknowledgement {
+	/// Nil in the same case as `read`: no snapshot is touched and no tap recorded.
+	private func sendAcknowledgement(organizationId: String, incidentId: String, now: Date) async -> Acknowledgement? {
 		guard let (device, key) = signer(organizationId: organizationId, now: now), device.canAcknowledgePages,
 			!isRejected(organizationId)
 		else { return .needsApp }
@@ -427,6 +446,7 @@ public actor WidgetPagesClient {
 			{ Self.request(url, method: "POST") },
 			credential: device, key: key, session: session, tokens: tokens, now: now
 		)
+		guard credentials.holds(device) else { return nil }
 		guard case .response(let response) = sent else {
 			return rejected(sent, organizationId: organizationId, now: now) ? .needsApp : .failed
 		}
@@ -435,7 +455,14 @@ public actor WidgetPagesClient {
 			guard let page = try? WidgetJSON.decoder.decode(WidgetPagesPayload.Page.self, from: response.data).page
 			else { return .failed }
 			let store = store(organizationId)
-			if let stored = store.load() { store.save(stored.replacing(page)) }
+			if let stored = store.load() {
+				store.save(stored.replacing(page))
+				// As in `read`: a sign-out between the check and the write is undone.
+				guard credentials.holds(device) else {
+					store.clear()
+					return nil
+				}
+			}
 			return .acknowledged(page)
 		case 404, 409:
 			return .nothingToAnswer

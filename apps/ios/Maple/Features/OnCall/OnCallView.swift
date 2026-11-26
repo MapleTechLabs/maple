@@ -92,6 +92,8 @@ private struct OnCallContent: View {
 		let rows = overview.scheduleRows(now: now)
 		let gaps = overview.gapRows(now: now)
 		VStack(alignment: .leading, spacing: 24) {
+			PageReachabilityCard(overview: overview, now: now)
+
 			TitledSection(SectionHeader(title: "Your shifts")) {
 				if shifts.isEmpty {
 					Text("You have no shifts in the next 60 days.")
@@ -137,6 +139,9 @@ private struct OnCallContent: View {
 					}
 				}
 			}
+
+			// Quiet, under everything: a way to see that a page reaches this phone.
+			TestPageControl(surface: .onCall)
 		}
 		.padding(.horizontal, 16)
 		.padding(.top, 20)
