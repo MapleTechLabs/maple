@@ -186,6 +186,8 @@ export interface MemberPagePush {
 	/** One notification per incident on the phone: a later step's page replaces this one. */
 	readonly collapseId: string
 	readonly severity: AlertSeverity
+	/** How long the incident has been open, which tells a first page from a later step's. */
+	readonly openForMs: number
 	/**
 	 * The Lock Screen card for the incident, started on the member's phones with the page. Left
 	 * out when there is nothing to draw one from.
@@ -243,6 +245,12 @@ const LIVE_ACTIVITY_ATTRIBUTES_TYPE = "IncidentActivityAttributes"
  * and a value nobody has refreshed in 20 minutes is not "now".
  */
 const LIVE_ACTIVITY_STALE_SECONDS = 20 * 60
+
+/**
+ * How long after a critical incident opens its own card may still be on the way to a phone. The
+ * first page goes out in the same tick, before the phone has reported the card it was sent.
+ */
+const TRIGGER_START_IN_FLIGHT_MS = 2 * 60_000
 
 /** A resolved incident stays on the Lock Screen briefly, then clears itself. */
 const LIVE_ACTIVITY_DISMISS_SECONDS = 5 * 60
@@ -843,10 +851,13 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					},
 				})
 				// The card that carries Acknowledge, on every phone that is not already showing one for
-				// this incident. A start still in flight is not known here, so two can reach a phone:
-				// the app takes the second down again.
+				// this incident. A critical incident that just opened sent its own card to the phones
+				// that take those; a second start would leave a card nothing ever ends.
+				const startInFlight =
+					page.severity === "critical" && page.openForMs < TRIGGER_START_IN_FLIGHT_MS
 				const starters = Arr.flatMap(targets, (device) =>
-					device.liveActivityStartToken !== null
+					device.liveActivityStartToken !== null &&
+					!(startInFlight && device.preferences.criticalIncidents)
 						? [{ device, startToken: device.liveActivityStartToken }]
 						: [],
 				)

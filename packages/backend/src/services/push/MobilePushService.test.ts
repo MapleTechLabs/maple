@@ -569,6 +569,8 @@ describe("MobilePushService.pageMember", () => {
 		linkUrl: "https://app.maple.test/alerts/incidents/x",
 		collapseId: "page:x",
 		severity: "critical" as const,
+		// A later step's page: the incident's own card has long been sent.
+		openForMs: 10 * 60_000,
 	}
 	const card = {
 		attributes: { incident_id: "inc_x", rule_name: "Checkout error rate" },
@@ -625,8 +627,9 @@ describe("MobilePushService.pageMember", () => {
 		const live: LiveActivityRecorder = { pushes: [], ended: [] }
 		return Effect.gen(function* () {
 			const push = yield* MobilePushService
-			// Whatever the severity and the phone's preferences: only a card known to be running
-			// counts, since a start that was budgeted away or rejected left none.
+			// Whatever the severity and the phone's preferences, once the incident's own start has
+			// had time to land: only a card known to be running counts, since a start that was
+			// budgeted away or rejected left none.
 			yield* push.pageMember({ ...page, subtitle: "checkout-api", liveActivity: card })
 			assert.deepStrictEqual(
 				Arr.map(live.pushes, (one) => [one.pushToken, one.event, one.attributes, one.contentState]),
@@ -662,6 +665,39 @@ describe("MobilePushService.pageMember", () => {
 					true,
 					live,
 					[activity(2, { incidentId: page.incidentId })],
+				),
+			),
+		)
+	})
+
+	it.effect("leaves the card to the incident's own start while that is still on its way", () => {
+		const live: LiveActivityRecorder = { pushes: [], ended: [] }
+		const firstPage = { ...page, openForMs: 5_000, liveActivity: card }
+		return Effect.gen(function* () {
+			const push = yield* MobilePushService
+			// Critical and just opened: phones that take critical incidents were sent this card
+			// seconds ago, so only the phone that has them off gets one from the page.
+			yield* push.pageMember(firstPage)
+			assert.deepStrictEqual(
+				Arr.map(live.pushes, (one) => one.pushToken),
+				["start-1"],
+			)
+			// A warning opens no card of its own, so the page starts it everywhere.
+			live.pushes.length = 0
+			yield* push.pageMember({ ...firstPage, severity: "warning" })
+			assert.deepStrictEqual(
+				Arr.map(live.pushes, (one) => one.pushToken),
+				["start-1", "start-2"],
+			)
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					[device(1, { preferences: muted }), device(2)],
+					() => ({ outcome: "sent", apnsId: null }),
+					[],
+					[],
+					true,
+					live,
 				),
 			),
 		)
