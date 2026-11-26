@@ -8,6 +8,7 @@ import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { REPLAY_BLOCK_CLASS } from "./replay-privacy"
 
 // A code block: language eyebrow or file name, copy button, highlighted markup. The parent owns the copy status.
 
@@ -40,8 +41,12 @@ export type CodeBlockOptions<M> = Readonly<{
 	isPlain?: boolean
 	/** A muted last line that is not part of `code`: a value shown masked until it is copied. */
 	maskedLine?: string
-	/** Wraps long lines, so a one-line command shows whole. Not for a file: it would break the indentation. */
+	/** Wraps long lines. On by default for a one-line command with no file name, so it shows whole. */
 	wrap?: boolean
+	/** Holds a secret: session replay records the block as a placeholder. */
+	secret?: boolean
+	/** Makes the scrolling body a focusable region with this name, so the keyboard can scroll a long file. */
+	scrollLabel?: string
 	fold?: CodeFold<M>
 }>
 
@@ -56,7 +61,9 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 	const lines = Str.split("\n")(options.code)
 	const isFoldable = fold !== undefined && lines.length > fold.lines + FOLD_SLACK
 	const shown = isFoldable && !fold.isOpen ? Arr.join(Arr.take(lines, fold.lines), "\n") : options.code
-	const isWrapped = options.isPlain === true || options.wrap === true
+	const isWrapped =
+		options.isPlain === true ||
+		(options.wrap ?? (options.fileName === undefined && !Str.includes("\n")(options.code)))
 	const label =
 		options.fileName !== undefined
 			? [
@@ -104,7 +111,20 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 						),
 					]),
 			h.div(
-				[h.Class(cn("overflow-x-auto bg-surface-well py-3", options.bodyClassName))],
+				[
+					...(options.scrollLabel === undefined
+						? []
+						: [h.Tabindex(0), h.Role("region"), h.AriaLabel(options.scrollLabel)]),
+					h.Class(
+						cn(
+							"overflow-x-auto bg-surface-well py-3",
+							options.scrollLabel !== undefined &&
+								"outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+							options.secret === true && REPLAY_BLOCK_CLASS,
+							options.bodyClassName,
+						),
+					),
+				],
 				[
 					// The padding sits on a content-wide `pre`, so a long line scrolls clear of the edge.
 					h.pre(
