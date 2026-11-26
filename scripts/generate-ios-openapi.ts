@@ -69,6 +69,8 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"unacknowledgeAlertIncident",
 	"resolveAlertIncident",
 	"listAlertIncidentEvents",
+	// Who is on call and when the signed-in user is, in one read.
+	"getOnCallOverview",
 	"listAlertRules",
 	"getAlertRule",
 	// Charts an incident's own signal, the read the dashboard's incident page draws from.

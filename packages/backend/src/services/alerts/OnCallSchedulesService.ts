@@ -66,6 +66,7 @@ import {
 	Effect,
 	Layer,
 	Option,
+	Order,
 	Schema,
 	String as Str,
 } from "effect"
@@ -86,8 +87,43 @@ type ScheduleWriteError =
 	| MemberLookupError
 type ScheduleReadError = AlertPersistenceError | OnCallScheduleNotFoundError
 
+/** How far ahead the overview draws each schedule, and how far it looks for the caller's own shifts. */
+export const ONCALL_OVERVIEW_SCHEDULE_MS = 14 * 24 * 60 * 60_000
+export const ONCALL_OVERVIEW_MY_SHIFTS_MS = 60 * 24 * 60 * 60_000
+export const MAX_ONCALL_OVERVIEW_MY_SHIFTS = 20
+
+/** One schedule as the overview draws it: who has it, and who covers the days ahead. */
+export interface OnCallOverviewSchedule {
+	readonly id: OnCallScheduleId
+	readonly name: string
+	readonly timeZone: string
+	readonly layers: OnCallLayers
+	/** The shift that holds now, or null when nobody is on call. */
+	readonly now: OnCallShift | null
+	/** Effective shifts over the schedule window, earliest first. The first may have started already. */
+	readonly shifts: ReadonlyArray<OnCallShift>
+	readonly gaps: ReadonlyArray<{ readonly startMs: number; readonly endMs: number }>
+}
+
+/** Everything the phone asks about on-call, in one read. */
+export interface OnCallOverview {
+	readonly nowMs: number
+	readonly scheduleHorizonMs: number
+	readonly schedules: ReadonlyArray<OnCallOverviewSchedule>
+	/** The caller's own shifts across every schedule, the current one first. */
+	readonly myShifts: ReadonlyArray<{
+		readonly scheduleId: OnCallScheduleId
+		readonly scheduleName: string
+		readonly shift: OnCallShift
+	}>
+	/** Display names of everyone a shift names; a member without a name is absent. */
+	readonly people: ReadonlyArray<{ readonly userId: UserId; readonly name: string }>
+}
+
 export interface OnCallSchedulesServiceApi {
 	readonly list: (orgId: OrgId) => Effect.Effect<OnCallSchedulesListResponse, AlertPersistenceError>
+	/** Who is on call on every schedule, the days ahead, and the caller's own shifts. */
+	readonly overview: (orgId: OrgId, userId: UserId) => Effect.Effect<OnCallOverview, AlertPersistenceError>
 	readonly get: (
 		orgId: OrgId,
 		scheduleId: OnCallScheduleId,
@@ -482,6 +518,113 @@ export class OnCallSchedulesService extends Context.Service<
 					),
 				),
 			})
+		})
+
+		const overview = Effect.fn("OnCallSchedulesService.overview")(function* (
+			orgId: OrgId,
+			userId: UserId,
+		) {
+			const nowMs = yield* runtime.now
+			const directory = yield* directoryOf(orgId)
+			const scheduleHorizonMs = nowMs + ONCALL_OVERVIEW_SCHEDULE_MS
+			const myHorizonMs = nowMs + ONCALL_OVERVIEW_MY_SHIFTS_MS
+			const [rows, ahead, active] = yield* dbExecute((db) =>
+				Effect.all(
+					[
+						db.run(
+							PG.from(OnCallSchedules)
+								.select()
+								.where(($) => [$.orgId.eq(orgId)])
+								.orderBy(["name", "asc"])
+								.limit(MAX_ONCALL_SCHEDULES_PER_ORG),
+						),
+						overlappingOverrides(db, orgId, nowMs - ONCALL_LOOKAROUND_MS, myHorizonMs),
+						// As in `list`: the window read is capped, and the overrides that decide who
+						// is on call now must never be the ones the cap drops.
+						db.run(
+							PG.from(OnCallOverrides)
+								.select()
+								.where(($) => [$.orgId.eq(orgId), $.startsAt.lte(nowMs), $.endsAt.gt(nowMs)]),
+						),
+					],
+					{ concurrency: "unbounded" },
+				),
+			)
+			const overrides = Arr.dedupeWith([...active, ...ahead], (a, b) => a.id === b.id)
+			const presence = presenceOf(directory.ids)
+			const rendered = Arr.map(rows, (row) => {
+				const config = configOf(row)
+				const own = Arr.map(
+					Arr.filter(overrides, (o) => o.scheduleId === row.id),
+					toOverride,
+				)
+				// The shift's real bounds, not the window's: "on call until Monday" is not "until now".
+				const now = resolveOnCallAt(config, own, nowMs, presence)
+				// One render for both windows: the schedule's days are the head of the caller's months.
+				// A render starts at its range, so the shift already running gets its real start back.
+				const final = Arr.map(
+					renderOnCall(config, own, nowMs, myHorizonMs, presence).final,
+					(shift) =>
+						now !== null && shift.startMs === nowMs && shift.userId === now.userId
+							? { ...shift, startMs: now.startMs }
+							: shift,
+				)
+				const shifts = Arr.map(
+					Arr.filter(final, (shift) => shift.startMs < scheduleHorizonMs),
+					(shift) => ({ ...shift, endMs: Math.min(shift.endMs, scheduleHorizonMs) }),
+				)
+				return {
+					schedule: {
+						id: row.id,
+						name: row.name,
+						timeZone: row.timeZone,
+						layers: row.layersJson,
+						now,
+						shifts,
+						gaps: Arr.take(
+							uncoveredIntervals(shifts, nowMs, scheduleHorizonMs),
+							MAX_ONCALL_REPORTED_GAPS,
+						),
+					} satisfies OnCallOverviewSchedule,
+					mine: Arr.map(
+						Arr.filter(final, (shift) => shift.userId === userId),
+						(shift) => ({ scheduleId: row.id, scheduleName: row.name, shift }),
+					),
+				}
+			})
+			const schedules = Arr.map(rendered, (one) => one.schedule)
+			const myShifts = Arr.take(
+				Arr.sort(
+					Arr.flatMap(rendered, (one) => one.mine),
+					Order.mapInput(
+						Order.Number,
+						(entry: { readonly shift: OnCallShift }) => entry.shift.startMs,
+					),
+				),
+				MAX_ONCALL_OVERVIEW_MY_SHIFTS,
+			)
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"result.rowCount": rows.length,
+				"maple.oncall.my_shift_count": myShifts.length,
+			})
+			const named = Arr.dedupe([
+				userId,
+				...Arr.flatMap(schedules, (schedule) => [
+					...Arr.map(schedule.shifts, (shift) => shift.userId),
+					...(schedule.now === null ? [] : [schedule.now.userId]),
+				]),
+			])
+			return {
+				nowMs,
+				scheduleHorizonMs,
+				schedules,
+				myShifts,
+				people: Arr.flatMap(named, (id) => {
+					const name = directory.names.get(id)
+					return name === undefined ? [] : [{ userId: id, name }]
+				}),
+			} satisfies OnCallOverview
 		})
 
 		const loadDocument = (
@@ -1023,6 +1166,7 @@ export class OnCallSchedulesService extends Context.Service<
 			deleteCalendarFeed,
 			calendarFeed,
 			list,
+			overview,
 			get,
 			create,
 			update,

@@ -60,6 +60,7 @@ const IOS_OPERATIONS = [
 	"unacknowledgeAlertIncident",
 	"resolveAlertIncident",
 	"listAlertIncidentEvents",
+	"getOnCallOverview",
 	"listAlertRules",
 	"getAlertRule",
 	"previewAlertRule",
