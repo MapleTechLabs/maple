@@ -5888,6 +5888,10 @@
         "additionalProperties": false,
         "description": "One of the calling user's own shifts.",
         "properties": {
+          "continues": {
+            "description": "The shift runs past the 60 day window: `ends_at` is the window's end, not a handoff.",
+            "type": "boolean"
+          },
           "ends_at": {
             "type": "string"
           },
@@ -5910,7 +5914,8 @@
           "schedule_name",
           "starts_at",
           "ends_at",
-          "is_override"
+          "is_override",
+          "continues"
         ],
         "title": "My on-call shift",
         "type": "object"
@@ -5923,6 +5928,7 @@
             "generated_at": "2026-11-27T01:14:00.000Z",
             "my_shifts": [
               {
+                "continues": false,
                 "ends_at": "2026-11-30T08:00:00.000Z",
                 "is_override": false,
                 "schedule_id": "onc_gQtGH2s65G6a7sJmuayXL6",
@@ -5945,12 +5951,14 @@
                 "id": "onc_gQtGH2s65G6a7sJmuayXL6",
                 "name": "Checkout primary",
                 "next": {
+                  "continues": false,
                   "ends_at": "2026-12-07T08:00:00.000Z",
                   "is_override": false,
                   "starts_at": "2026-11-30T08:00:00.000Z",
                   "user_id": "user_2Pq9rStUvWxYz0aB1cD2eF3g"
                 },
                 "on_call_now": {
+                  "continues": false,
                   "ends_at": "2026-11-30T08:00:00.000Z",
                   "is_override": false,
                   "starts_at": "2026-11-23T08:00:00.000Z",
@@ -5959,6 +5967,7 @@
                 "rotation_summary": "Weekly, hands off Mon 09:00",
                 "shifts": [
                   {
+                    "continues": false,
                     "ends_at": "2026-11-30T08:00:00.000Z",
                     "is_override": false,
                     "starts_at": "2026-11-23T08:00:00.000Z",
@@ -6031,7 +6040,7 @@
         "description": "One schedule as a phone draws it.",
         "properties": {
           "coverage_gaps": {
-            "description": "Stretches of the window when nobody is on call, earliest first (at most 20).",
+            "description": "Every stretch of the window when nobody is on call, earliest first.",
             "items": {
               "$ref": "#/components/schemas/OnCallGap"
             },
@@ -6048,11 +6057,11 @@
           },
           "next": {
             "$ref": "#/components/schemas/OnCallOverviewShift",
-            "description": "The shift that follows `on_call_now` (or the first one ahead when nobody is on call), or `null` when none starts inside the window."
+            "description": "The shift that follows `on_call_now` (or the first one ahead when nobody is on call), or `null` when none starts inside the 14 day window."
           },
           "on_call_now": {
             "$ref": "#/components/schemas/OnCallOverviewShift",
-            "description": "The shift that holds now, with its real bounds, or `null` when nobody is on call."
+            "description": "The stretch that holds now, or `null` when nobody is on call. Back-to-back turns of one person are one stretch, so `ends_at` is when someone else takes over or coverage stops; with `continues` set, that is more than 60 days away."
           },
           "rotation_summary": {
             "description": "How the schedule rotates, as one line for a header. A schedule with several layers says how many.",
@@ -6094,6 +6103,10 @@
         "additionalProperties": false,
         "description": "One person on call over a time range.",
         "properties": {
+          "continues": {
+            "description": "The person is still on call at `ends_at`: the window stops there, nobody takes over. Never read such an end as a handoff.",
+            "type": "boolean"
+          },
           "ends_at": {
             "type": "string"
           },
@@ -6112,7 +6125,8 @@
           "user_id",
           "starts_at",
           "ends_at",
-          "is_override"
+          "is_override",
+          "continues"
         ],
         "title": "On-call overview shift",
         "type": "object"

@@ -2614,6 +2614,16 @@ describe("v2 alerts over HTTP", () => {
 		})
 		expect(empty.status, JSON.stringify(empty.body)).toBe(200)
 
+		// One person, turn after turn: a stretch with no handoff in it.
+		const solo = await harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+			name: "Solo",
+			time_zone: "UTC",
+			layers: [
+				{ name: "Only", participants: ["user_dee"], rotation, starts_at: "2026-01-05T08:00:00.000Z" },
+			],
+		})
+		expect(solo.status, JSON.stringify(solo.body)).toBe(200)
+
 		const overview = await harness.request("GET", "/v2/alerts/oncall_overview", key.secret)
 		expect(overview.status, JSON.stringify(overview.body)).toBe(200)
 		expect(overview.body).toMatchObject({
@@ -2621,7 +2631,7 @@ describe("v2 alerts over HTTP", () => {
 			organization_id: "org_alerts_e2e",
 			user_id: "user_alerts_e2e",
 		})
-		const [checkout, pipeline] = overview.body.schedules
+		const [checkout, pipeline, alone] = overview.body.schedules
 		expect(checkout).toMatchObject({
 			id: covered.body.id,
 			name: "Checkout primary",
@@ -2646,6 +2656,18 @@ describe("v2 alerts over HTTP", () => {
 			shifts: [],
 		})
 		expect(pipeline.coverage_gaps).toHaveLength(1)
+		// Nobody takes over from someone who is the whole rotation: no next shift, no gap, and the
+		// ends that the windows cut say so instead of reading as handoffs.
+		expect(alone).toMatchObject({ name: "Solo", next: null, coverage_gaps: [] })
+		expect(alone.on_call_now).toMatchObject({ user_id: "user_dee", continues: true })
+		expect(alone.shifts).toHaveLength(1)
+		expect(alone.shifts[0]).toMatchObject({
+			user_id: "user_dee",
+			continues: true,
+			ends_at: overview.body.schedule_window_ends_at,
+		})
+		// A real handoff is not marked.
+		expect(checkout.on_call_now.continues).toBe(false)
 		// The caller's own weeks over two months, on the one schedule they are in, in order.
 		const mine: ReadonlyArray<{ schedule_name: string; starts_at: string }> = overview.body.my_shifts
 		expect(mine.length).toBeGreaterThanOrEqual(4)
@@ -2663,8 +2685,18 @@ describe("v2 alerts over HTTP", () => {
 		const held = (body: typeof overview.body) =>
 			Arr.map(
 				body.schedules,
-				(schedule: { id: string; on_call_now: unknown; next: unknown }) =>
-					[schedule.id, schedule.on_call_now, schedule.next] as const,
+				// Who and since when: an end cut by a window moves with the clock between two reads.
+				(schedule: {
+					id: string
+					on_call_now: { user_id: string; starts_at: string } | null
+					next: { user_id: string; starts_at: string } | null
+				}) => [
+					schedule.id,
+					schedule.on_call_now?.user_id ?? null,
+					schedule.on_call_now?.starts_at ?? null,
+					schedule.next?.user_id ?? null,
+					schedule.next?.starts_at ?? null,
+				],
 			)
 		expect(held(fromWidget.body)).toEqual(held(overview.body))
 		expect(Arr.map(fromWidget.body.my_shifts, (shift: { starts_at: string }) => shift.starts_at)).toEqual(

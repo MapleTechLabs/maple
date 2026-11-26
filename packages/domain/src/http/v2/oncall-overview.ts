@@ -30,6 +30,10 @@ export const V2OnCallOverviewShift = Schema.Struct({
 	is_override: Schema.Boolean.annotate({
 		description: "An override put this person on call, not the rotation.",
 	}),
+	continues: Schema.Boolean.annotate({
+		description:
+			"The person is still on call at `ends_at`: the window stops there, nobody takes over. Never read such an end as a handoff.",
+	}),
 }).annotate({
 	identifier: "OnCallOverviewShift",
 	title: "On-call overview shift",
@@ -47,18 +51,19 @@ export const V2OnCallOverviewSchedule = Schema.Struct({
 		examples: ["Weekly, hands off Mon 09:00", "Daily, hands off 09:00", "Every 12 hours", "3 layers"],
 	}),
 	on_call_now: Schema.NullOr(V2OnCallOverviewShift).annotate({
-		description: "The shift that holds now, with its real bounds, or `null` when nobody is on call.",
+		description:
+			"The stretch that holds now, or `null` when nobody is on call. Back-to-back turns of one person are one stretch, so `ends_at` is when someone else takes over or coverage stops; with `continues` set, that is more than 60 days away.",
 	}),
 	next: Schema.NullOr(V2OnCallOverviewShift).annotate({
 		description:
-			"The shift that follows `on_call_now` (or the first one ahead when nobody is on call), or `null` when none starts inside the window.",
+			"The shift that follows `on_call_now` (or the first one ahead when nobody is on call), or `null` when none starts inside the 14 day window.",
 	}),
 	shifts: Schema.Array(V2OnCallOverviewShift).annotate({
 		description:
 			"The effective shifts from now to `schedule_window_ends_at`, earliest first, cut at the window's end. The first may have started before now.",
 	}),
 	coverage_gaps: Schema.Array(V2OnCallGap).annotate({
-		description: "Stretches of the window when nobody is on call, earliest first (at most 20).",
+		description: "Every stretch of the window when nobody is on call, earliest first.",
 	}),
 }).annotate({
 	identifier: "OnCallOverviewSchedule",
@@ -76,6 +81,9 @@ export const V2OnCallMyShift = Schema.Struct({
 	}),
 	is_override: Schema.Boolean.annotate({
 		description: "The shift comes from an override, not the rotation.",
+	}),
+	continues: Schema.Boolean.annotate({
+		description: "The shift runs past the 60 day window: `ends_at` is the window's end, not a handoff.",
 	}),
 }).annotate({
 	identifier: "OnCallMyShift",
@@ -98,6 +106,7 @@ const exampleShift = {
 	starts_at: "2026-11-23T08:00:00.000Z",
 	ends_at: "2026-11-30T08:00:00.000Z",
 	is_override: false,
+	continues: false,
 } as const
 
 export const V2OnCallOverview = Schema.Struct({
@@ -142,6 +151,7 @@ export const V2OnCallOverview = Schema.Struct({
 						starts_at: "2026-11-30T08:00:00.000Z",
 						ends_at: "2026-12-07T08:00:00.000Z",
 						is_override: false,
+						continues: false,
 					},
 					shifts: [exampleShift],
 					coverage_gaps: [],
@@ -154,6 +164,7 @@ export const V2OnCallOverview = Schema.Struct({
 					starts_at: "2026-11-23T08:00:00.000Z",
 					ends_at: "2026-11-30T08:00:00.000Z",
 					is_override: false,
+					continues: false,
 				},
 			],
 			people: [{ user_id: "user_2Nk8mXqPfR3yZ1aB4cD5eF6g", name: "Dana Kim" }],
@@ -185,7 +196,9 @@ export class V2OnCallOverviewApiGroup extends HttpApiGroup.make("oncallOverview"
 			title: "On-Call Overview",
 			description: "Who is on call across every schedule, and when the calling user is, in one read.",
 		}),
-	) {}
+	)
+	// Stated, not left to the GET default: it names who is on call across the organization.
+	.annotate(EndpointAccess, requires("telemetry:read")) {}
 
 export class V2WidgetOnCallApiGroup extends HttpApiGroup.make("widgetOnCall")
 	.add(

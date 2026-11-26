@@ -92,16 +92,24 @@ export const ONCALL_OVERVIEW_SCHEDULE_MS = 14 * 24 * 60 * 60_000
 export const ONCALL_OVERVIEW_MY_SHIFTS_MS = 60 * 24 * 60 * 60_000
 export const MAX_ONCALL_OVERVIEW_MY_SHIFTS = 20
 
+/**
+ * A shift inside one of the overview's windows. `continues` says the person is still on call where
+ * the shift is cut: the window ended there, nobody took over.
+ */
+export interface OnCallOverviewShift extends OnCallShift {
+	readonly continues: boolean
+}
+
 /** One schedule as the overview draws it: who has it, and who covers the days ahead. */
 export interface OnCallOverviewSchedule {
 	readonly id: OnCallScheduleId
 	readonly name: string
 	readonly timeZone: string
 	readonly layers: OnCallLayers
-	/** The shift that holds now, or null when nobody is on call. */
-	readonly now: OnCallShift | null
+	/** The stretch that holds now, as far as the caller's window sees it, or null when nobody is on call. */
+	readonly now: OnCallOverviewShift | null
 	/** Effective shifts over the schedule window, earliest first. The first may have started already. */
-	readonly shifts: ReadonlyArray<OnCallShift>
+	readonly shifts: ReadonlyArray<OnCallOverviewShift>
 	readonly gaps: ReadonlyArray<{ readonly startMs: number; readonly endMs: number }>
 }
 
@@ -114,7 +122,7 @@ export interface OnCallOverview {
 	readonly myShifts: ReadonlyArray<{
 		readonly scheduleId: OnCallScheduleId
 		readonly scheduleName: string
-		readonly shift: OnCallShift
+		readonly shift: OnCallOverviewShift
 	}>
 	/** Display names of everyone a shift names; a member without a name is absent. */
 	readonly people: ReadonlyArray<{ readonly userId: UserId; readonly name: string }>
@@ -558,20 +566,31 @@ export class OnCallSchedulesService extends Context.Service<
 					Arr.filter(overrides, (o) => o.scheduleId === row.id),
 					toOverride,
 				)
-				// The shift's real bounds, not the window's: "on call until Monday" is not "until now".
-				const now = resolveOnCallAt(config, own, nowMs, presence)
+				// The turn that holds now is only asked for its start: a render begins at its range.
+				const turn = resolveOnCallAt(config, own, nowMs, presence)
 				// One render for both windows: the schedule's days are the head of the caller's months.
-				// A render starts at its range, so the shift already running gets its real start back.
+				// Everything below reads this one timeline, so "who is on call now", "who is next" and
+				// the days ahead cannot disagree: back-to-back turns of one person are one stretch,
+				// and an override that takes over weeks ahead ends the stretch where it starts.
 				const final = Arr.map(
 					renderOnCall(config, own, nowMs, myHorizonMs, presence).final,
-					(shift) =>
-						now !== null && shift.startMs === nowMs && shift.userId === now.userId
-							? { ...shift, startMs: now.startMs }
-							: shift,
+					(shift): OnCallOverviewShift => ({
+						...shift,
+						startMs:
+							turn !== null && shift.startMs === nowMs && shift.userId === turn.userId
+								? turn.startMs
+								: shift.startMs,
+						// Cut by the render, not handed off: past this the read does not know.
+						continues: shift.endMs >= myHorizonMs,
+					}),
 				)
 				const shifts = Arr.map(
 					Arr.filter(final, (shift) => shift.startMs < scheduleHorizonMs),
-					(shift) => ({ ...shift, endMs: Math.min(shift.endMs, scheduleHorizonMs) }),
+					(shift): OnCallOverviewShift => ({
+						...shift,
+						endMs: Math.min(shift.endMs, scheduleHorizonMs),
+						continues: shift.continues || shift.endMs > scheduleHorizonMs,
+					}),
 				)
 				return {
 					schedule: {
@@ -579,12 +598,13 @@ export class OnCallSchedulesService extends Context.Service<
 						name: row.name,
 						timeZone: row.timeZone,
 						layers: row.layersJson,
-						now,
-						shifts,
-						gaps: Arr.take(
-							uncoveredIntervals(shifts, nowMs, scheduleHorizonMs),
-							MAX_ONCALL_REPORTED_GAPS,
+						now: Option.getOrNull(
+							Arr.findFirst(final, (shift) => shift.startMs <= nowMs && shift.endMs > nowMs),
 						),
+						shifts,
+						// Every gap, not the list endpoint's first 20: a schedule that covers two
+						// windows a day has more than that in two weeks, and the phone draws them all.
+						gaps: uncoveredIntervals(shifts, nowMs, scheduleHorizonMs),
 					} satisfies OnCallOverviewSchedule,
 					mine: Arr.map(
 						Arr.filter(final, (shift) => shift.userId === userId),
@@ -598,7 +618,7 @@ export class OnCallSchedulesService extends Context.Service<
 					Arr.flatMap(rendered, (one) => one.mine),
 					Order.mapInput(
 						Order.Number,
-						(entry: { readonly shift: OnCallShift }) => entry.shift.startMs,
+						(entry: { readonly shift: OnCallOverviewShift }) => entry.shift.startMs,
 					),
 				),
 				MAX_ONCALL_OVERVIEW_MY_SHIFTS,
