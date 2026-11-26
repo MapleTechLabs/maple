@@ -222,7 +222,7 @@ const kubernetesSteps = (h: H, model: Model): ReadonlyArray<Html> => {
 				lang: "typescript",
 				text: alchemyStack(),
 				hint: [
-					"It targets your kubeconfig's current context. Pod auto-instrumentation stays off: it needs Helm's install hooks.",
+					"The deploy command pins it to your current kubeconfig context and makes the namespace. Pod auto-instrumentation stays off: it needs Helm's install hooks.",
 				],
 			}),
 			commandStep(h, model, {
@@ -238,7 +238,7 @@ const kubernetesSteps = (h: H, model: Model): ReadonlyArray<Html> => {
 				name: TERRAFORM_FILE,
 				lang: "hcl",
 				text: terraformConfig(),
-				hint: ["Or merge it into a module of yours. Pod auto-instrumentation stays off."],
+				hint: ["The apply command pins it to your current kubeconfig context. Pod auto-instrumentation stays off."],
 			}),
 			commandStep(h, model, {
 				snippet: "terraformApply",
