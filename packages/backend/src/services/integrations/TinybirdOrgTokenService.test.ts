@@ -18,6 +18,7 @@ import { Env } from "@maple/backend/platform/Env"
 import type { Database } from "@maple/backend/platform/DatabaseLive"
 import { mintOrgReadJwt } from "@maple/backend/services/auth/tinybird-jwt"
 import { READ_HORIZON_TTL_MS, RetentionService } from "@maple/backend/services/retention/RetentionService"
+import { DEFAULT_RETENTION_DAYS, type RetentionSignal } from "@maple/domain/retention"
 import { listOrgScopedDatasourceNames } from "@maple/backend/services/warehouse/warehouse-catalog"
 import {
 	cleanupTestDbs,
@@ -339,6 +340,35 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 		Rec.filter(filtersOf(token), (filter) => filter !== `OrgId = '${orgId}'`)
 	const since = (orgId: OrgId, column: string, days: number) =>
 		`OrgId = '${orgId}' AND ${column} >= now() - INTERVAL ${days} DAY`
+	/** Every bounded table once an org has a policy: `days` per signal, the default where unset. */
+	const boundedAt = (orgId: OrgId, set: Partial<Record<RetentionSignal, number>>) => {
+		const days = { ...DEFAULT_RETENTION_DAYS, ...set }
+		const traces = (column: string) => since(orgId, column, days.traces)
+		const metrics = since(orgId, "TimeUnix", days.metrics)
+		const sessions = (column: string) => since(orgId, column, days.sessions)
+		return {
+			traces: traces("Timestamp"),
+			// A bucket the horizon cuts through still locates spans that are kept.
+			trace_index: `${traces("Bucket")} - INTERVAL 5 MINUTE`,
+			trace_list_mv: traces("Timestamp"),
+			service_map_spans: traces("Timestamp"),
+			service_map_children: traces("Timestamp"),
+			service_overview_spans: traces("Timestamp"),
+			ai_trace_index: traces("Timestamp"),
+			ai_crawler_requests: traces("Timestamp"),
+			scanner_requests: traces("Timestamp"),
+			logs: since(orgId, "TimestampTime", days.logs),
+			metrics_sum: metrics,
+			metrics_gauge: metrics,
+			metrics_histogram: metrics,
+			metrics_exponential_histogram: metrics,
+			session_events: sessions("Timestamp"),
+			session_replay_events: sessions("Timestamp"),
+			session_replays: sessions("StartTime"),
+			product_events: since(orgId, "Timestamp", days.events),
+			profiles: since(orgId, "Timestamp", days.profiles),
+		}
+	}
 
 	it.effect("an org that set nothing gets the token it got before retention could be set", () =>
 		withPolicies(() =>
@@ -364,21 +394,20 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 		),
 	)
 
-	it.effect("cuts a shortened signal's raw tables at the org's period, and no other table", () =>
-		withPolicies(() =>
-			Effect.gen(function* () {
-				const tokens = yield* TinybirdOrgTokenService
-				const retention = yield* RetentionService
-				yield* retention.setOrganization(ORG_A, ANA, { logs: 7, metrics: 14 })
-				assert.deepStrictEqual(boundedIn(yield* tokens.getOrgReadToken(ORG_A), ORG_A), {
-					logs: since(ORG_A, "TimestampTime", 7),
-					metrics_sum: since(ORG_A, "TimeUnix", 14),
-					metrics_gauge: since(ORG_A, "TimeUnix", 14),
-					metrics_histogram: since(ORG_A, "TimeUnix", 14),
-					metrics_exponential_histogram: since(ORG_A, "TimeUnix", 14),
-				})
-			}),
-		),
+	it.effect(
+		"cuts a shortened signal's raw tables at the org's period, and every other at its default",
+		() =>
+			withPolicies(() =>
+				Effect.gen(function* () {
+					const tokens = yield* TinybirdOrgTokenService
+					const retention = yield* RetentionService
+					yield* retention.setOrganization(ORG_A, ANA, { logs: 7, metrics: 14 })
+					assert.deepStrictEqual(
+						boundedIn(yield* tokens.getOrgReadToken(ORG_A), ORG_A),
+						boundedAt(ORG_A, { logs: 7, metrics: 14 }),
+					)
+				}),
+			),
 	)
 
 	it.effect("cuts traces and the tables projected from them together, each by its own column", () =>
@@ -388,28 +417,17 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 				const retention = yield* RetentionService
 				yield* retention.setOrganization(ORG_A, ANA, { traces: 7 })
 				const everything = yield* tokens.getOrgReadToken(ORG_A, "trusted-read")
-				assert.deepStrictEqual(boundedIn(everything, ORG_A), {
-					traces: since(ORG_A, "Timestamp", 7),
-					// A bucket the horizon cuts through still locates spans that are kept.
-					trace_index: `${since(ORG_A, "Bucket", 7)} - INTERVAL 5 MINUTE`,
-					trace_list_mv: since(ORG_A, "Timestamp", 7),
-					service_map_spans: since(ORG_A, "Timestamp", 7),
-					service_map_children: since(ORG_A, "Timestamp", 7),
-					service_overview_spans: since(ORG_A, "Timestamp", 7),
-					ai_trace_index: since(ORG_A, "Timestamp", 7),
-					ai_crawler_requests: since(ORG_A, "Timestamp", 7),
-					scanner_requests: since(ORG_A, "Timestamp", 7),
-				})
+				assert.deepStrictEqual(boundedIn(everything, ORG_A), boundedAt(ORG_A, { traces: 7 }))
 				// The token of one statement lists fewer datasources, bounded the same way.
 				const one = yield* tokens.getOrgReadToken(
 					ORG_A,
 					"trusted-read",
 					"SELECT count() FROM trace_index AS i INNER JOIN logs AS l ON i.OrgId = l.OrgId WHERE i.OrgId = 'org_a'",
 				)
+				const bounded = boundedAt(ORG_A, { traces: 7 })
 				assert.deepStrictEqual(filtersOf(one), {
-					logs: "OrgId = 'org_a'",
-					// A bucket the horizon cuts through still locates spans that are kept.
-					trace_index: `${since(ORG_A, "Bucket", 7)} - INTERVAL 5 MINUTE`,
+					logs: bounded.logs,
+					trace_index: bounded.trace_index,
 				})
 			}),
 		),
@@ -431,11 +449,12 @@ describe("TinybirdOrgTokenService retention read horizon", () => {
 					filtersOf(yield* tokens.getOrgReadToken(ORG_A))["traces"],
 					since(ORG_A, "Timestamp", 90),
 				)
-				// A source's period alone bounds the signal, with no period on the org.
+				// A source's period alone bounds the org, with no period on the org.
 				yield* retention.setSource(ORG_B, ANA, yield* sourceOf(ORG_B), { logs: 365 })
-				assert.deepStrictEqual(boundedIn(yield* tokens.getOrgReadToken(ORG_B), ORG_B), {
-					logs: since(ORG_B, "TimestampTime", 365),
-				})
+				assert.deepStrictEqual(
+					boundedIn(yield* tokens.getOrgReadToken(ORG_B), ORG_B),
+					boundedAt(ORG_B, { logs: 365 }),
+				)
 			}),
 		),
 	)
