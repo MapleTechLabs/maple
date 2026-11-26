@@ -1,4 +1,4 @@
-import { Option, String as Str, Array as Arr } from "effect"
+import { Option, Predicate, String as Str, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
@@ -376,23 +376,58 @@ describe("migration 0037: service_overview_spans records why a row is an entry p
 })
 
 describe("migration 0076: span projections and product events carry their retention", () => {
-	const statements = migration_0076_retention_storage.statements
+	const statements = Arr.filter(migration_0076_retention_storage.statements, Predicate.isString)
 	const creates = Arr.filter(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
 	const viewName = (stmt: string) => Arr.getUnsafe(Str.split(" ")(stmt), 6)
 
-	it("adds the columns, then drops each view right before creating it as the schema ships it", () => {
-		const alters = Arr.takeWhile(
-			statements,
-			(stmt) => Str.startsWith("ALTER TABLE")(stmt) || Str.startsWith("SYSTEM ")(stmt),
-		)
-		// Each view is recreated in the next statement, so its gap is one statement wide.
-		const pairs = Arr.chunksOf(Arr.drop(statements, alters.length), 2)
-		expect(
-			Arr.map(pairs, ([drop, create]) => [drop, create === undefined ? "" : viewName(create)]),
-		).toEqual(Arr.map(creates, (create) => [`DROP VIEW IF EXISTS ${viewName(create)}`, viewName(create)]))
+	it("drops each view right before creating it as the schema ships it, the key tables' around their key change", () => {
+		const viewNames = Arr.map(creates, viewName)
+		const keyTableViews = ["trace_index_mv", "trace_facets_hourly_mv"]
+		for (const name of viewNames) {
+			const drop = statements.indexOf(`DROP VIEW IF EXISTS ${name}`)
+			const create = indexWhere(statements, (stmt) =>
+				Str.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${name} `)(stmt),
+			)
+			expect(drop, name).toBeGreaterThanOrEqual(0)
+			if (!keyTableViews.includes(name)) {
+				expect(create, name).toBe(drop + 1)
+				continue
+			}
+			// No insert reaches the table while its key column has no DEFAULT.
+			const table = Str.replace(/_mv$/, "")(name)
+			const between = statements.slice(drop + 1, create)
+			expect(between[0], name).toBe(`SYSTEM STOP MERGES ${table}`)
+			expect(between, name).toContain(
+				`ALTER TABLE ${table} MODIFY COLUMN RetentionDays UInt16 DEFAULT 30`,
+			)
+			expect(between, name).toContain(`SYSTEM START MERGES ${table}`)
+		}
 		for (const create of creates) {
 			expect(latestSnapshotStatements, viewName(create)).toContain(create)
 		}
+	})
+
+	it("repairs stored 0s after merges restart and before the facet TTL reads RetentionDays", () => {
+		const all = migration_0076_retention_storage.statements
+		const at = (predicate: (stmt: (typeof all)[number]) => boolean) => indexWhere(all, predicate)
+		for (const table of ["trace_index", "trace_facets_hourly"]) {
+			const repair = at(
+				(stmt) =>
+					Predicate.hasProperty(stmt, "kind") &&
+					stmt.kind === "repair-zero-key-column" &&
+					stmt.table === table,
+			)
+			expect(repair, table).toBe(at((stmt) => stmt === `SYSTEM START MERGES ${table}`) + 1)
+		}
+		const facetRepair = at(
+			(stmt) =>
+				Predicate.hasProperty(stmt, "kind") &&
+				stmt.kind === "repair-zero-key-column" &&
+				stmt.table === "trace_facets_hourly",
+		)
+		expect(facetRepair).toBeLessThan(
+			at((stmt) => Predicate.isString(stmt) && Str.includes("trace_facets_hourly MODIFY TTL")(stmt)),
+		)
 	})
 
 	it("copies each span's RetentionDays, and the events period into product_events", () => {

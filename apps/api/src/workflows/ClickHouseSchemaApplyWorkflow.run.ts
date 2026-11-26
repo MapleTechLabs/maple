@@ -31,7 +31,9 @@ import {
 	recordMigrationSql,
 	selectAppliedVersionsSql,
 	selectFeatureRevisionsSql,
+	sortingKeyMigrationColumns,
 	createSchemaFeaturesTableSql,
+	defaultRestored,
 	createSchemaMigrationsTableSql,
 	type ActualTable,
 	type ApplyStep,
@@ -134,15 +136,18 @@ const causeMessage = (cause: Cause.Cause<unknown>): string => {
 	return error instanceof Error ? error.message : String(error)
 }
 
-/** An optional step may be skipped, but a lost fence must still stop the run. */
-const isSkippable = <E>(cause: Cause.Cause<E>): boolean =>
-	!Cause.hasInterrupts(cause) &&
-	!Arr.some(
+/** The run stopped owning the cluster: interrupted (it replays) or superseded by a newer run. */
+const runWasLost = <E>(cause: Cause.Cause<E>): boolean =>
+	Cause.hasInterrupts(cause) ||
+	Arr.some(
 		cause.reasons,
 		(reason) =>
 			Cause.isFailReason(reason) &&
 			Predicate.isTagged(reason.error, "@maple/api/workflows/SchemaApplyRunSupersededError"),
 	)
+
+/** An optional step may be skipped, but a lost fence must still stop the run. */
+const isSkippable = <E>(cause: Cause.Cause<E>): boolean => !runWasLost(cause)
 
 /**
  * Optional feature metadata must never decide whether the correctness schema
@@ -521,34 +526,104 @@ const fetchActualSchema = (
 		return result
 	})
 
+/**
+ * The snapshot pass's DDL: create each missing object and add each missing column. A column a
+ * migration adds to a sorting key is left to it (`sortingKeyMigrationColumns`), since an existing
+ * column can no longer join the key.
+ */
+export const snapshotDiffStatements = (
+	desired: ReadonlyArray<DesiredTable>,
+	actual: ReadonlyMap<string, ActualTable>,
+	database: string,
+): ReadonlyArray<string> => {
+	const desiredByName = new Map(Arr.map(desired, (t) => [t.name, t]))
+	return Arr.flatMap(computeSchemaDiff({ tables: desired }, actual), (entry) => {
+		const table = desiredByName.get(entry.name)
+		if (!table) return []
+		if (entry.status === "missing") {
+			return [qualifyStatementForDatabase(table.createStatement, database)]
+		}
+		if (entry.status !== "drifted" || entry.kind !== "table") return []
+		const missing = Arr.filter(
+			entry.columnDrifts,
+			(drift) =>
+				drift.kind === "missing" && !sortingKeyMigrationColumns.has(`${entry.name}.${drift.column}`),
+		)
+		return Arr.flatMap(missing, (drift) => {
+			const colDef = extractColumnDefinition(table.createStatement, drift.column)
+			return colDef
+				? [
+						`ALTER TABLE ${quoteClickHouseIdentifier(database)}.${quoteClickHouseIdentifier(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
+					]
+				: []
+		})
+	})
+}
+
 const reconcileSchemaSnapshot = (
 	cfg: ChConfig,
 ): Effect.Effect<void, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
-		const desired = parseDesiredTables()
-		const desiredByName = new Map(Arr.map(desired, (t) => [t.name, t]))
 		const actual = yield* fetchActualSchema(cfg)
-		const statements = Arr.flatMap(computeSchemaDiff({ tables: desired }, actual), (entry) => {
-			const table = desiredByName.get(entry.name)
-			if (!table) return []
-			if (entry.status === "missing") {
-				return [qualifyStatementForDatabase(table.createStatement, cfg.database)]
-			}
-			if (entry.status !== "drifted" || entry.kind !== "table") return []
-			const missing = Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing")
-			return Arr.flatMap(missing, (drift) => {
-				const colDef = extractColumnDefinition(table.createStatement, drift.column)
-				return colDef
-					? [
-							`ALTER TABLE ${quoteClickHouseIdentifier(cfg.database)}.${quoteClickHouseIdentifier(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
-						]
-					: []
-			})
-		})
+		const statements = snapshotDiffStatements(parseDesiredTables(), actual, cfg.database)
 		yield* Effect.forEach(statements, (statement) => execClickHouse(cfg, statement), {
 			discard: true,
 		})
 	})
+
+/** A failed step left merges stopped because its key column's DEFAULT could not be restored. */
+export class SchemaApplyMergesLeftStoppedError extends Schema.TaggedError<SchemaApplyMergesLeftStoppedError>()(
+	"@maple/api/workflows/SchemaApplyMergesLeftStoppedError",
+	{ message: Schema.String },
+) {}
+
+/** What a planned step's failure cleanup runs, each through the run fence. */
+export type MergeCleanupStep = "restore-default" | "verify-default" | "restart-merges"
+
+/**
+ * Runs one planned step. When it fails inside a STOP/START MERGES pair, merges restart first and the
+ * step's own failure is what the run reports. A pair that sets a key column's DEFAULT has it set
+ * again and read back first; unconfirmed, merges stay stopped (a merge would store 0) and the run
+ * fails with the step's message and the statements to run by hand. Skipped when the run was lost:
+ * an interrupted run replays the step with merges still stopped, and a superseded one must not
+ * restart merges a newer run may have stopped. `cleanup` goes through the run fence for the same reason.
+ */
+export const runPlannedStep = <A, E, R, E2, R2>(
+	step: Pick<ApplyStep, "onFailure" | "restoreBeforeRestart">,
+	run: Effect.Effect<A, E, R>,
+	cleanup: (label: MergeCleanupStep, sql: string) => Effect.Effect<string, E2, R2>,
+): Effect.Effect<A, E | SchemaApplyMergesLeftStoppedError, R | R2> => {
+	const restart = step.onFailure
+	if (restart === undefined) return run
+	const restore = step.restoreBeforeRestart
+	const confirmed =
+		restore === undefined
+			? Effect.succeed(true)
+			: Effect.exit(cleanup("restore-default", restore.sql)).pipe(
+					Effect.andThen(cleanup("verify-default", restore.verifySql)),
+					Effect.map((response) => defaultRestored(restore, response)),
+					Effect.catchCause(() => Effect.succeed(false)),
+				)
+	return run.pipe(
+		Effect.catchCauseIf(
+			(cause) => !runWasLost(cause),
+			(cause) =>
+				Effect.flatMap(
+					confirmed,
+					(restored): Effect.Effect<never, E | SchemaApplyMergesLeftStoppedError, R2> =>
+						restored
+							? Effect.exit(cleanup("restart-merges", restart)).pipe(
+									Effect.andThen(Effect.failCause(cause)),
+								)
+							: Effect.fail(
+									new SchemaApplyMergesLeftStoppedError({
+										message: `${causeMessage(cause)}\n${restore?.recovery ?? ""}`,
+									}),
+								),
+				),
+		),
+	)
+}
 
 interface SkippedFeature {
 	readonly id: string
@@ -563,7 +638,11 @@ export const runClickHouseSchemaApply = (
 	payload: SchemaApplyWorkflowPayload,
 ): Effect.Effect<
 	SchemaApplyWorkflowResult,
-	SchemaApplyPayloadError | SchemaApplyConfigError | ClickHouseExecError | DatabaseError,
+	| SchemaApplyPayloadError
+	| SchemaApplyConfigError
+	| ClickHouseExecError
+	| DatabaseError
+	| SchemaApplyMergesLeftStoppedError,
 	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
@@ -703,20 +782,29 @@ const applySchema = (fence: RunFence) =>
 						(s, index) =>
 							// Progress rides inside the step: the body replays, so a write there
 							// would repeat, and a clock read there would differ per replay.
-							durableStep(
-								`m${migration.version}:${s.name}`,
-								fencedExec(
-									fence,
-									cfg,
-									{
-										phase: `migration ${migration.version} · ${s.name}`,
-										currentMigration: migration.version,
-										stepsTotal: steps.length,
-										stepsDone: index,
-									},
-									s.sql,
+							runPlannedStep(
+								s,
+								durableStep(
+									`m${migration.version}:${s.name}`,
+									fencedExec(
+										fence,
+										cfg,
+										{
+											phase: `migration ${migration.version} · ${s.name}`,
+											currentMigration: migration.version,
+											stepsTotal: steps.length,
+											stepsDone: index,
+										},
+										s.sql,
+									),
+									STEP,
 								),
-								STEP,
+								(label, sql) =>
+									durableStep(
+										`m${migration.version}:${s.name}:${label}`,
+										fencedExec(fence, cfg, { phase: "restarting merges" }, sql),
+										STEP,
+									),
 							),
 						{ discard: true },
 					)
@@ -781,20 +869,29 @@ const applySchema = (fence: RunFence) =>
 						yield* Effect.forEach(
 							steps,
 							(migrationStep, index) =>
-								durableStep(
-									`performance-m${migration.version}:${migrationStep.name}`,
-									fencedExec(
-										fence,
-										cfg,
-										{
-											phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
-											currentMigration: migration.version,
-											stepsTotal: steps.length,
-											stepsDone: index,
-										},
-										migrationStep.sql,
+								runPlannedStep(
+									migrationStep,
+									durableStep(
+										`performance-m${migration.version}:${migrationStep.name}`,
+										fencedExec(
+											fence,
+											cfg,
+											{
+												phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
+												currentMigration: migration.version,
+												stepsTotal: steps.length,
+												stepsDone: index,
+											},
+											migrationStep.sql,
+										),
+										STEP,
 									),
-									STEP,
+									(label, sql) =>
+										durableStep(
+											`performance-m${migration.version}:${migrationStep.name}:${label}`,
+											fencedExec(fence, cfg, { phase: "restarting merges" }, sql),
+											STEP,
+										),
 								),
 							{ discard: true },
 						)

@@ -97,7 +97,10 @@ export const modifyTtl = (table: string, ttl: string): StepOperation => ({ op: "
  * key. Old parts read the DEFAULT. Merges on the table stop around the pair, so none can write the
  * column's 0 into a part before the DEFAULT exists. A failure between them leaves merges stopped
  * only on the staged target, which is never cut over; the stop lives in the chDB session, and a
- * resumed apply reruns all four statements. `sortingKey` is the full new key. Rerunning is a no-op.
+ * resumed apply reruns every statement. A resumed store can hold 0s a merge wrote before the
+ * DEFAULT existed, and ClickHouse refuses UPDATE on a key column, so the last two statements copy
+ * any 0 row with the DEFAULT and delete the 0s (none on a clean run). A crash between those two
+ * counts the copied rows twice. `sortingKey` is the full new key. Rerunning converges.
  */
 export const addSortingColumn = (
 	table: string,
@@ -132,6 +135,9 @@ const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 				`ALTER TABLE ${operation.table} ADD COLUMN IF NOT EXISTS ${name} ${type}, MODIFY ORDER BY (${Arr.join(operation.sortingKey, ", ")})`,
 				`ALTER TABLE ${operation.table} MODIFY COLUMN ${name} ${type} DEFAULT ${defaultExpression}`,
 				`SYSTEM START MERGES ${operation.table}`,
+				// Filtered in a subquery: beside the REPLACE alias, WHERE would read the new value.
+				`INSERT INTO ${operation.table} SELECT * REPLACE (CAST(${defaultExpression} AS ${type}) AS ${name}) FROM (SELECT * FROM ${operation.table} WHERE ${name} = 0)`,
+				`ALTER TABLE ${operation.table} DELETE WHERE ${name} = 0 SETTINGS mutations_sync = 2`,
 			]
 		}
 	}
