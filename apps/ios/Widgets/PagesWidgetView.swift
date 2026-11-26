@@ -46,7 +46,7 @@ private struct SmallPagesView: View {
 					PageAction(page: page, entry: entry, isPrimary: true, fillsWidth: true)
 				}
 			} else {
-				QuietPagesView(snapshot: snapshot, now: entry.date, needsApp: entry.needsApp)
+				QuietPagesView(snapshot: snapshot, now: entry.date, needsApp: entry.needsApp, shiftLine: entry.shiftLine)
 			}
 		}
 		.widgetURL(PagesWidgetKind.incidentsListURL(organizationId: entry.organizationId))
@@ -64,7 +64,7 @@ private struct MediumPagesView: View {
 			} else if !waiting.isEmpty {
 				several(waiting, snapshot: snapshot)
 			} else {
-				QuietPagesView(snapshot: snapshot, now: entry.date, needsApp: entry.needsApp)
+				QuietPagesView(snapshot: snapshot, now: entry.date, needsApp: entry.needsApp, shiftLine: entry.shiftLine)
 			}
 		}
 		.widgetURL(PagesWidgetKind.incidentsListURL(organizationId: entry.organizationId))
@@ -250,20 +250,25 @@ private struct PagesFrame<Content: View>: View {
 	}
 }
 
-private struct PagesHeader: View {
+/// The label every widget in this family opens with. Shared with the on-call
+/// widgets, whose quieter headers have no dot or a muted title.
+struct PagesHeader: View {
 	let title: String
-	let tint: Color
+	let tint: Color?
+	var titleTint: Color = Token.foreground
 
 	var body: some View {
 		HStack(spacing: 5) {
-			Circle()
-				.fill(tint)
-				.frame(width: 6, height: 6)
+			if let tint {
+				Circle()
+					.fill(tint)
+					.frame(width: 6, height: 6)
+			}
 			Text(title)
 				.font(Typo.microMedium)
 				.textCase(.uppercase)
 				.tracking(1.1)
-				.foregroundStyle(Token.foreground)
+				.foregroundStyle(titleTint)
 				.lineLimit(1)
 		}
 	}
@@ -369,6 +374,8 @@ private struct QuietPagesView: View {
 	let snapshot: PagesSnapshot
 	let now: Date
 	let needsApp: Bool
+	/// The owner's shift, when they are on call: "Platform primary until Mon 09:00".
+	var shiftLine: String?
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 0) {
@@ -393,6 +400,15 @@ private struct QuietPagesView: View {
 					.foregroundStyle(Token.foreground)
 					.lineLimit(2)
 					.padding(.top, 8)
+				if let shiftLine {
+					// Quiet is not the same as off duty: say whose turn it still is.
+					Text(shiftLine)
+						.font(Typo.tiny)
+						.tabularNumbers()
+						.foregroundStyle(Token.mutedForeground)
+						.lineLimit(2)
+						.padding(.top, 3)
+				}
 				if let name = snapshot.organizationName {
 					Text(name)
 						.font(Typo.tiny)

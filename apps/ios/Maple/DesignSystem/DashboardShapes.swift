@@ -102,6 +102,9 @@ struct TableCard<Content: View>: View {
 	let columns: [String]
 	/// A widget-style title row above the header. Nil draws none.
 	var title: String? = nil
+	/// Widths of the trailing columns, for cells wider than a number: a name,
+	/// a time. A column without one keeps the numeric 56pt minimum.
+	var trailingWidths: [CGFloat] = []
 	@ViewBuilder let content: Content
 
 	var body: some View {
@@ -121,6 +124,9 @@ struct TableCard<Content: View>: View {
 					if index == 0 {
 						Text(column).sectionLabelStyle()
 						Spacer(minLength: 8)
+					} else if trailingWidths.indices.contains(index - 1) {
+						Text(column).sectionLabelStyle()
+							.frame(width: trailingWidths[index - 1], alignment: .trailing)
 					} else {
 						Text(column).sectionLabelStyle()
 							.frame(minWidth: 56, alignment: .trailing)

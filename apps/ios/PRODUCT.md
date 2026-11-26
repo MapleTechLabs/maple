@@ -29,6 +29,18 @@ Everything above the fold answers question 1.
 the last hour` (liveness — an org that stopped sending is _not_ healthy).
   Colour follows the worst thing on screen; amber primary used here and only
   here.
+- **Your shift**, when the organization has on-call schedules: a compact card
+  under the headline. `On call now · Platform primary · until Mon 09:00 · hands
+  off to Priya Shah`, or `Next shift` with when and on which schedule. A shift
+  with no end in sight reads `no handoff scheduled` and draws no progress. It has
+  its own read (`getOnCallOverview`) beside the board's, so it never delays the
+  board, and a failed read shows no card. Tap → On call.
+- **Reachability warning**, under the shift card, only when the viewer is on
+  call now or has a shift starting within 7 days and a page would not reach
+  this phone. One card in the warn colour, one problem, one button that fixes
+  it: `Focus can hold back a page · Time Sensitive notifications are off for
+  Maple. · Open settings`. Nothing is drawn when the phone is fine, and never
+  for someone with no shifts.
 - **Open incidents**, critical first, each a card: rule name · service(s) ·
   `observed vs threshold` in the rule's unit · how long open · a 1h sparkline
   of the signal. Tap → Incident detail. Empty state is a real sentence, not
@@ -110,11 +122,55 @@ incident page calls, and they need `incidents:respond`.
 last seen, occurrence sparkline, stack, linked incidents. Actions: open on
 web, share.
 
+### On call
+
+Pushed from the Overview shift card, read-only, and drawn from one document:
+`GET /v2/alerts/oncall_overview`.
+
+- **On call**: a line saying where you stand (`You are on call · 3d 6h left on
+  Platform primary`, or off call with the next shift), then **Your shifts**
+  (the current one marked Now, the rest with `in 6 days` and their dates),
+  **On call now** (one row per schedule: schedule, who, until, with `Nobody` in
+  the warning colour) and **Coverage gaps** when there are any. An organization
+  with no schedules gets a sentence saying they are set up on the web.
+  Someone still on call where the document stops (`continues`) is never given
+  that cut as an end: the line reads `no handoff scheduled`, the Until column
+  `No handoff`, a shift row `no end scheduled`, and nothing counts down.
+- **Schedule**: the rotation in one line with its time zone, who is on call now
+  and who they hand off to, **Who covers** the next 14 days as one lane per
+  person (overrides outlined, uncovered stretches in a lane of their own),
+  the **Upcoming** handoffs and the schedule's gaps. A rotation of one reads
+  `No handoff in the next 14 days`. It takes the overview the On call screen
+  already holds, when that was read for the same person and organization, and
+  reloads through the same read.
+
+Times are shown in the device's time zone. Creating overrides and editing
+layers stay on the web.
+
+The On call screen opens with the same reachability warning as Overview, under
+the same rule, and ends with a quiet **Send a test page**. The problems, most
+severe first: notifications denied, never asked for, delivered quietly, banners
+off, sound off, Time Sensitive off (Focus would hold a page back), and a phone
+the server does not hold. The fix is asking for permission in the app, opening
+Maple's notification settings, or registering again. The check runs again each
+time the app comes back to the front, since the fix is usually made in the
+Settings app.
+
 ### Profile sheet
 
 Org switcher (existing), **Notifications** (per-org toggles: critical
 incidents · warning incidents · resolved · new error issues · anomalies), sign
 out. Nothing else.
+
+The notifications sheet also has a **Test page** section: **Send a test page**
+sends a page with nothing behind it to the person's own phones (the v2
+`sendMobileTestPage` operation) and one line says what came of it: `Sent to
+this phone. It should arrive in a few seconds.`, `Sent to 2 phones.`, `No phone
+is registered for you here. Open Maple on your phone and allow notifications.`,
+`Push is not set up on this deployment.` or `The test page could not be sent.`
+A reachability problem shows above the button with its fix, so the sheet is the
+one place to sort out why a page did not arrive. Denied or never asked for
+permission is the Permission card's to say, at the top, and is not said twice.
 
 ## Health model
 
@@ -137,6 +193,7 @@ Reads needed, all in v2 already:
 | Home     | `listServices` (1h), `listAlertIncidents?status=open`, `listErrorIssues` (24h, sort first_seen), `listAnomalyIncidents`, `queryTraceTimeseries` for sparklines                                                           |
 | Services | `listServices`, `getService`, `queryTraceTimeseries`, `queryTraceBreakdown`, `listAlertIncidents`, `listErrorIssues`                                                                                                     |
 | Alerts   | `listAlertIncidents`, `getAlertIncident`, `getAlertRule`, `listAlertRuleChecks`, `listAlertDeliveries`, `listErrorIssues`, `getErrorIssue`, `listAnomalyIncidents`, `getAnomalyIncident`, `getAnomalyIncidentTimeseries` |
+| On call  | `getOnCallOverview` (also read by Home for the shift card)                                                                                                                                                               |
 
 Every screen also calls `listEnvironments` once per organization, to populate
 the deployment-environment control that sits beside the organization switcher on

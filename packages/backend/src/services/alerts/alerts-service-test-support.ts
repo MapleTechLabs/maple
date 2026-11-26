@@ -300,6 +300,7 @@ export const makeLayer = (
 					notifyIncident: (event) =>
 						Effect.sync(() => pushes?.push(event)).pipe(Effect.as(noPushes)),
 					notifyIncidentDigest: () => Effect.succeed(noPushes),
+					testPage: () => Effect.succeed({ ...noPushes, configured: true }),
 					pageMember: (page) =>
 						Effect.sync(() => memberPages?.push(page)).pipe(
 							Effect.as({

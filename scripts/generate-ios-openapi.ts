@@ -83,6 +83,7 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"listMobileDevices",
 	"registerMobileDevice",
 	"unregisterMobileDevice",
+	"sendMobileTestPage",
 	"registerLiveActivity",
 	"endLiveActivity",
 	"mintWidgetCredential",

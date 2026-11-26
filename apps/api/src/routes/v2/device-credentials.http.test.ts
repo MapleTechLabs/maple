@@ -39,6 +39,7 @@ import {
 	WarehouseServiceStubLayer,
 	Phase1ResourceStubsLayer,
 	TelemetryServiceStubsLayer,
+	MobilePushServiceUnusedLayer,
 } from "./v2-test-support"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { HttpV2DeviceCredentialsLive, HttpV2DeviceTokensLive } from "./device-credentials.http"
@@ -214,7 +215,7 @@ const makeHarness = (trustAnchor?: Uint8Array, limited?: (key: string) => boolea
 				),
 				HttpV2ErrorIssuesLive,
 				HttpV2ApiKeysLive,
-				HttpV2MobileDevicesLive,
+				HttpV2MobileDevicesLive.pipe(Layer.provide(MobilePushServiceUnusedLayer)),
 			),
 		),
 		Layer.provide(V2TransportErrorBoundaryLive),

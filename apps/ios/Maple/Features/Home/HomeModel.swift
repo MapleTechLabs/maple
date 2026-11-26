@@ -216,6 +216,11 @@ final class HomeModel {
 	/// instead of racing it.
 	private var decorations: Task<Void, Never>?
 
+	/// Who is on call, for the shift card. Beside the board and never part of
+	/// it: it is not persisted, so a card seeded from disk cannot claim a shift.
+	private(set) var onCall: OnCallOverview?
+	private var onCallRead: Task<Void, Never>?
+
 	/// Home is always "now": an hour for rates, a day for what's new. There is
 	/// no time picker on purpose: a picker answers "what happened", and that
 	/// is a question for the other tabs.
@@ -265,6 +270,7 @@ final class HomeModel {
 	/// sparklines follow in a second pass.
 	private func fetch() async throws -> HomeSnapshot {
 		decorations?.cancel()
+		readOnCall()
 		let now = Date()
 		let rates = Self.rateWindow.resolve(now: now)
 		let recent = Self.recentWindow.resolve(now: now)
@@ -333,6 +339,22 @@ final class HomeModel {
 			openAnomalies: previous?.openAnomalies,
 			loadedAt: now
 		)
+	}
+
+	/// The shift card's read, started with the board's and never awaited by it:
+	/// the card appears when this answers. A failure leaves the card as it was,
+	/// which on a first load is no card.
+	private func readOnCall() {
+		onCallRead?.cancel()
+		let api = self.api
+		let organizationId = self.organizationId
+		onCallRead = Task { [weak self] in
+			let overview = await Telemetry.screenDecorations(screen: Screen.home, organizationId: organizationId) {
+				try? await api.onCallOverview()
+			}
+			guard let self, !Task.isCancelled, let overview else { return }
+			self.onCall = overview
+		}
 	}
 
 	/// What the second pass produced. Counts stay `nil` on failure so the
