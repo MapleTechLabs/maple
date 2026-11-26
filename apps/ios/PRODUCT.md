@@ -31,7 +31,8 @@ the last hour` (liveness — an org that stopped sending is _not_ healthy).
   here.
 - **Your shift**, when the organization has on-call schedules: a compact card
   under the headline. `On call now · Platform primary · until Mon 09:00 · hands
-  off to Priya Shah`, or `Next shift` with when and on which schedule. It has
+  off to Priya Shah`, or `Next shift` with when and on which schedule. A shift
+  with no end in sight reads `no handoff scheduled` and draws no progress. It has
   its own read (`getOnCallOverview`) beside the board's, so it never delays the
   board, and a failed read shows no card. Tap → On call.
 - **Open incidents**, critical first, each a card: rule name · service(s) ·
@@ -126,11 +127,16 @@ Pushed from the Overview shift card, read-only, and drawn from one document:
   **On call now** (one row per schedule: schedule, who, until, with `Nobody` in
   the warning colour) and **Coverage gaps** when there are any. An organization
   with no schedules gets a sentence saying they are set up on the web.
+  Someone still on call where the document stops (`continues`) is never given
+  that cut as an end: the line reads `no handoff scheduled`, the Until column
+  `No handoff`, a shift row `no end scheduled`, and nothing counts down.
 - **Schedule**: the rotation in one line with its time zone, who is on call now
   and who they hand off to, **Who covers** the next 14 days as one lane per
   person (overrides outlined, uncovered stretches in a lane of their own),
-  the **Upcoming** handoffs and the schedule's gaps. It takes the overview the
-  On call screen already holds and reloads through the same read.
+  the **Upcoming** handoffs and the schedule's gaps. A rotation of one reads
+  `No handoff in the next 14 days`. It takes the overview the On call screen
+  already holds, when that was read for the same person and organization, and
+  reloads through the same read.
 
 Times are shown in the device's time zone. Creating overrides and editing
 layers stay on the web.

@@ -6,22 +6,32 @@ import Testing
 @testable import MapleAPI
 
 // The world these tests read: Friday 27 November 2026, 01:14 UTC, the caller
-// `user_me` on call for Platform primary until Monday 08:00.
+// `user_me` on call for Platform primary until Monday 08:00. As on the wire, a
+// shift the 14 day window cut says `continues`.
 
 private let generatedAt = "2026-11-27T01:14:00.000Z"
 private let windowEndsAt = "2026-12-11T01:14:00.000Z"
+/// Where `on_call_now` and `my_shifts` are cut: 60 days on.
+private let farEndsAt = "2027-01-26T01:14:00.000Z"
 
 /// A timestamp that will not parse lands in the distant past, where no expectation holds.
 private func at(_ text: String) -> Date {
 	ResolvedTimeWindow.parse(text) ?? .distantPast
 }
 
-private func shift(_ userId: String, _ startsAt: String, _ endsAt: String, override: Bool = false) -> [String: Any] {
-	["user_id": userId, "starts_at": startsAt, "ends_at": endsAt, "is_override": override]
+private func shift(
+	_ userId: String, _ startsAt: String, _ endsAt: String, override: Bool = false, continues: Bool = false
+) -> [String: Any] {
+	["user_id": userId, "starts_at": startsAt, "ends_at": endsAt, "is_override": override, "continues": continues]
 }
 
-private func myShift(_ scheduleId: String, _ name: String, _ startsAt: String, _ endsAt: String) -> [String: Any] {
-	["schedule_id": scheduleId, "schedule_name": name, "starts_at": startsAt, "ends_at": endsAt, "is_override": false]
+private func myShift(
+	_ scheduleId: String, _ name: String, _ startsAt: String, _ endsAt: String, continues: Bool = false
+) -> [String: Any] {
+	[
+		"schedule_id": scheduleId, "schedule_name": name, "starts_at": startsAt, "ends_at": endsAt,
+		"is_override": false, "continues": continues,
+	]
 }
 
 private func schedule(
@@ -47,7 +57,7 @@ private var platformShifts: [[String: Any]] {
 		shift("user_priya", "2026-11-30T08:00:00.000Z", "2026-12-05T09:00:00.000Z"),
 		shift("user_dana", "2026-12-05T09:00:00.000Z", "2026-12-05T19:00:00.000Z", override: true),
 		shift("user_priya", "2026-12-05T19:00:00.000Z", "2026-12-07T08:00:00.000Z"),
-		shift("user_marco", "2026-12-07T08:00:00.000Z", windowEndsAt),
+		shift("user_marco", "2026-12-07T08:00:00.000Z", windowEndsAt, continues: true),
 	]
 }
 
@@ -61,7 +71,7 @@ private var paymentsPrimaryShifts: [[String: Any]] {
 	[
 		shift("user_dana", "2026-11-20T17:00:00.000Z", "2026-11-27T17:00:00.000Z"),
 		shift("user_marco", "2026-11-27T17:00:00.000Z", "2026-12-04T17:00:00.000Z"),
-		shift("user_dana", "2026-12-04T17:00:00.000Z", windowEndsAt),
+		shift("user_dana", "2026-12-04T17:00:00.000Z", windowEndsAt, continues: true),
 	]
 }
 
@@ -70,7 +80,7 @@ private var paymentsSecondaryShifts: [[String: Any]] {
 		shift("user_marco", "2026-11-26T08:00:00.000Z", "2026-12-03T08:00:00.000Z"),
 		shift("user_me", "2026-12-03T08:00:00.000Z", "2026-12-10T08:00:00.000Z"),
 		// Nobody in `people` carries this id.
-		shift("user_ghost", "2026-12-10T08:00:00.000Z", windowEndsAt),
+		shift("user_ghost", "2026-12-10T08:00:00.000Z", windowEndsAt, continues: true),
 	]
 }
 
@@ -78,8 +88,18 @@ private var pipelineShifts: [[String: Any]] {
 	[
 		shift("user_priya", "2026-11-28T07:00:00.000Z", "2026-12-01T07:00:00.000Z"),
 		shift("user_marco", "2026-12-01T07:00:00.000Z", "2026-12-04T07:00:00.000Z"),
-		shift("user_priya", "2026-12-05T07:00:00.000Z", windowEndsAt),
+		shift("user_priya", "2026-12-05T07:00:00.000Z", windowEndsAt, continues: true),
 	]
+}
+
+/// A rotation of one: Dana holds Payments primary past both windows, so the
+/// stretch is cut at 60 days, the shift at 14, and nothing follows either.
+private var soloSchedule: [String: Any] {
+	schedule(
+		"onc_pay1", "Payments primary",
+		shifts: [shift("user_dana", "2026-11-20T17:00:00.000Z", windowEndsAt, continues: true)],
+		now: shift("user_dana", "2026-11-20T17:00:00.000Z", farEndsAt, continues: true)
+	)
 }
 
 /// The four schedules in the server's order, by name.
@@ -148,8 +168,7 @@ struct OnCallViewerStateTests {
 			return
 		}
 		#expect(current.shift.scheduleName == "Platform primary")
-		#expect(current.until == at("2026-11-30T08:00:00.000Z"))
-		#expect(current.handoff == .to(userId: "user_priya"))
+		#expect(current.end == .handoff(at: at("2026-11-30T08:00:00.000Z"), to: "user_priya"))
 		#expect(current.otherSchedules == 0)
 		let headline = state.headline(now: now, calendar: utc)
 		#expect(headline.lead == "You are on call")
@@ -204,12 +223,91 @@ struct OnCallViewerStateTests {
 	func progress() throws {
 		let shift = OnCallViewerShift(
 			scheduleId: "onc_platform", scheduleName: "Platform primary",
-			start: at("2026-11-23T08:00:00.000Z"), end: at("2026-11-30T08:00:00.000Z"), isOverride: false
+			start: at("2026-11-23T08:00:00.000Z"), end: at("2026-11-30T08:00:00.000Z"), isOverride: false,
+			continues: false
 		)
-		let current = OnCallViewerState.Current(shift: shift, until: shift.end, handoff: .unknown)
+		let current = OnCallViewerState.Current(shift: shift, end: .unknown(at: shift.end))
 		#expect(current.progress(now: shift.start) == 0)
 		#expect(current.progress(now: at("2026-11-26T20:00:00.000Z")) == 0.5)
 		#expect(current.progress(now: at("2026-12-01T00:00:00.000Z")) == 1)
+	}
+
+	@Test("A shift the 60 day window cut has no end: no handoff, no countdown, no progress")
+	func continuingShift() throws {
+		let now = at(generatedAt)
+		let overview = try makeOverview([
+			"user_id": "user_dana",
+			"schedules": [soloSchedule],
+			"my_shifts": [myShift("onc_pay1", "Payments primary", "2026-11-20T17:00:00.000Z", farEndsAt, continues: true)],
+		])
+		let mine = try #require(overview.viewerShifts(now: now).first)
+		#expect(mine.continues)
+		#expect(overview.end(of: mine) == .continues)
+
+		let state = overview.viewerState(now: now)
+		guard case .onCall(let current) = state else {
+			Issue.record("expected on call, got \(state)")
+			return
+		}
+		#expect(current.end == .continues)
+		#expect(current.end.date == nil)
+		#expect(current.progress(now: now) == nil)
+		#expect(overview.handsOffPhrase(current.end) == nil)
+		let headline = state.headline(now: now, calendar: utc)
+		#expect(headline.lead == "You are on call")
+		#expect(headline.detail == "· no handoff scheduled on Payments primary")
+	}
+
+	@Test("A continuing shift is not read off its schedule's 14 day cut either")
+	func continuingShiftWithoutItsSchedule() throws {
+		let now = at(generatedAt)
+		// The viewer's shift names a schedule the overview does not list.
+		let overview = try makeOverview([
+			"my_shifts": [myShift("onc_gone", "Retired", "2026-11-20T17:00:00.000Z", farEndsAt, continues: true)]
+		])
+		let mine = try #require(overview.viewerShifts(now: now).first)
+		#expect(overview.end(of: mine) == .continues)
+	}
+
+	@Test("A shift ahead that the window cut keeps saying so")
+	func continuingShiftAhead() throws {
+		let now = at(generatedAt)
+		let overview = try makeOverview([
+			"my_shifts": [myShift("onc_pay2", "Payments secondary", "2026-12-03T08:00:00.000Z", farEndsAt, continues: true)]
+		])
+		guard case .offCall(let next) = overview.viewerState(now: now) else {
+			Issue.record("expected off call")
+			return
+		}
+		#expect(next.continues)
+		#expect(next.start == at("2026-12-03T08:00:00.000Z"))
+	}
+
+	@Test("On two schedules, a real handoff leads a shift with none, and two with none say so once")
+	func continuingBesideAHandoff() throws {
+		let now = at(generatedAt)
+		let continuing = myShift("onc_pay1", "Payments primary", "2026-11-20T17:00:00.000Z", farEndsAt, continues: true)
+		let mixed = try makeOverview([
+			"my_shifts": [
+				continuing,
+				myShift("onc_platform", "Platform primary", "2026-11-23T08:00:00.000Z", "2026-11-30T08:00:00.000Z"),
+			]
+		]).viewerState(now: now)
+		guard case .onCall(let current) = mixed else {
+			Issue.record("expected on call, got \(mixed)")
+			return
+		}
+		#expect(current.shift.scheduleName == "Platform primary")
+		#expect(current.end == .handoff(at: at("2026-11-30T08:00:00.000Z"), to: "user_priya"))
+		#expect(mixed.headline(now: now).detail == "· 3d 6h left on Platform primary and 1 more schedule")
+
+		let both = try makeOverview([
+			"my_shifts": [
+				continuing,
+				myShift("onc_pay2", "Payments secondary", "2026-11-22T08:00:00.000Z", farEndsAt, continues: true),
+			]
+		]).viewerState(now: now)
+		#expect(both.headline(now: now).detail == "· no handoff scheduled on Payments primary and 1 more schedule")
 	}
 
 	@Test("A shift whose dates will not parse is left out, not guessed at")
@@ -264,16 +362,39 @@ struct OnCallWordingTests {
 		#expect(!overview.isViewer("user_priya"))
 	}
 
-	@Test("A handoff reads as who takes over, or that nobody does, or nothing when unknown")
+	@Test("An end reads as who takes over, or that nobody does, or nothing when unknown or not an end")
 	func handoffPhrases() throws {
 		let overview = try makeOverview()
-		#expect(overview.handsOffPhrase(.to(userId: "user_priya")) == "hands off to Priya Shah")
-		#expect(overview.handsOffPhrase(.to(userId: "user_me")) == "hands off to you")
-		#expect(overview.handsOffPhrase(.nobody) == "nobody takes over")
-		#expect(overview.handsOffPhrase(.unknown) == nil)
-		#expect(overview.thenPhrase(.to(userId: "user_ghost")) == "then a teammate")
-		#expect(overview.thenPhrase(.nobody) == "then nobody")
-		#expect(overview.thenPhrase(.unknown) == nil)
+		let date = at("2026-11-30T08:00:00.000Z")
+		#expect(overview.handsOffPhrase(.handoff(at: date, to: "user_priya")) == "hands off to Priya Shah")
+		#expect(overview.handsOffPhrase(.handoff(at: date, to: "user_me")) == "hands off to you")
+		#expect(overview.handsOffPhrase(.gap(at: date)) == "nobody takes over")
+		#expect(overview.handsOffPhrase(.unknown(at: date)) == nil)
+		#expect(overview.handsOffPhrase(.continues) == nil)
+		#expect(overview.thenPhrase(.handoff(at: date, to: "user_ghost")) == "then a teammate")
+		#expect(overview.thenPhrase(.gap(at: date)) == "then nobody")
+		#expect(overview.thenPhrase(.unknown(at: date)) == nil)
+		#expect(overview.thenPhrase(.continues) == nil)
+	}
+
+	@Test("Someone who stays on call is described without a handoff, an end or a countdown")
+	func noHandoffWording() {
+		#expect(OnCallWording.noHandoffScheduled == "no handoff scheduled")
+		#expect(OnCallWording.noHandoff == "No handoff")
+		#expect(OnCallWording.noEndScheduled == "no end scheduled")
+		#expect(OnCallWording.noHandoff(inNext: 14) == "No handoff in the next 14 days")
+	}
+
+	@Test("An overview is only taken over for the person and organization it was read for")
+	func seedOwnership() throws {
+		let overview = try makeOverview()
+		#expect(overview.belongs(toUser: "user_me", organization: "org_2abcDEF"))
+		// The next account on this phone, in the same organization.
+		#expect(!overview.belongs(toUser: "user_priya", organization: "org_2abcDEF"))
+		#expect(!overview.belongs(toUser: "user_me", organization: "org_other"))
+		// Nobody signed in, or no organization active: nothing to match.
+		#expect(!overview.belongs(toUser: nil, organization: "org_2abcDEF"))
+		#expect(!overview.belongs(toUser: "user_me", organization: nil))
 	}
 }
 
@@ -294,6 +415,7 @@ struct OnCallScheduleTests {
 			]
 		)
 		#expect(rows.map(\.isUncovered) == [false, false, false, true])
+		#expect(rows.map(\.hasNoHandoff) == [false, false, false, false])
 	}
 
 	@Test("A row follows the clock past the shift the server called current")
@@ -307,25 +429,102 @@ struct OnCallScheduleTests {
 		let secondary = try #require(overview.schedule(id: "onc_pay2"))
 		let unnamed = overview.scheduleRow(for: secondary, now: at("2026-12-10T09:00:00.000Z"))
 		#expect(unnamed.whoLabel == "A teammate")
+		// Their shift is cut at the window's end: that is not a time they hand off.
+		#expect(unnamed.until == nil)
+		#expect(unnamed.hasNoHandoff)
 	}
 
-	@Test("A handoff names the next person, a gap, or nothing past the window")
-	func handoffs() throws {
+	@Test("A shift ends in the next person, a gap, no end at all, or one nobody can name yet")
+	func ends() throws {
 		let overview = try makeOverview()
 		let end = overview.windowEnd
 		let pipeline = try #require(overview.schedule(id: "onc_pipeline"))
 		let periods = pipeline.periods
-		#expect(pipeline.handoff(after: periods[0], windowEnd: end).to == .to(userId: "user_marco"))
+		#expect(
+			pipeline.end(of: periods[0], windowEnd: end) == .handoff(at: at("2026-12-01T07:00:00.000Z"), to: "user_marco")
+		)
 		// Marco's shift ends into the second gap.
-		let gap = pipeline.handoff(after: periods[1], windowEnd: end)
-		#expect(gap.to == .nobody)
-		#expect(gap.at == at("2026-12-04T07:00:00.000Z"))
-		// The last shift is cut at the window's end, so what follows is not known.
-		#expect(pipeline.handoff(after: periods[2], windowEnd: end).to == .unknown)
+		#expect(pipeline.end(of: periods[1], windowEnd: end) == .gap(at: at("2026-12-04T07:00:00.000Z")))
+		// The last shift is cut at the window's end with Priya still on call.
+		#expect(pipeline.end(of: periods[2], windowEnd: end) == .continues)
 
-		// One of the viewer's shifts past the window: its schedule cannot say who follows.
+		// One of the viewer's shifts past the window: it ends, and its schedule cannot say who follows.
 		let far = try #require(overview.viewerShifts(now: at(generatedAt)).last)
-		#expect(overview.handoff(after: far).to == .unknown)
+		#expect(overview.end(of: far) == .unknown(at: at("2026-12-21T08:00:00.000Z")))
+	}
+
+	@Test("A rotation of one has no handoff, no gap and nothing upcoming")
+	func soloRotation() throws {
+		let overview = try makeOverview(["schedules": [soloSchedule]])
+		let now = at(generatedAt)
+		let solo = try #require(overview.schedule(id: "onc_pay1"))
+		guard case .covered(let period, let end) = solo.status(now: now, windowEnd: overview.windowEnd) else {
+			Issue.record("expected the schedule to be covered")
+			return
+		}
+		#expect(period.userId == "user_dana")
+		#expect(period.start == at("2026-11-20T17:00:00.000Z"))
+		#expect(end == .continues)
+
+		let row = overview.scheduleRow(for: solo, now: now)
+		#expect(row.whoLabel == "Dana Kim")
+		#expect(row.until == nil)
+		#expect(row.hasNoHandoff)
+		#expect(!row.isUncovered)
+		#expect(overview.upcomingHandoffs(on: solo, now: now).isEmpty)
+		#expect(overview.gapRows(now: now).isEmpty)
+
+		// The strip is one bar from edge to edge.
+		let coverage = try #require(overview.coverage(of: solo, calendar: utc))
+		#expect(coverage.lanes.map(\.name) == ["Dana Kim"])
+		#expect(coverage.lanes[0].segments == [.init(start: 0, end: 1)])
+		#expect(coverage.gaps.isEmpty)
+	}
+
+	@Test("One person's daily turns are one stretch, whatever the current turn alone says")
+	func dailyTurnsOfOne() throws {
+		// The same rotation listed turn by turn, `on_call_now` being today's only.
+		let turns = [
+			shift("user_dana", "2026-11-26T08:00:00.000Z", "2026-11-27T08:00:00.000Z"),
+			shift("user_dana", "2026-11-27T08:00:00.000Z", "2026-11-28T08:00:00.000Z"),
+			shift("user_dana", "2026-11-28T08:00:00.000Z", windowEndsAt, continues: true),
+		]
+		let overview = try makeOverview([
+			"schedules": [schedule("onc_daily", "Daily", shifts: turns, now: turns[0], summary: "Daily, hands off 09:00")]
+		])
+		let now = at(generatedAt)
+		let daily = try #require(overview.schedule(id: "onc_daily"))
+		guard case .covered(_, let end) = daily.status(now: now, windowEnd: overview.windowEnd) else {
+			Issue.record("expected the schedule to be covered")
+			return
+		}
+		#expect(end == .continues)
+		#expect(overview.scheduleRow(for: daily, now: now).hasNoHandoff)
+		#expect(overview.upcomingHandoffs(on: daily, now: now).isEmpty)
+	}
+
+	@Test("A stretch that ends past the window has a real end, and nobody named after it")
+	func endsPastTheWindow() throws {
+		// Marco hands off on 17 December, six days after the window stops.
+		let overview = try makeOverview([
+			"schedules": [
+				schedule(
+					"onc_long", "Long",
+					shifts: [shift("user_marco", "2026-11-20T08:00:00.000Z", windowEndsAt, continues: true)],
+					now: shift("user_marco", "2026-11-20T08:00:00.000Z", "2026-12-17T08:00:00.000Z")
+				)
+			]
+		])
+		let now = at(generatedAt)
+		let long = try #require(overview.schedule(id: "onc_long"))
+		guard case .covered(_, let end) = long.status(now: now, windowEnd: overview.windowEnd) else {
+			Issue.record("expected the schedule to be covered")
+			return
+		}
+		#expect(end == .unknown(at: at("2026-12-17T08:00:00.000Z")))
+		let row = overview.scheduleRow(for: long, now: now)
+		#expect(row.until == at("2026-12-17T08:00:00.000Z"))
+		#expect(!row.hasNoHandoff)
 	}
 
 	@Test("A person's own back-to-back shifts are one stretch")
@@ -333,17 +532,16 @@ struct OnCallScheduleTests {
 		let shifts = [
 			shift("user_me", "2026-11-23T08:00:00.000Z", "2026-11-28T08:00:00.000Z"),
 			shift("user_me", "2026-11-28T08:00:00.000Z", "2026-11-29T08:00:00.000Z", override: true),
-			shift("user_priya", "2026-11-29T08:00:00.000Z", windowEndsAt),
+			shift("user_priya", "2026-11-29T08:00:00.000Z", windowEndsAt, continues: true),
 		]
 		let overview = try makeOverview(["schedules": [schedule("onc_platform", "Platform primary", shifts: shifts, now: shifts[0])]])
 		let platform = try #require(overview.schedule(id: "onc_platform"))
 		let now = at(generatedAt)
-		guard case .covered(_, let until, let handoff) = platform.status(now: now, windowEnd: overview.windowEnd) else {
+		guard case .covered(_, let end) = platform.status(now: now, windowEnd: overview.windowEnd) else {
 			Issue.record("expected the schedule to be covered")
 			return
 		}
-		#expect(until == at("2026-11-29T08:00:00.000Z"))
-		#expect(handoff == .to(userId: "user_priya"))
+		#expect(end == .handoff(at: at("2026-11-29T08:00:00.000Z"), to: "user_priya"))
 		#expect(overview.upcomingHandoffs(on: platform, now: now).map(\.name) == ["Priya Shah"])
 	}
 
@@ -417,7 +615,23 @@ struct OnCallCoverageTests {
 		#expect(row.isOpenEnded)
 		#expect(row.detail == "Nobody is scheduled after this")
 		let platform = try #require(overview.schedule(id: "onc_platform"))
-		#expect(platform.handoff(after: platform.periods[0], windowEnd: overview.windowEnd).to == .nobody)
+		#expect(
+			platform.end(of: platform.periods[0], windowEnd: overview.windowEnd) == .gap(at: at("2026-12-01T08:00:00.000Z"))
+		)
+	}
+
+	@Test("Every gap the server sends is listed and drawn, however many")
+	func manyGaps() throws {
+		// Six hours uncovered out of every twelve: 28 gaps in the fourteen days.
+		let start = at(generatedAt)
+		let gaps = (0..<28).map { index -> [String] in
+			let from = start.addingTimeInterval(Double(index) * 12 * 3600 + 3600)
+			return [ResolvedTimeWindow.format(from), ResolvedTimeWindow.format(from.addingTimeInterval(6 * 3600))]
+		}
+		let overview = try makeOverview(["schedules": [schedule("onc_split", "Split", shifts: [], gaps: gaps)]])
+		#expect(overview.gapRows(now: start).count == 28)
+		let split = try #require(overview.schedule(id: "onc_split"))
+		#expect(try #require(overview.coverage(of: split, calendar: utc)).gaps.count == 28)
 	}
 
 	@Test("The strip has one lane per person, the override marked, covering the whole window")
@@ -535,5 +749,9 @@ struct OnCallOverviewReadTests {
 		#expect(overview.schedules.count == 4)
 		#expect(overview.schedule(id: "onc_pipeline")?.onCallNow == nil)
 		#expect(overview.schedule(id: "onc_platform")?.onCallNow?.userId == "user_me")
+		// `continues` rides on every shift: the window's cut says so, a handoff does not.
+		#expect(overview.schedule(id: "onc_platform")?.shifts.map(\.continues) == [false, false, false, false, true])
+		#expect(overview.schedule(id: "onc_platform")?.onCallNow?.continues == false)
+		#expect(overview.myShifts.map(\.continues) == [false, false, false])
 	}
 }

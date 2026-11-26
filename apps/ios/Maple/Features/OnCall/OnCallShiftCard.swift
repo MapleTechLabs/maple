@@ -2,8 +2,8 @@ import MapleAPI
 import SwiftUI
 
 /// The viewer's shift on Overview: on call now and until when, or the next
-/// shift. Opens the On call screen. Draws nothing for an organization with no
-/// schedules, where there is nothing to open.
+/// shift. A shift with no end in sight says so, and draws no progress. Opens
+/// the On call screen. Draws nothing for an organization with no schedules.
 struct OnCallShiftCard: View {
 	let overview: OnCallOverview
 
@@ -33,7 +33,8 @@ struct OnCallShiftCard: View {
 		switch state {
 		case .onCall(let current):
 			let others = current.otherSchedules > 0 ? " +\(current.otherSchedules)" : ""
-			let detail = ["until \(Format.handoffTime(current.until, now: now))", overview.handsOffPhrase(current.handoff)]
+			let until = current.end.date.map { "until \(Format.handoffTime($0, now: now))" }
+			let detail = [until ?? OnCallWording.noHandoffScheduled, overview.handsOffPhrase(current.end)]
 			return Lines(
 				label: "On call now",
 				title: current.shift.scheduleName + others,

@@ -38,13 +38,13 @@ struct OnCallView: View {
 					}
 				}
 			self.model = model
-			// A seed from another organization would paint that organization's rota.
-			await model.start(seed: seed?.organizationId == session.currentOrganizationId ? seed : nil)
+			await model.start(seed: seed)
 		}
 	}
 }
 
-/// The title and the line under it: `● You are on call · 3d 6h left on Platform primary`.
+/// The title and the line under it: `● You are on call · 3d 6h left on Platform primary`,
+/// or `· no handoff scheduled on Platform primary` when the shift has no end in sight.
 private struct OnCallHeader: View {
 	let overview: OnCallOverview?
 
@@ -172,7 +172,8 @@ private struct OnCallContent: View {
 }
 
 /// One of the viewer's shifts: the current one marked Now with its handoff,
-/// the rest with how far off they are and their dates.
+/// the rest with how far off they are and their dates. One the 60 day window
+/// cut gives no end date: that date is the window's, not the shift's.
 private struct ViewerShiftRow: View {
 	let overview: OnCallOverview
 	let shift: OnCallViewerShift
@@ -181,9 +182,13 @@ private struct ViewerShiftRow: View {
 	private var isCurrent: Bool { shift.isCurrent(now: now) }
 
 	private var detail: String {
-		guard isCurrent else { return "\(Format.dayTime(shift.start)) to \(Format.dayTime(shift.end))" }
-		let handoff = overview.handoff(after: shift)
-		return ["until \(Format.dayTime(handoff.at))", overview.thenPhrase(handoff.to)]
+		guard isCurrent else {
+			if shift.continues { return "from \(Format.dayTime(shift.start)) · \(OnCallWording.noEndScheduled)" }
+			return "\(Format.dayTime(shift.start)) to \(Format.dayTime(shift.end))"
+		}
+		let end = overview.end(of: shift)
+		guard let until = end.date else { return OnCallWording.noEndScheduled }
+		return ["until \(Format.dayTime(until))", overview.thenPhrase(end)]
 			.compactMap { $0 }
 			.joined(separator: " · ")
 	}
@@ -230,7 +235,7 @@ private struct ScheduleNowRow: View {
 	let row: OnCallScheduleRow
 	let now: Date
 
-	/// Wide enough for a first and last name, and for `Mon 9:00 AM`.
+	/// Wide enough for a first and last name, and for `Mon 9:00 AM` or `No handoff`.
 	static let whoWidth: CGFloat = 84
 	static let untilWidth: CGFloat = 82
 
@@ -246,7 +251,7 @@ private struct ScheduleNowRow: View {
 				.foregroundStyle(row.isUncovered ? Token.severityWarn : Token.foreground)
 				.lineLimit(1)
 				.frame(width: Self.whoWidth, alignment: .trailing)
-			Text(row.until.map { Format.handoffTime($0, now: now, compact: true) } ?? Format.placeholder)
+			Text(untilText)
 				.font(Typo.small)
 				.tabularNumbers()
 				.foregroundStyle(Token.mutedForeground)
@@ -258,8 +263,17 @@ private struct ScheduleNowRow: View {
 		.accessibilityLabel(label)
 	}
 
+	/// The Until column: a time, the words for someone who stays on call, or a dash.
+	private var untilText: String {
+		if row.hasNoHandoff { return OnCallWording.noHandoff }
+		return row.until.map { Format.handoffTime($0, now: now, compact: true) } ?? Format.placeholder
+	}
+
 	private var label: String {
-		let until = row.until.map { ", until \(Format.handoffTime($0, now: now))" } ?? ""
+		let until =
+			row.hasNoHandoff
+			? ", \(OnCallWording.noHandoffScheduled)"
+			: row.until.map { ", until \(Format.handoffTime($0, now: now))" } ?? ""
 		return row.isUncovered
 			? "\(row.name): nobody on call\(until)"
 			: "\(row.name): \(row.whoLabel) on call\(until)"

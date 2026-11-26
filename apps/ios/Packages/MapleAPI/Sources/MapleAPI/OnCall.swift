@@ -11,12 +11,16 @@ public struct OnCallPeriod: Hashable, Sendable {
 	public let start: Date
 	public let end: Date
 	public let isOverride: Bool
+	/// The person is still on call at `end`: a window stopped there and nobody
+	/// took over. Such an end is never a handoff.
+	public let continues: Bool
 
-	public init(userId: String, start: Date, end: Date, isOverride: Bool) {
+	public init(userId: String, start: Date, end: Date, isOverride: Bool, continues: Bool) {
 		self.userId = userId
 		self.start = start
 		self.end = end
 		self.isOverride = isOverride
+		self.continues = continues
 	}
 
 	public func holds(_ date: Date) -> Bool { start <= date && date < end }
@@ -26,22 +30,34 @@ extension OnCallShift {
 	public var period: OnCallPeriod? {
 		guard let start = ResolvedTimeWindow.parse(startsAt), let end = ResolvedTimeWindow.parse(endsAt), end > start
 		else { return nil }
-		return OnCallPeriod(userId: userId, start: start, end: end, isOverride: isOverride)
+		return OnCallPeriod(userId: userId, start: start, end: end, isOverride: isOverride, continues: continues)
 	}
 }
 
-/// What follows a shift.
-public enum OnCallHandoff: Hashable, Sendable {
-	case to(userId: String)
-	/// A coverage gap follows.
-	case nobody
-	/// The shift runs to the end of what the overview covers.
-	case unknown
+/// How a stretch on call ends.
+public enum OnCallEnd: Hashable, Sendable {
+	/// Someone else takes over.
+	case handoff(at: Date, to: String)
+	/// Coverage stops and a gap follows.
+	case gap(at: Date)
+	/// It ends further ahead than the overview names who follows.
+	case unknown(at: Date)
+	/// Still on call where the overview stops. That cut is not an end, so this
+	/// carries no date to print or count down to.
+	case continues
+
+	/// When the person stops being on call. Nil while no end is scheduled.
+	public var date: Date? {
+		switch self {
+		case .handoff(let at, _), .gap(let at), .unknown(let at): at
+		case .continues: nil
+		}
+	}
 }
 
 /// Who holds a schedule at one moment.
 public enum OnCallScheduleStatus: Hashable, Sendable {
-	case covered(by: OnCallPeriod, until: Date, handoff: OnCallHandoff)
+	case covered(by: OnCallPeriod, end: OnCallEnd)
 	/// Nobody is on call. `next` is the first shift ahead, when one starts inside the window.
 	case uncovered(next: OnCallPeriod?)
 }
@@ -55,39 +71,45 @@ extension OnCallSchedule {
 		shifts.compactMap(\.period).sorted { $0.start < $1.start }
 	}
 
-	/// `shifts` is cut at the window's end, and `next` may be the one shift past it.
+	/// `shifts` with `next` folded in. The server takes `next` from `shifts`; one
+	/// that ever came from past the cut would still count.
 	private var periodsAhead: [OnCallPeriod] {
 		(periods + [next?.period].compactMap { $0 }).sorted { $0.start < $1.start }
 	}
 
-	/// Who holds the schedule at `now`. `on_call_now` carries the shift's real
-	/// start, so it wins for as long as it still holds.
+	/// Who holds the schedule at `now`. `on_call_now` is the whole stretch, with
+	/// its real start and an end past the window, so it wins while it still holds.
 	public func current(now: Date) -> OnCallPeriod? {
 		if let period = onCallNow?.period, period.holds(now) { return period }
 		return periods.first { $0.holds(now) }
 	}
 
-	/// When the person on `period` stops being on call, and who takes over. Their
-	/// own back-to-back shifts (an override of themselves) count as one stretch.
-	public func handoff(after period: OnCallPeriod, windowEnd: Date?) -> (at: Date, to: OnCallHandoff) {
+	/// How the person on `period` stops being on call. Their own back-to-back
+	/// shifts (an override of themselves) count as one stretch.
+	public func end(of period: OnCallPeriod, windowEnd: Date?) -> OnCallEnd {
 		var end = period.end
-		for candidate in periodsAhead where candidate.start >= end - Self.seam {
-			if candidate.start > end + Self.seam { return (end, .nobody) }
-			guard candidate.userId == period.userId else { return (end, .to(userId: candidate.userId)) }
-			end = max(end, candidate.end)
+		var continues = period.continues
+		// A stretch that continues has nothing after it: the server cut it there.
+		for candidate in periodsAhead where !continues && candidate.start >= end - Self.seam {
+			if candidate.start > end + Self.seam { return .gap(at: end) }
+			guard candidate.userId == period.userId else { return .handoff(at: end, to: candidate.userId) }
+			if candidate.end > end {
+				end = candidate.end
+				continues = candidate.continues
+			}
 		}
+		if continues { return .continues }
 		// Nothing follows: a gap while the window still has room, otherwise the
-		// overview simply stops here.
-		if let windowEnd, end < windowEnd - Self.seam { return (end, .nobody) }
-		return (end, .unknown)
+		// overview does not reach far enough to say who does.
+		if let windowEnd, end < windowEnd - Self.seam { return .gap(at: end) }
+		return .unknown(at: end)
 	}
 
 	public func status(now: Date, windowEnd: Date?) -> OnCallScheduleStatus {
 		guard let current = current(now: now) else {
 			return .uncovered(next: periodsAhead.first { $0.start > now })
 		}
-		let handoff = handoff(after: current, windowEnd: windowEnd)
-		return .covered(by: current, until: handoff.at, handoff: handoff.to)
+		return .covered(by: current, end: end(of: current, windowEnd: windowEnd))
 	}
 }
 
@@ -111,22 +133,30 @@ extension OnCallOverview {
 		return midSentence ? "a teammate" : "A teammate"
 	}
 
-	/// "hands off to Priya Shah", "nobody takes over". Nil when what follows is unknown.
-	public func handsOffPhrase(_ handoff: OnCallHandoff) -> String? {
-		switch handoff {
-		case .to(let userId): "hands off to \(name(of: userId, midSentence: true))"
-		case .nobody: "nobody takes over"
-		case .unknown: nil
+	/// "hands off to Priya Shah", "nobody takes over". Nil when what follows is
+	/// unknown, and when nothing does: the person stays on call.
+	public func handsOffPhrase(_ end: OnCallEnd) -> String? {
+		switch end {
+		case .handoff(_, let userId): "hands off to \(name(of: userId, midSentence: true))"
+		case .gap: "nobody takes over"
+		case .unknown, .continues: nil
 		}
 	}
 
-	/// "then Priya Shah", "then nobody". Nil when what follows is unknown.
-	public func thenPhrase(_ handoff: OnCallHandoff) -> String? {
-		switch handoff {
-		case .to(let userId): "then \(name(of: userId, midSentence: true))"
-		case .nobody: "then nobody"
-		case .unknown: nil
+	/// "then Priya Shah", "then nobody". Nil in the same two cases.
+	public func thenPhrase(_ end: OnCallEnd) -> String? {
+		switch end {
+		case .handoff(_, let userId): "then \(name(of: userId, midSentence: true))"
+		case .gap: "then nobody"
+		case .unknown, .continues: nil
 		}
+	}
+
+	/// Whether this overview was read for this person in this organization. One
+	/// handed over from another account or organization must not be painted.
+	public func belongs(toUser userId: String?, organization organizationId: String?) -> Bool {
+		guard let userId, let organizationId else { return false }
+		return self.userId == userId && self.organizationId == organizationId
 	}
 }
 
@@ -137,15 +167,21 @@ public struct OnCallViewerShift: Hashable, Sendable, Identifiable {
 	public let scheduleId: String
 	public let scheduleName: String
 	public let start: Date
+	/// Where the shift ends, or where the 60 day window cut it when `continues`.
 	public let end: Date
 	public let isOverride: Bool
+	/// The shift runs past the window, so `end` is not a date to show as its end.
+	public let continues: Bool
 
-	public init(scheduleId: String, scheduleName: String, start: Date, end: Date, isOverride: Bool) {
+	public init(
+		scheduleId: String, scheduleName: String, start: Date, end: Date, isOverride: Bool, continues: Bool
+	) {
 		self.scheduleId = scheduleId
 		self.scheduleName = scheduleName
 		self.start = start
 		self.end = end
 		self.isOverride = isOverride
+		self.continues = continues
 	}
 
 	public var id: String { "\(scheduleId)|\(start.timeIntervalSince1970)" }
@@ -162,21 +198,21 @@ public enum OnCallViewerState: Hashable, Sendable {
 
 	public struct Current: Hashable, Sendable {
 		public let shift: OnCallViewerShift
-		/// When the viewer stops being on call on this schedule.
-		public let until: Date
-		public let handoff: OnCallHandoff
+		/// How the viewer stops being on call on this schedule.
+		public let end: OnCallEnd
 		/// Other schedules the viewer is on call for at the same moment.
 		public let otherSchedules: Int
 
-		public init(shift: OnCallViewerShift, until: Date, handoff: OnCallHandoff, otherSchedules: Int = 0) {
+		public init(shift: OnCallViewerShift, end: OnCallEnd, otherSchedules: Int = 0) {
 			self.shift = shift
-			self.until = until
-			self.handoff = handoff
+			self.end = end
 			self.otherSchedules = otherSchedules
 		}
 
-		/// How much of the shift is behind the viewer, 0 to 1.
-		public func progress(now: Date) -> Double {
+		/// How much of the shift is behind the viewer, 0 to 1. Nil with no end
+		/// scheduled: there is nothing to measure toward.
+		public func progress(now: Date) -> Double? {
+			guard let until = end.date else { return nil }
 			let length = until.timeIntervalSince(shift.start)
 			guard length > 0 else { return 1 }
 			return min(1, max(0, now.timeIntervalSince(shift.start) / length))
@@ -189,7 +225,8 @@ public enum OnCallViewerState: Hashable, Sendable {
 	}
 
 	/// The line under the On call title: "You are on call" and, muted after it,
-	/// "· 3d 6h left on Platform primary".
+	/// "· 3d 6h left on Platform primary", or "· no handoff scheduled on Platform
+	/// primary" for a shift with no end in sight.
 	public func headline(now: Date, calendar: Calendar = .current) -> (lead: String, detail: String) {
 		switch self {
 		case .onCall(let current):
@@ -199,10 +236,9 @@ public enum OnCallViewerState: Hashable, Sendable {
 				case 1: " and 1 more schedule"
 				default: " and \(current.otherSchedules) more schedules"
 				}
-			return (
-				"You are on call",
-				"· \(OnCallWording.remaining(until: current.until, now: now)) on \(current.shift.scheduleName)\(others)"
-			)
+			let timing =
+				current.end.date.map { OnCallWording.remaining(until: $0, now: now) } ?? OnCallWording.noHandoffScheduled
+			return ("You are on call", "· \(timing) on \(current.shift.scheduleName)\(others)")
 		case .offCall(let next):
 			return (
 				"You are off call",
@@ -223,25 +259,30 @@ extension OnCallOverview {
 			else { return nil }
 			return OnCallViewerShift(
 				scheduleId: shift.scheduleId, scheduleName: shift.scheduleName, start: start, end: end,
-				isOverride: shift.isOverride
+				isOverride: shift.isOverride, continues: shift.continues
 			)
 		}
 		.sorted { $0.start < $1.start }
 	}
 
-	/// When one of the viewer's shifts hands off, and to whom.
-	public func handoff(after shift: OnCallViewerShift) -> (at: Date, to: OnCallHandoff) {
-		guard let schedule = schedule(id: shift.scheduleId) else { return (shift.end, .unknown) }
-		let period = OnCallPeriod(userId: userId, start: shift.start, end: shift.end, isOverride: shift.isOverride)
-		return schedule.handoff(after: period, windowEnd: windowEnd)
+	/// How one of the viewer's shifts ends. One the 60 day window cut has no
+	/// end: the schedule is only asked who follows a real one.
+	public func end(of shift: OnCallViewerShift) -> OnCallEnd {
+		if shift.continues { return .continues }
+		guard let schedule = schedule(id: shift.scheduleId) else { return .unknown(at: shift.end) }
+		let period = OnCallPeriod(
+			userId: userId, start: shift.start, end: shift.end, isOverride: shift.isOverride, continues: false
+		)
+		return schedule.end(of: period, windowEnd: windowEnd)
 	}
 
 	public func viewerState(now: Date = Date()) -> OnCallViewerState {
 		let shifts = viewerShifts(now: now)
-		let current = shifts.filter { $0.isCurrent(now: now) }.map { ($0, handoff(after: $0)) }
-		// On several schedules at once, the nearest handoff is the next thing to know.
-		if let (shift, handoff) = current.min(by: { $0.1.at < $1.1.at }) {
-			return .onCall(.init(shift: shift, until: handoff.at, handoff: handoff.to, otherSchedules: current.count - 1))
+		let current = shifts.filter { $0.isCurrent(now: now) }.map { ($0, end(of: $0)) }
+		// On several schedules at once, the nearest end is the next thing to know.
+		// A shift with none scheduled leads only when none of them has one.
+		if let (shift, end) = current.min(by: { ($0.1.date ?? .distantFuture) < ($1.1.date ?? .distantFuture) }) {
+			return .onCall(.init(shift: shift, end: end, otherSchedules: current.count - 1))
 		}
 		if let next = shifts.first { return .offCall(next: next) }
 		return .noShifts
@@ -251,6 +292,21 @@ extension OnCallOverview {
 // MARK: - Wording
 
 public enum OnCallWording {
+	// The words for someone still on call where the overview stops. One set, so
+	// the card, the header, the tables and the Schedule screen cannot disagree.
+
+	/// Where "until Mon 09:00 · hands off to Priya Shah" would be.
+	public static let noHandoffScheduled = "no handoff scheduled"
+	/// The "On call now" table's Until column.
+	public static let noHandoff = "No handoff"
+	/// Where one of the viewer's shifts would give its end date.
+	public static let noEndScheduled = "no end scheduled"
+
+	/// The Schedule screen's line. Its window is all a schedule vouches for.
+	public static func noHandoff(inNext days: Int) -> String {
+		"No handoff in the next \(days) days"
+	}
+
 	/// "3d 6h left", "45m left", "under 1m left".
 	public static func remaining(until end: Date, now: Date) -> String {
 		"\(IncidentWording.span(max(0, end.timeIntervalSince(now)))) left"
@@ -284,9 +340,11 @@ public struct OnCallScheduleRow: Hashable, Sendable, Identifiable {
 	public let who: Who
 	/// "You", a name, "A teammate", or "Nobody".
 	public let whoLabel: String
-	/// When the person hands off, or when the gap ends. Nil when nothing follows
-	/// inside the window.
+	/// When the person stops being on call, or when the gap ends. Nil when no
+	/// shift starts inside the window, and when the person simply stays on call.
 	public let until: Date?
+	/// Whoever is on call stays on call: the Until column says so, not a date.
+	public let hasNoHandoff: Bool
 
 	public var isUncovered: Bool { who == .nobody }
 }
@@ -294,16 +352,20 @@ public struct OnCallScheduleRow: Hashable, Sendable, Identifiable {
 extension OnCallOverview {
 	public func scheduleRow(for schedule: OnCallSchedule, now: Date = Date()) -> OnCallScheduleRow {
 		switch schedule.status(now: now, windowEnd: windowEnd) {
-		case .covered(let period, let until, _):
+		case .covered(let period, let end):
 			OnCallScheduleRow(
 				id: schedule.id,
 				name: schedule.name,
 				who: isViewer(period.userId) ? .viewer : .person(userId: period.userId),
 				whoLabel: name(of: period.userId),
-				until: until
+				until: end.date,
+				hasNoHandoff: end == .continues
 			)
 		case .uncovered(let next):
-			OnCallScheduleRow(id: schedule.id, name: schedule.name, who: .nobody, whoLabel: "Nobody", until: next?.start)
+			OnCallScheduleRow(
+				id: schedule.id, name: schedule.name, who: .nobody, whoLabel: "Nobody", until: next?.start,
+				hasNoHandoff: false
+			)
 		}
 	}
 

@@ -2,8 +2,9 @@ import Foundation
 import MapleAPI
 
 /// The fixture organization's on-call world: four schedules, the fixture user
-/// on call for one of them now. Every date is built from the clock and the
-/// device's calendar, so handoffs read 09:00 here and the screens never go stale.
+/// on call for one of them now, and one that a single person holds with no
+/// handoff ahead. Every date is built from the clock and the device's calendar,
+/// so handoffs read 09:00 here and the screens never go stale.
 extension FixtureAPI {
 	private static let priya = "user_priya"
 	private static let dana = "user_dana"
@@ -27,12 +28,19 @@ extension FixtureAPI {
 			calendar.date(byAdding: .day, value: count, to: date) ?? date.addingTimeInterval(Double(count) * 86_400)
 		}
 		func format(_ date: Date) -> String { ResolvedTimeWindow.format(date) }
-		func shift(_ userId: String, _ start: Date, _ end: Date, override: Bool = false) -> OnCallShift {
-			OnCallShift(endsAt: format(end), isOverride: override, startsAt: format(start), userId: userId)
+		func shift(
+			_ userId: String, _ start: Date, _ end: Date, override: Bool = false, continues: Bool = false
+		) -> OnCallShift {
+			OnCallShift(
+				continues: continues, endsAt: format(end), isOverride: override, startsAt: format(start), userId: userId
+			)
 		}
-		/// As the server lists them: only what reaches into the window, cut at its end.
+		/// As the server lists them: only what reaches into the window, cut at its
+		/// end, and marked as continuing where the cut is not a handoff.
 		func inWindow(_ shifts: [(String, Date, Date, Bool)]) -> [OnCallShift] {
-			shifts.filter { $0.2 > now && $0.1 < windowEnd }.map { shift($0.0, $0.1, min($0.2, windowEnd), override: $0.3) }
+			shifts.filter { $0.2 > now && $0.1 < windowEnd }.map {
+				shift($0.0, $0.1, min($0.2, windowEnd), override: $0.3, continues: $0.2 > windowEnd)
+			}
 		}
 
 		// Platform primary: weekly on Monday 09:00. The fixture user, then Priya
@@ -49,13 +57,12 @@ extension FixtureAPI {
 			(Self.marco, days(7, after: monday), days(14, after: monday), false),
 		])
 
-		// Payments primary: weekly on Friday 18:00, Dana now.
+		// Payments primary: a rotation of one. Dana holds it past both windows, so
+		// her stretch is cut at 60 days, her shift at 14, and nothing follows either.
 		let friday = next(6, 18)
-		let paymentsPrimary = inWindow([
-			(Self.dana, days(-7, after: friday), friday, false),
-			(Self.marco, friday, days(7, after: friday), false),
-			(Self.dana, days(7, after: friday), days(14, after: friday), false),
-		])
+		let danaSince = days(-7, after: friday)
+		let paymentsPrimaryNow = shift(Self.dana, danaSince, now.addingTimeInterval(60 * 86_400), continues: true)
+		let paymentsPrimary = [shift(Self.dana, danaSince, windowEnd, continues: true)]
 
 		// Payments secondary: Marco now, the fixture user in six days at 09:00.
 		let today = calendar.startOfDay(for: now)
@@ -96,7 +103,10 @@ extension FixtureAPI {
 			)
 		}
 		func myShift(_ id: String, _ name: String, _ start: Date, _ end: Date) -> OnCallMyShift {
-			OnCallMyShift(endsAt: format(end), isOverride: false, scheduleId: id, scheduleName: name, startsAt: format(start))
+			OnCallMyShift(
+				continues: false, endsAt: format(end), isOverride: false, scheduleId: id, scheduleName: name,
+				startsAt: format(start)
+			)
 		}
 
 		return OnCallOverview(
@@ -122,7 +132,7 @@ extension FixtureAPI {
 					gaps: pipelineGaps
 				),
 				schedule(
-					"onc_payments_primary", "Payments primary", "Weekly, hands off Fri 18:00", current: paymentsPrimary.first,
+					"onc_payments_primary", "Payments primary", "Weekly, hands off Fri 18:00", current: paymentsPrimaryNow,
 					shifts: paymentsPrimary
 				),
 				schedule(
