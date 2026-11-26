@@ -118,6 +118,27 @@ final class LiveActivityController {
 		let incidentId = activity.attributes.incidentId
 		let organizationId = activity.attributes.organizationId
 
+		// One card per incident. A critical incident starts an activity for
+		// everyone, and a page can start one for the person paged: when both
+		// reach the same phone the later one is taken down again.
+		let isDuplicate = Activity<IncidentActivityAttributes>.activities.contains { other in
+			other.id != activity.id && other.attributes.incidentId == incidentId
+				&& activityObservers[other.id] != nil
+		}
+		if isDuplicate {
+			let duplicateId = activity.id
+			Task {
+				// Looked up again rather than captured: an `Activity` is not
+				// Sendable, and one fresh from the system's list may be awaited on.
+				for running in Activity<IncidentActivityAttributes>.activities where running.id == duplicateId {
+					await running.end(nil, dismissalPolicy: .immediate)
+				}
+			}
+			return
+		}
+		// What a push cannot say: who has the incident and who is paged next.
+		Task { await self.incidentChanged(incidentId: incidentId, to: nil) }
+
 		let tokens = Task { [weak self] in
 			for await data in activity.pushTokenUpdates {
 				guard let self else { return }
@@ -163,6 +184,80 @@ final class LiveActivityController {
 		}
 	}
 
+	// MARK: Who has the incident
+
+	/// Bring the cards for an incident in step with it: who acknowledged, who
+	/// the next escalation step pages and when. Pass the incident when it is
+	/// already in hand (the answer to an Acknowledge), or nil to read it.
+	///
+	/// The app does this because the server's pushes carry only the numbers, and
+	/// a content state replaces the previous one whole: the next push drops
+	/// these fields again, which reads as "unacknowledged, nothing known about
+	/// the next page" until the app next runs.
+	func incidentChanged(incidentId: String, to known: AlertIncident?) async {
+		let running = Activity<IncidentActivityAttributes>.activities
+			.filter { $0.attributes.incidentId == incidentId }
+			.map { (id: $0.id, organizationId: $0.attributes.organizationId) }
+		guard let first = running.first else { return }
+		let session = PushRegistrar.shared.opener?.session
+		var incident = known
+		if incident == nil, let api = session?.api {
+			incident = try? await Self.api(api, for: first.organizationId).alertIncident(id: incidentId)
+		}
+		guard let incident else { return }
+		for card in running {
+			await Self.show(incident, onActivity: card.id, viewerUserId: session?.currentUserId)
+		}
+	}
+
+	/// Every running card, re-read. Called when the app comes to the front.
+	func refreshRunningActivities() async {
+		let incidentIds = Set(Activity<IncidentActivityAttributes>.activities.map(\.attributes.incidentId))
+		for incidentId in incidentIds {
+			await incidentChanged(incidentId: incidentId, to: nil)
+		}
+	}
+
+	private static func show(_ incident: AlertIncident, onActivity activityId: String, viewerUserId: String?) async {
+		// Looked up by id rather than passed in: an `Activity` is not Sendable,
+		// and one fresh from the system's list may be awaited on.
+		for activity in Activity<IncidentActivityAttributes>.activities where activity.id == activityId {
+			var state = activity.content.state
+			switch incident.responseState {
+			case .resolved:
+				// The end push was missed, or the incident was resolved by hand
+				// from this phone: close the card the way the server would have.
+				state.status = .resolved
+				state.acknowledgedBy = nil
+				state.nextPageAt = nil
+				state.nextPagePeople = nil
+				await activity.end(
+					ActivityContent(state: state, staleDate: nil),
+					dismissalPolicy: .after(Date().addingTimeInterval(Self.resolvedLinger))
+				)
+				continue
+			case .acknowledged(let acknowledgement):
+				state.acknowledgedBy = acknowledgement.by.label(viewerUserId: viewerUserId)
+				state.nextPageAt = nil
+				state.nextPagePeople = nil
+			case .unacknowledged(let next):
+				state.acknowledgedBy = nil
+				state.nextPageAt = next?.at
+				state.nextPagePeople = next?.peopleSummary(viewerUserId: viewerUserId)
+			}
+			guard state != activity.content.state else { continue }
+			// Stale once the next page is due: the card then stops claiming a
+			// countdown it can no longer keep.
+			await activity.update(
+				ActivityContent(state: state, staleDate: state.nextPageAt ?? activity.content.staleDate)
+			)
+		}
+	}
+
+	/// How long a resolved card stays before it clears itself, as after the
+	/// server's own end push.
+	private static let resolvedLinger: TimeInterval = 5 * 60
+
 	// MARK: Fixtures
 
 	/// Starts an activity locally, with sample content, for fixture mode.
@@ -173,8 +268,14 @@ final class LiveActivityController {
 	/// real session: the button that calls it is behind `FixtureAPI.isEnabled`.
 	func startPreviewActivity() {
 		guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+		// The fixture's own paging incident, so Acknowledge on the card goes
+		// through the same fixture log the app's screens read.
+		var attributes = IncidentActivityAttributes.sample
+		attributes.incidentId = "inc_checkout_now"
+		attributes.organizationId = nil
+		attributes.startedAt = Date().addingTimeInterval(-161)
 		_ = try? Activity.request(
-			attributes: IncidentActivityAttributes.sample,
+			attributes: attributes,
 			content: ActivityContent(
 				state: .sample,
 				staleDate: Date().addingTimeInterval(20 * 60)

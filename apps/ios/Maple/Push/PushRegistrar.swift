@@ -197,33 +197,41 @@ final class PushRegistrar: NSObject {
 		}
 	}
 
-	// MARK: Answering a page from its banner
+	// MARK: Answering a page without a screen
 
-	/// Acknowledge without opening the app. The request names the organization
-	/// the page came from, which need not be the one the app last showed.
+	/// Acknowledge from a banner or a Live Activity, with no screen to show the
+	/// outcome on. The request names the organization the page came from, which
+	/// need not be the one the app last showed.
 	///
-	/// A failure cannot be an alert, there is no screen: it becomes a second
-	/// banner that opens the incident, because a page that looks answered and is
-	/// not is the one outcome worse than no button at all.
-	func acknowledgeFromNotification(incidentId: String, organizationId: String?) async {
+	/// A failure cannot be an alert, so it becomes a banner that opens the
+	/// incident: a page that looks answered and is not is the one outcome worse
+	/// than no button at all. Returns the incident as the server now holds it,
+	/// or nil when it was not acknowledged.
+	@discardableResult
+	func acknowledgeWithoutScreen(
+		incidentId: String,
+		organizationId: String?,
+		surface: IncidentResponder.Surface
+	) async -> AlertIncident? {
 		guard let api = opener?.session?.api else {
 			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
-			return
+			return nil
 		}
 		let scoped = organizationId.map { api.scoped(to: $0) } ?? api
 		// iOS suspends a background action after about half a minute, and a request
 		// on a weak connection outlives that: without a deadline of our own the
-		// banner would vanish and neither the acknowledgement nor the failure
+		// button would be spent and neither the acknowledgement nor the failure
 		// notice would ever happen.
-		let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<BannerAcknowledgement, Never>) in
+		let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<BackgroundAcknowledgement, Never>) in
 			// Whichever finishes first answers; the other finds the answer given.
 			let first = FirstAnswer(continuation)
 			Task { @MainActor in
 				do {
-					_ = try await IncidentResponder.send(
-						.acknowledge, on: incidentId, api: scoped, surface: .notification
+					first.give(
+						.acknowledged(
+							try await IncidentResponder.send(.acknowledge, on: incidentId, api: scoped, surface: surface)
+						)
 					)
-					first.give(.acknowledged)
 				} catch let error as MapleAPIError {
 					first.give(error.meansNothingToAnswer ? .nothingToAnswer : .failed)
 				} catch {
@@ -231,39 +239,41 @@ final class PushRegistrar: NSObject {
 				}
 			}
 			Task { @MainActor in
-				try? await Task.sleep(for: Self.bannerActionDeadline)
+				try? await Task.sleep(for: Self.backgroundActionDeadline)
 				first.give(.failed)
 			}
 		}
 		switch outcome {
-		case .acknowledged:
+		case .acknowledged(let incident):
 			WidgetCenter.shared.reloadAllTimelines()
+			return incident
 		case .nothingToAnswer:
-			// Resolved or gone since the banner arrived: there is no page left, so
+			// Resolved or gone since the page arrived: there is no page left, so
 			// there is nothing to warn about either.
-			break
+			return nil
 		case .failed:
 			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
+			return nil
 		}
 	}
 
-	private enum BannerAcknowledgement: Sendable {
-		case acknowledged
+	private enum BackgroundAcknowledgement: Sendable {
+		case acknowledged(AlertIncident)
 		case nothingToAnswer
 		case failed
 	}
 
-	private static let bannerActionDeadline: Duration = .seconds(20)
+	private static let backgroundActionDeadline: Duration = .seconds(20)
 
 	/// Resumes a continuation once, for the first of two racers on the main actor.
 	private final class FirstAnswer {
-		private var continuation: CheckedContinuation<BannerAcknowledgement, Never>?
+		private var continuation: CheckedContinuation<BackgroundAcknowledgement, Never>?
 
-		init(_ continuation: CheckedContinuation<BannerAcknowledgement, Never>) {
+		init(_ continuation: CheckedContinuation<BackgroundAcknowledgement, Never>) {
 			self.continuation = continuation
 		}
 
-		func give(_ answer: BannerAcknowledgement) {
+		func give(_ answer: BackgroundAcknowledgement) {
 			continuation?.resume(returning: answer)
 			continuation = nil
 		}
@@ -484,10 +494,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 		if response.actionIdentifier == PageNotification.acknowledgeActionId, let incidentId {
 			nonisolated(unsafe) let done = completionHandler
 			Task { @MainActor in
-				await PushRegistrar.shared.acknowledgeFromNotification(
+				let incident = await PushRegistrar.shared.acknowledgeWithoutScreen(
 					incidentId: incidentId,
-					organizationId: organizationId
+					organizationId: organizationId,
+					surface: .notification
 				)
+				// The Lock Screen card for the same incident should not go on
+				// offering the button that was just pressed on the banner.
+				await LiveActivityController.shared.incidentChanged(incidentId: incidentId, to: incident)
 				done()
 			}
 			return

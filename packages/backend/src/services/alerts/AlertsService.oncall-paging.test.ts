@@ -801,6 +801,14 @@ describe("escalation pages the on-call", () => {
 					Arr.map(memberPages, (page) => [page.userId, page.title, page.body]),
 					[[ben, "You are paged · Checkout error rate", "Critical. Error Rate 1000% > 500%."]],
 				)
+				// The page carries the incident's Lock Screen card, drawn as an incident push draws it.
+				const card = memberPages[0]?.liveActivity
+				assert.strictEqual(memberPages[0]?.severity, "critical")
+				assert.match(String(card?.attributes.incident_id), /^inc_/)
+				assert.deepStrictEqual(
+					[card?.attributes.rule_name, card?.attributes.organization_id, card?.contentState.status],
+					["Checkout error rate", orgId, "firing"],
+				)
 				const pushRows = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "push")
 				assert.deepStrictEqual(
 					Arr.map(pushRows, (row) => [row.user_id, row.status]),

@@ -30,7 +30,12 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
-import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import {
+	MobilePushService,
+	renderLiveActivityAttributes,
+	renderLiveActivityState,
+	type LiveActivitySubject,
+} from "@maple/backend/services/push/MobilePushService"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { buildAlertEmailContent } from "./alert-email"
@@ -298,7 +303,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 				dbExecute((db) =>
 					db.run(
 						PG.from(AlertIncidents)
-							.select("status", "acknowledgedAt")
+							.select("status", "acknowledgedAt", "firstTriggeredAt", "severity")
 							.where(($) => [$.id.eq(row.incidentId), $.orgId.eq(row.orgId)])
 							.limit(1),
 					),
@@ -361,9 +366,31 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 			 * connector is tried, oldest first; only "no such user" moves on to the next one.
 			 */
 			/** The member's own phones. A phone that has gone since the step queued this is no failure. */
-			const sendPush = (row: AlertMemberNotificationRow, input: ChatAlertCardInput) =>
+			const sendPush = (
+				row: AlertMemberNotificationRow,
+				input: ChatAlertCardInput,
+				incident: { readonly firstTriggeredAt: number; readonly severity: string },
+			) =>
 				Effect.gen(function* () {
 					const context = input.context
+					const nowMs = yield* runtime.now
+					// What the phone's Lock Screen card is drawn from, as an incident push draws it.
+					const subject: LiveActivitySubject = {
+						orgId: row.orgId,
+						incidentId: row.incidentId,
+						ruleName: context.ruleName,
+						groupKey: context.groupKey,
+						groupLabel: context.groupLabel ?? null,
+						signalType: context.signalType,
+						signalDisplay: signalDisplayOf(context),
+						serviceNames: [],
+						openForMs: Math.max(0, nowMs - incident.firstTriggeredAt),
+						value: context.value,
+						comparator: context.comparator,
+						threshold: context.threshold,
+						thresholdUpper: context.thresholdUpper,
+						eventType: "trigger",
+					}
 					const summary = yield* mobilePush.pageMember({
 						orgId: row.orgId,
 						userId: row.userId,
@@ -372,6 +399,12 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 						...renderPagePush(context),
 						linkUrl: input.linkUrl,
 						collapseId: `page:${row.incidentId}`,
+						// The incident's severity now, which a tier change may have moved since the page was queued.
+						severity: Option.getOrElse(decodeSeverity(incident.severity), () => context.severity),
+						liveActivity: {
+							attributes: renderLiveActivityAttributes(subject, nowMs),
+							contentState: renderLiveActivityState(subject, nowMs),
+						},
 					})
 					// Without push credentials nothing was tried: say that, not that the member has no phone.
 					const attempt: Attempt = !summary.configured
@@ -512,7 +545,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 									payload.value.recipient.lastResort === true,
 								)
 							: row.channel === PUSH_CHANNEL
-								? yield* sendPush(row, input.value)
+								? yield* sendPush(row, input.value, incident.value)
 								: yield* sendDirectMessage(row, payload.value, input.value)
 				const attemptedAt = yield* runtime.now
 				if (attempt.status === "sent") {

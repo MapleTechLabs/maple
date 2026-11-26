@@ -183,7 +183,38 @@ export interface MemberPagePush {
 	readonly linkUrl: string
 	/** One notification per incident on the phone: a later step's page replaces this one. */
 	readonly collapseId: string
+	readonly severity: AlertSeverity
+	/**
+	 * The Lock Screen card for the incident, started on the member's phones with the page. Left
+	 * out when there is nothing to draw one from.
+	 */
+	readonly liveActivity?: LiveActivityPayload | undefined
 }
+
+/** A Live Activity's two halves as the phone decodes them: what the incident is, and its numbers. */
+export interface LiveActivityPayload {
+	readonly attributes: Record<string, unknown>
+	readonly contentState: Record<string, unknown>
+}
+
+/** What a Live Activity is drawn from: an incident push has all of it, and so does a page. */
+export type LiveActivitySubject = Pick<
+	IncidentPushEvent,
+	| "orgId"
+	| "incidentId"
+	| "ruleName"
+	| "groupKey"
+	| "groupLabel"
+	| "signalType"
+	| "signalDisplay"
+	| "serviceNames"
+	| "openForMs"
+	| "value"
+	| "comparator"
+	| "threshold"
+	| "thresholdUpper"
+	| "eventType"
+>
 
 /**
  * The notification category of a page. The iOS app registers its Acknowledge action under this
@@ -507,7 +538,7 @@ export const renderDigestPush = (
  * starts, with no error anywhere.
  */
 export const renderLiveActivityAttributes = (
-	event: IncidentPushEvent,
+	event: LiveActivitySubject,
 	nowMs: number,
 ): Record<string, unknown> => ({
 	incident_id: encodePublicId(PublicIdPrefixes.alertIncident, event.incidentId),
@@ -555,7 +586,7 @@ export const buildLiveActivitySeries = (
 
 /** The Live Activity's moving half: the numbers, and whether it is still firing. */
 export const renderLiveActivityState = (
-	event: IncidentPushEvent,
+	event: LiveActivitySubject,
 	nowMs: number,
 	series: ReadonlyArray<number> = [],
 ): Record<string, unknown> => ({
@@ -627,6 +658,49 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 								Arr.filter(listed, (device) => Arr.contains(readers, device.userId)),
 							),
 						)
+
+			/**
+			 * Start the Lock Screen card on each phone, through its push-to-start token. Best effort:
+			 * a rejected start is a log line, and a dead start token does not mean a dead device (the
+			 * notification token is separate), so nothing is disabled here.
+			 */
+			const startLiveActivities = (
+				starters: ReadonlyArray<{ readonly device: MobileDevice; readonly startToken: string }>,
+				payload: LiveActivityPayload,
+				incident: { readonly orgId: OrgId; readonly incidentId: string },
+			) =>
+				Effect.forEach(
+					starters,
+					({ device, startToken }) =>
+						apns
+							.sendLiveActivity({
+								pushToken: startToken,
+								environment: device.environment,
+								bundleId: device.bundleId,
+								event: "start",
+								attributesType: LIVE_ACTIVITY_ATTRIBUTES_TYPE,
+								attributes: payload.attributes,
+								contentState: payload.contentState,
+								staleAfterSeconds: LIVE_ACTIVITY_STALE_SECONDS,
+							})
+							.pipe(
+								Effect.timeout(SEND_TIMEOUT),
+								Effect.flatMap((result) =>
+									result.outcome === "sent"
+										? Effect.void
+										: Effect.logWarning("Live Activity: start push rejected").pipe(
+												Effect.annotateLogs({
+													orgId: incident.orgId,
+													deviceId: device.id,
+													incidentId: incident.incidentId,
+													reason: result.reason,
+												}),
+											),
+								),
+								Effect.ignore,
+							),
+					{ concurrency: SEND_CONCURRENCY, discard: true },
+				)
 
 			const pageMember = Effect.fn("MobilePushService.pageMember")(function* (page: MemberPagePush) {
 				yield* Effect.annotateCurrentSpan({
@@ -738,6 +812,21 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 						deviceCount: pushed.length,
 					}),
 				)
+				// The card that carries Acknowledge. A critical incident already started one on every
+				// phone that asked for critical incidents, so those are left alone; the app takes a
+				// second card for the same incident down again if both ever reach a phone.
+				if (page.liveActivity !== undefined) {
+					yield* startLiveActivities(
+						Arr.flatMap(targets, (device) =>
+							device.liveActivityStartToken !== null &&
+							!(page.severity === "critical" && device.preferences.criticalIncidents)
+								? [{ device, startToken: device.liveActivityStartToken }]
+								: [],
+						),
+						page.liveActivity,
+						{ orgId: page.orgId, incidentId: page.incidentId },
+					)
+				}
 				return {
 					sent: pushed.length,
 					failed: withOutcome("failed").length,
@@ -1100,45 +1189,13 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 							: [],
 					)
 					if (starters.length === 0) return
-					const attributes = renderLiveActivityAttributes(event, nowMs)
-					const contentState = yield* contentStateFor()
-					yield* Effect.forEach(
+					yield* startLiveActivities(
 						starters,
-						({ device, startToken }) =>
-							apns
-								.sendLiveActivity({
-									pushToken: startToken,
-									environment: device.environment,
-									bundleId: device.bundleId,
-									event: "start",
-									attributesType: LIVE_ACTIVITY_ATTRIBUTES_TYPE,
-									attributes,
-									contentState,
-									staleAfterSeconds: LIVE_ACTIVITY_STALE_SECONDS,
-								})
-								.pipe(
-									Effect.timeout(SEND_TIMEOUT),
-									Effect.flatMap((result) =>
-										result.outcome === "sent"
-											? Effect.void
-											: Effect.logWarning("Live Activity: start push rejected").pipe(
-													Effect.annotateLogs({
-														orgId: event.orgId,
-														deviceId: device.id,
-														incidentId: event.incidentId,
-														reason:
-															result.outcome === "unregistered"
-																? result.reason
-																: result.reason,
-													}),
-												),
-									),
-									// A dead push-to-start token does not mean a dead device:
-									// the notification token is separate, so nothing is
-									// disabled here.
-									Effect.ignore,
-								),
-						{ concurrency: SEND_CONCURRENCY, discard: true },
+						{
+							attributes: renderLiveActivityAttributes(event, nowMs),
+							contentState: yield* contentStateFor(),
+						},
+						{ orgId: event.orgId, incidentId: event.incidentId },
 					)
 					return
 				}

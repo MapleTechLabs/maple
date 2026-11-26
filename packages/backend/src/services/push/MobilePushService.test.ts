@@ -568,6 +568,11 @@ describe("MobilePushService.pageMember", () => {
 		body: "Critical. Error Rate 9.1% > 5%.",
 		linkUrl: "https://app.maple.test/alerts/incidents/x",
 		collapseId: "page:x",
+		severity: "critical" as const,
+	}
+	const card = {
+		attributes: { incident_id: "inc_x", rule_name: "Checkout error rate" },
+		contentState: { value: "9.1%", threshold: "> 5%", status: "firing" },
 	}
 	// Everything off: what the org's incidents tell this person is their choice, a page is not.
 	const muted = {
@@ -615,6 +620,58 @@ describe("MobilePushService.pageMember", () => {
 			),
 		)
 	})
+
+	it.effect(
+		"starts the Lock Screen card with a page, on phones that did not get one with the incident",
+		() => {
+			const live: LiveActivityRecorder = { pushes: [], ended: [] }
+			const wantsNoCritical = { ...muted, warningIncidents: true }
+			return Effect.gen(function* () {
+				const push = yield* MobilePushService
+				// A warning incident starts no card of its own, so the page brings it to every phone.
+				yield* push.pageMember({ ...page, severity: "warning", liveActivity: card })
+				assert.deepStrictEqual(
+					Arr.map(live.pushes, (one) => [
+						one.pushToken,
+						one.event,
+						one.attributes,
+						one.contentState,
+					]),
+					[
+						["start-1", "start", card.attributes, card.contentState],
+						["start-2", "start", card.attributes, card.contentState],
+					],
+				)
+				// A critical one already put a card on the phone that asked for critical incidents.
+				live.pushes.length = 0
+				yield* push.pageMember({ ...page, liveActivity: card })
+				assert.deepStrictEqual(
+					Arr.map(live.pushes, (one) => one.pushToken),
+					["start-2"],
+				)
+				// Without a card to draw, or a start token, nothing is started.
+				live.pushes.length = 0
+				yield* push.pageMember({ ...page, severity: "warning" })
+				assert.deepStrictEqual(live.pushes, [])
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						[
+							device(1),
+							device(2, { preferences: wantsNoCritical }),
+							device(3, { liveActivityStartToken: null }),
+							device(4, { userId: OTHER }),
+						],
+						() => ({ outcome: "sent", apnsId: null }),
+						[],
+						[],
+						true,
+						live,
+					),
+				),
+			)
+		},
+	)
 
 	it.effect("switches off a phone Apple says is gone, and reports that nothing landed", () => {
 		const deviceWrites: Array<string> = []

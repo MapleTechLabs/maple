@@ -196,6 +196,9 @@ struct MainTabView: View {
 				// the throttle inside `refresh` keeps this from being a request
 				// per app switch.
 				Task { await widgets.refresh(trigger: .foreground) }
+				// And the Lock Screen cards: who has each incident may have changed
+				// while the app was away, and no push says so.
+				Task { await liveActivities.refreshRunningActivities() }
 			case .background:
 				// Queue the next opportunistic refresh on the way out, which is
 				// the only moment iOS accepts one.

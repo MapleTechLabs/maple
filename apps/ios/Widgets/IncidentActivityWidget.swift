@@ -15,7 +15,8 @@ struct IncidentActivityWidget: Widget {
 		ActivityConfiguration(for: IncidentActivityAttributes.self) { context in
 			IncidentActivityLockScreenView(
 				attributes: context.attributes,
-				state: context.state
+				state: context.state,
+				isStale: context.isStale
 			)
 			.activityBackgroundTint(Token.card)
 			.activitySystemActionForegroundColor(Token.foreground)
@@ -68,6 +69,13 @@ struct IncidentActivityWidget: Widget {
 								status: context.state.status
 							)
 						}
+						if context.state.status == .firing {
+							IncidentActivityResponseRow(
+								attributes: context.attributes,
+								state: context.state,
+								isStale: context.isStale
+							)
+						}
 					}
 				}
 			} compactLeading: {
@@ -75,10 +83,22 @@ struct IncidentActivityWidget: Widget {
 					.fill(context.state.status.tint)
 					.frame(width: 8, height: 8)
 			} compactTrailing: {
-				Text(context.state.value)
-					.font(Typo.tinyMedium)
-					.tabularNumbers()
-					.foregroundStyle(context.state.status.tint)
+				// A page nobody has answered shows the time left before the next
+				// one; otherwise the number that is breaching.
+				if context.state.awaitsAcknowledgement, !context.isStale, let at = context.state.nextPageAt, at > Date() {
+					Text(timerInterval: Date()...at, countsDown: true)
+						.font(Typo.tinyMedium)
+						.monospacedDigit()
+						.foregroundStyle(context.state.status.tint)
+						// Fixed: a timer otherwise takes the island's full width.
+						.multilineTextAlignment(.trailing)
+						.frame(width: 38)
+				} else {
+					Text(context.state.value)
+						.font(Typo.tinyMedium)
+						.tabularNumbers()
+						.foregroundStyle(context.state.status.tint)
+				}
 			} minimal: {
 				// One glyph's worth of space: the colour is the message, and the
 				// value is behind a long-press.

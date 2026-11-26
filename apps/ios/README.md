@@ -140,6 +140,35 @@ pinned by tests in `MapleWidgetDataTests`:
   whose default date strategy is Apple's 2001 reference date — an ISO-8601
   string does not decode, and a failed decode is silence, not an error.
 
+### Answering from the card
+
+While the incident is firing and nobody has it, the card and the expanded
+Dynamic Island carry **Acknowledge**, with who the next escalation step pages and
+a countdown to it. The button is `AcknowledgeIncidentIntent` (in
+`MapleWidgetData`, which both targets link), a `LiveActivityIntent`: iOS performs
+it in the app's process, where `IncidentActivityActions.acknowledge`, set in
+`MapleApp.init`, sends the same request as the banner's Acknowledge with the same
+20 second deadline and failure banner.
+
+Who acknowledged and who is paged next are **not in the server's pushes**. The
+app reads the incident and writes them into the content state
+(`LiveActivityController.incidentChanged`): when a card starts, when the app
+comes to the front, and with the answer to an Acknowledge. A content state
+replaces the previous one whole, so a later push (a `renotify`) drops them again
+and the card reads "Unacknowledged" with no countdown until the app next runs.
+The card goes stale at the next page's time, and a stale card stops showing the
+countdown: by then the step has run and nothing on the Lock Screen knows what it
+did.
+
+A page also starts the card on the paged person's phones
+(`MobilePushService.pageMember`), so a warning incident that pages someone gets
+one too. A critical incident already started one for everyone who asked for
+critical incidents, so those phones are skipped, and the app takes a second card
+for the same incident down again if both ever arrive.
+
+Whether the button acts on a locked phone without Face ID is iOS's decision; the
+intent asks for `.alwaysAllowed`. This needs checking on a device.
+
 Live Activities render in the simulator but cannot receive pushes; verifying the
 push path needs a device. `NSSupportsLiveActivities` is on the **app's**
 Info.plist, not the extension's.

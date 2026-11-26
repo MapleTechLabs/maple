@@ -42,6 +42,7 @@ final class IncidentResponder {
 		case triage
 		case overview
 		case notification
+		case liveActivity = "live_activity"
 	}
 
 	struct Pending: Equatable {
