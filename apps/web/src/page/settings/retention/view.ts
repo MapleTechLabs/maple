@@ -180,6 +180,9 @@ const overrideSummary = (set: V2RetentionPolicy["sources"][number]["set"]): stri
 		", ",
 	)
 
+const isOwnWarehouse = (model: Model): boolean =>
+	Option.exists(AsyncData.getData(model.policy), (policy) => policy.storage === "own_warehouse")
+
 const sourcesSection = (h: H, model: Model): ReadonlyArray<Html> =>
 	Option.match(AsyncData.getData(model.policy), {
 		onNone: () => [],
@@ -254,8 +257,8 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 					]),
 				]),
 		signalsSection(h, model, inputs),
-		...sourcesSection(h, model),
-		footnote(h),
+		// On its own ClickHouse nothing set here applies, so the notice stands alone.
+		...(isOwnWarehouse(model) ? [] : [...sourcesSection(h, model), footnote(h)]),
 		...saveBar(h, {
 			isDirty: changedSignals(model).length > 0,
 			isPending: model.isSaving,
