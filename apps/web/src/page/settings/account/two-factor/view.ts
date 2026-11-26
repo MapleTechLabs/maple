@@ -14,7 +14,7 @@ import { settingsSection, settingsSections } from "../../../kit/settings-section
 import { codeField } from "../code-field"
 import type { AccountUser } from "../user"
 import { type EnrollStep, Message, type Model } from "./model"
-import { qrCode } from "./qr-code"
+import { qrCode } from "@maple/views/ui/qr-code"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -123,7 +123,13 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 					vstack(h, { gap: "4", align: "center" }, [
 						h.div(
 							[h.Class("rounded-md border border-border bg-background p-3")],
-							[qrCode(h, step.uri, "size-44")],
+							[
+								qrCode(h, {
+									value: step.uri,
+									label: "Two-factor setup QR code",
+									className: "size-44",
+								}),
+							],
 						),
 						h.div(
 							[h.Class("w-full")],

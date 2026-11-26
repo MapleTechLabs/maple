@@ -393,7 +393,6 @@
         "effect": "catalog:effect",
         "foldkit": "0.171.0",
         "three": "^0.187.0",
-        "uqr": "^0.1.3",
       },
       "devDependencies": {
         "@foldkit/vite-plugin": "0.29.1",
@@ -1112,6 +1111,7 @@
         "effect": "catalog:effect",
         "elkjs": "^0.12.1",
         "foldkit": "0.171.0",
+        "uqr": "^0.1.3",
       },
       "devDependencies": {
         "@types/d3-scale": "^4.0.9",

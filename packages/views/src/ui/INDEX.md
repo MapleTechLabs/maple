@@ -141,6 +141,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/person-avatar.ts` `personAvatar`, `personLabel`, `personCard`, `personTrigger`, `personAvatarStack`: `PersonAvatar` and `PersonLabel`: a member of the org as a warm initials tile (or their own image), alone or beside their name.
 - `packages/views/src/ui/popover.ts` `titleId`, `descriptionId`, `open`, `close`, `view`, `popoverTitle`, `popoverDescription` (stateful: Model, init, update): Base UI `Popover` (`@maple/ui/popover`, non-modal): the trigger toggles it, Escape and a press outside close it, and it is placed under the trigger with `sideOffset` 4 and colli...
 - `packages/views/src/ui/pressable.ts` `pressable`: `Pressable`: a click target that draws its own look (a timeline lane, a chart bar, a colour swatch, a bespoke row).
+- `packages/views/src/ui/qr-code.ts` `qrCode`: `QrCode`: a value as a QR code, one `<path>` in `currentColor` so it takes the theme's foreground; `label` is its accessible name and `className` its size.
 - `packages/views/src/ui/radio-group.ts` `radioGroup`, `labelId`, `radio` (stateful: Model, init, update): Base UI `RadioGroup`: the checked value.
 - `packages/views/src/ui/refresh-button.ts` `refreshButton`: A refresh button: the icon spins while pending and the button disables.
 - `packages/views/src/ui/removable-chip.ts` `removableChip`: `RemovableChip`: an active filter as a small mono chip, its label then an x that removes it (the infra filter rails).

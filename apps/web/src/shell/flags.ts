@@ -2,6 +2,7 @@ import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { readQuotaApproachingDismissed } from "./billing-banners"
 import { readDashboardFavorites } from "./favorites"
+import { IOS_PROMPT_STORAGE_PREFIX } from "./ios-app-prompt"
 import {
 	COLLAPSED_NAV_GROUPS_KEY,
 	INFRA_SURFACES_STORAGE_PREFIX,
@@ -75,6 +76,12 @@ const readNoScheduleOrgs = readPrefixed(
 	Schema.decodeUnknownOption(Schema.NumberFromString),
 )
 
+/** The users who closed the iPhone app card in this browser. */
+const readIosPromptDismissedUsers = Effect.map(
+	readPrefixed(IOS_PROMPT_STORAGE_PREFIX, (raw) => (raw === "1" ? Option.some(true) : Option.none())),
+	Rec.keys,
+)
+
 /** `SaveSidebarState`'s cookie: open unless the last toggle collapsed it (as Maple Local reads it). */
 export const isSidebarOpenIn = (cookie: string): boolean =>
 	!Arr.contains(Str.split("; ")(cookie), "sidebar_state=false")
@@ -94,6 +101,7 @@ export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* ()
 		noScheduleOrgs: yield* readNoScheduleOrgs,
 		rememberedSurfaces: yield* readRememberedSurfaces,
 		isQuotaApproachingDismissed: yield* readQuotaApproachingDismissed,
+		iosPromptDismissedUsers: yield* readIosPromptDismissedUsers,
 		platform: detectPlatform(),
 	}
 })
