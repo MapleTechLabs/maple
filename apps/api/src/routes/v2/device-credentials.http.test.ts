@@ -2,6 +2,7 @@ import { generateKeyPairSync, createHash, randomUUID } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { EdgeCacheService } from "@maple/cache"
 import { OrgId, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import {
 	ConfigProvider,
@@ -366,14 +367,14 @@ const withHarness = (body: (harness: Harness) => Promise<void>, trustAnchor?: Ui
 const isAuthorized = (status: number) => status !== 401 && status !== 403
 
 /** Register as an arbitrary member, which the self-hosted session cannot be. */
-const registerAs = (harness: Harness, userId: UserId, key: DeviceKey) =>
+const registerAs = (harness: Harness, userId: UserId, key: DeviceKey, roles: ReadonlyArray<string> = []) =>
 	harness.runtime.runPromiseExit(
 		Effect.gen(function* () {
 			const devices = yield* DeviceCredentialsService
 			const path = `/v2/device_credentials/${INSTALLATION}`
 			const dpop = yield* Effect.promise(() => proof(key, { htm: "PUT", htu: `${BASE}${path}` }))
 			return yield* devices.register(
-				{ orgId: ORG, userId, roles: [] },
+				{ orgId: ORG, userId, roles, permissions: Policy.grantsOf(roles) },
 				{ installationId: INSTALLATION, publicJwk: key.jwk },
 				{ proof: dpop, method: "PUT", path },
 			)
@@ -449,6 +450,20 @@ describe("device credential registration", () => {
 			await harness.sql(`update device_credentials set scopes = '["widget_summary:read"]'::jsonb`, [])
 			const refreshed = await harness.register(secret, key)
 			expect(refreshed.body.scopes).toEqual(["widget_summary:read", "widget_summary:write"])
+		}),
+	)
+
+	it(
+		"keeps the widget's write scope from a member who may not respond to incidents, and takes it back on a refresh",
+		withHarness(async (harness) => {
+			const key = await newDeviceKey()
+			const scopesAs = async (role: string) => {
+				const exit = await registerAs(harness, OTHER_USER, key, [role])
+				return Exit.isSuccess(exit) ? exit.value.scopes : null
+			}
+			expect(await scopesAs("org:member")).toEqual(["widget_summary:read", "widget_summary:write"])
+			// The same key again, after a move to a role that only reads.
+			expect(await scopesAs("org:analyst")).toEqual(["widget_summary:read"])
 		}),
 	)
 

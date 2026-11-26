@@ -2134,11 +2134,57 @@ describe("v2 alerts over HTTP", () => {
 			acknowledged_by: { user_id: "user_alerts_e2e" },
 		})
 
+		// A widget answers its owner's pages only: an incident that paged someone else is not there.
+		const notMineId = encodePublicId("inc", notMine)
+		expect(
+			(await call("POST", `/v2/widget_summary/pages/${notMineId}/acknowledge`, writer.secret)).status,
+		).toBe(404)
+		expect(
+			(await call("GET", `/v2/alerts/incidents/${notMineId}`, key.secret)).body.acknowledged_at,
+		).toBeNull()
+
 		// The widget's scope is a fence: it reaches nothing else about alerts.
 		expect((await call("GET", "/v2/alerts/incidents", writer.secret)).status).toBe(403)
 		expect((await call("POST", `/v2/alerts/incidents/${waitingId}/resolve`, writer.secret)).status).toBe(
 			403,
 		)
+
+		await harness.dispose()
+	})
+
+	it("keeps an unanswered page on the widget however many answered incidents triggered since", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const reader = await harness.bootstrapKey(["widget_summary:read"])
+		await createWebhookAndRule(harness, key.secret)
+		const waiting = "00000000-0000-4000-8000-000000002a00"
+		const answered = Arr.makeBy(11, (n) => `00000000-0000-4000-8000-000000002b${10 + n}`)
+		await insertOpenIncidents(harness, "org_alerts_e2e", [waiting, ...answered])
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = now(), acknowledged_by_user_id = 'user_dana',
+				acknowledged_by_name = 'Dana Kim', acknowledged_via = 'slack', last_triggered_at = now() + interval '1 minute'
+				where id <> '${waiting}' and org_id = 'org_alerts_e2e'`,
+		)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_member_notifications (
+				id, org_id, incident_id, run_id, user_id, channel, status, scheduled_at, payload_json,
+				dedupe_key, created_at, updated_at
+			)
+			select 'wp-' || id, org_id, id, 'run-' || id, 'user_alerts_e2e', 'push', 'sent', now(), '{}'::jsonb,
+				'wp-' || id, now(), now()
+			from alert_incidents where org_id = 'org_alerts_e2e'`,
+		)
+
+		const listed = await harness.request("GET", "/v2/widget_summary/pages", reader.secret)
+		expect(listed.status).toBe(200)
+		expect(listed.body.has_more).toBe(true)
+		expect(listed.body.data).toHaveLength(10)
+		expect(listed.body.data[0]).toMatchObject({
+			incident_id: encodePublicId("inc", waiting),
+			acknowledged_by: null,
+		})
 
 		await harness.dispose()
 	})

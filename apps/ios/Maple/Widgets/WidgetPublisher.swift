@@ -324,6 +324,9 @@ final class WidgetPublisher {
 	/// included separately because the app can be showing an environment that
 	/// the environments list has not caught up with yet.
 	private static func clearSnapshots(organizationId: String, environments organization: WidgetOrganization?) {
+		// One person's pages, kept per organization: the next account on this
+		// phone may be in the same one.
+		WidgetSnapshotStore<PagesSnapshot>.pages(organizationId: organizationId).clear()
 		var slots: [String?] = [nil]
 		slots.append(contentsOf: (organization?.environments ?? []).map { $0 })
 		if let active = organization?.activeEnvironment, !slots.contains(active) { slots.append(active) }

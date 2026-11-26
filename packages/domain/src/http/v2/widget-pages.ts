@@ -137,7 +137,7 @@ export class V2WidgetPagesApiGroup extends HttpApiGroup.make("widgetPages")
 					identifier: "acknowledgeWidgetPage",
 					summary: "Acknowledge an incident from a widget",
 					description:
-						"Acknowledges an open incident as the calling user, exactly as `POST /v2/alerts/incidents/{id}/acknowledge` does, and returns the widget row as it now stands. Fails with 409 on a resolved incident. Requires the `widget_summary:write` scope.",
+						"Acknowledges an open incident that paged the calling user, as `POST /v2/alerts/incidents/{id}/acknowledge` does, and returns the widget row as it now stands. Fails with 404 on an incident that did not page the caller and 409 on a resolved one. Requires the `widget_summary:write` scope.",
 				}),
 			),
 	)

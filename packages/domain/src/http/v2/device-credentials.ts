@@ -94,7 +94,7 @@ export const V2DeviceCredential = Schema.Struct({
 	}),
 	scopes: Schema.Array(Schema.String).annotate({
 		description:
-			"Fixed by the server. Today `widget_summary:read` and `widget_summary:write`: the widgets' reads, and acknowledging a page from one.",
+			"Fixed by the server. Today `widget_summary:read`, the widgets' reads, and for a member who may respond to incidents `widget_summary:write`, acknowledging a page from a widget.",
 	}),
 	attested: Schema.Boolean.annotate({
 		description: "Whether an App Attest attestation for this installation verified.",

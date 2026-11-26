@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/http-api"
 import type { AlertIncidentDocument, OrgId } from "@maple/domain/http"
-import { CurrentTenant } from "@maple/domain/http"
+import { AlertIncidentNotFoundError, CurrentTenant } from "@maple/domain/http"
 import type { V2WidgetPage } from "@maple/domain/http/v2"
 import { MapleApiV2, timestamp, WIDGET_PAGES_LIMIT } from "@maple/domain/http/v2"
 import type { UserId } from "@maple/primitives"
@@ -81,30 +81,44 @@ export const HttpV2WidgetPagesLive = HttpApiBuilder.group(MapleApiV2, "widgetPag
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const nowMs = yield* Clock.currentTimeMillis
-					// One past the limit says whether there are more than a widget lists.
-					const { incidents } = yield* readModels.listIncidents(tenant.orgId, {
-						status: "open",
-						pagedUserId: tenant.userId,
-						limit: WIDGET_PAGES_LIMIT + 1,
+					// Two reads, so answered incidents can never crowd an unanswered page out of the
+					// limit. One past it says whether there are more than a widget lists.
+					const half = (acknowledged: boolean) =>
+						readModels.listIncidents(tenant.orgId, {
+							acknowledged,
+							pagedUserId: tenant.userId,
+							limit: WIDGET_PAGES_LIMIT + 1,
+						})
+					const [waiting, answered] = yield* Effect.all([half(false), half(true)], {
+						concurrency: 2,
 					})
-					const shown = Arr.take(incidents, WIDGET_PAGES_LIMIT)
-					const rows = yield* rowsOf(tenant.orgId, tenant.userId, shown)
 					// What is waiting on an answer leads; the read's own order (most recently
 					// triggered) holds within each half.
-					const waiting = Arr.filter(rows, (row) => row.acknowledged_by === null)
-					const answered = Arr.filter(rows, (row) => row.acknowledged_by !== null)
+					const incidents = [...waiting.incidents, ...answered.incidents]
 					return {
 						object: "widget_pages" as const,
 						generated_at: timestamp(DateTime.formatIso(DateTime.makeUnsafe(nowMs))),
 						organization_id: tenant.orgId,
 						has_more: incidents.length > WIDGET_PAGES_LIMIT,
-						data: [...waiting, ...answered],
+						data: yield* rowsOf(
+							tenant.orgId,
+							tenant.userId,
+							Arr.take(incidents, WIDGET_PAGES_LIMIT),
+						),
 					}
 				}).pipe(Effect.withSpan("HttpV2WidgetPages.list")),
 			)
 			.handle("acknowledge", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					// A widget answers its own pages and nothing else: a credential that lives in an
+					// extension must not be able to quiet an escalation that never reached its owner.
+					if (!(yield* pagesService.wasPaged(tenant.orgId, params.id, tenant.userId))) {
+						return yield* new AlertIncidentNotFoundError({
+							message: `No page for you on alert incident '${params.id}'`,
+							incidentId: params.id,
+						})
+					}
 					// The name rides on the acknowledgement so every surface can show it without a
 					// directory lookup; a slow directory records none rather than delaying the answer.
 					const name = Option.getOrNull(

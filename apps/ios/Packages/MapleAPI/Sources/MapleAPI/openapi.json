@@ -4246,7 +4246,7 @@
             "$ref": "#/components/schemas/_maple_OrgId"
           },
           "scopes": {
-            "description": "Fixed by the server. Today `widget_summary:read` and `widget_summary:write`: the widgets' reads, and acknowledging a page from one.",
+            "description": "Fixed by the server. Today `widget_summary:read`, the widgets' reads, and for a member who may respond to incidents `widget_summary:write`, acknowledging a page from a widget.",
             "items": {
               "type": "string"
             },

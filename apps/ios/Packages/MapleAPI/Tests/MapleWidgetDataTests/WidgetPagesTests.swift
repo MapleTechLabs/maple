@@ -111,6 +111,11 @@ private struct Harness {
 		WidgetPagesClient(credentials: credentials, keys: keys, session: transport, appGroupIdentifier: suite)
 	}
 
+	/// What the app reads before deciding the registered key is still good.
+	var isCredentialRejected: Bool {
+		WidgetFetchStateStore(appGroupIdentifier: suite).load(organizationId: organizationId).isCredentialRejected
+	}
+
 	var stored: PagesSnapshot? {
 		WidgetSnapshotStore<PagesSnapshot>.pages(organizationId: organizationId, appGroupIdentifier: suite).load()
 	}
@@ -228,6 +233,27 @@ struct WidgetPagesClientTests {
 		let refused = ScriptedTransport(["/v2/device_tokens": tokenReply, listPath: .init(status: 403, body: "{}")])
 		#expect(await harness.client(refused).refresh(organizationId: organizationId, organizationName: nil, now: now) == .needsApp)
 		#expect(harness.stored == nil)
+	}
+
+	@Test("A revoked credential is recorded for the app to replace, and a refusal of the request or no network is not")
+	func revokedCredential() async throws {
+		let harness = Harness()
+		defer { harness.cleanUp() }
+		try harness.register()
+		// The key is fine, the request is not allowed: nothing a new key would fix.
+		let forbidden = ScriptedTransport(["/v2/device_tokens": tokenReply, listPath: .init(status: 403, body: "{}")])
+		_ = await harness.client(forbidden).refresh(organizationId: organizationId, organizationName: nil, now: now)
+		#expect(await harness.client(ScriptedTransport([:])).refresh(organizationId: organizationId, organizationName: nil, now: now) == .failed)
+		#expect(!harness.isCredentialRejected)
+
+		// A role change revoked the key: the token in hand is refused, and the
+		// token endpoint no longer knows the key that would buy another.
+		let revoked = ScriptedTransport([
+			listPath: .init(status: 401, body: #"{"error":{"code":"invalid_token"}}"#),
+			"/v2/device_tokens": .init(status: 401, body: #"{"error":{"code":"invalid_device_credential"}}"#),
+		])
+		#expect(await harness.client(revoked).refresh(organizationId: organizationId, organizationName: nil, now: now) == .needsApp)
+		#expect(harness.isCredentialRejected)
 	}
 
 	@Test("Acknowledges with a signed POST and writes the answer into the stored snapshot")

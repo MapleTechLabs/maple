@@ -237,6 +237,7 @@ public actor WidgetPagesClient {
 	private let session: any WidgetHTTPTransport
 	/// Where snapshots are written. Only tests point it elsewhere.
 	private let appGroupIdentifier: String
+	private let fetchStates: WidgetFetchStateStore
 
 	public init(
 		credentials: WidgetCredentialStore = WidgetCredentialStore(),
@@ -248,6 +249,7 @@ public actor WidgetPagesClient {
 		self.credentials = credentials
 		self.keys = keys
 		self.appGroupIdentifier = appGroupIdentifier
+		self.fetchStates = WidgetFetchStateStore(appGroupIdentifier: appGroupIdentifier)
 		let session = session ?? WidgetSummaryFetcher.makeSession()
 		self.session = session
 		self.tokens = tokens ?? DeviceTokenClient(transport: session, store: credentials)
@@ -287,7 +289,9 @@ public actor WidgetPagesClient {
 			{ Self.request(url, method: "GET") },
 			credential: device, key: key, session: session, tokens: tokens, now: now
 		)
-		guard case .response(let response) = sent else { return .failed }
+		guard case .response(let response) = sent else {
+			return rejected(sent, organizationId: organizationId, now: now) ? .needsApp : .failed
+		}
 		switch response.status {
 		case 200:
 			// The organization the credential is bound to is the one the server
@@ -319,7 +323,9 @@ public actor WidgetPagesClient {
 			{ Self.request(url, method: "POST") },
 			credential: device, key: key, session: session, tokens: tokens, now: now
 		)
-		guard case .response(let response) = sent else { return .failed }
+		guard case .response(let response) = sent else {
+			return rejected(sent, organizationId: organizationId, now: now) ? .needsApp : .failed
+		}
 		switch response.status {
 		case 200:
 			guard let page = try? WidgetJSON.decoder.decode(WidgetPagesPayload.Page.self, from: response.data).page
@@ -334,6 +340,16 @@ public actor WidgetPagesClient {
 		default:
 			return .failed
 		}
+	}
+
+	/// Whether the server refused the credential itself (revoked, say, by a role
+	/// change). Recorded where the app looks before deciding a key is still
+	/// good, so its next foreground registers a new one instead of waiting for
+	/// the scheduled renewal.
+	private func rejected(_ sent: DeviceRequest.Sent, organizationId: String, now: Date) -> Bool {
+		guard case .failure(.unauthorized) = sent else { return false }
+		fetchStates.recordCredentialRejection(organizationId: organizationId, at: now)
+		return true
 	}
 
 	/// The registered credential and the key it is bound to, when both are
