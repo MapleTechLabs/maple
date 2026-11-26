@@ -282,12 +282,17 @@ final class HomeModel {
 		let health = try await healthTask
 		let previousServices = health.previous.map { ServiceSummary.aggregate($0) }
 		let services = ServiceSummary.aggregate(health.services)
-		let incidents = try await incidentsTask.items
+		let listed = try await incidentsTask.items
 		let rules = Dictionary(
 			((try? await rulesTask.items) ?? []).map { ($0.id, $0) },
 			uniquingKeysWith: { first, _ in first }
 		)
-		let pagingMe = Set(((try? await pagingTask) ?? []).map(\.id))
+		// A page to this person gets its card even when fifty newer incidents
+		// would have pushed it off the list.
+		let paging = (try? await pagingTask) ?? []
+		let pagingMe = Set(paging.map(\.id))
+		let listedIds = Set(listed.map(\.id))
+		let incidents = paging.filter { !listedIds.contains($0.id) } + listed
 
 		var cards = incidents.map { incident in
 			let rule = rules[incident.ruleId]

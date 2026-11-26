@@ -139,6 +139,19 @@ struct IncidentResponseStateTests {
 		#expect(next.countdown(now: at.addingTimeInterval(-3_725)) == "1h 2m")
 	}
 
+	@Test("An escalation block from a server that predates the people field still says when the next page is")
+	func nextPageWithoutPeople() throws {
+		var block = escalation()
+		block.removeValue(forKey: "next_step_people")
+		let state = try incident(["escalation": block]).responseState
+		guard case .unacknowledged(let next?) = state else {
+			Issue.record("expected a waiting page, got \(state)")
+			return
+		}
+		#expect(next.people.isEmpty)
+		#expect(next.headline(viewerUserId: nil) == "Escalates to step 2 of 3")
+	}
+
 	@Test("No run, a paused run or an ended run leaves an open incident with no next page")
 	func unacknowledgedWithoutNextPage() throws {
 		#expect(try incident().responseState == .unacknowledged(nil))
@@ -292,6 +305,17 @@ struct IncidentEventWordingTests {
 		#expect(events.paged(userId: "user_me"))
 		#expect(!events.paged(userId: "user_other"))
 		#expect(!events.paged(userId: nil))
+		// A page that was skipped because someone acknowledged first paged nobody.
+		let skipped = [
+			try event([
+				"type": "paged",
+				"page": [
+					"user_id": "user_me", "name": NSNull(), "channel": "push", "status": "skipped",
+					"error_message": NSNull(),
+				],
+			])
+		]
+		#expect(!skipped.paged(userId: "user_me"))
 	}
 }
 

@@ -673,6 +673,48 @@ describe("MobilePushService.pageMember", () => {
 		},
 	)
 
+	it.effect(
+		"pages only someone who still reads telemetry, and keeps paging when the directory cannot say",
+		() => {
+			const sent: Array<ApnsPush> = []
+			const UNREADABLE = Schema.decodeSync(UserId)("user_clerk_down")
+			const directory = Layer.mock(OrgMembershipService)({
+				directory: "clerk",
+				verify: (userId, orgId) =>
+					userId === UNREADABLE
+						? Effect.fail(new AuthorizationUnavailableError({ message: "Clerk is down" }))
+						: Effect.succeedSome({
+								orgId,
+								role: Schema.decodeSync(RoleName)("org:custom"),
+								customPermissions: ["billing:manage"],
+							}),
+			})
+			return Effect.gen(function* () {
+				const push = yield* MobilePushService
+				// The banner carries what the rule measured, so it follows the same rule as an incident push.
+				const refused = yield* push.pageMember(page)
+				assert.deepStrictEqual([refused.sent, sent.length], [0, 0])
+				// An outage must not silence a page.
+				const kept = yield* push.pageMember({ ...page, userId: UNREADABLE })
+				assert.deepStrictEqual([kept.sent, Arr.map(sent, (one) => one.deviceToken)], [1, ["token-2"]])
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						[device(1), device(2, { userId: UNREADABLE })],
+						() => ({ outcome: "sent", apnsId: null }),
+						sent,
+						[],
+						true,
+						undefined,
+						undefined,
+						undefined,
+						directory,
+					),
+				),
+			)
+		},
+	)
+
 	it.effect("switches off a phone Apple says is gone, and reports that nothing landed", () => {
 		const deviceWrites: Array<string> = []
 		return Effect.gen(function* () {

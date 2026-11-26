@@ -214,7 +214,7 @@ final class PushRegistrar: NSObject {
 		surface: IncidentResponder.Surface
 	) async -> AlertIncident? {
 		guard let api = opener?.session?.api else {
-			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
+			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId, confirmed: true)
 			return nil
 		}
 		let scoped = organizationId.map { api.scoped(to: $0) } ?? api
@@ -225,7 +225,7 @@ final class PushRegistrar: NSObject {
 		let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<BackgroundAcknowledgement, Never>) in
 			// Whichever finishes first answers; the other finds the answer given.
 			let first = FirstAnswer(continuation)
-			Task { @MainActor in
+			let request = Task { @MainActor in
 				do {
 					first.give(
 						.acknowledged(
@@ -240,7 +240,11 @@ final class PushRegistrar: NSObject {
 			}
 			Task { @MainActor in
 				try? await Task.sleep(for: Self.backgroundActionDeadline)
-				first.give(.failed)
+				// Stop the request rather than leave it to land after the banner has
+				// said otherwise. It may still have reached the server, which is why
+				// this outcome is worded as not known.
+				request.cancel()
+				first.give(.unconfirmed)
 			}
 		}
 		switch outcome {
@@ -252,7 +256,10 @@ final class PushRegistrar: NSObject {
 			// there is nothing to warn about either.
 			return nil
 		case .failed:
-			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId)
+			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId, confirmed: true)
+			return nil
+		case .unconfirmed:
+			await notifyAcknowledgeFailed(incidentId: incidentId, organizationId: organizationId, confirmed: false)
 			return nil
 		}
 	}
@@ -260,7 +267,10 @@ final class PushRegistrar: NSObject {
 	private enum BackgroundAcknowledgement: Sendable {
 		case acknowledged(AlertIncident)
 		case nothingToAnswer
+		/// The server refused, or could not be reached.
 		case failed
+		/// The deadline passed with the request still out.
+		case unconfirmed
 	}
 
 	private static let backgroundActionDeadline: Duration = .seconds(20)
@@ -279,10 +289,14 @@ final class PushRegistrar: NSObject {
 		}
 	}
 
-	private func notifyAcknowledgeFailed(incidentId: String, organizationId: String?) async {
+	/// `confirmed` is false when the request ran out of time: it may have landed.
+	private func notifyAcknowledgeFailed(incidentId: String, organizationId: String?, confirmed: Bool) async {
 		let content = UNMutableNotificationContent()
-		content.title = "Couldn't acknowledge"
-		content.body = "The page is still unanswered. Open the incident to try again."
+		content.title = confirmed ? "Couldn't acknowledge" : "Acknowledgement not confirmed"
+		content.body =
+			confirmed
+			? "The page is still unanswered. Open the incident to try again."
+			: "Maple did not hear back in time. Open the incident to check."
 		content.sound = .default
 		content.interruptionLevel = .timeSensitive
 		// The same keys a page carries, so a tap opens the incident it is about.

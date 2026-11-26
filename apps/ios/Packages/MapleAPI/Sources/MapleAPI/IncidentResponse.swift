@@ -94,7 +94,8 @@ extension AlertIncident {
 		return .unacknowledged(
 			.init(
 				at: at,
-				people: escalation.nextStepPeople.map { .init(userId: $0.userId, name: $0.name) },
+				// Absent from a server that predates the field.
+				people: (escalation.nextStepPeople ?? []).map { .init(userId: $0.userId, name: $0.name) },
 				step: escalation.step,
 				stepCount: escalation.stepCount,
 				pass: escalation.pass,
@@ -310,9 +311,10 @@ extension AlertIncidentEvent {
 }
 
 extension Sequence where Element == AlertIncidentEvent {
-	/// Whether an escalation step paged this person, on any channel.
+	/// Whether an escalation step's page reached this person, on any channel. A
+	/// page that was skipped or never got through did not page anyone.
 	public func paged(userId: String?) -> Bool {
 		guard let userId else { return false }
-		return contains { $0._type == .paged && $0.page?.userId == userId }
+		return contains { $0._type == .paged && $0.page?.userId == userId && $0.page?.status == .sent }
 	}
 }

@@ -34,6 +34,7 @@ const toV2Escalation = (
 	doc: AlertIncidentEscalationDocument,
 	isAcknowledged: boolean,
 	nextStepPeople: AlertIncidentNextStepPeople["people"],
+	client: WireClient,
 ): V2AlertIncidentEscalation => {
 	const isPausing = isAcknowledged && doc.status === "active"
 	return {
@@ -47,32 +48,46 @@ const toV2Escalation = (
 		pass_count: doc.repeatCount + 1,
 		steps_sent: doc.stepsSent,
 		next_step_at: isPausing ? null : doc.nextStepAt,
-		next_step_people:
-			isPausing || doc.nextStepAt === null
-				? []
-				: Arr.map(nextStepPeople, (person) => ({ user_id: person.userId, name: person.name })),
+		...(client.isOlderIosBuild
+			? undefined
+			: {
+					next_step_people:
+						isPausing || doc.nextStepAt === null
+							? []
+							: Arr.map(nextStepPeople, (person) => ({
+									user_id: person.userId,
+									name: person.name,
+								})),
+				}),
 	}
 }
 
 /**
- * iOS builds from before the app could acknowledge decode the acknowledgement source as a closed
- * enum, and one value they do not know fails their whole incident list. They are the callers on
- * Apple's networking stack that do not name themselves, and they read `mobile` as `api`.
+ * iOS builds from before the app could acknowledge decode these objects strictly: a key or an enum
+ * value they do not know fails their whole incident list. They are the callers on Apple's
+ * networking stack that do not name themselves, and they are served the shape they shipped with:
+ * `mobile` reads as `api`, and the escalation block carries no `next_step_people`.
  */
-type AckSourceOnWire = (source: AlertIncidentAckSource | null) => AlertIncidentAckSource | null
+interface WireClient {
+	readonly isOlderIosBuild: boolean
+	readonly ackSource: (source: AlertIncidentAckSource | null) => AlertIncidentAckSource | null
+}
 
-const ackSourceOnWire = Effect.map(HttpServerRequest.HttpServerRequest, (request): AckSourceOnWire => {
+const wireClient = Effect.map(HttpServerRequest.HttpServerRequest, (request): WireClient => {
 	const isOlderIosBuild =
 		request.headers[MOBILE_CLIENT_HEADER] === undefined &&
 		/CFNetwork\//u.test(request.headers["user-agent"] ?? "")
-	return (source) => (isOlderIosBuild && source === "mobile" ? "api" : source)
+	return {
+		isOlderIosBuild,
+		ackSource: (source) => (isOlderIosBuild && source === "mobile" ? "api" : source),
+	}
 })
 
 const toV2Incident = (
 	doc: AlertIncidentDocument,
 	escalation: AlertIncidentEscalationDocument | undefined,
 	nextStepPeople: AlertIncidentNextStepPeople["people"],
-	onWire: AckSourceOnWire,
+	client: WireClient,
 ): V2AlertIncident => ({
 	id: doc.id,
 	object: "alert_incident",
@@ -106,12 +121,12 @@ const toV2Incident = (
 		doc.acknowledgedAt === null
 			? null
 			: { user_id: doc.acknowledgedByUserId, name: doc.acknowledgedByName },
-	acknowledged_via: onWire(doc.acknowledgedVia),
+	acknowledged_via: client.ackSource(doc.acknowledgedVia),
 	error_issue_id: doc.errorIssueId,
 	escalation:
 		escalation === undefined
 			? null
-			: toV2Escalation(escalation, doc.acknowledgedAt !== null, nextStepPeople),
+			: toV2Escalation(escalation, doc.acknowledgedAt !== null, nextStepPeople, client),
 	...(doc.anomalyIncidentId === undefined ? undefined : { anomaly_incident_id: doc.anomalyIncidentId }),
 	...(doc.groupLabel === undefined ? undefined : { group_label: doc.groupLabel }),
 	...(doc.labels === undefined ? undefined : { labels: doc.labels }),
@@ -119,7 +134,7 @@ const toV2Incident = (
 	silenced_at: timestampOrNull(doc.silencedAt),
 })
 
-const toV2Event = (doc: AlertIncidentEventDocument, onWire: AckSourceOnWire): V2AlertIncidentEvent => ({
+const toV2Event = (doc: AlertIncidentEventDocument, client: WireClient): V2AlertIncidentEvent => ({
 	id: doc.id,
 	object: "alert_incident_event",
 	incident_id: doc.incidentId,
@@ -128,7 +143,7 @@ const toV2Event = (doc: AlertIncidentEventDocument, onWire: AckSourceOnWire): V2
 		doc.actorUserId === null && doc.actorName === null
 			? null
 			: { user_id: doc.actorUserId, name: doc.actorName },
-	source: onWire(doc.source),
+	source: client.ackSource(doc.source),
 	...(doc.page === undefined
 		? undefined
 		: {
@@ -156,7 +171,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 		// is read only for the runs still waiting on a step: unacknowledged open incidents with a chain.
 		const incidentsOnWire = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
 			Effect.gen(function* () {
-				const onWire = yield* ackSourceOnWire
+				const client = yield* wireClient
 				const escalations = yield* readModels.listIncidentEscalations(
 					orgId,
 					Arr.map(docs, (doc): AlertIncidentId => doc.id),
@@ -172,7 +187,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 				const people = yield* pagesService.listNextStepPeople(orgId, waiting)
 				const peopleByIncident = new Map(Arr.map(people, (row) => [row.incidentId, row.people]))
 				return (doc: AlertIncidentDocument) =>
-					toV2Incident(doc, byIncident.get(doc.id), peopleByIncident.get(doc.id) ?? [], onWire)
+					toV2Incident(doc, byIncident.get(doc.id), peopleByIncident.get(doc.id) ?? [], client)
 			})
 		const withEscalations = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
 			Effect.map(incidentsOnWire(orgId, docs), (toWire) => Arr.map(docs, toWire))
@@ -268,10 +283,10 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 					const ackEvents = yield* acks.listEvents(tenant.orgId, params.id)
 					const pages = yield* pagesService.listPages(tenant.orgId, [params.id])
 					const events = mergePagesIntoEvents(ackEvents, pages)
-					const onWire = yield* ackSourceOnWire
+					const client = yield* wireClient
 					return {
 						object: "list" as const,
-						data: Arr.map(events, (event) => toV2Event(event, onWire)),
+						data: Arr.map(events, (event) => toV2Event(event, client)),
 					}
 				}),
 			)
