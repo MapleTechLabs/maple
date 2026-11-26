@@ -41,7 +41,7 @@ struct ScheduleView: View {
 					}
 				}
 			self.model = model
-			await model.start(seed: seed?.organizationId == session.currentOrganizationId ? seed : nil)
+			await model.start(seed: seed)
 		}
 	}
 }
@@ -134,8 +134,9 @@ private struct ScheduleContent: View {
 	}
 }
 
-/// Who holds the schedule now, how long is left and who takes over. With
-/// nobody on call it says so in the warning colour, and who picks it up.
+/// Who holds the schedule now, how long is left and who takes over. Someone
+/// who stays on call gets no countdown. With nobody on call it says so in the
+/// warning colour, and who picks it up.
 private struct ScheduleNowCard: View {
 	let overview: OnCallOverview
 	let status: OnCallScheduleStatus
@@ -144,16 +145,18 @@ private struct ScheduleNowCard: View {
 
 	var body: some View {
 		switch status {
-		case .covered(let period, let until, let handoff):
+		case .covered(let period, let end):
 			VStack(alignment: .leading, spacing: 0) {
 				HStack(spacing: 6) {
 					OnCallDot()
 					Text("On call now").sectionLabelStyle(tint: Token.foreground)
 					Spacer(minLength: 8)
-					Text(OnCallWording.remaining(until: until, now: now))
-						.font(Typo.tiny)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground)
+					if let until = end.date {
+						Text(OnCallWording.remaining(until: until, now: now))
+							.font(Typo.tiny)
+							.tabularNumbers()
+							.foregroundStyle(Token.mutedForeground)
+					}
 				}
 				HStack(spacing: 8) {
 					Text(overview.name(of: period.userId))
@@ -165,7 +168,7 @@ private struct ScheduleNowCard: View {
 					}
 				}
 				.padding(.top, 8)
-				Text(handsOff(at: until, to: handoff))
+				Text(line(end))
 					.font(Typo.small)
 					.tabularNumbers()
 					.foregroundStyle(Token.mutedForeground)
@@ -201,11 +204,13 @@ private struct ScheduleNowCard: View {
 		}
 	}
 
-	private func handsOff(at date: Date, to handoff: OnCallHandoff) -> String {
-		switch handoff {
-		case .to(let userId): "Hands off \(Format.dayTime(date)) to \(overview.name(of: userId, midSentence: true))"
-		case .nobody: "Ends \(Format.dayTime(date)), and nobody takes over"
-		case .unknown: "On call past the next \(days) days"
+	private func line(_ end: OnCallEnd) -> String {
+		switch end {
+		case .handoff(let date, let userId):
+			"Hands off \(Format.dayTime(date)) to \(overview.name(of: userId, midSentence: true))"
+		case .gap(let date): "Ends \(Format.dayTime(date)), and nobody takes over"
+		case .unknown(let date): "On call until \(Format.dayTime(date))"
+		case .continues: OnCallWording.noHandoff(inNext: days)
 		}
 	}
 }

@@ -92,6 +92,30 @@ final class AppNavigation {
 	/// The Explore tab's stack and segment.
 	var explorePath: [Route] = []
 	var exploreSegment: ExploreSegment = .traces
+	/// The organization the Overview stack was built under.
+	@ObservationIgnored private var organizationId: String?
+
+	/// The session ended. Every stack held the previous account's screens, and
+	/// the next account must not be handed them.
+	func reset() {
+		tab = .home
+		alertsSegment = .errors
+		exploreSegment = .traces
+		homePath = []
+		alertsPath = []
+		servicesPath = []
+		explorePath = []
+		organizationId = nil
+	}
+
+	/// The organization on screen. Overview's stack goes with the one it was built
+	/// under: its on-call screens carry that organization's overview. The other
+	/// stacks stay, because a tapped notification switches and then pushes onto them.
+	func show(organizationId: String) {
+		guard organizationId != self.organizationId else { return }
+		if self.organizationId != nil { homePath = [] }
+		self.organizationId = organizationId
+	}
 
 	func open(_ segment: AlertsSegment) {
 		alertsSegment = segment

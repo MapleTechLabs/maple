@@ -9,6 +9,7 @@ import SwiftUI
 final class OnCallModel {
 	private(set) var loader: ScreenLoader<OnCallOverview>!
 	let generation: Int
+	private let session: SessionController
 
 	/// How old a handed-over overview may be before the screen reads again on arrival.
 	private static let seedFreshFor: TimeInterval = 60
@@ -20,15 +21,19 @@ final class OnCallModel {
 		isEmpty: @escaping @MainActor (OnCallOverview) -> Bool
 	) {
 		self.generation = session.dataGeneration
+		self.session = session
 		self.loader = ScreenLoader(session: session, screen: screen, isEmpty: isEmpty) {
 			try await api.onCallOverview()
 		}
 	}
 
 	/// Paint the overview the previous screen handed over, and read again only
-	/// when it has aged. Without one, load cold.
+	/// when it has aged. Without one, load cold. A seed read for someone else or
+	/// for another organization is theirs: the stack outlives a sign-out.
 	func start(seed: OnCallOverview?) async {
-		if !loader.state.hasContent, !loader.isLoading, let seed {
+		if !loader.state.hasContent, !loader.isLoading, let seed,
+			seed.belongs(toUser: session.currentUserId, organization: session.currentOrganizationId)
+		{
 			loader.seed(seed)
 			let age = ResolvedTimeWindow.parse(seed.generatedAt).map { Date().timeIntervalSince($0) }
 			if (age ?? .infinity) > Self.seedFreshFor { await loader.load(.refresh) }

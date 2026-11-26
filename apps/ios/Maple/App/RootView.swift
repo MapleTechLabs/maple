@@ -50,6 +50,19 @@ struct RootView: View {
 			// the memberships are known.
 			await opener.sessionDidSettle()
 		}
+		// The stacks live in `AppNavigation` and outlive the tabs, so they are
+		// dropped here: all of them when a session ends, Overview's on a switch.
+		.onChange(of: session.phase, initial: true) { old, phase in
+			switch phase {
+			case .signedOut:
+				// Not on the way in from `.loading`: nothing was signed in to end.
+				if old != .loading { navigation.reset() }
+			case .ready(let organizationId):
+				navigation.show(organizationId: organizationId)
+			case .loading, .needsOrganization:
+				break
+			}
+		}
 		.background(Token.background)
 		.tint(Token.primary)
 		// Clerk draws `AuthView` itself; this is what stops sign-in from being
