@@ -331,6 +331,9 @@ final class WidgetPublisher {
 		// next account's spans would otherwise report as theirs.
 		WidgetSnapshotStore<PagesTapRecord>.pagesTap(organizationId: organizationId).clear()
 		WidgetSnapshotStore<PagesReadRecord>.pagesRead(organizationId: organizationId).clear()
+		// One person's shifts and their colleagues' names, and how reading them went.
+		WidgetSnapshotStore<OnCallSnapshot>.onCall(organizationId: organizationId).clear()
+		WidgetSnapshotStore<OnCallReadRecord>.onCallRead(organizationId: organizationId).clear()
 		var slots: [String?] = [nil]
 		slots.append(contentsOf: (organization?.environments ?? []).map { $0 })
 		if let active = organization?.activeEnvironment, !slots.contains(active) { slots.append(active) }
@@ -456,6 +459,13 @@ final class WidgetPublisher {
 				WidgetCenter.shared.reloadTimelines(ofKind: ThroughputWidgetKind.identifier)
 				reloads += 1
 			}
+			// The on-call widgets follow the active organization, which this round
+			// has only now recorded: their own publisher may have reloaded them before it.
+			if self.index.activeOrganizationId != previousActiveId {
+				WidgetCenter.shared.reloadTimelines(ofKind: OnCallWidgetKind.identifier)
+				WidgetCenter.shared.reloadTimelines(ofKind: ScheduleWidgetKind.identifier)
+				reloads += 2
+			}
 			span?.setAttribute(Telemetry.Key.widgetReloadCount, reloads)
 			span?.setAttribute(Telemetry.Key.widgetResolutionChanged, resolutionMoved)
 		}
@@ -543,6 +553,11 @@ final class WidgetPublisher {
 		if let read = WidgetSnapshotStore<PagesReadRecord>.pagesRead(organizationId: organizationId).load() {
 			span?.setAttribute(Telemetry.Key.widgetPagesReadOutcome, read.outcome.rawValue)
 			span?.setAttribute(Telemetry.Key.widgetPagesReadFailures, read.consecutiveFailures)
+		}
+		// And the on-call read, which the On call and Schedule widgets share.
+		if let read = WidgetSnapshotStore<OnCallReadRecord>.onCallRead(organizationId: organizationId).load() {
+			span?.setAttribute(Telemetry.Key.widgetOnCallReadOutcome, read.outcome.rawValue)
+			span?.setAttribute(Telemetry.Key.widgetOnCallReadFailures, read.consecutiveFailures)
 		}
 		let state = fetchStates.load(organizationId: organizationId)
 		guard let outcome = state.lastOutcome else { return }

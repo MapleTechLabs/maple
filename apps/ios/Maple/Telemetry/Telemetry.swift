@@ -121,6 +121,10 @@ enum Telemetry {
 		static let widgetPagesReadOutcome = "maple.app.widget.pages.read.outcome"
 		static let widgetPagesReadFailures = "maple.app.widget.pages.read.consecutive_failures"
 		static let widgetPagesTapAgeSeconds = "maple.app.widget.pages.tap.age_seconds"
+		/// How the last on-call read ended, from a widget or the app: fetched,
+		/// no_credential, needs_app, failed.
+		static let widgetOnCallReadOutcome = "maple.app.widget.oncall.read.outcome"
+		static let widgetOnCallReadFailures = "maple.app.widget.oncall.read.consecutive_failures"
 		/// Seconds since the extension last fetched successfully. Absent when it
 		/// never has, which is a different statement from "a long time ago".
 		static let widgetFetchAgeSeconds = "maple.app.widget.fetch.age_seconds"

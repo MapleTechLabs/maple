@@ -46,6 +46,11 @@ struct PagesEntry: TimelineEntry {
 	/// The credential was refused and only the app can register it again.
 	var needsApp = false
 	var isPlaceholder = false
+	/// The last on-call read for the same organization, when there is one. Only
+	/// the quiet state uses it, to say whose shift it is.
+	var onCall: OnCallSnapshot?
+
+	var shiftLine: String? { onCall?.pagesShiftLine(at: date) }
 }
 
 struct PagesProvider: AppIntentTimelineProvider {
@@ -77,7 +82,8 @@ struct PagesProvider: AppIntentTimelineProvider {
 			snapshot: snapshot,
 			organizationId: organizationId,
 			canAcknowledge: snapshot?.isFixture == true
-				|| WidgetPagesClient.shared.canAcknowledge(organizationId: organizationId, now: date)
+				|| WidgetPagesClient.shared.canAcknowledge(organizationId: organizationId, now: date),
+			onCall: WidgetSnapshotStore<OnCallSnapshot>.onCall(organizationId: organizationId).load()
 		)
 	}
 
@@ -96,9 +102,13 @@ struct PagesProvider: AppIntentTimelineProvider {
 		}
 		// One more entry just after each page comes due, so a countdown that has
 		// run out is taken down rather than left at zero.
-		let due = (base.snapshot?.waiting ?? [])
+		var due = (base.snapshot?.waiting ?? [])
 			.compactMap { $0.upcomingPage(at: now) }
 			.map { $0.addingTimeInterval(1) }
+		// And one where the owner's shift ends, so the quiet state stops naming it.
+		if base.shiftLine != nil, case .onCall(let current)? = base.onCall?.viewerState(at: now) {
+			due.append(current.until)
+		}
 		let entries = ([now] + due.sorted()).map { date -> PagesEntry in
 			var entry = base
 			entry.date = date

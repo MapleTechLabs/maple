@@ -179,7 +179,8 @@ Info.plist, not the extension's.
 
 ## The Home Screen widgets
 
-A third widget, **Pages**, is described under [The Pages widget](#the-pages-widget) below.
+A third widget, **Pages**, is described under [The Pages widget](#the-pages-widget) below,
+and **On call** and **Schedule** under [The On call and Schedule widgets](#the-on-call-and-schedule-widgets).
 
 `Widgets/` is a WidgetKit extension with two widgets:
 
@@ -342,6 +343,46 @@ widget**. It follows the organization the app last showed.
   writes the snapshot from the fixture incidents and marks it `isFixture`, which
   makes the widget draw the button a registered phone gets. A tap there cannot
   land, and shows "Open to answer".
+- **Quiet.** With nothing paging and the owner on call, the quiet state adds
+  their shift (`Platform primary until Mon 09:00`) from the on-call snapshot
+  below. It reads that snapshot from the App Group and makes no request for it.
+
+## The On call and Schedule widgets
+
+`Widgets/OnCallWidget.swift` says where you stand: small (`3d 6h` left on this
+shift and who is next, or the next shift and who has it before you), medium
+(**On call now**: schedule, who, until, with `Nobody` in the warning colour),
+and the Lock Screen's rectangular and inline families. It follows the
+organization the app last showed. `Widgets/ScheduleWidget.swift` is one rotation
+over the next seven days, medium only.
+
+- **Read.** One request serves both: `GET /v2/widget_summary/oncall`, through
+  `WidgetOnCallClient` and the same device credential (`widget_summary:read`).
+  The snapshot is `OnCallSnapshot` in the App Group, per organization, cleared
+  at sign-out with the others. An answer for another organization is refused,
+  and a revoked credential is recorded and then not used again.
+- **One read, many dates.** Everything the views say is a function on the
+  snapshot that takes the date (`viewerState(at:)`, `tableRows(at:)`,
+  `strip(for:at:)`, `scheduleLine(for:at:)`), covered by `WidgetOnCallTests`.
+  `timelineDates(from:)` gives the timeline an entry at each handoff, each
+  midnight, and each hour the coarse `3d 6h` drops, so a handoff shows on the
+  widget when it happens. Inside the last day the time left is a timer text.
+  A snapshot older than its own 14 day window draws "Open Maple" instead.
+- **Wording.** `MapleWidgetData` cannot import `MapleAPI`, so `WidgetTime.span`,
+  `remaining`, `lead` and `handoffTime` reproduce `IncidentWording.span`,
+  `OnCallWording` and `Format.handoffTime`. The tests pin the same strings.
+- **Picking a schedule.** `SelectScheduleIntent` with a `ScheduleEntity` whose
+  query lists the schedules in the stored snapshot. Unset means the schedule
+  the owner is on call for, else the first. A picked schedule is found in
+  whichever organization's snapshot holds it, and one that was deleted says so.
+- **Taps** open `maple://oncall` and `maple://schedule/<id>`, with the
+  organization as the `org` query item like every other widget link.
+- **Staying current.** `OnCallWidgetPublisher` reads and reloads both kinds when
+  the app comes to the front (once a minute per organization at most) and on a
+  switch of organization. The read's outcome goes on the `widget.refresh` span
+  as `maple.app.widget.oncall.read.*`.
+- **Fixture mode** writes the snapshot from `FixtureAPI.onCallOverview()`: four
+  schedules, the fixture user on call for Platform primary.
 
 ## Running without a sign-in
 
