@@ -19,6 +19,14 @@ export const DATA_RATES = {
 	storagePerGbMonth: 0.15,
 } as const
 
+/** Per GB ingested past the plan's included GB, per signal: profiles store about 28 times their wire size. */
+export const INGEST_RATES_PER_GB = {
+	traces: DATA_RATES.ingestPerGb,
+	logs: DATA_RATES.ingestPerGb,
+	metrics: DATA_RATES.ingestPerGb,
+	profiles: 0.6,
+} as const satisfies Record<StorageSignal, number>
+
 /** The mean length of a month, so a period's monthly cost does not depend on the calendar. */
 export const DAYS_PER_MONTH = 365.25 / 12
 
@@ -38,22 +46,23 @@ export const daysInUtcMonth = (epochMs: number): number => {
 /** One day's share of a month's storage: GB stored that day, in GB-months. */
 export const dailyGbMonths = (storedGb: number, epochMs: number): number => storedGb / daysInUtcMonth(epochMs)
 
-export const DataRates = Schema.Struct({
-	ingestPerGb: Schema.Number,
-	storagePerGbMonth: Schema.Number,
-})
-
 export const StorageSignalUsage = Schema.Struct({
 	signal: StorageSignal,
 	/** GB still inside its retention period now. */
 	storedGb: Schema.Number,
 	/** Mean GB ingested a day over the last 7 complete UTC days. */
 	avgDailyGb: Schema.Number,
+	/** Dollars per GB ingested past the plan's included GB, for this signal. */
+	ingestPerGb: Schema.Number,
 })
 export type StorageSignalUsage = typeof StorageSignalUsage.Type
 
+export const StorageRates = Schema.Struct({
+	storagePerGbMonth: Schema.Number,
+})
+
 export const StorageUsageSummary = Schema.Struct({
 	signals: Schema.Array(StorageSignalUsage),
-	rates: DataRates,
+	rates: StorageRates,
 }).annotate({ identifier: "@maple/StorageUsageSummary", title: "Storage Usage Summary" })
 export type StorageUsageSummary = typeof StorageUsageSummary.Type

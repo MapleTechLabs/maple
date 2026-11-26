@@ -15,6 +15,7 @@ import {
 	UPTIME_MONITORS_FEATURE_ID,
 } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
+import { DATA_RATES, INGEST_RATES_PER_GB, STORAGE_FEATURE_ID } from "@maple/domain/storage-pricing"
 
 export const logs = feature({
 	id: "logs",
@@ -42,6 +43,15 @@ export const traces = feature({
 export const profiles = feature({
 	id: "profiles",
 	name: "Profiles",
+	type: "metered",
+	consumable: true,
+})
+
+// GB kept inside its retention period, in GB-months: each day's stored GB over the days in that
+// month. Tracked daily by the storage metering cron (`STORAGE_FEATURE_ID` in @maple/domain).
+export const storage = feature({
+	id: STORAGE_FEATURE_ID,
+	name: "Storage",
 	type: "metered",
 	consumable: true,
 })
@@ -144,7 +154,7 @@ export const startup = plan({
 			featureId: "logs",
 			included: 100,
 			price: {
-				amount: 0.3,
+				amount: DATA_RATES.ingestPerGb,
 				billingUnits: 1,
 				billingMethod: "usage_based",
 				interval: "month",
@@ -154,7 +164,7 @@ export const startup = plan({
 			featureId: "metrics",
 			included: 100,
 			price: {
-				amount: 0.3,
+				amount: DATA_RATES.ingestPerGb,
 				billingUnits: 1,
 				billingMethod: "usage_based",
 				interval: "month",
@@ -164,7 +174,7 @@ export const startup = plan({
 			featureId: "traces",
 			included: 100,
 			price: {
-				amount: 0.3,
+				amount: DATA_RATES.ingestPerGb,
 				billingUnits: 1,
 				billingMethod: "usage_based",
 				interval: "month",
@@ -175,8 +185,20 @@ export const startup = plan({
 			featureId: "profiles",
 			included: 10,
 			price: {
-				amount: 0.6,
+				amount: INGEST_RATES_PER_GB.profiles,
 				billingUnits: 1,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
+		},
+		{
+			// Every GB stored, nothing included. Billed per 0.01 GB-month because Autumn rounds
+			// usage up to whole blocks; a 1 GB-month block would charge $0.15 for a day's few MB.
+			featureId: STORAGE_FEATURE_ID,
+			included: 0,
+			price: {
+				amount: DATA_RATES.storagePerGbMonth / 100,
+				billingUnits: 0.01,
 				billingMethod: "usage_based",
 				interval: "month",
 			},
@@ -233,6 +255,8 @@ export const trial = plan({
 		{ featureId: "metrics", included: TRIAL_SIGNAL_GB, reset: { interval: "month" } },
 		{ featureId: "traces", included: TRIAL_SIGNAL_GB, reset: { interval: "month" } },
 		{ featureId: "profiles", included: 10, reset: { interval: "month" } },
+		// Stored GB is free on the trial: unlimited, so the daily storage track never hits a cap.
+		{ featureId: STORAGE_FEATURE_ID, unlimited: true },
 		{ featureId: "browser_sessions", included: 5000, reset: { interval: "month" } },
 		{ featureId: "product_events", included: 1_000_000, reset: { interval: "month" } },
 		{ featureId: UPTIME_MONITORS_FEATURE_ID, included: 10 },
