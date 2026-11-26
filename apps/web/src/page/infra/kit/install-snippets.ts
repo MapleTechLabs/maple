@@ -52,6 +52,7 @@ import * as Alchemy from "alchemy"
 import * as Kubernetes from "@alchemy.run/kubernetes"
 import * as Config from "effect/Config"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
@@ -60,7 +61,7 @@ export default Alchemy.Stack(
   { providers: Kubernetes.providers(), state: Alchemy.localState() },
   // A destroy skips this program and reuses the saved cluster, so it needs neither variable.
   Effect.gen(function* () {
-    const ingestKey = yield* Config.Redacted("MAPLE_INGEST_KEY")
+    const ingestKey = yield* Config.schema(Schema.Redacted(Schema.NonEmptyString), "MAPLE_INGEST_KEY")
     const context = yield* Config.NonEmptyString("KUBE_CONTEXT")
     // The stack keeps one kubeconfig file, so it must be the one that defines the context.
     const kubeconfigs = (yield* Config.String("KUBECONFIG").pipe(Config.withDefault(""))).split(":").filter(Boolean)
