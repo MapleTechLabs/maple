@@ -99,7 +99,9 @@ const merge = (newer: TraceBounds, older: TraceBounds): TraceBounds => ({
 /**
  * Rows wholly before a tier are not seen, so a trace may start earlier: walk back one
  * pruned day at a time while the day below still holds rows of the trace (a span gap of
- * up to a day is bridged), down to `oldestMs`.
+ * up to a day is bridged), down to `oldestMs`. A probe past its budget leaves the start
+ * unknown, so the bounds then reach back to `oldestMs`: a read inside them may be slower,
+ * but never misses a span in an unprobed older day.
  */
 const extendBack = (
 	traceId: string,
@@ -109,11 +111,13 @@ const extendBack = (
 ): Effect.Effect<TraceBounds, WarehouseExecutorError, WarehouseExecutor> => {
 	if (edgeMs <= oldestMs) return Effect.succeed(bounds)
 	const below = { startMs: Math.max(oldestMs, edgeMs - DAY_MS), endMs: edgeMs }
-	// Over budget, the bounds found so far stand.
 	return probeWithinBudget(traceId, below).pipe(
 		Effect.flatMap((hit) =>
 			hit === OVER_BUDGET
-				? Effect.succeed(bounds)
+				? Effect.as(Effect.annotateCurrentSpan("maple.query.trace_start_unbounded", true), {
+						...bounds,
+						startMs: oldestMs,
+					})
 				: Option.match(hit, {
 						onNone: () => Effect.succeed(bounds),
 						onSome: (older) => extendBack(traceId, merge(bounds, older), below.startMs, oldestMs),
@@ -146,7 +150,8 @@ const probeTiers = (
 /**
  * Where a trace's spans are, from `trace_index` (written with the spans, so a trace it
  * does not hold is not stored). Tiers newest first, each pruned to its own days, stopping at
- * the first that holds the trace. A probe past its budget ends the lookup as not found.
+ * the first that holds the trace. A tier probe past its budget ends the lookup as not found;
+ * one past it while walking back from a found trace widens its start to `oldestMs`.
  */
 export const locateTrace = Effect.fn("Observability.locateTrace")(function* (
 	traceId: string,

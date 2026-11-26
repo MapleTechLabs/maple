@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { applySchemaFeatures, reconcileSchemaFeatures } from "./apply"
+import { expandMigrationToSteps, migrations } from "@maple/domain/clickhouse"
+import { applyMigrationSteps, applySchemaFeatures, reconcileSchemaFeatures } from "./apply"
 
 describe("applySchemaFeatures", () => {
 	it("skips unsupported features without executing or recording them", async () => {
@@ -123,5 +124,72 @@ describe("reconcileSchemaFeatures", () => {
 
 		expect(result.appliedFeatures).toEqual([])
 		expect(result.skippedFeatures[0]?.reason).toBe("SELECT denied")
+	})
+})
+
+describe("applyMigrationSteps", () => {
+	const retentionStorage = migrations.find((migration) => migration.version === 76)
+
+	/** A cluster that rejects `failing`, and answers the DEFAULT read-back with `defaultNow`. */
+	const cluster = (failing: string, defaultNow: string) => {
+		const executed: string[] = []
+		const execute = async (sql: string) => {
+			executed.push(sql)
+			if (sql.startsWith(failing)) throw new Error("BAD_ARGUMENTS")
+			return sql.startsWith("SELECT default_expression")
+				? `{"default_expression":"${defaultNow}"}\n`
+				: ""
+		}
+		return { executed, execute }
+	}
+
+	it("restores the DEFAULT, then restarts merges, when 0076's key ALTER fails; the ALTER's error stands", async () => {
+		if (retentionStorage === undefined) throw new Error("migration 76 is not bundled")
+		const steps = await expandMigrationToSteps(retentionStorage, "maple", async () => "")
+		const { executed, execute } = cluster("ALTER TABLE trace_index ADD COLUMN", "30")
+
+		await expect(applyMigrationSteps(steps, execute)).rejects.toThrow(/^BAD_ARGUMENTS$/)
+		expect(executed.slice(-4)).toEqual([
+			"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
+			"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+			"SELECT default_expression FROM system.columns WHERE database = 'maple' AND table = 'trace_index' AND name = 'RetentionDays' FORMAT JSONEachRow",
+			"SYSTEM START MERGES trace_index",
+		])
+	})
+
+	it("leaves merges stopped when the DEFAULT cannot be restored, and says what to run", async () => {
+		if (retentionStorage === undefined) throw new Error("migration 76 is not bundled")
+		const steps = await expandMigrationToSteps(retentionStorage, "maple", async () => "")
+		const { executed, execute } = cluster("ALTER TABLE trace_index MODIFY COLUMN", "")
+
+		const failure = applyMigrationSteps(steps, execute)
+		await expect(failure).rejects.toThrow(/^BAD_ARGUMENTS\n/)
+		await expect(failure).rejects.toThrow(
+			"Run `ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30`, then `SYSTEM START MERGES trace_index`.",
+		)
+		expect(executed).not.toContain("SYSTEM START MERGES trace_index")
+	})
+
+	it("keeps the step's error when the restart fails too", async () => {
+		const failure = applyMigrationSteps(
+			[{ name: "alter", sql: "ALTER", backfill: false, onFailure: "SYSTEM START MERGES t" }],
+			async (sql) => {
+				throw new Error(sql === "ALTER" ? "ALTER rejected" : "START rejected")
+			},
+		)
+		await expect(failure).rejects.toThrow("ALTER rejected")
+	})
+
+	it("restarts nothing when a step outside a stopped pair fails", async () => {
+		const executed: string[] = []
+		const failure = applyMigrationSteps(
+			[{ name: "alter", sql: "ALTER", backfill: false }],
+			async (sql) => {
+				executed.push(sql)
+				throw new Error("ALTER rejected")
+			},
+		)
+		await expect(failure).rejects.toThrow("ALTER rejected")
+		expect(executed).toEqual(["ALTER"])
 	})
 })

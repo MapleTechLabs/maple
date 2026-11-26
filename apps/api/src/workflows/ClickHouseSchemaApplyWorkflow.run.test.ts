@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Exit, Fiber, Layer, Option, Schema, Array as Arr } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { OrgId } from "@maple/domain/http"
@@ -18,8 +18,20 @@ import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBo
 import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import {
+	expandMigrationToSteps,
+	migrations,
+	parseEmittedStatement,
+	type ActualTable,
+	type ApplyStep,
+	type DesiredTable,
+} from "@maple/domain/clickhouse"
+import { latestSnapshotStatements } from "@maple/domain/generated/clickhouse-schema"
+import {
 	loadOptionalFeatureState,
 	runClickHouseSchemaApply,
+	runPlannedStep,
+	SchemaApplyRunSupersededError,
+	snapshotDiffStatements,
 	withRunHeartbeat,
 } from "./ClickHouseSchemaApplyWorkflow.run"
 
@@ -336,4 +348,157 @@ describe("withRunHeartbeat", () => {
 			assert.strictEqual(yield* updatedAt(testDb), 5 * 60_000)
 		}).pipe(Effect.provide(testDb.layer))
 	})
+})
+
+describe("snapshotDiffStatements", () => {
+	/** The snapshot's own table, and the same table on a v75 cluster: every column but `dropped`. */
+	const tableAt = (name: string, dropped: ReadonlyArray<string>) => {
+		const statement = Arr.findFirst(latestSnapshotStatements, (stmt) =>
+			Str.startsWith(`CREATE TABLE IF NOT EXISTS ${name} (`)(stmt),
+		).pipe(Option.getOrThrow)
+		const parsed = parseEmittedStatement(statement)
+		assert.isTrue(parsed?.kind === "table")
+		const columns = parsed?.kind === "table" ? parsed.columns : []
+		const desired: DesiredTable = { name, kind: "table", columns, createStatement: statement }
+		const actual: ActualTable = {
+			name,
+			kind: "table",
+			columns: Arr.filter(columns, (column) => !dropped.includes(column.name)),
+		}
+		return { desired, actual }
+	}
+
+	it("leaves the columns 0076 adds to a sorting key to 0076, and still adds other missing columns", () => {
+		const tables = [
+			tableAt("trace_index", ["RetentionDays"]),
+			tableAt("trace_facets_hourly", ["RetentionDays"]),
+			tableAt("service_map_spans", ["RetentionDays"]),
+		]
+		const statements = snapshotDiffStatements(
+			Arr.map(tables, (table) => table.desired),
+			new Map(Arr.map(tables, (table) => [table.actual.name, table.actual])),
+			"maple",
+		)
+		assert.deepStrictEqual(statements, [
+			"ALTER TABLE `maple`.`service_map_spans` ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30",
+		])
+	})
+})
+
+describe("runPlannedStep", () => {
+	const retentionStorageSteps = Effect.promise(() =>
+		expandMigrationToSteps(
+			Option.getOrThrow(Arr.findFirst(migrations, (candidate) => candidate.version === 76)),
+			"maple",
+			async () => "",
+		),
+	)
+	/** A cluster that rejects `failing`, and answers the DEFAULT read-back with `defaultNow`. */
+	const cluster = (failing: string, defaultNow: string) => {
+		const executed: string[] = []
+		const exec = (sql: string) =>
+			Effect.suspend(() => {
+				executed.push(sql)
+				if (Str.startsWith(failing)(sql))
+					return Effect.fail(new ClickHouseDenied({ message: "BAD_ARGUMENTS" }))
+				return Effect.succeed(
+					Str.startsWith("SELECT default_expression")(sql)
+						? `{"default_expression":"${defaultNow}"}\n`
+						: "",
+				)
+			})
+		return { executed, exec }
+	}
+	const applyAll = (
+		steps: ReadonlyArray<ApplyStep>,
+		exec: (sql: string) => Effect.Effect<string, ClickHouseDenied>,
+	) =>
+		Effect.exit(
+			Effect.forEach(
+				steps,
+				(step) => runPlannedStep(step, exec(step.sql), (_label, sql) => exec(sql)),
+				{
+					discard: true,
+				},
+			),
+		)
+
+	it.effect(
+		"restores the DEFAULT, then restarts merges, when 0076's key ALTER fails; the ALTER's failure stands",
+		() =>
+			Effect.gen(function* () {
+				const steps = yield* retentionStorageSteps
+				const { executed, exec } = cluster("ALTER TABLE trace_index ADD COLUMN", "30")
+				const exit = yield* applyAll(steps, exec)
+				assert.deepStrictEqual(
+					Option.map(Exit.findErrorOption(exit), (error) => error.message),
+					Option.some("BAD_ARGUMENTS"),
+				)
+				assert.deepStrictEqual(executed.slice(-4), [
+					"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
+					"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+					"SELECT default_expression FROM system.columns WHERE database = 'maple' AND table = 'trace_index' AND name = 'RetentionDays' FORMAT JSONEachRow",
+					"SYSTEM START MERGES trace_index",
+				])
+			}),
+	)
+
+	it.effect("leaves merges stopped when the DEFAULT cannot be restored, and says what to run", () =>
+		Effect.gen(function* () {
+			const steps = yield* retentionStorageSteps
+			const { executed, exec } = cluster("ALTER TABLE trace_index MODIFY COLUMN", "")
+			const exit = yield* applyAll(steps, exec)
+			const failure = Exit.findErrorOption(exit)
+			assert.deepStrictEqual(
+				Option.map(failure, (error) => error._tag),
+				Option.some("@maple/api/workflows/SchemaApplyMergesLeftStoppedError"),
+			)
+			const message = Option.getOrThrow(Option.map(failure, (error) => error.message))
+			assert.isTrue(Str.startsWith("BAD_ARGUMENTS\n")(message))
+			assert.include(message, "`ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30`")
+			assert.include(message, "`SYSTEM START MERGES trace_index`")
+			assert.notInclude(executed, "SYSTEM START MERGES trace_index")
+		}),
+	)
+
+	it.effect("keeps the step's failure when the restart fails, and restarts nothing for a lost run", () =>
+		Effect.gen(function* () {
+			const restarts: string[] = []
+			const step = { onFailure: "SYSTEM START MERGES t" }
+			const restart = (_label: string, sql: string) =>
+				Effect.sync(() => restarts.push(sql)).pipe(
+					Effect.andThen(Effect.fail(new ClickHouseDenied({ message: "START denied" }))),
+				)
+			const failed = yield* Effect.exit(
+				runPlannedStep(step, Effect.fail(new ClickHouseDenied({ message: "ALTER denied" })), restart),
+			)
+			assert.deepStrictEqual(
+				Option.map(Exit.findErrorOption(failed), (error) => error.message),
+				Option.some("ALTER denied"),
+			)
+			const interrupted = yield* Effect.exit(runPlannedStep(step, Effect.interrupt, restart))
+			assert.isTrue(Exit.hasInterrupts(interrupted))
+			assert.deepStrictEqual(restarts, ["SYSTEM START MERGES t"])
+
+			// A newer run owns the cluster and may have merges stopped for its own key change.
+			const superseded = yield* Effect.exit(
+				runPlannedStep(
+					step,
+					Effect.fail(
+						new SchemaApplyRunSupersededError({
+							message: "run reclaimed",
+							orgId: Schema.decodeSync(OrgId)("org_superseded"),
+							runId: "run-old",
+						}),
+					),
+					restart,
+				),
+			)
+			assert.deepStrictEqual(
+				Option.map(Exit.findErrorOption(superseded), (error) => error._tag),
+				Option.some("@maple/api/workflows/SchemaApplyRunSupersededError"),
+			)
+			assert.deepStrictEqual(restarts, ["SYSTEM START MERGES t"])
+		}),
+	)
 })

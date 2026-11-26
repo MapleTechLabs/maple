@@ -747,13 +747,13 @@ describe("local migration registry", () => {
 			for (const check of step.counts?.checks ?? []) expect(measured.has(check.key)).toBe(true)
 			// Every statement is idempotent, so a resumed apply lands where it left off. MODIFY TTL
 			// and MODIFY COLUMN ... DEFAULT set a fixed expression, and SYSTEM STOP/START MERGES set a
-			// state, so re-running them changes nothing.
+			// state, so re-running them changes nothing; an ALTER ... DELETE WHERE removes what is left.
 			for (const statement of stepStatements([
 				...(step.beforeBootstrap ?? []),
 				...(step.afterBootstrap ?? []),
 			]))
 				expect(statement).toMatch(
-					/IF (NOT )?EXISTS|^DELETE FROM |^INSERT INTO | MODIFY TTL | MODIFY COLUMN \w+ \w+ DEFAULT |^SYSTEM (STOP|START) MERGES /,
+					/IF (NOT )?EXISTS|^DELETE FROM |^INSERT INTO |^ALTER TABLE \w+ DELETE WHERE | MODIFY TTL | MODIFY COLUMN \w+ \w+ DEFAULT |^SYSTEM (STOP|START) MERGES /,
 				)
 		}
 	})
