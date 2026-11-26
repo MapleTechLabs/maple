@@ -2679,6 +2679,26 @@ describe("v2 alerts over HTTP", () => {
 			),
 		)
 
+		// An override that holds now is said to be one, and hands back to the rotation when it ends.
+		const coverUntil = new Date(Date.now() + 2 * 60 * 60_000).toISOString()
+		const cover = await harness.request(
+			"POST",
+			`/v2/alerts/oncall_schedules/${solo.body.id}/overrides`,
+			key.secret,
+			{
+				user_id: "user_chen",
+				starts_at: new Date(Date.now() - 60_000).toISOString(),
+				ends_at: coverUntil,
+			},
+		)
+		expect(cover.status, JSON.stringify(cover.body)).toBe(200)
+		const covering = await harness.request("GET", "/v2/alerts/oncall_overview", key.secret)
+		expect(covering.body.schedules[2]).toMatchObject({
+			name: "Solo",
+			on_call_now: { user_id: "user_chen", is_override: true, continues: false, ends_at: coverUntil },
+			next: { user_id: "user_dee", is_override: false, starts_at: coverUntil },
+		})
+
 		// A widget's credential reads the same document under its own scope, and nothing beside it.
 		const fromWidget = await harness.request("GET", "/v2/widget_summary/oncall", widget.secret)
 		expect(fromWidget.status).toBe(200)
@@ -2698,7 +2718,7 @@ describe("v2 alerts over HTTP", () => {
 					schedule.next?.starts_at ?? null,
 				],
 			)
-		expect(held(fromWidget.body)).toEqual(held(overview.body))
+		expect(held(fromWidget.body)).toEqual(held(covering.body))
 		expect(Arr.map(fromWidget.body.my_shifts, (shift: { starts_at: string }) => shift.starts_at)).toEqual(
 			Arr.map(mine, (shift) => shift.starts_at),
 		)
