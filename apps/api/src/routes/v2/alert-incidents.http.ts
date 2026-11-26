@@ -1,5 +1,7 @@
+import { HttpServerRequest } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import type {
+	AlertIncidentAckSource,
 	AlertIncidentDocument,
 	AlertIncidentEscalationDocument,
 	AlertIncidentEventDocument,
@@ -22,7 +24,7 @@ import {
 	type AlertIncidentNextStepPeople,
 } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
-import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { CurrentAuditActor, MOBILE_CLIENT_HEADER } from "@maple/backend/services/auth/audit-actor"
 
 /**
  * An ack pauses the run on the scheduler's next tick; until then the wire already reads it paused,
@@ -52,10 +54,25 @@ const toV2Escalation = (
 	}
 }
 
+/**
+ * iOS builds from before the app could acknowledge decode the acknowledgement source as a closed
+ * enum, and one value they do not know fails their whole incident list. They are the callers on
+ * Apple's networking stack that do not name themselves, and they read `mobile` as `api`.
+ */
+type AckSourceOnWire = (source: AlertIncidentAckSource | null) => AlertIncidentAckSource | null
+
+const ackSourceOnWire = Effect.map(HttpServerRequest.HttpServerRequest, (request): AckSourceOnWire => {
+	const isOlderIosBuild =
+		request.headers[MOBILE_CLIENT_HEADER] === undefined &&
+		/CFNetwork\//u.test(request.headers["user-agent"] ?? "")
+	return (source) => (isOlderIosBuild && source === "mobile" ? "api" : source)
+})
+
 const toV2Incident = (
 	doc: AlertIncidentDocument,
 	escalation: AlertIncidentEscalationDocument | undefined,
 	nextStepPeople: AlertIncidentNextStepPeople["people"],
+	onWire: AckSourceOnWire,
 ): V2AlertIncident => ({
 	id: doc.id,
 	object: "alert_incident",
@@ -89,7 +106,7 @@ const toV2Incident = (
 		doc.acknowledgedAt === null
 			? null
 			: { user_id: doc.acknowledgedByUserId, name: doc.acknowledgedByName },
-	acknowledged_via: doc.acknowledgedVia,
+	acknowledged_via: onWire(doc.acknowledgedVia),
 	error_issue_id: doc.errorIssueId,
 	escalation:
 		escalation === undefined
@@ -102,7 +119,7 @@ const toV2Incident = (
 	silenced_at: timestampOrNull(doc.silencedAt),
 })
 
-const toV2Event = (doc: AlertIncidentEventDocument): V2AlertIncidentEvent => ({
+const toV2Event = (doc: AlertIncidentEventDocument, onWire: AckSourceOnWire): V2AlertIncidentEvent => ({
 	id: doc.id,
 	object: "alert_incident_event",
 	incident_id: doc.incidentId,
@@ -111,7 +128,7 @@ const toV2Event = (doc: AlertIncidentEventDocument): V2AlertIncidentEvent => ({
 		doc.actorUserId === null && doc.actorName === null
 			? null
 			: { user_id: doc.actorUserId, name: doc.actorName },
-	source: doc.source,
+	source: onWire(doc.source),
 	...(doc.page === undefined
 		? undefined
 		: {
@@ -137,8 +154,9 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 
 		// One escalation read for a whole page of incidents, never one per incident. Who is paged next
 		// is read only for the runs still waiting on a step: unacknowledged open incidents with a chain.
-		const withEscalations = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
+		const incidentsOnWire = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
 			Effect.gen(function* () {
+				const onWire = yield* ackSourceOnWire
 				const escalations = yield* readModels.listIncidentEscalations(
 					orgId,
 					Arr.map(docs, (doc): AlertIncidentId => doc.id),
@@ -153,15 +171,13 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 				)
 				const people = yield* pagesService.listNextStepPeople(orgId, waiting)
 				const peopleByIncident = new Map(Arr.map(people, (row) => [row.incidentId, row.people]))
-				return Arr.map(docs, (doc) =>
-					toV2Incident(doc, byIncident.get(doc.id), peopleByIncident.get(doc.id) ?? []),
-				)
+				return (doc: AlertIncidentDocument) =>
+					toV2Incident(doc, byIncident.get(doc.id), peopleByIncident.get(doc.id) ?? [], onWire)
 			})
+		const withEscalations = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
+			Effect.map(incidentsOnWire(orgId, docs), (toWire) => Arr.map(docs, toWire))
 		const withEscalation = (orgId: OrgId, doc: AlertIncidentDocument) =>
-			Effect.map(
-				withEscalations(orgId, [doc]),
-				(incidents) => incidents[0] ?? toV2Incident(doc, undefined, []),
-			)
+			Effect.map(incidentsOnWire(orgId, [doc]), (toWire) => toWire(doc))
 
 		// Who is acknowledging, with a name recorded alongside so every surface can show it without a
 		// directory lookup. An API key is not a person: it is named by its label and has no user. A
@@ -252,7 +268,11 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 					const ackEvents = yield* acks.listEvents(tenant.orgId, params.id)
 					const pages = yield* pagesService.listPages(tenant.orgId, [params.id])
 					const events = mergePagesIntoEvents(ackEvents, pages)
-					return { object: "list" as const, data: Arr.map(events, toV2Event) }
+					const onWire = yield* ackSourceOnWire
+					return {
+						object: "list" as const,
+						data: Arr.map(events, (event) => toV2Event(event, onWire)),
+					}
 				}),
 			)
 	}),

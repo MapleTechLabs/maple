@@ -14,6 +14,7 @@ import {
 	Effect,
 	Layer,
 	ManagedRuntime,
+	Option,
 	Schema,
 	Array as Arr,
 	String as Str,
@@ -119,6 +120,8 @@ const makeHarness = (
 	warehouseService: WarehouseQueryServiceApi = warehouseStub,
 	linearOAuthService?: LinearOAuthServiceApi,
 	orgMembersService?: OrgMembersServiceApi,
+	/** The member directory the incident routes name people from; empty when not given. */
+	incidentDirectory?: OrgMembersServiceApi,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const configLive = testConfig()
@@ -271,7 +274,13 @@ const makeHarness = (
 						Layer.mergeAll(
 							Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
 							Layer.effect(AlertIncidentResolver, AlertIncidentResolver.make),
-							Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make),
+							Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make).pipe(
+								Layer.provide(
+									incidentDirectory === undefined
+										? OrgMembersServiceStubLayer
+										: Layer.succeed(OrgMembersService, incidentDirectory),
+								),
+							),
 						),
 					),
 				),
@@ -1882,6 +1891,130 @@ describe("v2 alerts over HTTP", () => {
 			key.secret,
 		)
 		expect(acked.body.escalation).toMatchObject({ next_step_at: null, next_step_people: [] })
+
+		await harness.dispose()
+	})
+
+	it("names the next step's people from the directory, once per distinct step, and reads it only when a step pages someone", async () => {
+		const directoryReads = { count: 0 }
+		const harness = makeHarness(undefined, undefined, undefined, {
+			listMembers: () =>
+				Effect.sync(() => {
+					directoryReads.count += 1
+					return [
+						{ userId: "user_next", email: "priya@acme.test", name: "Priya Shah", imageUrl: null },
+					]
+				}),
+			listOrganizationsOf: () => Effect.succeed([]),
+			listMemberActivity: () => Effect.succeed([]),
+			resolveMembers: () => Effect.succeed([]),
+		})
+		const key = await harness.bootstrapKey(["alerts:write"])
+		await createWebhookAndRule(harness, key.secret)
+		const first = "00000000-0000-4000-8000-000000000d01"
+		const second = "00000000-0000-4000-8000-000000000d02"
+		const quiet = "00000000-0000-4000-8000-000000000d03"
+		await insertOpenIncidents(harness, "org_alerts_e2e", [first, second, quiet])
+		// Someone who has left the organization is still named on the step; the directory no longer lists them.
+		const paging = JSON.stringify([
+			{
+				targets: [
+					{ type: "user", userId: "user_next" },
+					{ type: "user", userId: "user_gone" },
+				],
+				waitMinutes: 5,
+			},
+		])
+		const notifying = JSON.stringify([
+			{
+				targets: [{ type: "destination", destinationId: "00000000-0000-4000-8000-0000000000d1" }],
+				waitMinutes: 5,
+			},
+		])
+		const run = (id: string, incidentId: string, steps: string) =>
+			`('${id}', 'org_alerts_e2e', '${incidentId}', '00000000-0000-4000-8000-0000000000e2',
+				'Checkout on-call', 'critical', '${steps}'::jsonb, 0, 0, 0, now() + interval '5 minutes',
+				'active', '{}'::jsonb, 0, now(), now())`
+		await executeSql(
+			harness.testDb,
+			`insert into alert_escalation_runs (
+				id, org_id, incident_id, chain_id, chain_name, severity, steps_json, repeat_count,
+				step_index, pass_index, next_step_at, status, payload_json, steps_sent, created_at, updated_at
+			) values ${run("00000000-0000-4000-8000-000000000e01", quiet, notifying)}`,
+		)
+
+		const onlyNotifying = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		expect(onlyNotifying.status).toBe(200)
+		expect(directoryReads.count).toBe(0)
+
+		await executeSql(
+			harness.testDb,
+			`insert into alert_escalation_runs (
+				id, org_id, incident_id, chain_id, chain_name, severity, steps_json, repeat_count,
+				step_index, pass_index, next_step_at, status, payload_json, steps_sent, created_at, updated_at
+			) values ${run("00000000-0000-4000-8000-000000000e02", first, paging)},
+				${run("00000000-0000-4000-8000-000000000e03", second, paging)}`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		type Person = { readonly user_id: string; readonly name: string | null }
+		type Listed = {
+			readonly dedupe_key: string
+			readonly escalation: { readonly next_step_people: ReadonlyArray<Person> }
+		}
+		const peopleOf = (dedupeKey: string): ReadonlyArray<Person> | null =>
+			Arr.findFirst(list.body.data, (incident: Listed) => incident.dedupe_key === dedupeKey).pipe(
+				Option.map((incident: Listed) => incident.escalation.next_step_people),
+				Option.getOrNull,
+			)
+		const priya = [{ user_id: "user_next", name: "Priya Shah" }]
+		expect([peopleOf(first), peopleOf(second), peopleOf(quiet)]).toEqual([priya, priya, []])
+		expect(directoryReads.count).toBe(1)
+
+		await harness.dispose()
+	})
+
+	it("serves an older iOS build the acknowledgement source it can decode", async () => {
+		const harness = makeHarness()
+		const session = await harness.bootstrapSession()
+		await createWebhookAndRule(harness, session)
+		await insertOpenIncidents(harness, "default", ["00000000-0000-4000-8000-000000000f01"])
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", session)
+		const openId: string = list.body.data[0]?.id ?? ""
+		await harness.request("POST", `/v2/alerts/incidents/${openId}/acknowledge`, session, undefined, {
+			"x-maple-client": "ios",
+		})
+		const olderBuild = { "user-agent": "Maple/7 CFNetwork/3860.100.1 Darwin/25.0.0" }
+
+		const toOlderBuild = await harness.request(
+			"GET",
+			`/v2/alerts/incidents/${openId}`,
+			session,
+			undefined,
+			olderBuild,
+		)
+		expect(toOlderBuild.body.acknowledged_via).toBe("api")
+		const listed = await harness.request(
+			"GET",
+			"/v2/alerts/incidents?status=open",
+			session,
+			undefined,
+			olderBuild,
+		)
+		expect(listed.body.data[0].acknowledged_via).toBe("api")
+
+		const toThisBuild = await harness.request(
+			"GET",
+			`/v2/alerts/incidents/${openId}`,
+			session,
+			undefined,
+			{
+				...olderBuild,
+				"x-maple-client": "ios",
+			},
+		)
+		expect(toThisBuild.body.acknowledged_via).toBe("mobile")
+		const toBrowser = await harness.request("GET", `/v2/alerts/incidents/${openId}`, session)
+		expect(toBrowser.body.acknowledged_via).toBe("mobile")
 
 		await harness.dispose()
 	})
