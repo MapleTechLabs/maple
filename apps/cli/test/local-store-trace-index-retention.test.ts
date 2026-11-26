@@ -23,19 +23,22 @@ const decodeColumns = decodeJsonEachRow(
 const decodeKeys = decodeJsonEachRow(Schema.Struct({ sortingKey: Schema.String, primaryKey: Schema.String }))
 const decodeRows = decodeJsonEachRow(Schema.Struct({ traceId: Schema.String, days: Schema.String }))
 
-/** trace_index's columns, defaults, sorting and primary key, as system tables report them. */
-const traceIndexDefinition = (db: Chdb) => ({
+/** A table's columns, defaults, sorting and primary key, as system tables report them. */
+const tableDefinition = (db: Chdb, table: string) => ({
 	columns: decodeColumns(
 		db.query(
-			"SELECT name, type, default_kind AS defaultKind, default_expression AS defaultExpression FROM system.columns WHERE database = 'default' AND table = 'trace_index' ORDER BY position",
+			`SELECT name, type, default_kind AS defaultKind, default_expression AS defaultExpression FROM system.columns WHERE database = 'default' AND table = '${table}' ORDER BY position`,
 		),
 	),
 	keys: decodeKeys(
 		db.query(
-			"SELECT sorting_key AS sortingKey, primary_key AS primaryKey FROM system.tables WHERE database = 'default' AND name = 'trace_index'",
+			`SELECT sorting_key AS sortingKey, primary_key AS primaryKey FROM system.tables WHERE database = 'default' AND name = '${table}'`,
 		),
 	)[0],
 })
+const traceIndexDefinition = (db: Chdb) => tableDefinition(db, "trace_index")
+/** The other aggregating table whose sorting key gains RetentionDays in v68. */
+const traceFacetsDefinition = (db: Chdb) => tableDefinition(db, "trace_facets_hourly")
 
 const storedRows = (db: Chdb) =>
 	decodeRows(
@@ -85,16 +88,21 @@ describeWithChdb("v67 -> v68 trace_index sorts by RetentionDays", () => {
 			targetDataDir,
 			(db) => {
 				const definition = traceIndexDefinition(db)
+				const facets = traceFacetsDefinition(db)
 				const before = storedRows(db)
 				db.exec("OPTIMIZE TABLE trace_index FINAL")
-				return { definition, before, after: storedRows(db) }
+				return { definition, facets, before, after: storedRows(db) }
 			},
 			{ schemaSql: localSchemaSnapshot(68).sql, bootstrapSchema: false },
 		)
-		const fresh = await openStore(freshDataDir, traceIndexDefinition, {
-			schemaSql: localSchemaSnapshot(68).sql,
-			bootstrapSchema: true,
-		})
+		const fresh = await openStore(
+			freshDataDir,
+			(db) => ({ definition: traceIndexDefinition(db), facets: traceFacetsDefinition(db) }),
+			{
+				schemaSql: localSchemaSnapshot(68).sql,
+				bootstrapSchema: true,
+			},
+		)
 
 		expect(migrated.definition.keys).toEqual({
 			sortingKey: "OrgId, TraceId, ServiceName, Bucket, RetentionDays",
@@ -117,6 +125,10 @@ describeWithChdb("v67 -> v68 trace_index sorts by RetentionDays", () => {
 		]
 		expect(migrated.before).toEqual(expected)
 		expect(migrated.after).toEqual(expected)
-		expect(migrated.definition).toEqual(fresh)
+		expect(migrated.definition).toEqual(fresh.definition)
+		expect(migrated.facets.keys?.primaryKey).toBe(
+			"OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
+		)
+		expect(migrated.facets).toEqual(fresh.facets)
 	})
 })

@@ -1257,8 +1257,23 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 
 export type TraceListMvRow = InferRow<typeof traceListMv>
 
-/** How long `trace_facets_hourly` keeps an hour; older hours read `trace_list_mv`. */
+/**
+ * The longest `trace_facets_hourly` keeps an hour; older hours read `trace_list_mv`. A row from a
+ * source that keeps spans less expires with them.
+ */
 export const TRACE_FACETS_HOURLY_RETENTION_DAYS = 30
+
+const TRACE_FACETS_HOURLY_DIMENSIONS = [
+	"OrgId",
+	"Hour",
+	"ServiceName",
+	"SpanName",
+	"HttpMethod",
+	"HttpStatusCode",
+	"DeploymentEnv",
+	"ServiceNamespace",
+	"HasError",
+] as const
 
 /**
  * Hourly rollup of `trace_list_mv` for the traces sidebar facets and duration
@@ -1285,22 +1300,17 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 		DurationMin: t.simpleAggregateFunction("min", t.uint64()),
 		DurationMax: t.simpleAggregateFunction("max", t.uint64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95)", t.uint64()),
+		RetentionDays: spanRetentionDaysColumn(),
 	},
-	...RETENTION_REPARTITION_FORWARD,
+	...RETENTION_COLUMN_FORWARD,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
-		sortingKey: [
-			"OrgId",
-			"Hour",
-			"ServiceName",
-			"SpanName",
-			"HttpMethod",
-			"HttpStatusCode",
-			"DeploymentEnv",
-			"ServiceNamespace",
-			"HasError",
-		],
-		ttl: `toDate(Hour) + INTERVAL ${TRACE_FACETS_HOURLY_RETENTION_DAYS} DAY`,
+		// One row per period, so an hour's counts from a short-period source expire with its spans.
+		// RetentionDays sorts last (an aggregating table sorts by every plain column); the primary
+		// key is the one an upgraded store keeps after MODIFY ORDER BY.
+		sortingKey: [...TRACE_FACETS_HOURLY_DIMENSIONS, "RetentionDays"],
+		primaryKey: TRACE_FACETS_HOURLY_DIMENSIONS,
+		ttl: `toDate(Hour) + toIntervalDay(least(RetentionDays, ${TRACE_FACETS_HOURLY_RETENTION_DAYS}))`,
 	}),
 })
 

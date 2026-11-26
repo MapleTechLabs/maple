@@ -349,11 +349,14 @@ describe("migration 0034: trace_facets_hourly", () => {
 		expect(drop).toBe("DROP VIEW IF EXISTS trace_facets_hourly_mv")
 		expect(truncate).toBe("TRUNCATE TABLE IF EXISTS trace_facets_hourly")
 		expect(backfill).toBe(traceFacetsHourlyBackfill)
-		// 0045 later moved its TTL onto the partition's day.
-		expect(latestSnapshotStatements).toContain(
-			Str.replace("TTL Hour + INTERVAL", "TTL toDate(Hour) + INTERVAL")(String(table)),
+		// 0045 moved its TTL onto the partition's day and 0076 added RetentionDays, so the table and
+		// view are checked for what this one created.
+		expect(table).toContain("CREATE TABLE IF NOT EXISTS trace_facets_hourly (")
+		expect(table).toContain("TTL Hour + INTERVAL 30 DAY")
+		expect(view).toContain(
+			"CREATE MATERIALIZED VIEW IF NOT EXISTS trace_facets_hourly_mv TO trace_facets_hourly",
 		)
-		expect(latestSnapshotStatements).toContain(view)
+		expect(view).toContain("FROM trace_list_mv")
 	})
 })
 
@@ -395,11 +398,14 @@ describe("migration 0076: span projections and product events carry their retent
 	it("copies each span's RetentionDays, and the events period into product_events", () => {
 		for (const create of creates) {
 			const fromTraces = Str.includes("FROM traces")(create)
+			const fromTraceList = Str.includes("FROM trace_list_mv")(create)
 			const intoEvents = Str.includes(" TO product_events AS")(create)
 			expect(create, viewName(create)).toMatch(
-				intoEvents ? /EventsRetentionDays AS RetentionDays/ : /\bRetentionDays\n\s+FROM traces/,
+				intoEvents
+					? /EventsRetentionDays AS RetentionDays/
+					: /\bRetentionDays\n\s+FROM trace(s|_list_mv)\n/,
 			)
-			expect(fromTraces || intoEvents, viewName(create)).toBe(true)
+			expect(fromTraces || fromTraceList || intoEvents, viewName(create)).toBe(true)
 		}
 		expect(migration_0076_retention_storage.requiredForIngest).toBe(false)
 	})
@@ -489,7 +495,13 @@ describe("migration 0045: TTL eviction drops whole parts", () => {
 					partition === undefined
 						? undefined
 						: firstGroup(/^to(?:Date|YYYYMM)\((\w+)\)$/)(partition)
-				return column === undefined || !Str.startsWith(`toDate(${column}) + INTERVAL `)(ttl)
+				return (
+					column === undefined ||
+					!(
+						Str.startsWith(`toDate(${column}) + INTERVAL `)(ttl) ||
+						Str.startsWith(`toDate(${column}) + toIntervalDay(`)(ttl)
+					)
+				)
 			}),
 			({ name }) => name,
 		)

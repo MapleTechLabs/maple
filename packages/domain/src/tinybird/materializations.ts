@@ -1936,9 +1936,10 @@ export const traceFacetsHourlyMv = defineMaterializedView("trace_facets_hourly_m
           count() AS TraceCount,
           min(Duration) AS DurationMin,
           max(Duration) AS DurationMax,
-          quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles
+          quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles,
+          RetentionDays
         FROM trace_list_mv
-        GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError
+        GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, RetentionDays
       `,
 		}),
 	],
