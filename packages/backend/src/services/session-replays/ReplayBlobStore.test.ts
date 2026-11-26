@@ -2,7 +2,7 @@ import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { Effect, Layer, Option, Array as Arr } from "effect"
 import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bindings"
-import { ReplayBlobStore, replayObjectKey } from "./ReplayBlobStore"
+import { legacyReplayObjectKey, ReplayBlobStore, replayObjectKey } from "./ReplayBlobStore"
 
 const gzip = (text: string): Effect.Effect<Uint8Array> =>
 	Effect.promise(async () => {
@@ -37,24 +37,29 @@ describe("replayObjectKey", () => {
 	// to a user as "every recording is empty", not as an error. So both suites
 	// pin the same strings.
 	it("matches the ingest gateway's key scheme", () => {
-		expect(replayObjectKey("org_123", "sess_abc", 7)).toBe("v1/org_123/sess_abc/00000007.json.gz")
+		expect(replayObjectKey(30, "org_123", "sess_abc", 7)).toBe("r30/v1/org_123/sess_abc/00000007.json.gz")
+		expect(replayObjectKey(365, "o", "s", 1)).toBe("r365/v1/o/s/00000001.json.gz")
 	})
 
 	it("zero-pads so lexicographic order is playback order", () => {
 		const keys = [
-			replayObjectKey("o", "s", 10),
-			replayObjectKey("o", "s", 2),
-			replayObjectKey("o", "s", 1),
+			replayObjectKey(30, "o", "s", 10),
+			replayObjectKey(30, "o", "s", 2),
+			replayObjectKey(30, "o", "s", 1),
 		].sort()
 		expect(keys).toEqual([
-			"v1/o/s/00000001.json.gz",
-			"v1/o/s/00000002.json.gz",
-			"v1/o/s/00000010.json.gz",
+			"r30/v1/o/s/00000001.json.gz",
+			"r30/v1/o/s/00000002.json.gz",
+			"r30/v1/o/s/00000010.json.gz",
 		])
 	})
 
 	it("does not truncate a chunk seq wider than the pad", () => {
-		expect(replayObjectKey("o", "s", 123_456_789)).toBe("v1/o/s/123456789.json.gz")
+		expect(replayObjectKey(30, "o", "s", 123_456_789)).toBe("r30/v1/o/s/123456789.json.gz")
+	})
+
+	it("keeps the pre-period legacy key", () => {
+		expect(legacyReplayObjectKey("org_123", "sess_abc", 7)).toBe("v1/org_123/sess_abc/00000007.json.gz")
 	})
 })
 
@@ -70,6 +75,35 @@ describe("ReplayBlobStore.hydrate", () => {
 				store.hydrate("org_1", "sess_1", [{ chunkSeq: 0, events: "", byteSize: 26 }]),
 			)
 			expect(result).toEqual([{ chunkSeq: 0, events, byteSize: 26 }])
+		}),
+	)
+
+	it.live("reads a chunk under its stamped period's prefix, then the legacy key", () =>
+		Effect.gen(function* () {
+			const fetched: string[] = []
+			const bucket = fakeBucket(
+				{
+					"r365/v1/org_1/sess_1/00000000.json.gz": yield* gzip("[0]"),
+					"v1/org_1/sess_1/00000001.json.gz": yield* gzip("[1]"),
+				},
+				(key) => fetched.push(key),
+			)
+			const result = yield* runWithBucket(bucket, (store) =>
+				store.hydrate("org_1", "sess_1", [
+					{ chunkSeq: 0, events: "", retentionDays: 365 },
+					{ chunkSeq: 1, events: "", retentionDays: 30 },
+					{ chunkSeq: 2, events: "", retentionDays: 60 },
+				]),
+			)
+			expect(Arr.map(result, (chunk) => chunk.events)).toEqual(["[0]", "[1]"])
+			// A hit under the period never pays for the legacy lookup.
+			expect([...fetched].sort()).toEqual([
+				"r30/v1/org_1/sess_1/00000001.json.gz",
+				"r365/v1/org_1/sess_1/00000000.json.gz",
+				"r60/v1/org_1/sess_1/00000002.json.gz",
+				"v1/org_1/sess_1/00000001.json.gz",
+				"v1/org_1/sess_1/00000002.json.gz",
+			])
 		}),
 	)
 
@@ -123,13 +157,17 @@ describe("ReplayBlobStore.hydrate", () => {
 		Effect.gen(function* () {
 			const objects: Record<string, Uint8Array> = {}
 			for (let seq = 0; seq < 20; seq++) {
-				objects[replayObjectKey("org_1", "sess_1", seq)] = yield* gzip(`[${seq}]`)
+				objects[replayObjectKey(30, "org_1", "sess_1", seq)] = yield* gzip(`[${seq}]`)
 			}
 			const result = yield* runWithBucket(fakeBucket(objects), (store) =>
 				store.hydrate(
 					"org_1",
 					"sess_1",
-					Array.from({ length: 20 }, (_, seq) => ({ chunkSeq: seq, events: "" })),
+					Array.from({ length: 20 }, (_, seq) => ({
+						chunkSeq: seq,
+						events: "",
+						retentionDays: 30,
+					})),
 				),
 			)
 			expect(Arr.map(result, (chunk) => chunk.events)).toEqual(

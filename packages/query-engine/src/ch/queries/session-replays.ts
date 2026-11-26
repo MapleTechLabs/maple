@@ -932,6 +932,8 @@ export interface SessionReplayEventsOutput {
 	/** The rrweb event array for this chunk, serialized as a JSON string. */
 	readonly events: string
 	readonly isCheckpoint: number
+	/** The row's stamped period: names the R2 key prefix a blob-backed chunk sits under. */
+	readonly retentionDays: number
 }
 
 export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
@@ -944,6 +946,7 @@ export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
 			byteSize: $.ByteSize,
 			events: $.Events,
 			isCheckpoint: $.IsCheckpoint,
+			retentionDays: $.RetentionDays,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
