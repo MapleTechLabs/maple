@@ -12,7 +12,8 @@ import MapleWidgetData
 struct FixtureAPI: MapleAPI {
 	static let isEnabled = ProcessInfo.processInfo.environment["MAPLE_FIXTURES"] == "1"
 
-	private let now: Date
+	/// Internal, not private: the fixture's extensions build their dates from it.
+	let now: Date
 	private let latency: Duration
 
 	init(now: Date = Date(), latency: Duration = .milliseconds(350)) {
@@ -956,6 +957,12 @@ struct FixtureAPI: MapleAPI {
 	func myDevices() async throws -> [MobileDevice] {
 		try await pause()
 		return []
+	}
+
+	/// One phone reached. Nothing arrives: fixture mode has no server to send it.
+	func sendTestPage() async throws -> TestPageResult {
+		try await pause()
+		return TestPageResult(configured: true, sent: 1)
 	}
 
 	func registerLiveActivity(

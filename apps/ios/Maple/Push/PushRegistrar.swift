@@ -36,6 +36,33 @@ final class PushRegistrar: NSObject {
 	private(set) var lastError: String?
 	/// True while a sync is in flight; the settings sheet dims its toggles.
 	private(set) var isSyncing = false
+
+	/// What iOS would do with a page, from the last read of the notification
+	/// settings. Nil before the first read: nothing is known, so nothing is warned.
+	private(set) var delivery: Delivery?
+	/// The organization and token the server last accepted.
+	private(set) var registered: Registered?
+	/// The last attempt to get a token or register it failed, or the token never came.
+	private(set) var registrationFailed = false
+	@ObservationIgnored private var tokenWait: Task<Void, Never>?
+
+	struct Delivery: Equatable {
+		var authorization: PageReachability.Authorization
+		var alertsEnabled: Bool
+		var soundEnabled: Bool
+		var timeSensitiveEnabled: Bool
+	}
+
+	struct Registered: Equatable {
+		let organizationId: String
+		let token: String
+	}
+
+	#if DEBUG
+		/// Set by `maple://debug/reachability/<state>`: what the reachability
+		/// surfaces show for this session, whatever the phone's own settings say.
+		var debugReachability: PageReachability?
+	#endif
 	/// Bumped by every sync and by sign-out. A registration finishing under an
 	/// older generation was superseded, so its outcome is dropped.
 	@ObservationIgnored private var generation = 0
@@ -68,8 +95,104 @@ final class PushRegistrar: NSObject {
 		case .authorized, .provisional, .ephemeral: authorization = .authorized
 		@unknown default: authorization = .unknown
 		}
+		let delivery = Self.delivery(from: settings)
+		// Read on every return to the foreground, and usually unchanged.
+		if delivery != self.delivery { self.delivery = delivery }
 		if authorization == .authorized {
 			UIApplication.shared.registerForRemoteNotifications()
+			awaitToken()
+		}
+	}
+
+	private static func delivery(from settings: UNNotificationSettings) -> Delivery? {
+		let authorization: PageReachability.Authorization
+		switch settings.authorizationStatus {
+		case .notDetermined: authorization = .notDetermined
+		case .denied: authorization = .denied
+		case .provisional: authorization = .provisional
+		case .authorized, .ephemeral: authorization = .authorized
+		@unknown default: return nil
+		}
+		return Delivery(
+			authorization: authorization,
+			alertsEnabled: settings.alertSetting == .enabled,
+			soundEnabled: settings.soundSetting == .enabled,
+			// `.notSupported` is a device without the feature, where no Focus holds a page back.
+			timeSensitiveEnabled: settings.timeSensitiveSetting != .disabled
+		)
+	}
+
+	// MARK: Reachability
+
+	/// Whether a page would reach this phone in `orgId`, from what was last read.
+	/// Nil until the settings have been read once.
+	func pageReachability(orgId: String?) -> PageReachability? {
+		#if DEBUG
+			if let debugReachability { return debugReachability }
+		#endif
+		guard let delivery else { return nil }
+		return PageReachability(
+			authorization: delivery.authorization,
+			alertsEnabled: delivery.alertsEnabled,
+			soundEnabled: delivery.soundEnabled,
+			timeSensitiveEnabled: delivery.timeSensitiveEnabled,
+			registration: registration(orgId: orgId)
+		)
+	}
+
+	private func registration(orgId: String?) -> PageReachability.Registration {
+		if let orgId, let deviceToken, registered == Registered(organizationId: orgId, token: deviceToken) {
+			return .registered
+		}
+		return registrationFailed ? .missing : .pending
+	}
+
+	/// How long iOS gets to hand over a token before its absence counts as a failure.
+	private static let tokenDeadline: Duration = .seconds(15)
+
+	/// iOS reports a token or an error, or on a phone that cannot reach Apple,
+	/// neither. Without a deadline that phone would read as pending forever.
+	private func awaitToken() {
+		guard deviceToken == nil, tokenWait == nil else { return }
+		tokenWait = Task { [weak self] in
+			try? await Task.sleep(for: Self.tokenDeadline)
+			guard let self, !Task.isCancelled else { return }
+			self.tokenWait = nil
+			if self.deviceToken == nil { self.registrationFailed = true }
+		}
+	}
+
+	/// Ask the server whether it still pushes to this phone. A test page that found a
+	/// phone gone does not say which one, and a token the platform called dead is
+	/// switched off there while this phone still believes it is registered.
+	func reconcileRegistration(api: any MapleAPI) async {
+		guard let registered, let devices = try? await api.myDevices() else { return }
+		// Only a read that confirms it: the phone that was gone may be another one.
+		guard self.registered == registered else { return }
+		if devices.first(where: { $0.token == registered.token })?.enabled != true {
+			self.registered = nil
+			registrationFailed = true
+		}
+	}
+
+	/// The one thing a reachability problem's button does.
+	func perform(_ fix: PageReachability.Fix, api: any MapleAPI, orgId: String?) async {
+		switch fix {
+		case .requestPermission:
+			await requestAuthorization()
+		case .openSettings:
+			// Maple's own notification page, not the app's top-level settings.
+			guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return }
+			await UIApplication.shared.open(url)
+		case .retryRegistration:
+			registrationFailed = false
+			lastError = nil
+			tokenWait?.cancel()
+			tokenWait = nil
+			UIApplication.shared.registerForRemoteNotifications()
+			awaitToken()
+			// With no token yet, the tab root's sync runs when one arrives.
+			if let orgId { await sync(api: api, orgId: orgId) }
 		}
 	}
 
@@ -97,11 +220,21 @@ final class PushRegistrar: NSObject {
 	// MARK: Token (from the app delegate)
 
 	func didRegister(deviceToken data: Data) {
-		deviceToken = data.map { String(format: "%02x", $0) }.joined()
+		let token = data.map { String(format: "%02x", $0) }.joined()
+		tokenWait?.cancel()
+		tokenWait = nil
+		// The same token comes back on every return to the foreground.
+		guard deviceToken != token else { return }
+		// A new token has not been tried yet: the registration that follows decides.
+		registrationFailed = false
+		deviceToken = token
 	}
 
 	func didFailToRegister(_ error: any Error) {
 		lastError = error.localizedDescription
+		tokenWait?.cancel()
+		tokenWait = nil
+		registrationFailed = true
 	}
 
 	// MARK: Preferences
@@ -173,7 +306,7 @@ final class PushRegistrar: NSObject {
 		span: Span?
 	) async {
 		do {
-			_ = try await api.registerDevice(
+			let device = try await api.registerDevice(
 				DeviceRegistration(
 					token: deviceToken,
 					environment: PushEnvironmentDetector.current,
@@ -184,7 +317,11 @@ final class PushRegistrar: NSObject {
 					liveActivityStartToken: LiveActivityController.shared.pushToStartToken
 				)
 			)
-			if generation == self.generation { lastError = nil }
+			guard generation == self.generation else { return }
+			lastError = nil
+			// A row the server keeps disabled receives nothing: not a registration.
+			registered = device.enabled ? Registered(organizationId: orgId, token: deviceToken) : nil
+			registrationFailed = !device.enabled
 		} catch is CancellationError {
 		} catch {
 			// A phone that failed to register is a phone that will not be told
@@ -193,7 +330,10 @@ final class PushRegistrar: NSObject {
 			let message = apiError?.message ?? error.localizedDescription
 			span?.setAttribute(Telemetry.Key.errorType, apiError?.telemetryType ?? "transport")
 			span?.setStatus(.error(message))
-			if generation == self.generation { lastError = message }
+			if generation == self.generation {
+				lastError = message
+				registrationFailed = true
+			}
 		}
 	}
 
@@ -319,6 +459,8 @@ final class PushRegistrar: NSObject {
 		inFlight = nil
 		isSyncing = false
 		lastError = nil
+		registered = nil
+		registrationFailed = false
 		await pending?.value
 		guard let deviceToken else { return }
 		// Rows are kept per organization, and organizations live in different
@@ -351,6 +493,9 @@ enum PageNotification {
 	static let categoryId = "MAPLE_PAGE"
 	static let acknowledgeActionId = "MAPLE_PAGE_ACKNOWLEDGE"
 	static let openActionId = "MAPLE_PAGE_OPEN"
+	/// `maple_kind` on the page "Send a test page" asks for. It has no incident
+	/// behind it. Must match `testPage` in `MobilePushService.ts`.
+	static let testKind = "test_page"
 
 	static var category: UNNotificationCategory {
 		UNNotificationCategory(
@@ -448,7 +593,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 		didReceiveRemoteNotification userInfo: [AnyHashable: Any],
 		fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
 	) {
-		let isWidgetRefresh = userInfo["maple_kind"] as? String == "widget_refresh"
+		let kind = userInfo["maple_kind"] as? String
+		// A test page says nothing changed: no incident, nothing for a widget to redraw.
+		if kind == PageNotification.testKind {
+			completionHandler(.noData)
+			return
+		}
+		let isWidgetRefresh = kind == "widget_refresh"
 		Task { @MainActor in
 			if isWidgetRefresh {
 				WidgetCenter.shared.reloadAllTimelines()
@@ -456,6 +607,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 				// An alert push also renews credentials and warms the snapshots,
 				// which the widget cannot do for itself.
 				await WidgetPublisher.shared.refresh(trigger: .push, force: true)
+				// It may have been a page, or the resolve that ends one.
+				if let session = PushRegistrar.shared.opener?.session {
+					await PagesWidgetPublisher.refresh(session: session)
+				}
 			}
 			completionHandler(.newData)
 		}
@@ -485,7 +640,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 		willPresent notification: UNNotification,
 		withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
 	) {
-		let event = notification.request.content.userInfo["maple_event"] as? String
+		let userInfo = notification.request.content.userInfo
+		// A test page is asked for from inside the app, so this is where it usually
+		// lands. It shows as a page does, sound included: that is what it is for.
+		if userInfo["maple_kind"] as? String == PageNotification.testKind {
+			completionHandler([.banner, .sound, .list])
+			return
+		}
+		let event = userInfo["maple_event"] as? String
 		completionHandler(event == "resolve" ? [.banner, .list] : [.banner, .sound, .list])
 	}
 
@@ -505,7 +667,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 		// The banner's Acknowledge: answered in the background, with no screen to
 		// open. iOS keeps the app alive until the completion handler runs, so it
 		// is called only once the request has landed or failed.
-		if response.actionIdentifier == PageNotification.acknowledgeActionId, let incidentId {
+		// Never for a test page: it has no incident, whatever its payload carries.
+		if response.actionIdentifier == PageNotification.acknowledgeActionId, kind != PageNotification.testKind,
+			let incidentId
+		{
 			nonisolated(unsafe) let done = completionHandler
 			Task { @MainActor in
 				let incident = await PushRegistrar.shared.acknowledgeWithoutScreen(
@@ -552,7 +717,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 					WidgetDeepLink(target: .incidentsList, organizationId: organizationId),
 					source: .push
 				)
+			case PageNotification.testKind:
+				// The tap has already brought the app to the front, and that is all
+				// it should do: there is no incident to open and no screen to time.
+				Telemetry.track(Telemetry.Event.pushOpened, ["kind": PageNotification.testKind])
 			default:
+				// A kind this build does not know opens the app and goes nowhere.
 				break
 			}
 		}

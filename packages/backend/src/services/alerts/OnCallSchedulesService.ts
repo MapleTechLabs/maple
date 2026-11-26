@@ -66,6 +66,7 @@ import {
 	Effect,
 	Layer,
 	Option,
+	Order,
 	Schema,
 	String as Str,
 } from "effect"
@@ -86,8 +87,51 @@ type ScheduleWriteError =
 	| MemberLookupError
 type ScheduleReadError = AlertPersistenceError | OnCallScheduleNotFoundError
 
+/** How far ahead the overview draws each schedule, and how far it looks for the caller's own shifts. */
+export const ONCALL_OVERVIEW_SCHEDULE_MS = 14 * 24 * 60 * 60_000
+export const ONCALL_OVERVIEW_MY_SHIFTS_MS = 60 * 24 * 60 * 60_000
+export const MAX_ONCALL_OVERVIEW_MY_SHIFTS = 20
+
+/**
+ * A shift inside one of the overview's windows. `continues` says the person is still on call where
+ * the shift is cut: the window ended there, nobody took over.
+ */
+export interface OnCallOverviewShift extends OnCallShift {
+	readonly continues: boolean
+}
+
+/** One schedule as the overview draws it: who has it, and who covers the days ahead. */
+export interface OnCallOverviewSchedule {
+	readonly id: OnCallScheduleId
+	readonly name: string
+	readonly timeZone: string
+	readonly layers: OnCallLayers
+	/** The stretch that holds now, as far as the caller's window sees it, or null when nobody is on call. */
+	readonly now: OnCallOverviewShift | null
+	/** Effective shifts over the schedule window, earliest first. The first may have started already. */
+	readonly shifts: ReadonlyArray<OnCallOverviewShift>
+	readonly gaps: ReadonlyArray<{ readonly startMs: number; readonly endMs: number }>
+}
+
+/** Everything the phone asks about on-call, in one read. */
+export interface OnCallOverview {
+	readonly nowMs: number
+	readonly scheduleHorizonMs: number
+	readonly schedules: ReadonlyArray<OnCallOverviewSchedule>
+	/** The caller's own shifts across every schedule, the current one first. */
+	readonly myShifts: ReadonlyArray<{
+		readonly scheduleId: OnCallScheduleId
+		readonly scheduleName: string
+		readonly shift: OnCallOverviewShift
+	}>
+	/** Display names of everyone a shift names; a member without a name is absent. */
+	readonly people: ReadonlyArray<{ readonly userId: UserId; readonly name: string }>
+}
+
 export interface OnCallSchedulesServiceApi {
 	readonly list: (orgId: OrgId) => Effect.Effect<OnCallSchedulesListResponse, AlertPersistenceError>
+	/** Who is on call on every schedule, the days ahead, and the caller's own shifts. */
+	readonly overview: (orgId: OrgId, userId: UserId) => Effect.Effect<OnCallOverview, AlertPersistenceError>
 	readonly get: (
 		orgId: OrgId,
 		scheduleId: OnCallScheduleId,
@@ -482,6 +526,125 @@ export class OnCallSchedulesService extends Context.Service<
 					),
 				),
 			})
+		})
+
+		const overview = Effect.fn("OnCallSchedulesService.overview")(function* (
+			orgId: OrgId,
+			userId: UserId,
+		) {
+			const nowMs = yield* runtime.now
+			const directory = yield* directoryOf(orgId)
+			const scheduleHorizonMs = nowMs + ONCALL_OVERVIEW_SCHEDULE_MS
+			const myHorizonMs = nowMs + ONCALL_OVERVIEW_MY_SHIFTS_MS
+			const [rows, ahead, active] = yield* dbExecute((db) =>
+				Effect.all(
+					[
+						db.run(
+							PG.from(OnCallSchedules)
+								.select()
+								.where(($) => [$.orgId.eq(orgId)])
+								.orderBy(["name", "asc"])
+								.limit(MAX_ONCALL_SCHEDULES_PER_ORG),
+						),
+						overlappingOverrides(db, orgId, nowMs - ONCALL_LOOKAROUND_MS, myHorizonMs),
+						// As in `list`: the window read is capped, and the overrides that decide who
+						// is on call now must never be the ones the cap drops.
+						db.run(
+							PG.from(OnCallOverrides)
+								.select()
+								.where(($) => [$.orgId.eq(orgId), $.startsAt.lte(nowMs), $.endsAt.gt(nowMs)]),
+						),
+					],
+					{ concurrency: "unbounded" },
+				),
+			)
+			const overrides = Arr.dedupeWith([...active, ...ahead], (a, b) => a.id === b.id)
+			const presence = presenceOf(directory.ids)
+			const rendered = Arr.map(rows, (row) => {
+				const config = configOf(row)
+				const own = Arr.map(
+					Arr.filter(overrides, (o) => o.scheduleId === row.id),
+					toOverride,
+				)
+				// The turn that holds now is only asked for its start: a render begins at its range.
+				const turn = resolveOnCallAt(config, own, nowMs, presence)
+				// One render for both windows: the schedule's days are the head of the caller's months.
+				// Everything below reads this one timeline, so "who is on call now", "who is next" and
+				// the days ahead cannot disagree: back-to-back turns of one person are one stretch,
+				// and an override that takes over weeks ahead ends the stretch where it starts.
+				const final = Arr.map(
+					renderOnCall(config, own, nowMs, myHorizonMs, presence).final,
+					(shift): OnCallOverviewShift => ({
+						...shift,
+						startMs:
+							turn !== null && shift.startMs === nowMs && shift.userId === turn.userId
+								? turn.startMs
+								: shift.startMs,
+						// Cut by the render, not handed off: past this the read does not know.
+						continues: shift.endMs >= myHorizonMs,
+					}),
+				)
+				const shifts = Arr.map(
+					Arr.filter(final, (shift) => shift.startMs < scheduleHorizonMs),
+					(shift): OnCallOverviewShift => ({
+						...shift,
+						endMs: Math.min(shift.endMs, scheduleHorizonMs),
+						continues: shift.continues || shift.endMs > scheduleHorizonMs,
+					}),
+				)
+				return {
+					schedule: {
+						id: row.id,
+						name: row.name,
+						timeZone: row.timeZone,
+						layers: row.layersJson,
+						now: Option.getOrNull(
+							Arr.findFirst(final, (shift) => shift.startMs <= nowMs && shift.endMs > nowMs),
+						),
+						shifts,
+						// Every gap, not the list endpoint's first 20: a schedule that covers two
+						// windows a day has more than that in two weeks, and the phone draws them all.
+						gaps: uncoveredIntervals(shifts, nowMs, scheduleHorizonMs),
+					} satisfies OnCallOverviewSchedule,
+					mine: Arr.map(
+						Arr.filter(final, (shift) => shift.userId === userId),
+						(shift) => ({ scheduleId: row.id, scheduleName: row.name, shift }),
+					),
+				}
+			})
+			const schedules = Arr.map(rendered, (one) => one.schedule)
+			const myShifts = Arr.take(
+				Arr.sort(
+					Arr.flatMap(rendered, (one) => one.mine),
+					Order.mapInput(
+						Order.Number,
+						(entry: { readonly shift: OnCallOverviewShift }) => entry.shift.startMs,
+					),
+				),
+				MAX_ONCALL_OVERVIEW_MY_SHIFTS,
+			)
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"result.rowCount": rows.length,
+				"maple.oncall.my_shift_count": myShifts.length,
+			})
+			const named = Arr.dedupe([
+				userId,
+				...Arr.flatMap(schedules, (schedule) => [
+					...Arr.map(schedule.shifts, (shift) => shift.userId),
+					...(schedule.now === null ? [] : [schedule.now.userId]),
+				]),
+			])
+			return {
+				nowMs,
+				scheduleHorizonMs,
+				schedules,
+				myShifts,
+				people: Arr.flatMap(named, (id) => {
+					const name = directory.names.get(id)
+					return name === undefined ? [] : [{ userId: id, name }]
+				}),
+			} satisfies OnCallOverview
 		})
 
 		const loadDocument = (
@@ -1023,6 +1186,7 @@ export class OnCallSchedulesService extends Context.Service<
 			deleteCalendarFeed,
 			calendarFeed,
 			list,
+			overview,
 			get,
 			create,
 			update,

@@ -20,6 +20,7 @@ import {
 	WarehouseServiceStubLayer,
 	Phase1ResourceStubsLayer,
 	TelemetryServiceStubsLayer,
+	MobilePushServiceUnusedLayer,
 } from "./v2-test-support"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
@@ -93,7 +94,7 @@ const makeHarness = () => {
 				),
 				HttpV2ErrorIssuesLive,
 				HttpV2ApiKeysLive,
-				HttpV2MobileDevicesLive,
+				HttpV2MobileDevicesLive.pipe(Layer.provide(MobilePushServiceUnusedLayer)),
 				HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
 			),
 		),

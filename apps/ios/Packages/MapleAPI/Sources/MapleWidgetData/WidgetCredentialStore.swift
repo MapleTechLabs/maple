@@ -164,6 +164,14 @@ public struct WidgetCredentialStore: Sendable {
 		write(credential, organizationId: credential.organizationId, prefix: "device")
 	}
 
+	/// Whether `device` is still the registration on file. Sign-out removes it
+	/// before the snapshots, so an answer to a request it signed is checked
+	/// against this before anything is stored: a stale one belongs to nobody here.
+	public func holds(_ device: DeviceCredential) -> Bool {
+		guard let stored = loadDevice(organizationId: device.organizationId) else { return false }
+		return stored.credentialId == device.credentialId && stored.jkt == device.jkt
+	}
+
 	public func clearDevice(organizationId: String) {
 		for prefix in ["device", "token"] {
 			guard let url = url(for: organizationId, prefix: prefix) else { return }
@@ -247,6 +255,9 @@ public struct DeviceCredential: Codable, Sendable, Equatable {
 	/// The cap no refresh extends past; the key is rotated before it.
 	public var hardExpiresAt: Date
 	public var registeredAt: Date
+	/// What the server granted at the last registration. Nil on a record saved
+	/// before the app kept them, which the next registration replaces.
+	public var scopes: [String]?
 
 	public init(
 		organizationId: String,
@@ -256,7 +267,8 @@ public struct DeviceCredential: Codable, Sendable, Equatable {
 		attested: Bool,
 		expiresAt: Date,
 		hardExpiresAt: Date,
-		registeredAt: Date
+		registeredAt: Date,
+		scopes: [String]? = nil
 	) {
 		self.organizationId = organizationId
 		self.credentialId = credentialId
@@ -266,6 +278,15 @@ public struct DeviceCredential: Codable, Sendable, Equatable {
 		self.expiresAt = expiresAt
 		self.hardExpiresAt = hardExpiresAt
 		self.registeredAt = registeredAt
+		self.scopes = scopes
+	}
+
+	/// The one write a widget makes: acknowledging a page. Must match the scope
+	/// `POST /v2/widget_summary/pages/{id}/acknowledge` asks for.
+	public static let acknowledgeScope = "widget_summary:write"
+
+	public var canAcknowledgePages: Bool {
+		scopes?.contains(Self.acknowledgeScope) ?? false
 	}
 
 	public func isExpired(at date: Date) -> Bool { date >= expiresAt }

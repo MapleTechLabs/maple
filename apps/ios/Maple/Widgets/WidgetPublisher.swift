@@ -324,6 +324,16 @@ final class WidgetPublisher {
 	/// included separately because the app can be showing an environment that
 	/// the environments list has not caught up with yet.
 	private static func clearSnapshots(organizationId: String, environments organization: WidgetOrganization?) {
+		// One person's pages, kept per organization: the next account on this
+		// phone may be in the same one.
+		WidgetSnapshotStore<PagesSnapshot>.pages(organizationId: organizationId).clear()
+		// And what the widget recorded about its own reads and taps, which the
+		// next account's spans would otherwise report as theirs.
+		WidgetSnapshotStore<PagesTapRecord>.pagesTap(organizationId: organizationId).clear()
+		WidgetSnapshotStore<PagesReadRecord>.pagesRead(organizationId: organizationId).clear()
+		// One person's shifts and their colleagues' names, and how reading them went.
+		WidgetSnapshotStore<OnCallSnapshot>.onCall(organizationId: organizationId).clear()
+		WidgetSnapshotStore<OnCallReadRecord>.onCallRead(organizationId: organizationId).clear()
 		var slots: [String?] = [nil]
 		slots.append(contentsOf: (organization?.environments ?? []).map { $0 })
 		if let active = organization?.activeEnvironment, !slots.contains(active) { slots.append(active) }
@@ -449,6 +459,13 @@ final class WidgetPublisher {
 				WidgetCenter.shared.reloadTimelines(ofKind: ThroughputWidgetKind.identifier)
 				reloads += 1
 			}
+			// The on-call widgets follow the active organization, which this round
+			// has only now recorded: their own publisher may have reloaded them before it.
+			if self.index.activeOrganizationId != previousActiveId {
+				WidgetCenter.shared.reloadTimelines(ofKind: OnCallWidgetKind.identifier)
+				WidgetCenter.shared.reloadTimelines(ofKind: ScheduleWidgetKind.identifier)
+				reloads += 2
+			}
 			span?.setAttribute(Telemetry.Key.widgetReloadCount, reloads)
 			span?.setAttribute(Telemetry.Key.widgetResolutionChanged, resolutionMoved)
 		}
@@ -525,6 +542,23 @@ final class WidgetPublisher {
 	/// The active organization only: a round already carries one organization id,
 	/// and fanning these attributes across three would make them unreadable.
 	private func drainFetchState(for organizationId: String, onto span: Span?) {
+		// The Pages widget's last Acknowledge, reported once and then forgotten.
+		let taps = WidgetSnapshotStore<PagesTapRecord>.pagesTap(organizationId: organizationId)
+		if let tap = taps.load() {
+			span?.setAttribute(Telemetry.Key.widgetPagesTapOutcome, tap.outcome.rawValue)
+			span?.setAttribute(Telemetry.Key.widgetPagesTapAgeSeconds, Int(Date().timeIntervalSince(tap.at)))
+			taps.clear()
+		}
+		// How the last Pages read ended, whichever process made it.
+		if let read = WidgetSnapshotStore<PagesReadRecord>.pagesRead(organizationId: organizationId).load() {
+			span?.setAttribute(Telemetry.Key.widgetPagesReadOutcome, read.outcome.rawValue)
+			span?.setAttribute(Telemetry.Key.widgetPagesReadFailures, read.consecutiveFailures)
+		}
+		// And the on-call read, which the On call and Schedule widgets share.
+		if let read = WidgetSnapshotStore<OnCallReadRecord>.onCallRead(organizationId: organizationId).load() {
+			span?.setAttribute(Telemetry.Key.widgetOnCallReadOutcome, read.outcome.rawValue)
+			span?.setAttribute(Telemetry.Key.widgetOnCallReadFailures, read.consecutiveFailures)
+		}
 		let state = fetchStates.load(organizationId: organizationId)
 		guard let outcome = state.lastOutcome else { return }
 		span?.setAttribute(Telemetry.Key.widgetFetchOutcome, outcome.rawValue)
@@ -699,8 +733,10 @@ final class WidgetPublisher {
 		_ context: Context,
 		trigger: Trigger
 	) async -> (targets: [PublishTarget], organizations: [WidgetOrganization], pinnedCount: Int) {
-		let pinned = await pinnedTargets()
-		let pinnedOrganizationIds = Set(pinned.map(\.organizationId))
+		let (pinned, scheduleOrganizationIds) = await pinnedTargets()
+		// A Schedule widget reads its own organization itself, so that one needs
+		// a live credential here and no summary published for it.
+		let pinnedOrganizationIds = Set(pinned.map(\.organizationId)).union(scheduleOrganizationIds)
 		let others = context.memberships.filter {
 			$0.id != context.active.id && pinnedOrganizationIds.contains($0.id)
 		}
@@ -744,11 +780,15 @@ final class WidgetPublisher {
 	}
 
 	/// The (organization, environment) pairs the user actually pinned a widget
-	/// to.
-	private func pinnedTargets() async -> [PublishTarget] {
-		guard let configurations = try? await WidgetCenter.shared.currentConfigurations() else { return [] }
+	/// to, and the organizations of the schedules picked in a Schedule widget.
+	private func pinnedTargets() async -> (targets: [PublishTarget], scheduleOrganizationIds: Set<String>) {
+		guard let configurations = try? await WidgetCenter.shared.currentConfigurations() else { return ([], []) }
 		var targets: [PublishTarget] = []
+		var scheduleOrganizationIds: Set<String> = []
 		for info in configurations {
+			if let id = info.widgetConfigurationIntent(of: SelectScheduleIntent.self)?.schedule?.organizationId {
+				scheduleOrganizationIds.insert(id)
+			}
 			if let intent = info.widgetConfigurationIntent(of: SelectOrganizationIntent.self),
 				let id = intent.organization?.id
 			{
@@ -760,7 +800,7 @@ final class WidgetPublisher {
 				targets.append(PublishTarget(organizationId: id, environment: intent.environment?.id))
 			}
 		}
-		return targets
+		return (targets, scheduleOrganizationIds)
 	}
 
 	/// One surface's fetch-and-publish, as a child of the refresh.

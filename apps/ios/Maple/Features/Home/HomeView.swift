@@ -6,6 +6,7 @@ import SwiftUI
 struct HomeView: View {
 	@Environment(SessionController.self) private var session
 	@Environment(EnvironmentController.self) private var environments
+	@Environment(AppNavigation.self) private var navigation
 	@Environment(\.scenePhase) private var scenePhase
 	@State private var model: HomeModel?
 	@State private var showsNotificationSettings = false
@@ -15,7 +16,8 @@ struct HomeView: View {
 	}
 
 	var body: some View {
-		NavigationStack {
+		@Bindable var navigation = navigation
+		NavigationStack(path: $navigation.homePath) {
 			ZStack {
 				Token.background.ignoresSafeArea()
 				LoadableView(
@@ -31,6 +33,7 @@ struct HomeView: View {
 					if let model {
 						HomeContent(
 							snapshot: snapshot,
+							onCall: model.onCall,
 							viewerUserId: session.currentUserId,
 							responder: model.responder
 						) { incidentId in
@@ -126,6 +129,8 @@ extension HomeView {
 
 private struct HomeContent: View {
 	let snapshot: HomeSnapshot
+	/// Nil until its own read answers, and when that read failed.
+	let onCall: OnCallOverview?
 	let viewerUserId: String?
 	let responder: IncidentResponder
 	let acknowledge: (String) -> Void
@@ -133,6 +138,14 @@ private struct HomeContent: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 28) {
+			if let onCall {
+				VStack(spacing: 8) {
+					OnCallShiftCard(overview: onCall)
+					PageReachabilityCard(overview: onCall)
+				}
+				.transition(.opacity)
+			}
+
 			OverviewStats(snapshot: snapshot)
 
 			if !snapshot.incidents.isEmpty {
@@ -187,6 +200,8 @@ private struct HomeContent: View {
 		.padding(.horizontal, 16)
 		.padding(.top, 20)
 		.padding(.bottom, 24)
+		// The card arrives after the board; it eases in instead of shoving it.
+		.animation(.easeOut(duration: 0.2), value: onCall != nil)
 	}
 }
 
