@@ -5866,6 +5866,59 @@
         "title": "Mobile device registration",
         "type": "object"
       },
+      "MobileTestPage": {
+        "additionalProperties": false,
+        "description": "What a test page came to. All counts zero with `configured` true means no phone of the caller's is registered and enabled here.",
+        "examples": [
+          {
+            "configured": true,
+            "failed": 0,
+            "object": "mobile_test_page",
+            "sent": 1,
+            "unregistered": 0
+          }
+        ],
+        "properties": {
+          "configured": {
+            "description": "False on a deployment without push credentials: nothing was tried, whatever phones are registered.",
+            "type": "boolean"
+          },
+          "failed": {
+            "description": "Phones the test page could not be sent to, or 1 when the phones could not be read.",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "object": {
+            "description": "Always `\"mobile_test_page\"`.",
+            "enum": [
+              "mobile_test_page"
+            ],
+            "type": "string"
+          },
+          "sent": {
+            "description": "Phones the push platform accepted the test page for.",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unregistered": {
+            "description": "Phones the push platform called gone. They are switched off until the app registers again.",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "object",
+          "configured",
+          "sent",
+          "failed",
+          "unregistered"
+        ],
+        "title": "Mobile test page",
+        "type": "object"
+      },
       "OnCallGap": {
         "additionalProperties": false,
         "description": "A stretch when nobody is on call.",
@@ -13199,6 +13252,121 @@
           }
         ],
         "summary": "List my devices",
+        "tags": [
+          "Mobile Devices"
+        ]
+      }
+    },
+    "/v2/mobile_devices/test_page": {
+      "post": {
+        "description": "Sends a test page to the current user's own phones in the current organization, delivered exactly as an escalation step's page is (time sensitive, top priority) and saying it is a test. Use it to see that a page reaches the phone through Focus and notification settings. Requires the `mobile_devices:write` scope.",
+        "operationId": "sendMobileTestPage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileTestPage"
+                }
+              }
+            },
+            "description": "What a test page came to. All counts zero with `configured` true means no phone of the caller's is registered and enabled here."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send myself a test page",
         "tags": [
           "Mobile Devices"
         ]

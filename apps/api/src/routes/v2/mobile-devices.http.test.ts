@@ -14,6 +14,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { MobilePushService, type MemberPageSummary } from "@maple/backend/services/push/MobilePushService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
 import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
@@ -35,6 +36,8 @@ const TOKEN = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 const START_TOKEN = "b1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 const ACTIVITY_TOKEN = "c1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 
+const nothingSent: MemberPageSummary = { sent: 0, failed: 0, unregistered: 0, skipped: 0, configured: true }
+
 const testConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
@@ -51,7 +54,13 @@ const testConfig = () =>
 		}),
 	)
 
-const makeHarness = () => {
+/** What the push service is asked for a test page, and what it answers. */
+interface TestPages {
+	readonly asked: Array<string>
+	answer: MemberPageSummary
+}
+
+const makeHarness = (testPages: TestPages = { asked: [], answer: nothingSent }) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const servicesLive = Layer.mergeAll(
@@ -65,6 +74,19 @@ const makeHarness = () => {
 
 	const routes = HttpApiBuilder.layer(HttpApi.make("MapleApiV2").add(MapleApiV2.groups.mobileDevices)).pipe(
 		Layer.provide(HttpV2MobileDevicesLive),
+		Layer.provide(
+			Layer.succeed(MobilePushService, {
+				notifyIncident: () => Effect.die("unused"),
+				notifyIncidentDigest: () => Effect.die("unused"),
+				pageMember: () => Effect.die("unused"),
+				refreshWidgets: () => Effect.die("unused"),
+				testPage: (orgId, userId) =>
+					Effect.sync(() => {
+						testPages.asked.push(`${orgId}:${userId}`)
+						return testPages.answer
+					}),
+			}),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
@@ -116,6 +138,42 @@ const makeHarness = () => {
 }
 
 describe("v2 mobile devices", () => {
+	it("sends the caller a test page and says what came of it", async () => {
+		const testPages: TestPages = {
+			asked: [],
+			answer: { sent: 1, failed: 0, unregistered: 1, skipped: 0, configured: true },
+		}
+		const harness = makeHarness(testPages)
+		try {
+			const key = await harness.bootstrapKey(["mobile_devices:write"])
+			const sent = await harness.request("POST", "/v2/mobile_devices/test_page", key.secret)
+			expect(sent.status, JSON.stringify(sent.body)).toBe(200)
+			expect(sent.body).toEqual({
+				object: "mobile_test_page",
+				configured: true,
+				sent: 1,
+				failed: 0,
+				unregistered: 1,
+			})
+			// To the caller's own phones in the caller's organization, and nobody else's.
+			expect(testPages.asked).toEqual([`${ORG}:${USER}`])
+
+			// A deployment without push credentials says so instead of reporting no phones.
+			testPages.answer = { ...nothingSent, configured: false }
+			const unconfigured = await harness.request("POST", "/v2/mobile_devices/test_page", key.secret)
+			expect(unconfigured.body).toMatchObject({ configured: false, sent: 0 })
+
+			// Reading devices is not a licence to buzz a phone.
+			const readOnly = await harness.bootstrapKey(["mobile_devices:read"])
+			expect(
+				(await harness.request("POST", "/v2/mobile_devices/test_page", readOnly.secret)).status,
+			).toBe(403)
+			expect(testPages.asked).toHaveLength(2)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("registers, refreshes, lists, and unregisters a device", async () => {
 		const harness = makeHarness()
 		try {

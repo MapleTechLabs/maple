@@ -668,6 +668,56 @@ describe("MobilePushService.pageMember", () => {
 	})
 
 	it.effect(
+		"sends a test page as a page is sent, to the caller's phones only, and with no incident behind it",
+		() => {
+			const sent: Array<ApnsPush> = []
+			const live: LiveActivityRecorder = { pushes: [], ended: [] }
+			return Effect.gen(function* () {
+				const push = yield* MobilePushService
+				const summary = yield* push.testPage(ORG, USER)
+				assert.deepStrictEqual(summary, {
+					sent: 1,
+					failed: 0,
+					unregistered: 0,
+					skipped: 0,
+					configured: true,
+				})
+				// Time sensitive and top priority, so it meets Focus and silent mode the way a page would.
+				assert.deepStrictEqual(
+					Arr.map(sent, (one) => [
+						one.deviceToken,
+						one.interruptionLevel,
+						one.priority,
+						one.alert.title,
+					]),
+					[["token-1", "time-sensitive", 10, "Test page"]],
+				)
+				// Nothing to acknowledge and nothing to open: no page category, no incident, no card.
+				assert.deepStrictEqual(
+					[sent[0]?.category, sent[0]?.data.maple_kind, sent[0]?.data.maple_incident_id],
+					[undefined, "test_page", undefined],
+				)
+				assert.deepStrictEqual(live.pushes, [])
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						[
+							device(1, { preferences: muted }),
+							device(2, { userId: OTHER }),
+							device(3, { enabled: false }),
+						],
+						() => ({ outcome: "sent", apnsId: null }),
+						sent,
+						[],
+						true,
+						live,
+					),
+				),
+			)
+		},
+	)
+
+	it.effect(
 		"pages only someone who still reads telemetry, and keeps paging when the directory cannot say",
 		() => {
 			const sent: Array<ApnsPush> = []
