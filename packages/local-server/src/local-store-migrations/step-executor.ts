@@ -3,6 +3,13 @@
 // the clone, bootstrap the target snapshot over it, verify, and never touch the source.
 import { resolve } from "node:path"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	dropStagingTableSql,
+	moveStagedPartitionSql,
+	stagedPartitionsSql,
+	stageZeroKeyRowsSql,
+	type RepairZeroKeyColumnSpec,
+} from "@maple/domain/clickhouse"
 import { readRawTelemetryRetentionDays, type Chdb } from "../chdb"
 import { decodeJsonObjectRows } from "../chdb-rows"
 import type {
@@ -98,15 +105,44 @@ export const modifyTtl = (table: string, ttl: string): StepOperation => ({ op: "
  * column's 0 into a part before the DEFAULT exists. A failure between them leaves merges stopped
  * only on the staged target, which is never cut over; the stop lives in the chDB session, and a
  * resumed apply reruns every statement. A resumed store can hold 0s a merge wrote before the
- * DEFAULT existed, and ClickHouse refuses UPDATE on a key column, so the last two statements copy
- * any 0 row with the DEFAULT and delete the 0s (none on a clean run). A crash between those two
- * counts the copied rows twice. `sortingKey` is the full new key. Rerunning converges.
+ * DEFAULT existed, and ClickHouse refuses UPDATE on a key column, so the 0 rows then move to the
+ * DEFAULT through a staging table (`RepairZeroKeyColumnSpec` in `@maple/domain/clickhouse`): each
+ * statement is safe to rerun after a crash at any point, and a clean run stages nothing.
+ * `sortingKey` is the full new key. Rerunning converges.
  */
 export const addSortingColumn = (
 	table: string,
 	column: readonly [name: string, type: string, defaultExpression: string],
 	sortingKey: ReadonlyArray<string>,
 ): StepOperation => ({ op: "add-sorting-column", table, column, sortingKey })
+
+/** The `add-sorting-column` operation's 0-row repair, as the self-managed apply runs it. */
+const zeroKeyRepair = (
+	operation: Extract<StepOperation, { readonly op: "add-sorting-column" }>,
+): RepairZeroKeyColumnSpec => ({
+	kind: "repair-zero-key-column",
+	table: operation.table,
+	column: operation.column[0],
+	value: Number(operation.column[2]),
+})
+
+/**
+ * Moves each partition the repair staged back into its table, then drops the staging table. The
+ * partitions are read here, after staging, since `stepStatements` is fixed before the store opens.
+ */
+const finishZeroKeyRepairs = (
+	db: Pick<Chdb, "query" | "exec">,
+	operations: ReadonlyArray<StepOperation>,
+): void => {
+	for (const operation of operations) {
+		if (operation.op !== "add-sorting-column") continue
+		const spec = zeroKeyRepair(operation)
+		const staged = decodeJsonObjectRows(db.query(stagedPartitionsSql(spec, "")))
+		for (const row of staged)
+			if (typeof row.p === "string") db.exec(moveStagedPartitionSql(spec, "", row.p))
+		db.exec(dropStagingTableSql(spec, ""))
+	}
+}
 
 const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 	switch (operation.op) {
@@ -135,15 +171,22 @@ const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 				`ALTER TABLE ${operation.table} ADD COLUMN IF NOT EXISTS ${name} ${type}, MODIFY ORDER BY (${Arr.join(operation.sortingKey, ", ")})`,
 				`ALTER TABLE ${operation.table} MODIFY COLUMN ${name} ${type} DEFAULT ${defaultExpression}`,
 				`SYSTEM START MERGES ${operation.table}`,
-				// Filtered in a subquery: beside the REPLACE alias, WHERE would read the new value.
-				`INSERT INTO ${operation.table} SELECT * REPLACE (CAST(${defaultExpression} AS ${type}) AS ${name}) FROM (SELECT * FROM ${operation.table} WHERE ${name} = 0)`,
-				`ALTER TABLE ${operation.table} DELETE WHERE ${name} = 0 SETTINGS mutations_sync = 2`,
+				...stageZeroKeyRowsSql(zeroKeyRepair(operation), ""),
 			]
 		}
 	}
 }
 
-/** The exact statements a list of operations runs, in order. */
+/** Runs a list of operations: their statements, then any 0-row repair's moves. */
+export const applyStepOperations = (
+	db: Pick<Chdb, "query" | "exec">,
+	operations: ReadonlyArray<StepOperation>,
+): void => {
+	for (const statement of stepStatements(operations)) db.exec(statement)
+	finishZeroKeyRepairs(db, operations)
+}
+
+/** The exact statements a list of operations runs, in order (a 0-row repair's moves come after). */
 export const stepStatements = (operations: ReadonlyArray<StepOperation>): ReadonlyArray<string> =>
 	Arr.flatMap(operations, operationSql)
 
@@ -360,9 +403,7 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 	const run = (
 		db: Pick<Chdb, "query" | "exec">,
 		operations: ReadonlyArray<StepOperation> | undefined,
-	): void => {
-		for (const statement of stepStatements(operations ?? [])) db.exec(statement)
-	}
+	): void => applyStepOperations(db, operations ?? [])
 
 	const verifyCounts = (db: Pick<Chdb, "query" | "exec">, counts: StepCounts, state: StepState): void => {
 		const expected = decodeCountGroup(counts.group, state[counts.group])
