@@ -264,6 +264,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/infra-correlation/view-charts.ts` `correlationCharts`: Each correlation group's charts, drawn as the detail charts.
 - `apps/web/src/page/kit/infra-correlation/view.ts` `view`: The panel; keyed by the record, so another record remounts it and reads its own window.
 - `apps/web/src/page/kit/infra-correlation/window.ts` `anchoredWindow`: The window for a parseable anchor: 15 minutes either side, covering the span, snapped to a 15 s grid before the request is sent.
+- `apps/web/src/page/kit/install-recipe.ts` `fileStep`, `commandStep`, `maskSecret`, `maskedSecret`, `selectedRecipe`, `view` (stateful: Model, init, update): An install as data: per tool, the files to save and the commands that carry the key.
 - `apps/web/src/page/kit/integration-empty.ts` `integrationIconPlate`, `integrationEmptyFeatures`, `integrationEmptyMedia`, `integrationEmptyCard`, `integrationEmptyHint`, `integrationEmptyFooter`, `integrationEmpty`, `integrationConnectCta`: An integration page's empty state: the brand plate, what the page will show, and the way to connect.
 - `apps/web/src/page/kit/integration-status-keys.ts` `integrationStatusKey`: One cache key per integration status read: `/integrations` and the provider pages share each read.
 - `apps/web/src/page/kit/issue-actor.ts` `resolveActorIdentity`, `identityAvatar`, `actorAvatar`, `noActor`, `actorChip`: Actor avatars and chips.
@@ -278,6 +279,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTextsWith`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
 - `apps/web/src/page/kit/mcp-client-config.ts` `isMcpClient`, `mcpClientConfig`, `claudeCodeCommand`, `cursorInstallUrl`, `vscodeInstallUrl`: The `mcpServers` entry each client reads.
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown laid out with Streamdown's element classes.
+- `apps/web/src/page/kit/method-picker.ts` `methodPicker`: How a setup is done (Helm, Alchemy, Terraform, CloudShell...): a label, then one tool picked, each with its mark.
 - `apps/web/src/page/kit/nav-shell.ts` `navShell`: A page's own nav rail of titled sections (settings, security, alerts).
 - `apps/web/src/page/kit/notifies-no-one.ts` `notifiesNoOne`: A list row's warning that a rule has no destination: its incidents open, and nobody is told.
 - `apps/web/src/page/kit/onboard-skill.ts` `agentSetupPrompt`: The coding-agent prompts that point at the setup guides maple.dev serves.
@@ -341,6 +343,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
 - `apps/web/src/page/kit/session-grants.ts` `fetchSessionGrants`, `acceptGrants`, `canManageAlerts`, `canManageOnCall`, `canManageSlos`, `canRespondToIncidents`, `canRunInvestigations`, `canReadAuditLog`, `gatedControl`, `denialReason`, `denialTooltip`, `denialTooltipContent`: A page's read of the viewer's permissions: the answer carries the org it was asked for, so a late answer for another org is dropped.
 - `apps/web/src/page/kit/settings-section.ts` `settingsSection`, `settingsSections`, `adminOnlyNote`, `sectionNote`: A settings tab's titled sections, the stack they sit in, and the admin-only note.
+- `apps/web/src/page/kit/setup-steps.ts` `setupSteps`, `setupStep`: Setup as plain steps: a short heading per thing to do, a line of detail, then its snippets and notes.
 - `apps/web/src/page/kit/severity-tokens.ts` `statusLabel`: Canonical severity/status → Tailwind class maps for the infrastructure UI.
 - `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: A detail sheet's eyebrow kind, title, screen-reader description and meta row.
 - `apps/web/src/page/kit/sheet-param.ts` `withSheetParam`, `sheetParamOf`, `dismissalOf`, `pushSheetUrl`, `dismissSheetUrl`: A side sheet held in the URL as `?sheet=<id>`.
@@ -358,6 +361,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/time-range-picker.ts` `searchPatchOf`, `dashboardTimeRangeOf`, `rejectedToast`, `unpicked`, `isActivePreset`, `quickSelectOf`, `isOpenKey`, `openOnHotkey`, `view` (stateful: Model, init, update): The header's time range popover: the preset rail and quick select.
 - `apps/web/src/page/kit/timezone-select-view.ts` `zoneListView`: The timezone select's list: the search input, "No timezone matches that." and the grouped zone list with clock and offset.
 - `apps/web/src/page/kit/timezone-zones.ts` `shortZoneName`, `formatUtcOffset`, `formatClock`, `zoneLabel`, `matchesZoneQuery`, `zoneRows`, `readZoneRows`: The zone list logic of the timezone select.
+- `apps/web/src/page/kit/tool-marks.ts` `toolMark`: The tools and places a setup step runs in.
 - `apps/web/src/page/kit/tools/error-parts.ts` `maskChip`, `errorTextHeading`, `errorTextLine`, `windowRangeLabel`, `failureStatusLine`: The pieces the Errors table (and the error modal) draw a failure with.
 - `apps/web/src/page/kit/tools/metric-strip.ts` `selectableTile`, `metricStrip`, `metricStripLoading`: The tool metric strip over selectable stat rail items.
 - `apps/web/src/page/kit/tools/model.ts` `toolWindowArgs`, `selectedMetric`, `selectedPercentile`, `toolSelection`, `toolDetailLinkSearch`: Schemas for the tool analytics reads (`@maple/web-data/lib/tool-analytics` types), shared by `/agent-sessions/tools` and the tool detail page.

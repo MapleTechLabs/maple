@@ -7,19 +7,8 @@ import {
 	sdkSnippets,
 } from "../../kit/sdk-snippets"
 import { ingestUrl } from "../../../platform/ingest-url"
-import {
-	ALCHEMY_FILE,
-	alchemyDeployCommand,
-	alchemyStack,
-	dockerCommand,
-	HOST_CONFIG,
-	helmCommand,
-	hostCommand,
-	TERRAFORM_FILE,
-	terraformApplyCommand,
-	terraformConfig,
-} from "../../infra/kit/install-snippets"
-import type { IconName } from "@maple/views/ui/icon"
+import { DOCKER_RECIPES, HOST_RECIPES, KUBERNETES_RECIPES } from "../../infra/kit/install-snippets"
+import type { InstallRecipe } from "../../kit/install-recipe"
 import { Array as Arr, String as Str, Option } from "effect"
 
 export interface SourceSnippet {
@@ -27,8 +16,6 @@ export interface SourceSnippet {
 	readonly label: string
 	readonly language: string
 	readonly code: string
-	/** The tool's mark in the snippet's tab, when the tabs name tools. */
-	readonly icon?: IconName
 }
 
 const envSnippet = (token: string, serviceName: string, needsHttp = false): SourceSnippet => ({
@@ -124,44 +111,9 @@ export const sourceSnippets = (
 	const serviceName = serviceNameOf(name)
 	switch (platform) {
 		case "kubernetes":
-			return [
-				{ id: "helm", label: "Helm", language: "shell", code: helmCommand(token), icon: "HelmIcon" },
-				{
-					id: "alchemy",
-					label: `Alchemy ${ALCHEMY_FILE}`,
-					language: "typescript",
-					code: alchemyStack(),
-					icon: "AlchemyIcon",
-				},
-				{
-					id: "alchemy-deploy",
-					label: "Alchemy deploy",
-					language: "shell",
-					code: alchemyDeployCommand(token),
-					icon: "AlchemyIcon",
-				},
-				{
-					id: "terraform",
-					label: `Terraform ${TERRAFORM_FILE}`,
-					language: "hcl",
-					code: terraformConfig(),
-					icon: "TerraformIcon",
-				},
-				{
-					id: "terraform-apply",
-					label: "Terraform apply",
-					language: "shell",
-					code: terraformApplyCommand(token),
-					icon: "TerraformIcon",
-				},
-			]
 		case "docker":
-			return [{ id: "docker", label: "docker run", language: "shell", code: dockerCommand(token) }]
 		case "host":
-			return [
-				{ id: "host-config", label: "config.yaml", language: "yaml", code: HOST_CONFIG },
-				{ id: "host-run", label: "Run", language: "shell", code: hostCommand(token) },
-			]
+			return []
 		case "browser":
 			return [browserSnippet(token, serviceName)]
 		case "claude_code":
@@ -178,6 +130,12 @@ export const sourceSnippets = (
 	}
 }
 
-/** Stands in for the token once it can no longer be shown. */
-export const maskedToken = (prefix: string | null): string =>
-	`${prefix ?? "maple_src_"}${Str.repeat(16)("•")}`
+/** A collector platform installs as the collector dialog does: a recipe per tool, not snippet tabs. */
+export const sourceRecipes = (platform: SourcePlatform): ReadonlyArray<InstallRecipe> | null =>
+	platform === "kubernetes"
+		? KUBERNETES_RECIPES
+		: platform === "docker"
+			? DOCKER_RECIPES
+			: platform === "host"
+				? HOST_RECIPES
+				: null

@@ -1,16 +1,13 @@
 import { ingestUrl } from "../../../platform/ingest-url"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
+import { commandStep, fileStep, type InstallRecipe } from "../../kit/install-recipe"
 
-// The install modal's snippet builders.
+// The collector's install snippets, and the recipes the install dialog and a Kubernetes, Docker or
+// Host source show them as.
 
 const CHART_DEFAULT_INGEST_URL = "https://ingest.maple.dev"
 
 export const isCustomEndpoint = ingestUrl !== CHART_DEFAULT_INGEST_URL
-
-export const maskToken = (token: string): string => {
-	const prefix = "maple_sk_"
-	return Str.startsWith(prefix)(token) ? `${prefix}${Str.repeat(24)("•")}` : Str.repeat(24)("•")
-}
 
 export const helmCommand = (token: string): string => {
 	const lines = [
@@ -220,3 +217,81 @@ service:
 
 export const hostCommand = (token: string): string =>
 	`MAPLE_INGEST_KEY=${token} otelcol-contrib --config config.yaml`
+
+export const KUBERNETES_RECIPES: ReadonlyArray<InstallRecipe> = [
+	{
+		tool: "helm",
+		steps: [
+			commandStep({
+				id: "helm",
+				title: "Run this against your cluster",
+				hint: ["For production, use an existing Secret instead of an inline key. See the docs."],
+				build: helmCommand,
+			}),
+		],
+	},
+	{
+		tool: "alchemy",
+		steps: [
+			fileStep({
+				id: "alchemy",
+				name: ALCHEMY_FILE,
+				lang: "typescript",
+				text: alchemyStack(),
+				hint: [
+					"The deploy command pins it to your current kubeconfig context and makes the namespace. Pod auto-instrumentation stays off: it needs Helm's install hooks.",
+				],
+			}),
+			commandStep({ id: "alchemy-deploy", title: "Deploy it", build: alchemyDeployCommand }),
+		],
+	},
+	{
+		tool: "terraform",
+		steps: [
+			fileStep({
+				id: "terraform",
+				name: TERRAFORM_FILE,
+				lang: "hcl",
+				text: terraformConfig(),
+				hint: [
+					"The apply command pins it to your current kubeconfig context. Pod auto-instrumentation stays off.",
+				],
+			}),
+			commandStep({ id: "terraform-apply", title: "Apply it", build: terraformApplyCommand }),
+		],
+	},
+]
+
+export const DOCKER_RECIPES: ReadonlyArray<InstallRecipe> = [
+	{
+		tool: "docker",
+		steps: [
+			commandStep({
+				id: "docker",
+				title: "Run the agent",
+				hint: ["Container logs come from the mounted log directory. Drop that mount to skip them."],
+				build: dockerCommand,
+			}),
+		],
+	},
+]
+
+export const HOST_RECIPES: ReadonlyArray<InstallRecipe> = [
+	{
+		tool: "host",
+		steps: [
+			fileStep({
+				id: "host-config",
+				name: "config.yaml",
+				lang: "yaml",
+				text: HOST_CONFIG,
+				hint: [
+					"Install the OpenTelemetry Collector Contrib distribution, ",
+					{ code: "otelcol-contrib" },
+					", first. This is its config.",
+				],
+			}),
+			commandStep({ id: "host", title: "Start the collector", build: hostCommand }),
+		],
+	},
+]
