@@ -175,6 +175,12 @@ public struct PagesSnapshot: Codable, Sendable, Equatable {
 		"\(waiting.count)\(hasMore ? "+" : "") unacknowledged"
 	}
 
+	/// The same count for the Lock Screen's narrower lines: "1 page", "3 pages",
+	/// "10+ pages".
+	public var waitingPagesLabel: String {
+		waiting.count == 1 && !hasMore ? "1 page" : "\(waiting.count)\(hasMore ? "+" : "") pages"
+	}
+
 	/// The snapshot after an acknowledgement the widget just made, so the row
 	/// changes before the next read confirms it.
 	public func replacing(_ page: Page) -> PagesSnapshot {

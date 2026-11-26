@@ -158,6 +158,10 @@ struct PagesSnapshotTests {
 	@Test("A count the server cut short reads as a floor")
 	func floor() throws {
 		#expect(try snapshot([pageJSON()], hasMore: true).waitingLabel == "1+ unacknowledged")
+		// The Lock Screen's shorter line carries the same floor.
+		#expect(try snapshot([pageJSON(), pageJSON(id: "inc_other")], hasMore: true).waitingPagesLabel == "2+ pages")
+		#expect(try snapshot([pageJSON(), pageJSON(id: "inc_other")]).waitingPagesLabel == "2 pages")
+		#expect(try snapshot([pageJSON()]).waitingPagesLabel == "1 page")
 	}
 
 	@Test("The next page is shown only while it is still ahead")

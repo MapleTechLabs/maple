@@ -176,7 +176,7 @@ private struct RectangularPagesView: View {
 		PagesFrame(entry: entry, isAccessory: true) { snapshot in
 			VStack(alignment: .leading, spacing: 2) {
 				if let page = snapshot.waiting.first {
-					Text(snapshot.waiting.count == 1 ? "1 page" : "\(snapshot.waiting.count) pages")
+					Text(snapshot.waitingPagesLabel)
 						.font(.headline)
 						.widgetAccentable()
 					Text(page.ruleName)
@@ -213,7 +213,7 @@ private struct InlinePagesView: View {
 
 	var body: some View {
 		if let snapshot = entry.snapshot, let page = snapshot.waiting.first {
-			Text(snapshot.waiting.count == 1 ? "1 page · \(page.ruleName)" : "\(snapshot.waiting.count) pages")
+			Text(snapshot.waiting.count == 1 ? "1 page · \(page.ruleName)" : snapshot.waitingPagesLabel)
 		} else {
 			Text(entry.snapshot == nil ? "Open Maple" : "No pages")
 		}
