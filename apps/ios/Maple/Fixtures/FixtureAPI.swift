@@ -12,7 +12,8 @@ import MapleWidgetData
 struct FixtureAPI: MapleAPI {
 	static let isEnabled = ProcessInfo.processInfo.environment["MAPLE_FIXTURES"] == "1"
 
-	private let now: Date
+	/// Internal, not private: the fixture's extensions build their dates from it.
+	let now: Date
 	private let latency: Duration
 
 	init(now: Date = Date(), latency: Duration = .milliseconds(350)) {

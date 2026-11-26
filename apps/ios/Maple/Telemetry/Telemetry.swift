@@ -212,6 +212,8 @@ enum Screen {
 	static let issueDetail = "Issue"
 	static let anomalies = "Anomalies"
 	static let anomalyDetail = "Anomaly"
+	static let onCall = "On Call"
+	static let onCallSchedule = "On Call Schedule"
 	static let traces = "Traces"
 	static let traceDetail = "Trace"
 	static let logs = "Logs"

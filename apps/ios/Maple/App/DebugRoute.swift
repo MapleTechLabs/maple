@@ -3,7 +3,7 @@
 
 	/// `maple://debug/<path>` opens any screen for the latency harness and screenshots
 	/// (Debug only): `home`, `services`, `triage/<segment>`, `explore/<segment>`,
-	/// `search`, `org|service|issue|incident|anomaly|trace|dashboard/<id>`.
+	/// `search`, `oncall`, `org|service|issue|incident|anomaly|trace|dashboard|schedule/<id>`.
 	enum DebugRoute {
 		@MainActor
 		static func open(_ url: URL, navigation: AppNavigation, session: SessionController) -> Bool {
@@ -13,7 +13,16 @@
 			let arg = parts.dropFirst().joined(separator: "/")
 			switch head {
 			case "org": Task { await session.select(organizationId: arg) }
-			case "home": navigation.tab = .home
+			case "home":
+				navigation.homePath = []
+				navigation.tab = .home
+			case "oncall":
+				navigation.homePath = [.onCall()]
+				navigation.tab = .home
+			case "schedule":
+				// Under the On call screen, so back goes where a tap would have come from.
+				navigation.homePath = [.onCall(), .schedule(id: arg)]
+				navigation.tab = .home
 			case "services":
 				navigation.servicesPath = []
 				navigation.tab = .services

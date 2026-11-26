@@ -29,6 +29,11 @@ Everything above the fold answers question 1.
 the last hour` (liveness — an org that stopped sending is _not_ healthy).
   Colour follows the worst thing on screen; amber primary used here and only
   here.
+- **Your shift**, when the organization has on-call schedules: a compact card
+  under the headline. `On call now · Platform primary · until Mon 09:00 · hands
+  off to Priya Shah`, or `Next shift` with when and on which schedule. It has
+  its own read (`getOnCallOverview`) beside the board's, so it never delays the
+  board, and a failed read shows no card. Tap → On call.
 - **Open incidents**, critical first, each a card: rule name · service(s) ·
   `observed vs threshold` in the rule's unit · how long open · a 1h sparkline
   of the signal. Tap → Incident detail. Empty state is a real sentence, not
@@ -110,6 +115,26 @@ incident page calls, and they need `incidents:respond`.
 last seen, occurrence sparkline, stack, linked incidents. Actions: open on
 web, share.
 
+### On call
+
+Pushed from the Overview shift card, read-only, and drawn from one document:
+`GET /v2/alerts/oncall_overview`.
+
+- **On call**: a line saying where you stand (`You are on call · 3d 6h left on
+  Platform primary`, or off call with the next shift), then **Your shifts**
+  (the current one marked Now, the rest with `in 6 days` and their dates),
+  **On call now** (one row per schedule: schedule, who, until, with `Nobody` in
+  the warning colour) and **Coverage gaps** when there are any. An organization
+  with no schedules gets a sentence saying they are set up on the web.
+- **Schedule**: the rotation in one line with its time zone, who is on call now
+  and who they hand off to, **Who covers** the next 14 days as one lane per
+  person (overrides outlined, uncovered stretches in a lane of their own),
+  the **Upcoming** handoffs and the schedule's gaps. It takes the overview the
+  On call screen already holds and reloads through the same read.
+
+Times are shown in the device's time zone. Creating overrides and editing
+layers stay on the web.
+
 ### Profile sheet
 
 Org switcher (existing), **Notifications** (per-org toggles: critical
@@ -137,6 +162,7 @@ Reads needed, all in v2 already:
 | Home     | `listServices` (1h), `listAlertIncidents?status=open`, `listErrorIssues` (24h, sort first_seen), `listAnomalyIncidents`, `queryTraceTimeseries` for sparklines                                                           |
 | Services | `listServices`, `getService`, `queryTraceTimeseries`, `queryTraceBreakdown`, `listAlertIncidents`, `listErrorIssues`                                                                                                     |
 | Alerts   | `listAlertIncidents`, `getAlertIncident`, `getAlertRule`, `listAlertRuleChecks`, `listAlertDeliveries`, `listErrorIssues`, `getErrorIssue`, `listAnomalyIncidents`, `getAnomalyIncident`, `getAnomalyIncidentTimeseries` |
+| On call  | `getOnCallOverview` (also read by Home for the shift card)                                                                                                                                                               |
 
 Every screen also calls `listEnvironments` once per organization, to populate
 the deployment-environment control that sits beside the organization switcher on

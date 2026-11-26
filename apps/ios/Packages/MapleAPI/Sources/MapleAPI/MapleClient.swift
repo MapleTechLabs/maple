@@ -178,6 +178,10 @@ public protocol MapleAPI: Sendable {
 	func alertRuleChecks(ruleId: String, groupKey: String?, since: Date?, limit: Int) async throws -> [AlertCheck]
 	func alertDeliveries(incidentId: String, limit: Int) async throws -> [AlertDelivery]
 
+	// On call: see MapleClient+OnCall.swift
+	/// Every schedule's next 14 days and the caller's own shifts over the next 60.
+	func onCallOverview() async throws -> OnCallOverview
+
 	// Anomalies — see MapleClient+Alerts.swift
 	func anomalyIncidents(status: AnomalyIncidentStatus?, serviceName: String?, window: ResolvedTimeWindow?, limit: Int, cursor: String?)
 		async throws -> Page<AnomalyIncident>

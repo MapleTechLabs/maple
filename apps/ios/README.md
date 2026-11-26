@@ -4,7 +4,11 @@ A native SwiftUI client for Maple, reading the **v2 public API**. Four tabs
 and a search tab, in the order the questions get asked (see [`PRODUCT.md`](PRODUCT.md)):
 
 - **Overview**: is anything wrong right now? Status headline, open alerts with
-  the rule's own last hour, services needing attention, what's new in 24h.
+  the rule's own last hour, services needing attention, what's new in 24h. A
+  shift card leads the board when the organization has on-call schedules: on
+  call now and until when, or the next shift. It opens **On call** (your shifts,
+  who holds each schedule, coverage gaps), and a schedule row there opens the
+  read-only **Schedule** screen with who covers the next 14 days.
 - **Services**: the list, and a detail that leads with a health verdict and
   its reason, one full-width scrubbable chart per golden signal (throughput,
   errors, latency percentiles), window aggregates, scoped alerts, the busiest
@@ -50,7 +54,7 @@ Config/                      xcconfigs; Secrets.xcconfig is gitignored
 Maple/App                    entry point, auth gate, build-time config, Route
 Maple/Auth                   token provider, session state machine, org picker
 Maple/DesignSystem           tokens, type scale, service colours, shared primitives
-Maple/Features               Home, Services, Alerts (incidents/anomalies), Issues, Explore, Search
+Maple/Features               Home, Services, Alerts (incidents/anomalies), Issues, Explore, Search, OnCall
 Maple/Components             LoadableView, formatting, Sparkline, alert formatting
 Maple/Fixtures               FixtureAPI — the app without Clerk or a network
 Maple/Widgets                publishes the widget's snapshot; background refresh
@@ -353,7 +357,8 @@ if offline — the way to see the error state, the "Couldn't refresh" strip, and
 "Try again" without pulling the plug.
 
 `FixtureAPI` then stands in for the network with one believable organization
-(nine services, a critical incident, a warning, issues, an anomaly), generated
+(nine services, a critical incident, a warning, issues, an anomaly, four on-call
+schedules with the fixture user on call for one), generated
 relative to now so timestamps always read as current, and the session is pinned
 to `.ready` without touching Clerk. This is how screens get built and
 screenshotted; it is not a test double for logic — that stays in
