@@ -18,7 +18,15 @@ import {
 	type BackfillSpec,
 } from "./backfill"
 import type { ClickHouseMigration } from "./migrations"
-import { dropUnkeyedColumnSql, isDropUnkeyedColumn, unkeyedColumnProbeSql } from "./unkeyed-column"
+import {
+	dropUnkeyedColumnSql,
+	isDropUnkeyedColumn,
+	isRepairZeroKeyColumn,
+	keyColumnProbeSql,
+	repairZeroKeyColumnSql,
+	unkeyedColumnProbeSql,
+	zeroKeyRowsProbeSql,
+} from "./unkeyed-column"
 
 export interface ApplyStep {
 	/** Stable, unique step name — the Workflow's durable step key + UI label. */
@@ -140,6 +148,17 @@ export const expandMigrationToSteps = async (
 					sql: dropUnkeyedColumnSql(stmt, database),
 					backfill: false,
 				})
+		} else if (isRepairZeroKeyColumn(stmt)) {
+			// The column is probed first: on a store before the migration it does not exist yet.
+			const keyed = parseFirstRow(await exec(keyColumnProbeSql(stmt, database))) !== null
+			const zeros = keyed ? parseFirstRow(await exec(zeroKeyRowsProbeSql(stmt, database))) : null
+			if (zeros !== null && zeros.zeros !== "0") {
+				const [copy, remove] = repairZeroKeyColumnSql(stmt, database)
+				steps.push(
+					{ name: `m${migration.version}:stmt${index}:copy`, sql: copy, backfill: false },
+					{ name: `m${migration.version}:stmt${index}:delete`, sql: remove, backfill: false },
+				)
+			}
 		} else {
 			steps.push({
 				name: `m${migration.version}:stmt${index}`,

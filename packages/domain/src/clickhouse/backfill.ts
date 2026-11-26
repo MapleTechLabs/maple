@@ -1,8 +1,11 @@
 import { qualifyStatementForDatabase } from "./qualify"
 import {
 	isDropUnkeyedColumn,
+	isRepairZeroKeyColumn,
 	renderDropUnkeyedColumnFull,
+	renderRepairZeroKeyColumnFull,
 	type DropUnkeyedColumnSpec,
+	type RepairZeroKeyColumnSpec,
 } from "./unkeyed-column"
 import { Array as Arr, String as Str } from "effect"
 
@@ -93,11 +96,13 @@ export const compileBackfillChunk = (
  * they behave exactly as before the structured-backfill format landed.
  */
 export const renderStatementFull = (
-	stmt: string | BackfillSpec | DropUnkeyedColumnSpec,
+	stmt: string | BackfillSpec | DropUnkeyedColumnSpec | RepairZeroKeyColumnSpec,
 	database: string,
 ): string =>
 	isBackfill(stmt)
 		? renderBackfillFull(stmt, database)
 		: isDropUnkeyedColumn(stmt)
 			? renderDropUnkeyedColumnFull(stmt)
-			: qualifyStatementForDatabase(stmt, database)
+			: isRepairZeroKeyColumn(stmt)
+				? renderRepairZeroKeyColumnFull(stmt)
+				: qualifyStatementForDatabase(stmt, database)

@@ -68,13 +68,22 @@ describe("expandMigrationToSteps", () => {
 })
 
 describe("migration 0076's plan against the cluster", () => {
-	/** A cluster whose probe for `unkeyed` tables answers a row: the column exists outside the key. */
+	/**
+	 * A cluster where the column sits outside the key on `unkeyed` tables, and in the key holding
+	 * `zeros` rows at 0 on `keyed` ones.
+	 */
 	const clusterWith =
-		(unkeyed: ReadonlyArray<string>): ExecFn =>
-		async (sql) =>
-			Arr.some(unkeyed, (table) => Str.includes(`table = '${table}'`)(sql))
-				? `{"name":"RetentionDays"}\n`
-				: ""
+		(unkeyed: ReadonlyArray<string>, keyed: ReadonlyArray<string> = [], zeros = "0"): ExecFn =>
+		async (sql) => {
+			const names = (tables: ReadonlyArray<string>) =>
+				Arr.some(tables, (table) => Str.includes(`table = '${table}'`)(sql))
+			if (Str.includes("is_in_sorting_key = 0")(sql))
+				return names(unkeyed) ? `{"name":"RetentionDays"}\n` : ""
+			if (Str.includes("is_in_sorting_key = 1")(sql))
+				return names(keyed) ? `{"name":"RetentionDays"}\n` : ""
+			if (Str.includes("count()")(sql)) return `{"zeros":"${zeros}"}\n`
+			return ""
+		}
 	const sqlOf = (steps: ReadonlyArray<{ readonly sql: string }>) => Arr.map(steps, (step) => step.sql)
 
 	it("drops a RetentionDays an older apply added outside the key, before merges stop", async () => {
@@ -89,7 +98,10 @@ describe("migration 0076's plan against the cluster", () => {
 			"ALTER TABLE `maple`.`trace_index` DROP COLUMN IF EXISTS RetentionDays SETTINGS mutations_sync = 2",
 		)
 		expect(drop).toBeGreaterThanOrEqual(0)
-		expect(sql[drop + 1]).toBe("SYSTEM STOP MERGES trace_index")
+		expect(sql.slice(drop + 1, drop + 3)).toEqual([
+			"DROP VIEW IF EXISTS trace_index_mv",
+			"SYSTEM STOP MERGES trace_index",
+		])
 		expect(Arr.filter(sql, (statement) => Str.includes("DROP COLUMN")(statement))).toHaveLength(1)
 	})
 
@@ -98,6 +110,36 @@ describe("migration 0076's plan against the cluster", () => {
 			await expandMigrationToSteps(migration_0076_retention_storage, "maple", clusterWith([])),
 		)
 		expect(Arr.filter(sql, (statement) => Str.includes("DROP COLUMN")(statement))).toEqual([])
+	})
+
+	it("moves stored 0s to the default once merges run again, before the view returns", async () => {
+		const sql = sqlOf(
+			await expandMigrationToSteps(
+				migration_0076_retention_storage,
+				"maple",
+				clusterWith([], ["trace_facets_hourly"], "3"),
+			),
+		)
+		const start = sql.indexOf("SYSTEM START MERGES trace_facets_hourly")
+		expect(sql.slice(start + 1, start + 3)).toEqual([
+			"INSERT INTO `maple`.`trace_facets_hourly` SELECT * REPLACE (toUInt16(30) AS RetentionDays) FROM (SELECT * FROM `maple`.`trace_facets_hourly` WHERE RetentionDays = 0)",
+			"ALTER TABLE `maple`.`trace_facets_hourly` DELETE WHERE RetentionDays = 0 SETTINGS mutations_sync = 2",
+		])
+		expect(Arr.filter(sql, (statement) => Str.includes("DELETE WHERE")(statement))).toHaveLength(1)
+	})
+
+	it("plans no repair when no row holds 0, or the column is not in the key yet", async () => {
+		for (const cluster of [
+			clusterWith([], ["trace_index", "trace_facets_hourly"], "0"),
+			clusterWith([], [], "5"),
+		]) {
+			const sql = sqlOf(
+				await expandMigrationToSteps(migration_0076_retention_storage, "maple", cluster),
+			)
+			expect(
+				Arr.filter(sql, (statement) => Str.includes("WHERE RetentionDays = 0")(statement)),
+			).toEqual([])
+		}
 	})
 
 	it("restarts merges when a step between a stop and its start fails, and only there", async () => {
