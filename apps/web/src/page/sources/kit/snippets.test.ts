@@ -56,7 +56,10 @@ describe("sourceSnippets", () => {
 		expect(code("alchemy")).toContain("Kubernetes.KubeConfig({ path: kubeconfig, context })")
 		expect(code("alchemy-deploy")).toContain('export KUBE_CONTEXT="$(kubectl config current-context)"')
 		expect(code("terraform")).toContain("config_context = var.kube_context")
-		expect(code("terraform-apply")).toContain("> maple.auto.tfvars")
+		// A rerun after switching context keeps the first apply's cluster.
+		expect(code("terraform-apply")).toContain("test -f maple.auto.tfvars || printf")
+		// Read inside the program, which a destroy skips: a fresh shell can still destroy.
+		expect(code("alchemy")).toContain('yield* Config.NonEmptyString("KUBE_CONTEXT")')
 		// Tracking the namespace would make a destroy delete everything else in it.
 		expect(code("alchemy")).not.toContain("createNamespace")
 		expect(code("alchemy-deploy")).toContain("create namespace maple")

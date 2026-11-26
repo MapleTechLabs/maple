@@ -50,21 +50,20 @@ export const alchemyStack =
 // Needs the helm CLI. Alchemy's state keeps the ingest key, so keep .alchemy/ private.
 import * as Alchemy from "alchemy"
 import * as Kubernetes from "@alchemy.run/kubernetes"
+import * as Config from "effect/Config"
 import * as Effect from "effect/Effect"
-import * as Redacted from "effect/Redacted"
 import { homedir } from "node:os"
 import { join } from "node:path"
-
-const ingestKey = process.env.MAPLE_INGEST_KEY
-if (!ingestKey) throw new Error("Set MAPLE_INGEST_KEY to your Maple ingest key.")
-const context = process.env.KUBE_CONTEXT
-if (!context) throw new Error("Set KUBE_CONTEXT to the kubeconfig context to deploy into.")
-const kubeconfig = process.env.KUBECONFIG?.split(":")[0] || join(homedir(), ".kube", "config")
 
 export default Alchemy.Stack(
   "maple-k8s-infra",
   { providers: Kubernetes.providers(), state: Alchemy.localState() },
+  // A destroy skips this program and reuses the saved cluster, so it needs neither variable.
   Effect.gen(function* () {
+    const ingestKey = yield* Config.Redacted("MAPLE_INGEST_KEY")
+    const context = yield* Config.NonEmptyString("KUBE_CONTEXT")
+    const kubeconfigs = yield* Config.String("KUBECONFIG").pipe(Config.withDefault(""))
+    const kubeconfig = kubeconfigs.split(":")[0] || join(homedir(), ".kube", "config")
     const collector = yield* Kubernetes.HelmChart("maple-k8s-infra", {
       cluster: Kubernetes.KubeConfig({ path: kubeconfig, context }),
       chart: "oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra",
@@ -74,7 +73,7 @@ export default Alchemy.Stack(
       namespace: "maple",
       values: {
         global: { clusterName: "production" },
-        maple: { ingestKey: { value: Redacted.make(ingestKey) }${isCustomEndpoint ? `, ingest: { endpoint: "${ingestUrl}" }` : ""} },
+        maple: { ingestKey: { value: ingestKey }${isCustomEndpoint ? `, ingest: { endpoint: "${ingestUrl}" }` : ""} },
         // Pod auto-instrumentation needs Helm's install hooks: use the Helm command for it.
         autoInstrumentation: { enabled: false, operator: { enabled: false } },
       },
@@ -113,7 +112,8 @@ provider "helm" {
   }
 }
 
-# The apply command writes both to maple.auto.tfvars, so plan and destroy reach the same cluster.
+# The apply command writes both to maple.auto.tfvars once and leaves it on reruns, so plan and destroy
+# reach the cluster of the first apply. Another cluster gets its own directory and state.
 variable "kubeconfig" {
   type    = string
   default = "~/.kube/config"
@@ -121,6 +121,10 @@ variable "kubeconfig" {
 
 variable "kube_context" {
   type = string
+  validation {
+    condition     = length(var.kube_context) > 0
+    error_message = "Set kube_context to the kubeconfig context the release lives in."
+  }
 }
 
 variable "maple_ingest_key" {
@@ -156,7 +160,7 @@ resource "helm_release" "maple_k8s_infra" {
 export const terraformApplyCommand = (token: string): string =>
 	Arr.join(
 		[
-			`printf 'kubeconfig = "%s"\\nkube_context = "%s"\\n' \\`,
+			`test -f maple.auto.tfvars || printf 'kubeconfig = "%s"\\nkube_context = "%s"\\n' \\`,
 			'  "${KUBECONFIG:-$HOME/.kube/config}" "$(kubectl config current-context)" > maple.auto.tfvars',
 			`terraform init && TF_VAR_maple_ingest_key=${token} terraform apply`,
 		],
