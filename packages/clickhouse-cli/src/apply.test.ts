@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { expandMigrationToSteps, migrations } from "@maple/domain/clickhouse"
 import { applyMigrationSteps, applySchemaFeatures, reconcileSchemaFeatures } from "./apply"
 
@@ -170,7 +170,8 @@ describe("applyMigrationSteps", () => {
 		expect(executed).not.toContain("SYSTEM START MERGES trace_index")
 	})
 
-	it("keeps the step's error when the restart fails too", async () => {
+	it("keeps the step's error when the restart fails too, and reports the failed restart", async () => {
+		const warnings = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
 		const failure = applyMigrationSteps(
 			[{ name: "alter", sql: "ALTER", backfill: false, onFailure: "SYSTEM START MERGES t" }],
 			async (sql) => {
@@ -178,6 +179,9 @@ describe("applyMigrationSteps", () => {
 			},
 		)
 		await expect(failure).rejects.toThrow("ALTER rejected")
+		expect(warnings).toHaveBeenCalledWith(expect.stringContaining("SYSTEM START MERGES t"))
+		expect(warnings).toHaveBeenCalledWith(expect.stringContaining("START rejected"))
+		warnings.mockRestore()
 	})
 
 	it("restarts nothing when a step outside a stopped pair fails", async () => {

@@ -176,7 +176,12 @@ export async function applyMigrationSteps(
 				const message = error instanceof Error ? error.message : String(error)
 				throw new Error(`${message}\n${restore.recovery}`, { cause: error })
 			}
-			await execute(step.onFailure).catch(() => "")
+			// The step's error is what the apply reports; a failed restart is printed so it is not lost.
+			await execute(step.onFailure).catch((restartError: unknown) => {
+				const detail = restartError instanceof Error ? restartError.message : String(restartError)
+				process.stderr.write(`warning: restarting merges failed (${step.onFailure}): ${detail}\n`)
+				return ""
+			})
 			throw error
 		}
 	}
