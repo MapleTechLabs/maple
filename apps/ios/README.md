@@ -175,6 +175,8 @@ Info.plist, not the extension's.
 
 ## The Home Screen widgets
 
+A third widget, **Pages**, is described under [The Pages widget](#the-pages-widget) below.
+
 `Widgets/` is a WidgetKit extension with two widgets:
 
 - **Ongoing issues** — what the app's "Needs attention" filter returns over the
@@ -306,6 +308,36 @@ Both targets carry the App Group entitlement. With automatic signing Xcode
 creates the group on first build; a mismatch between the two entitlements files
 and `IssuesSnapshotStore.appGroupIdentifier` is silent — the widget simply
 renders "Open Maple" forever.
+
+## The Pages widget
+
+`Widgets/PagesWidget.swift` shows what is paging you (small, medium, and the
+Lock Screen's rectangular and inline families) with **Acknowledge on the
+widget**. It follows the organization the app last showed.
+
+- **Read.** `GET /v2/widget_summary/pages`, through `WidgetPagesClient` and the
+  same device credential the other widgets use. Values arrive formatted, so the
+  extension carries no unit logic. The snapshot is `PagesSnapshot` in the App
+  Group, per organization.
+- **Acknowledge.** `AcknowledgePageIntent` is performed **in the extension**, not
+  the app, so it signs `POST /v2/widget_summary/pages/{id}/acknowledge` with the
+  device credential. That needs the `widget_summary:write` scope, which the
+  server grants at registration and on the next refresh of a key registered
+  before it existed. `DeviceCredentialRegistrar.isCurrent` refreshes once when
+  the stored record has no scopes at all. A widget whose credential cannot
+  acknowledge draws **Open** in place of the button, and a tap that did not
+  land turns the button into **Open to answer** until the next read.
+- **Staying current.** A widget is not live: it redraws when WidgetKit rebuilds
+  its timeline (every five minutes while a page waits, twenty otherwise, iOS
+  permitting), and when the app tells it to. `PagesWidgetPublisher` reads and
+  reloads it when the app comes to the front, when a push arrives, and when an
+  incident is answered on any of the app's screens. The countdown is a timer
+  text and ticks on its own; an extra timeline entry just after it runs out
+  takes it down.
+- **Fixture mode** has no server and no credential. `PagesWidgetPublisher`
+  writes the snapshot from the fixture incidents and marks it `isFixture`, which
+  makes the widget draw the button a registered phone gets. A tap there cannot
+  land, and shows "Open to answer".
 
 ## Running without a sign-in
 

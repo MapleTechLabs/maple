@@ -189,6 +189,11 @@ struct MainTabView: View {
 			}
 		}
 		.animation(.snappy, value: opener.notice)
+		// An incident answered on any screen, or a switch of organization: the Pages
+		// widget should not go on offering a button that was just pressed in the app.
+		.task(id: "\(IncidentChanges.shared.revision)|\(session.currentOrganizationId ?? "")") {
+			await PagesWidgetPublisher.refresh(session: session)
+		}
 		.onChange(of: scenePhase) { _, phase in
 			switch phase {
 			case .active:
@@ -199,6 +204,7 @@ struct MainTabView: View {
 				// And the Lock Screen cards: who has each incident may have changed
 				// while the app was away, and no push says so.
 				Task { await liveActivities.refreshRunningActivities() }
+				Task { await PagesWidgetPublisher.refresh(session: session) }
 			case .background:
 				// Queue the next opportunistic refresh on the way out, which is
 				// the only moment iOS accepts one.

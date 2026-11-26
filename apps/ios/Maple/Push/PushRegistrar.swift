@@ -456,6 +456,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 				// An alert push also renews credentials and warms the snapshots,
 				// which the widget cannot do for itself.
 				await WidgetPublisher.shared.refresh(trigger: .push, force: true)
+				// It may have been a page, or the resolve that ends one.
+				if let session = PushRegistrar.shared.opener?.session {
+					await PagesWidgetPublisher.refresh(session: session)
+				}
 			}
 			completionHandler(.newData)
 		}

@@ -443,6 +443,16 @@ describe("device credential registration", () => {
 	)
 
 	it(
+		"gives a key registered before a scope existed that scope on its next refresh",
+		withHarness(async (harness) => {
+			const { secret, key } = await harness.enrolled()
+			await harness.sql(`update device_credentials set scopes = '["widget_summary:read"]'::jsonb`, [])
+			const refreshed = await harness.register(secret, key)
+			expect(refreshed.body.scopes).toEqual(["widget_summary:read", "widget_summary:write"])
+		}),
+	)
+
+	it(
 		"rejects a key that is not on the P-256 curve",
 		withHarness(async (harness) => {
 			const secret = await harness.sessionKey()

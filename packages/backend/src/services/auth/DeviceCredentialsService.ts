@@ -396,6 +396,8 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 													existing.hardExpiresAt,
 												),
 												...pinnedColumns,
+												// A scope added since this key registered reaches it here.
+												scopes: [...DEVICE_CREDENTIAL_SCOPES],
 												...(attestation === undefined
 													? undefined
 													: { attested: true, attestation: attestation.metadata }),
