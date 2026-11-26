@@ -166,6 +166,19 @@
 			}
 		},
 		{
+			"name": "730 days is kept and 731 sets nothing, on either side",
+			"organization": { "traces": 730, "logs": 731 },
+			"source": { "events": 731 },
+			"expected": {
+				"traces": 730,
+				"logs": 30,
+				"metrics": 90,
+				"sessions": 30,
+				"events": 365,
+				"profiles": 14
+			}
+		},
+		{
 			"name": "a negative source value inherits the organization's",
 			"organization": { "metrics": 30 },
 			"source": { "metrics": -5 },

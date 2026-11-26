@@ -7,6 +7,7 @@ import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
 import {
 	cleanupTestDbs,
 	createTestDb,
+	executeSql,
 	insertTestSource,
 	makeSwitchableDatabase,
 	queryFirstRow,
@@ -238,6 +239,40 @@ describe("RetentionService", () => {
 })
 
 describe("RetentionService.readHorizon", () => {
+	it.effect("reads a stored period off the list as the gateway stamps it, without failing other orgs", () =>
+		withDb((db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const elsewhere = yield* source(db, OTHER_ORG, "nodejs")
+				yield* Effect.promise(() =>
+					executeSql(
+						db,
+						`INSERT INTO org_retention_policies (org_id, retention_days, created_at, updated_at)
+						 VALUES ($1, '{"traces": 45, "logs": 9000}'::jsonb, now(), now())`,
+						[ORG],
+					),
+				)
+				yield* Effect.promise(() =>
+					executeSql(
+						db,
+						`UPDATE sources SET retention_days = '{"metrics": 400}'::jsonb WHERE id = $1`,
+						[elsewhere],
+					),
+				)
+				// 45 rounds up to 60; 9000 is past the longest period, so logs inherit.
+				assert.deepStrictEqual((yield* retention.get(ORG)).overrides, { traces: 60 })
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
+					days: { ...DEFAULT_RETENTION_DAYS, traces: 60 },
+					configured: ["traces"],
+				})
+				assert.deepStrictEqual(yield* retention.readHorizon(OTHER_ORG), {
+					days: { ...DEFAULT_RETENTION_DAYS, metrics: 730 },
+					configured: ["metrics"],
+				})
+			}),
+		),
+	)
+
 	it.effect("an organization that set nothing reads the defaults, with no signal bounded", () =>
 		withDb(() =>
 			Effect.gen(function* () {

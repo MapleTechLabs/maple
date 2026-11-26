@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { Array as Arr, Option, Record as Rec, Schema } from "effect"
 import fixtures from "../fixtures/retention-stamp.json" with { type: "json" }
-import { RetentionOverrides, retentionStampDays, sourceRetentionDays } from "./retention"
+import {
+	readStoredRetentionOverrides,
+	RetentionOverrides,
+	retentionStampDays,
+	sourceRetentionDays,
+	StoredRetentionOverrides,
+} from "./retention"
 
 // The same fixture runs in `cargo test` against apps/ingest/src/retention.rs, which stamps rows.
 
@@ -27,16 +33,32 @@ const Fixtures = Schema.Struct({
 		}),
 	),
 	invalidStored: Schema.Array(
-		Schema.Struct({ name: Schema.String, organization: Schema.Unknown, source: Schema.Unknown }),
+		Schema.Struct({
+			name: Schema.String,
+			organization: Schema.Unknown,
+			source: Schema.Unknown,
+			expected: Schema.Record(Schema.String, Schema.Number),
+		}),
 	),
 })
 
 const { cases, invalidStored } = Schema.decodeSync(Fixtures)(fixtures)
 
+/** Both columns read as the database tables decode them, then stamped. */
+const storedStamps = (organization: unknown, source: unknown) =>
+	Rec.map(
+		sourceRetentionDays(
+			Schema.decodeUnknownSync(StoredRetentionOverrides)(organization),
+			readStoredRetentionOverrides(source),
+		),
+		retentionStampDays,
+	)
+
 describe("retention stamp fixtures", () => {
 	it.each(Arr.map(cases, (fixture) => [fixture.name, fixture] as const))("%s", (_name, fixture) => {
 		const stamps = Rec.map(sourceRetentionDays(fixture.organization, fixture.source), retentionStampDays)
 		expect(stamps).toEqual(fixture.expected)
+		expect(storedStamps(fixture.organization, fixture.source)).toEqual(fixture.expected)
 	})
 })
 
@@ -44,5 +66,12 @@ describe("retention stamp fixtures", () => {
 describe("retention values the gateway ignores", () => {
 	it.each(Arr.map(invalidStored, (fixture) => [fixture.name, fixture] as const))("%s", (_name, fixture) => {
 		expect(Option.isNone(Schema.decodeUnknownOption(Stored)(fixture))).toBe(true)
+	})
+})
+
+// Reading them back never fails: each signal stamps as the gateway stamps it.
+describe("stored retention values as the tables read them", () => {
+	it.each(Arr.map(invalidStored, (fixture) => [fixture.name, fixture] as const))("%s", (_name, fixture) => {
+		expect(storedStamps(fixture.organization, fixture.source)).toEqual(fixture.expected)
 	})
 })
