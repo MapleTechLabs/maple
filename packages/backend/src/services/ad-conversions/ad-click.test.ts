@@ -21,7 +21,7 @@ describe("decodeAdClick", () => {
 		const unreadable = { _tag: "Invalid", reason: "invalid_shape" }
 		const expired = { _tag: "Invalid", reason: "outside_window" }
 		expect(decodeAdClick({ adClick: { ...click, id: `=cmd|${Str.repeat(1000)("x")}` } }, NOW)).toEqual(
-			shape,
+			unreadable,
 		)
 		expect(decodeAdClick({ adClick: { ...click, type: "fbclid" } }, NOW)).toEqual(unreadable)
 		expect(decodeAdClick({ adClick: { ...click, clickTime: NOW - 91 * DAY } }, NOW)).toEqual(expired)
