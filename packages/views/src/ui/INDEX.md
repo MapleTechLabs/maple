@@ -279,7 +279,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTextsWith`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
 - `apps/web/src/page/kit/mcp-client-config.ts` `isMcpClient`, `mcpClientConfig`, `claudeCodeCommand`, `cursorInstallUrl`, `vscodeInstallUrl`: The `mcpServers` entry each client reads.
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown laid out with Streamdown's element classes.
-- `apps/web/src/page/kit/method-picker.ts` `methodPicker`: How a setup is done (Helm, Alchemy, Terraform, CloudShell...): a label, then one tool picked, each with its mark.
+- `apps/web/src/page/kit/method-picker.ts` `methodPicker`: How a setup is done (Helm, Alchemy, Terraform, CloudShell...): one tool picked, each with its mark, after an optional label.
 - `apps/web/src/page/kit/nav-shell.ts` `navShell`: A page's own nav rail of titled sections (settings, security, alerts).
 - `apps/web/src/page/kit/notifies-no-one.ts` `notifiesNoOne`: A list row's warning that a rule has no destination: its incidents open, and nobody is told.
 - `apps/web/src/page/kit/onboard-skill.ts` `agentSetupPrompt`: The coding-agent prompts that point at the setup guides maple.dev serves.

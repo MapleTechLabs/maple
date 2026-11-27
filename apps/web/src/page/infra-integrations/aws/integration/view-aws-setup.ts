@@ -3,7 +3,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { errorState } from "@maple/views/ui/error-state"
-import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { methodPicker } from "../../../kit/method-picker"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { codeBlock } from "../../../kit/code-block"
 import { AwsMessage, type AwsSetupMethod, type AwsSetupPart } from "./aws"
@@ -26,34 +26,30 @@ const CREATE_STACK_URL =
 	"https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create"
 export const SMALL = typographyClass({ size: "xs", tone: "muted" })
 
-/** A generated file to copy, its name in the eyebrow; a long one scrolls under its copy button. */
+/** A generated file to copy, its name in the header; a long one scrolls under its copy button. */
 export const fileBlock = (h: H, model: Model, id: string, name: string, text: string): Html =>
 	codeBlock(h, {
 		code: Str.trimEnd(text),
-		language: name,
+		fileName: name,
+		scrollLabel: name,
 		bodyClassName: "max-h-72 overflow-y-auto",
 		copy: model.awsCard.copies[id] ?? CopyButton.init(),
 		toCopyMessage: (message) => toHub(AwsMessage.GotAwsCopyMessage({ id, message })),
 	})
 
-const ROLE_METHODS: ReadonlyArray<Readonly<{ value: AwsSetupMethod; label: string }>> = [
-	{ value: "cloudshell", label: "CloudShell" },
-	{ value: "console", label: "Console" },
-	{ value: "terraform", label: "Terraform" },
-]
+const ROLE_METHODS: ReadonlyArray<AwsSetupMethod> = ["cloudshell", "console", "terraform"]
 
 // Terraform covers only the role, so the metric stream is set up from CloudShell or the console.
-const STREAM_METHODS = Arr.filter(ROLE_METHODS, (option) => option.value !== "terraform")
+const STREAM_METHODS = Arr.filter(ROLE_METHODS, (method) => method !== "terraform")
 
 export type SetupPart = AwsSetupPart
 
 /** The method picker for the role's setup or the metric stream's. */
 export const methodSelect = (h: H, model: Model, part: SetupPart): Html =>
-	segmentedSelect(h, {
-		options: part === "role" ? ROLE_METHODS : STREAM_METHODS,
+	methodPicker(h, {
+		methods: part === "role" ? ROLE_METHODS : STREAM_METHODS,
 		value: methodOf(model, part),
 		onChange: (method) => toHub(AwsMessage.ClickedAwsSetupMethod({ part, method })),
-		size: "sm",
 		ariaLabel: "Setup method",
 	})
 

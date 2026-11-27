@@ -64,7 +64,6 @@ export const ConfigureModel = Schema.Struct({
 	method: SetupMethod,
 	/** Whether a run was asked for when the Method step was left; null before the data step. */
 	rerun: Schema.NullOr(Schema.Boolean),
-	flavourGroup: ToggleGroup.Model,
 	/** Whether logs were confirmed when the Set up step opened. */
 	sinkExisted: Schema.Boolean,
 	/** The open console step; untouched, the first one is. */

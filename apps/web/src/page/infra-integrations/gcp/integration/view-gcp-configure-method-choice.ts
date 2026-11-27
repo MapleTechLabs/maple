@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { label } from "@maple/views/ui/label"
 import * as RadioGroup from "@maple/views/ui/radio-group"
-import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { methodPicker } from "../../../kit/method-picker"
 import type { ConfigureModel, SetupMethod } from "./gcp-configure-schema"
 import type { Message } from "../../../integrations/message"
 import { GCP_TITLE, SMALL, toHub } from "./view-gcp-parts"
@@ -48,21 +48,15 @@ const rowOf = (method: SetupMethod): Row => (method === "terraform" || method ==
 const methodOfRow = (value: string, flavour: "terraform" | "alchemy"): SetupMethod =>
 	value === "code" ? flavour : value === "manual" ? "manual" : "script"
 
-const flavourToggle = (h: H, configure: ConfigureModel, flavour: "terraform" | "alchemy"): Html =>
-	vstack(h, { gap: "1.5", className: "pl-7" }, [
-		hstack(h, { gap: "3", wrap: true }, [
-			ToggleGroup.view(h, {
-				model: { ...configure.flavourGroup, values: [flavour] },
-				toParentMessage: (message) => toHub(GcpMessage.GotGcpFlavourMessage({ message })),
-				items: [
-					{ value: "terraform", label: "Terraform" },
-					{ value: "alchemy", label: "Alchemy" },
-				],
-				variant: "outline",
-				size: "sm",
-			}),
-			h.span([h.Class(SMALL)], [HINTS[flavour]]),
-		]),
+const flavourToggle = (h: H, flavour: "terraform" | "alchemy"): Html =>
+	hstack(h, { gap: "3", wrap: true, align: "center", className: "pl-7" }, [
+		methodPicker(h, {
+			methods: ["terraform", "alchemy"],
+			value: flavour,
+			onChange: (method) => toHub(GcpMessage.ClickedGcpMethod({ method })),
+			ariaLabel: "Infrastructure as code tool",
+		}),
+		h.span([h.Class(SMALL)], [HINTS[flavour]]),
 	])
 
 /** The Method step's choice; `changing` when something of the connection is set up already. */
@@ -128,9 +122,7 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 								],
 							),
 						]),
-						...(option.value === "code" && row === "code"
-							? [flavourToggle(h, configure, flavour)]
-							: []),
+						...(option.value === "code" && row === "code" ? [flavourToggle(h, flavour)] : []),
 					]),
 				),
 			),

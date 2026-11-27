@@ -76,7 +76,7 @@ const emptyState = (h: H, model: Model): Html =>
 					]),
 					codeBlock(h, {
 						code: PROFILING_SNIPPET,
-						language: "telemetry.ts",
+						fileName: "telemetry.ts",
 						lang: "ts",
 						className: "w-full text-left",
 						copy: model.profileSnippetCopy,
