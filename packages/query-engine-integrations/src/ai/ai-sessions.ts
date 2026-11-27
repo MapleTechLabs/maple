@@ -724,6 +724,22 @@ const indexSessions = <Bounds extends IndexBounds>(
 		}))
 		.groupBy("sessionId")
 
+/** The session each scored trace is filed under, over the window's whole index. */
+const sessionsOfScoredTraces = (traceIds: ReturnType<typeof aiEvaluationMatchSubqueries>["traceIds"]) =>
+	fromQuery(
+		from(Datasources.aiTraceIndex)
+			.select(($) => ({ traceId: $.TraceId, sessionId: sessionKey(CH.max_($.SessionId), $.TraceId) }))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				inSubquery($.TraceId, traceIds),
+			])
+			.groupBy("traceId")
+			.having(($) => [isSessionTraceCond($)]),
+		"scored_traces",
+	).select(($) => ({ sessionId: $.sessionId }))
+
 /**
  * The page: which sessions the list shows, in what order, and everything a
  * row shows about them that the index can answer — the read the list renders
@@ -773,22 +789,6 @@ const indexSessions = <Bounds extends IndexBounds>(
  */
 /** What `aiSessionPageQuery` and `aiSessionRankQuery` agree on: which level
  *  orders the page, by what, and which sessions are on it at all. */
-/** The session each scored trace is filed under, over the window's whole index. */
-const sessionsOfScoredTraces = (traceIds: ReturnType<typeof aiEvaluationMatchSubqueries>["traceIds"]) =>
-	fromQuery(
-		from(Datasources.aiTraceIndex)
-			.select(($) => ({ traceId: $.TraceId, sessionId: sessionKey(CH.max_($.SessionId), $.TraceId) }))
-			.where(($) => [
-				$.OrgId.eq(orgIdParam),
-				$.Timestamp.gte(param.dateTime("startTime")),
-				$.Timestamp.lte(param.dateTime("endTime")),
-				inSubquery($.TraceId, traceIds),
-			])
-			.groupBy("traceId")
-			.having(($) => [isSessionTraceCond($)]),
-		"scored_traces",
-	).select(($) => ({ sessionId: $.sessionId }))
-
 const pagePlan = (opts: AiSessionPageOpts) => {
 	const limit = opts.limit ?? 50
 	const offset = opts.offset ?? 0
