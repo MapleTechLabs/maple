@@ -11,7 +11,7 @@ sdk: "effect"
 
 ## Install
 
-For Effect 4 (`effect` 4.0.0 or later):
+For Effect 4 (`effect` 4.1.6 or later):
 
 ```bash
 npm install @maple-dev/effect-sdk effect
