@@ -589,7 +589,12 @@ const sessionChecksTick = makeTick(
 	"session_checks",
 	(result) =>
 		result.orgs > 0
-			? { orgs: result.orgs, sessionsScored: result.sessionsScored, orgsFailed: result.orgsFailed }
+			? {
+					orgs: result.orgs,
+					sessionsScored: result.sessionsScored,
+					orgsFailed: result.orgsFailed,
+					orgsDeferred: result.orgsDeferred,
+				}
 			: undefined,
 )
 

@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AiEvaluationRuns } from "@maple/db/tables"
-import { OrgId } from "@maple/domain/http"
+import { OrgId, WarehouseConfigError } from "@maple/domain/http"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
@@ -17,7 +17,13 @@ import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSess
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ENROLL_LOOKBACK_MS, SESSION_IDLE_MS, SessionCheckScoresService } from "./SessionCheckScoresService"
+import {
+	ENROLL_LOOKBACK_MS,
+	LIST_LOOKBACK_MS,
+	MAX_CURSOR_LAG_MS,
+	SESSION_IDLE_MS,
+	SessionCheckScoresService,
+} from "./SessionCheckScoresService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -124,9 +130,14 @@ const doneSpans = [
 ]
 
 /** The warehouse, answering each session read by the context it names. */
-const warehouse = (reads: Array<string>) => {
+const warehouse = (
+	reads: Array<string>,
+	statements: Array<{ readonly context: string; readonly sql: string }>,
+	spansFail: boolean,
+) => {
 	const rowsFor = (context: string, sql: string): ReadonlyArray<Record<string, unknown>> => {
 		reads.push(context)
+		statements.push({ context, sql })
 		switch (context) {
 			case "aiSessionsRank":
 				return [
@@ -159,6 +170,16 @@ const warehouse = (reads: Array<string>) => {
 		options: { readonly context: string },
 	) => {
 		const query = compiledQueryOf(compiled)
+		if (spansFail && options.context === "aiSessionSpans") {
+			reads.push(options.context)
+			return Effect.fail(
+				new WarehouseConfigError({
+					message: "budget exceeded",
+					pipeName: "aiSessionSpans",
+					clickhouseType: "TIMEOUT_EXCEEDED",
+				}),
+			)
+		}
 		return query.decodeRows(rowsFor(options.context, query.sql)).pipe(Effect.orDie)
 	}
 	return makeWarehouseServiceStub({
@@ -199,10 +220,13 @@ const IngestBody = Schema.Struct({
 })
 const decodeIngestBody = Schema.decodeUnknownSync(Schema.fromJsonString(IngestBody))
 
-const makeWorld = (opts: { readonly llmEvals?: boolean; readonly ingestStatus?: number } = {}) => {
+const makeWorld = (
+	opts: { readonly llmEvals?: boolean; readonly ingestStatus?: number; readonly spansFail?: boolean } = {},
+) => {
 	const testDb = createTestDb(trackedDbs)
 	const bodies: Array<typeof IngestBody.Type> = []
 	const reads: Array<string> = []
+	const statements: Array<{ readonly context: string; readonly sql: string }> = []
 	const api = VendorFake.make({
 		routes: [
 			{
@@ -219,7 +243,12 @@ const makeWorld = (opts: { readonly llmEvals?: boolean; readonly ingestStatus?: 
 	const layer = Layer.effect(SessionCheckScoresService, SessionCheckScoresService.make).pipe(
 		Layer.provide(
 			Layer.effect(AiSessionReadService, AiSessionReadService.make).pipe(
-				Layer.provide(Layer.succeed(WarehouseQueryService, warehouse(reads))),
+				Layer.provide(
+					Layer.succeed(
+						WarehouseQueryService,
+						warehouse(reads, statements, opts.spansFail ?? false),
+					),
+				),
 			),
 		),
 		Layer.provide(
@@ -235,7 +264,7 @@ const makeWorld = (opts: { readonly llmEvals?: boolean; readonly ingestStatus?: 
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
 		Layer.merge(api.layer),
 	)
-	return { layer, bodies, reads }
+	return { layer, bodies, reads, statements }
 }
 
 const runRow = Effect.gen(function* () {
@@ -280,7 +309,17 @@ describe("SessionCheckScoresService", () => {
 			const scores = yield* SessionCheckScoresService
 			yield* scores.enroll(ORG)
 			const result = yield* scores.runTick()
-			assert.deepStrictEqual(result, { orgs: 1, sessionsScored: 1, orgsFailed: 0 })
+			assert.deepStrictEqual(result, { orgs: 1, sessionsScored: 1, orgsFailed: 0, orgsDeferred: 0 })
+			// Listed from an hour before the cursor: the list finds sessions by span start.
+			const rank = Arr.findFirst(
+				world.statements,
+				(statement) => statement.context === "aiSessionsRank",
+			)
+			assert.ok(
+				Str.includes(formatWarehouseDateTime(NOW - ENROLL_LOOKBACK_MS - LIST_LOOKBACK_MS))(
+					rank._tag === "Some" ? rank.value.sql : "",
+				),
+			)
 			// The live session is left for a later tick: only the finished one's spans are read.
 			assert.deepStrictEqual(
 				Arr.filter(world.reads, (context) => context === "aiSessionSpans").length,
@@ -306,6 +345,47 @@ describe("SessionCheckScoresService", () => {
 			assert.ok(Arr.every(records, (record) => record.eventName === "gen_ai.evaluation.result"))
 			const rows = yield* runRow
 			assert.deepStrictEqual(rows, [{ cursorAt: NOW - SESSION_IDLE_MS, lastError: null }])
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("resumes a long-stuck cursor from the newest hours, not from where it stopped", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const scores = yield* SessionCheckScoresService
+			yield* scores.enroll(ORG)
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(AiEvaluationRuns)
+						.set({ cursorAt: NOW - 30 * 86_400_000 })
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			yield* scores.runTick()
+			const rank = Arr.findFirst(
+				world.statements,
+				(statement) => statement.context === "aiSessionsRank",
+			)
+			assert.ok(
+				Str.includes(formatWarehouseDateTime(NOW - MAX_CURSOR_LAG_MS - LIST_LOOKBACK_MS))(
+					rank._tag === "Some" ? rank.value.sql : "",
+				),
+			)
+			assert.deepStrictEqual(yield* runRow, [{ cursorAt: NOW - SESSION_IDLE_MS, lastError: null }])
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("skips a session whose spans cannot be read, and moves on", () => {
+		const world = makeWorld({ spansFail: true })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const scores = yield* SessionCheckScoresService
+			yield* scores.enroll(ORG)
+			const result = yield* scores.runTick()
+			assert.deepStrictEqual(result, { orgs: 1, sessionsScored: 0, orgsFailed: 0, orgsDeferred: 0 })
+			assert.strictEqual(world.bodies.length, 0)
+			assert.deepStrictEqual(yield* runRow, [{ cursorAt: NOW - SESSION_IDLE_MS, lastError: null }])
 		}).pipe(Effect.provide(world.layer))
 	})
 

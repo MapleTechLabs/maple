@@ -284,6 +284,29 @@ describe("AiEvaluationReadService", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("still reads a session's scores when its responses cannot be resolved", () => {
+		const failure = new WarehouseConfigError({
+			message: "budget exceeded",
+			pipeName: "aiEvaluationResponseSpans",
+			clickhouseType: "TIMEOUT_EXCEEDED",
+		})
+		const { layer } = layerWith({ llmEvals: true }, (sql) =>
+			isResponseSpansRead(sql) ? Effect.fail(failure) : Effect.succeed([scoreRow(TRACE_A, "fail")]),
+		)
+		return Effect.gen(function* () {
+			const reads = yield* AiEvaluationReadService
+			const result = yield* reads.session(
+				tenant,
+				new GetAiSessionEvaluationsRequest({
+					...WINDOW,
+					sessionId: "session-1",
+					traceIds: [TRACE_A],
+				}),
+			)
+			expect(result.scores.length).toBeGreaterThan(0)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("reads as empty on a warehouse without the table", () => {
 		const missing = new WarehouseConfigError({
 			message: "Table default.ai_evaluations does not exist",
