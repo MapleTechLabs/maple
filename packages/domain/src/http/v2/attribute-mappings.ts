@@ -16,7 +16,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, handlerChecks } from "../endpoint-access"
 
 /** `amap_…` public ID ⇄ internal `IngestAttributeMappingId` (raw UUID). */
 export const AttributeMappingPublicId = PublicId(PublicIdPrefixes.attributeMapping, IngestAttributeMappingId)
@@ -250,4 +250,4 @@ export class V2AttributeMappingsApiGroup extends HttpApiGroup.make("attributeMap
 				"Ingest-time attribute rewrite rules. Move or copy span/resource attribute values to new keys as telemetry arrives, normalizing naming across services without redeploying them.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("attribute_mappings:manage")) {}

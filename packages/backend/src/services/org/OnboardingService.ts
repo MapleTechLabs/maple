@@ -2,11 +2,15 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgOnboardingState, type OrgOnboardingStateRow } from "@maple/db/tables"
 import { OnboardingPersistenceError, OnboardingStateResponse } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { UserId } from "@maple/domain/http"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
+import { AdConversionsService } from "@maple/backend/services/ad-conversions/AdConversionsService"
 import { type FirstDataSeen, firstDataReceivedEvent } from "./first-data"
+
+const decodeUserId = Schema.decodeUnknownOption(UserId)
 
 const toPersistenceError = (error: unknown) =>
 	new OnboardingPersistenceError({
@@ -59,6 +63,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const productEvents = yield* ProductEventsService
+			const adConversions = yield* AdConversionsService
 			const dbExecute = makeDbExecute(database, "OnboardingService", toPersistenceError)
 
 			const findRow = (orgId: OrgId) =>
@@ -220,15 +225,25 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				// creation, so the event is dated against the org itself.
 				const row = yield* findRow(orgId)
 				const orgCreatedAtMs = yield* orgCreatedAt
+				const setUpBy = row?.userId ?? userId
 				yield* productEvents.track(
-					firstDataReceivedEvent({
-						orgId,
-						userId: row?.userId ?? userId,
-						firstData,
-						orgCreatedAtMs,
-						nowMs: now,
-					}),
+					firstDataReceivedEvent({ orgId, userId: setUpBy, firstData, orgCreatedAtMs, nowMs: now }),
 				)
+				// The org's creator counts as activated for the Google Ads upload if an ad brought them.
+				const adUser = decodeUserId(setUpBy)
+				if (Option.isSome(adUser)) {
+					yield* adConversions
+						.recordActivation(adUser.value, now)
+						.pipe(
+							Effect.catchTag(
+								"@maple/backend/ad-conversions/AdConversionPersistenceError",
+								(error) =>
+									Effect.logError("Ad activation conversion was not recorded").pipe(
+										Effect.annotateLogs({ error: error.message }),
+									),
+							),
+						)
+				}
 				return true
 			})
 
@@ -366,5 +381,5 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AdConversionsService.layer))
 }

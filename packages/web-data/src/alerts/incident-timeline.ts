@@ -41,6 +41,7 @@ const ackSourceLabel: Record<AlertIncidentAckSource, string> = {
 	mcp: "MCP",
 	slack: "Slack",
 	discord: "Discord",
+	mobile: "the mobile app",
 } satisfies Record<AlertIncidentAckSource, string>
 
 /** "Dana Kim", or who it was when the source named nobody: an MCP agent or a teammate. */

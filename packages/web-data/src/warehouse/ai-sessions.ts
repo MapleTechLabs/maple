@@ -1,6 +1,7 @@
 import { Clock, Effect, Schema } from "effect"
 import {
 	AI_SESSION_DETAILS_MAX_SESSIONS,
+	AiEvaluationFilter,
 	AI_SESSION_SPANS_MAX_TRACE_IDS,
 	AiSessionSortDir,
 	AiSessionSortKey,
@@ -42,6 +43,7 @@ const ListAiSessionsInput = Schema.Struct({
 	llmCallsMax: Schema.optional(Schema.Number),
 	toolCallsMin: Schema.optional(Schema.Number),
 	toolCallsMax: Schema.optional(Schema.Number),
+	evaluation: Schema.optional(AiEvaluationFilter),
 	sortBy: Schema.optional(AiSessionSortKey),
 	sortDir: Schema.optional(AiSessionSortDir),
 })

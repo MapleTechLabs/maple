@@ -7,6 +7,7 @@ import { features } from "../lib/features";
 import { featurePath, useCasePath } from "../lib/page-registry";
 import { useCases } from "../lib/use-cases";
 import Icon from "./Icon.astro";
+import { IOS_APP_STORE_URL } from "@maple/domain/mobile-app";
 
 const locale = Astro.currentLocale ?? "en";
 const l = (path: string) => getRelativeLocaleUrl(locale, path);
@@ -63,6 +64,7 @@ const stars = await getGitHubStars();
                     <li><a href={l("/opentelemetry")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_opentelemetry()}</a></li>
                     <li><a href="/roadmap" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_roadmap()}</a></li>
                     <li><a href="/local" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_local()}</a></li>
+                    <li><a href={IOS_APP_STORE_URL} target="_blank" rel="noopener noreferrer" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_ios_app()}</a></li>
                     <li><a href="/docs" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_docs()}</a></li>
                     <li><a href="/guides" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_guides()}</a></li>
                     <li><a href="/blog" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_blog()}</a></li>

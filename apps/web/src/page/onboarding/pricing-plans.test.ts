@@ -20,7 +20,7 @@ describe("getFeatureRows", () => {
 				item("logs", 100),
 				item("ai_input_tokens", 0),
 				item("some_future_feature", 5),
-				item("ai_credits", 10),
+				item("ai_credits", 1),
 			],
 		})
 

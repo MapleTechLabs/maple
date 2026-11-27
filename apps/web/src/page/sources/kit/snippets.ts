@@ -7,7 +7,8 @@ import {
 	sdkSnippets,
 } from "../../kit/sdk-snippets"
 import { ingestUrl } from "../../../platform/ingest-url"
-import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
+import { DOCKER_RECIPES, HOST_RECIPES, KUBERNETES_RECIPES } from "../../infra/kit/install-snippets"
+import type { InstallRecipe } from "../../kit/install-recipe"
 import { Array as Arr, String as Str, Option } from "effect"
 
 export interface SourceSnippet {
@@ -110,14 +111,9 @@ export const sourceSnippets = (
 	const serviceName = serviceNameOf(name)
 	switch (platform) {
 		case "kubernetes":
-			return [{ id: "helm", label: "Helm", language: "shell", code: helmCommand(token) }]
 		case "docker":
-			return [{ id: "docker", label: "docker run", language: "shell", code: dockerCommand(token) }]
 		case "host":
-			return [
-				{ id: "host-config", label: "config.yaml", language: "yaml", code: HOST_CONFIG },
-				{ id: "host-run", label: "Run", language: "shell", code: hostCommand(token) },
-			]
+			return []
 		case "browser":
 			return [browserSnippet(token, serviceName)]
 		case "claude_code":
@@ -134,6 +130,12 @@ export const sourceSnippets = (
 	}
 }
 
-/** Stands in for the token once it can no longer be shown. */
-export const maskedToken = (prefix: string | null): string =>
-	`${prefix ?? "maple_src_"}${Str.repeat(16)("•")}`
+/** A collector platform installs as the collector dialog does: a recipe per tool, not snippet tabs. */
+export const sourceRecipes = (platform: SourcePlatform): ReadonlyArray<InstallRecipe> | null =>
+	platform === "kubernetes"
+		? KUBERNETES_RECIPES
+		: platform === "docker"
+			? DOCKER_RECIPES
+			: platform === "host"
+				? HOST_RECIPES
+				: null

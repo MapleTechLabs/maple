@@ -1,6 +1,6 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { sourceSnippets } from "./snippets"
+import { sourceRecipes, sourceSnippets } from "./snippets"
 
 describe("sourceSnippets", () => {
 	it("gives the browser SDK snippet the service name init() requires, slugged from the source", () => {
@@ -17,5 +17,46 @@ describe("sourceSnippets", () => {
 		expect(env?.code).toContain('OTEL_SERVICE_NAME="billing-api"')
 		expect(install?.code).toContain("opentelemetry-distro")
 		expect(run?.code).toContain("opentelemetry-instrument")
+	})
+
+	it("installs a Kubernetes source with Helm, Alchemy or Terraform, keeping the key out of the files", () => {
+		const recipes = sourceRecipes("kubernetes") ?? []
+		expect(Arr.map(recipes, (recipe) => recipe.tool)).toEqual(["helm", "alchemy", "terraform"])
+		const steps = Arr.flatMap(recipes, (recipe) => recipe.steps)
+		const textOf = (id: string): string =>
+			Option.match(
+				Arr.findFirst(steps, (step) => step.id === id),
+				{
+					onNone: () => "",
+					onSome: (step) => (step._tag === "File" ? step.text : step.build("maple_src_test")),
+				},
+			)
+		expect(textOf("alchemy")).not.toContain("maple_src_test")
+		expect(textOf("terraform")).not.toContain("maple_src_test")
+		expect(textOf("alchemy")).toContain('chart: "oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra"')
+		expect(textOf("terraform")).toContain('resource "helm_release" "maple_k8s_infra"')
+		expect(textOf("alchemy-deploy")).toContain(
+			"MAPLE_INGEST_KEY=maple_src_test bunx alchemy deploy maple.ts --stage maple",
+		)
+		expect(textOf("terraform-apply")).toContain(
+			"terraform init && TF_VAR_maple_ingest_key=maple_src_test terraform apply",
+		)
+		expect(sourceSnippets("kubernetes", "maple_src_test", "Cluster")).toEqual([])
+		// A destroy reads the context back from the stack or the tfvars file, not the shell's current one.
+		expect(textOf("alchemy")).toContain("Kubernetes.KubeConfig({ path: kubeconfig, context })")
+		expect(textOf("alchemy-deploy")).toContain('export KUBE_CONTEXT="$(kubectl config current-context)"')
+		expect(textOf("terraform")).toContain("config_context = var.kube_context")
+		// A rerun after switching context keeps the first apply's cluster.
+		expect(textOf("terraform-apply")).toContain("test -f maple.auto.tfvars ||")
+		// A failed context lookup writes nothing, so the next run asks again rather than pinning "".
+		expect(textOf("terraform-apply")).toContain('context="$(kubectl config current-context)" &&')
+		// Read inside the program, which a destroy skips: a fresh shell can still destroy.
+		expect(textOf("alchemy")).toContain('yield* Config.NonEmptyString("KUBE_CONTEXT")')
+		expect(textOf("alchemy")).toContain(
+			'Config.schema(Schema.Redacted(Schema.NonEmptyString), "MAPLE_INGEST_KEY")',
+		)
+		// Tracking the namespace would make a destroy delete everything else in it.
+		expect(textOf("alchemy")).not.toContain("createNamespace")
+		expect(textOf("alchemy-deploy")).toContain("create namespace maple")
 	})
 })

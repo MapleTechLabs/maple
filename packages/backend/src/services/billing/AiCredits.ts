@@ -10,7 +10,12 @@ import type { OrgId } from "@maple/primitives"
 import { EdgeCacheService } from "@maple/cache"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { decodeUpstream, ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
+import {
+	decodeUpstream,
+	ensureOk,
+	readCustomerCached,
+	readCustomerFresh,
+} from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 
@@ -145,15 +150,13 @@ export class AiCredits extends Context.Service<AiCredits, AiCreditsApi>()(
 				// A member org spends the credits of the org that pays for it.
 				const missing = yield* billingCustomers.customerFor(orgId).pipe(
 					Effect.flatMap((customerId) => {
-						const fresh = autumn.getOrCreateCustomer(customerId, {
-							expand: ["subscriptions.plan"],
-						})
+						const fresh = readCustomerFresh(autumn, customerId)
 						const judge = (result: AutumnResult) =>
 							ensureOk(result).pipe(
 								Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
 								Effect.map((customer) => missingAiCredits(customer, nowMs)),
 							)
-						return readCustomerCached(edgeCache, customerId, fresh).pipe(
+						return readCustomerCached(edgeCache, autumn, customerId).pipe(
 							Effect.flatMap(({ result, hit }) =>
 								judge(result).pipe(
 									// A cached refusal may predate a raised cap or a new plan: confirm it first.

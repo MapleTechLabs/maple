@@ -136,6 +136,7 @@ import {
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { exactDateTime64, inTraces, orgIdParam, paramTraceWindow } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
+import { type AiEvaluationMatch, aiEvaluationMatchSubqueries } from "@maple/query-engine/ch"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
 	AI_SESSION_SUMMARY_MAX_TURNS,
@@ -352,6 +353,9 @@ export interface AiSessionPageOpts extends AiSessionFilterOpts {
 	readonly llmCallsMax?: number
 	readonly toolCallsMin?: number
 	readonly toolCallsMax?: number
+	/** Only sessions with a latest score of this evaluator and verdict in the window: a session-scope
+	 *  score naming the session, or a score of one of its traces. */
+	readonly evaluation?: AiEvaluationMatch
 	readonly sortBy?: AiSessionSortKey
 	readonly sortDir?: AiSessionSortDir
 	/**
@@ -720,6 +724,22 @@ const indexSessions = <Bounds extends IndexBounds>(
 		}))
 		.groupBy("sessionId")
 
+/** The session each scored trace is filed under, over the window's whole index. */
+const sessionsOfScoredTraces = (traceIds: ReturnType<typeof aiEvaluationMatchSubqueries>["traceIds"]) =>
+	fromQuery(
+		from(Datasources.aiTraceIndex)
+			.select(($) => ({ traceId: $.TraceId, sessionId: sessionKey(CH.max_($.SessionId), $.TraceId) }))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				inSubquery($.TraceId, traceIds),
+			])
+			.groupBy("traceId")
+			.having(($) => [isSessionTraceCond($)]),
+		"scored_traces",
+	).select(($) => ({ sessionId: $.sessionId }))
+
 /**
  * The page: which sessions the list shows, in what order, and everything a
  * row shows about them that the index can answer — the read the list renders
@@ -776,6 +796,7 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 	// The `HAVING` and `WHERE` levels see the aliases by name only.
 	const column = {
 		sessionId: CH.dynamicColumn("sessionId", T.string),
+		traceId: CH.dynamicColumn("traceId", T.string),
 		errorAgentSpans: CH.dynamicColumn<number>("errorAgentSpans", T.float64),
 		agentDurationMs: CH.dynamicColumn<number>("agentDurationMs", T.float64),
 		cost: CH.dynamicColumn<number>("cost", T.float64),
@@ -828,6 +849,14 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 		CH.when(opts.durationMaxMs, (v) => column.agentDurationMs.lte(v)),
 		CH.when(opts.toolCallsMin, (v) => column.toolCalls.gte(v)),
 		CH.when(opts.toolCallsMax, (v) => column.toolCalls.lte(v)),
+		// A score on any trace of the session matches the whole session: the scored traces resolve to
+		// sessions over the whole index, not over the traces the other filters kept.
+		CH.when(opts.evaluation, (match) => {
+			const scored = aiEvaluationMatchSubqueries(match)
+			return inSubquery(column.sessionId, scored.sessionIds).or(
+				inSubquery(column.sessionId, sessionsOfScoredTraces(scored.traceIds)),
+			)
+		}),
 	]
 	return { column, order, ranksOnSession, paged, sessionFilters }
 }
@@ -1784,6 +1813,31 @@ export function aiTraceTotalsQuery() {
 			$.Timestamp.lte(param.dateTime("endTime")),
 			inTraces((id) => id.eq(param.string("traceId")), paramTraceWindow()),
 		])
+		.format("JSON")
+}
+
+/** Responses one read resolves: a session's model calls, or an evaluator page's scores. */
+export const AI_RESPONSE_SPANS_LIMIT = 2_000
+
+/**
+ * The span each provider response (`gen_ai.response.id`) came from, for evaluation scores that name
+ * only a response. By the traces' model calls, or by the responses themselves. A response two
+ * traces observed (the app's span and a gateway's mirror) resolves to either.
+ */
+export function aiResponseSpansQuery(
+	by: { readonly traceIds: readonly string[] } | { readonly responseIds: readonly string[] },
+) {
+	return from(Datasources.aiTraceIndex)
+		.select(($) => ({ responseId: $.ResponseId, traceId: CH.any_($.TraceId), spanId: CH.any_($.SpanId) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.ResponseId.neq(""),
+			"traceIds" in by ? CH.inList($.TraceId, by.traceIds) : CH.inList($.ResponseId, by.responseIds),
+		])
+		.groupBy("responseId")
+		.limit(AI_RESPONSE_SPANS_LIMIT)
 		.format("JSON")
 }
 

@@ -150,7 +150,14 @@ export const AlertIncidentHoldReason = Schema.Literals([
 })
 export type AlertIncidentHoldReason = Schema.Schema.Type<typeof AlertIncidentHoldReason>
 
-export const AlertIncidentAckSource = Schema.Literals(["web", "api", "mcp", "slack", "discord"]).annotate({
+export const AlertIncidentAckSource = Schema.Literals([
+	"web",
+	"api",
+	"mcp",
+	"slack",
+	"discord",
+	"mobile",
+]).annotate({
 	identifier: "@maple/AlertIncidentAckSource",
 	title: "Alert Incident Acknowledgement Source",
 })

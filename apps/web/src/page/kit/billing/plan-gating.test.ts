@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
+import { Array as Arr } from "effect"
 import {
 	BillingBalance,
 	BillingCustomer,
 	BillingSubscription,
 	BillingSubscriptionPlan,
+	BillingTrialUse,
 	CatalogPlan,
 	CatalogPlanPrice,
 } from "@maple/domain/http"
@@ -44,13 +46,18 @@ function buildBalance(_featureId: string, partial: Partial<Balance> = {}): Balan
 
 function buildCustomer(
 	subscriptions: Subscription[],
-	overrides: { flags?: Customer["flags"]; balances?: Customer["balances"] } = {},
+	overrides: {
+		flags?: Customer["flags"]
+		balances?: Customer["balances"]
+		trialsUsed?: ReadonlyArray<string>
+	} = {},
 ): Customer {
 	return new BillingCustomer({
 		id: "cus_1",
 		subscriptions,
 		balances: overrides.balances ?? {},
 		flags: overrides.flags ?? {},
+		trialsUsed: Arr.map(overrides.trialsUsed ?? [], (planId) => new BillingTrialUse({ planId })),
 	})
 }
 
@@ -464,6 +471,20 @@ describe("the no-card trial", () => {
 		expect(hasEndedNoCardTrial(endedTrial)).toBe(true)
 		expect(hasEndedNoCardTrial(endedPlan)).toBe(false)
 		expect(resolvePlanAccess({ customer: endedTrial, isLoading: false })).toBe("app")
+	})
+
+	it("keeps an ended trial in the app once Autumn deletes its row, as it does at the end", () => {
+		// Autumn's payload for a sandbox customer after its no-card trial ended (2026-11-26).
+		const rowGone = buildCustomer([], { trialsUsed: ["trial"] })
+		expect(hasLapsedPlan(rowGone)).toBe(true)
+		expect(hasEndedNoCardTrial(rowGone)).toBe(true)
+		expect(resolvePlanAccess({ customer: rowGone, isLoading: false })).toBe("app")
+		// A Startup card trial on record too: the org paid once, so its banner is the plan's.
+		expect(hasEndedNoCardTrial(buildCustomer([], { trialsUsed: ["trial", "startup"] }))).toBe(false)
+		// Nothing on record is still a new org.
+		expect(resolvePlanAccess({ customer: buildCustomer([], { trialsUsed: [] }), isLoading: false })).toBe(
+			"onboarding",
+		)
 	})
 })
 

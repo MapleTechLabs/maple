@@ -8,7 +8,7 @@ import {
 	type ExecFn,
 } from "./apply-plan"
 import type { ClickHouseMigration } from "./migrations"
-import { migration_0076_retention_storage } from "./migrations/0076_retention_storage"
+import { migration_0077_retention_storage } from "./migrations/0077_retention_storage"
 import { Array as Arr, Option, String as Str } from "effect"
 
 const spec: BackfillSpec = {
@@ -73,7 +73,7 @@ describe("expandMigrationToSteps", () => {
 	})
 })
 
-describe("migration 0076's plan against the cluster", () => {
+describe("migration 0077's plan against the cluster", () => {
 	/**
 	 * A cluster where the column sits outside the key on `unkeyed` tables, and in the key on `keyed`
 	 * ones, which hold 0 rows when `zeros`; `ready` lists the partitions a ready table left by an
@@ -108,7 +108,7 @@ describe("migration 0076's plan against the cluster", () => {
 	}
 	const sqlOf = (steps: ReadonlyArray<{ readonly sql: string }>) => Arr.map(steps, (step) => step.sql)
 	const repairOf = async (table: string, exec: ExecFn) => {
-		const steps = await expandMigrationToSteps(migration_0076_retention_storage, "maple", exec)
+		const steps = await expandMigrationToSteps(migration_0077_retention_storage, "maple", exec)
 		return Option.getOrThrow(
 			Arr.findFirst(steps, (step) => step.repair?.spec.table === table).pipe(
 				Option.flatMapNullishOr((step) => step.repair),
@@ -127,7 +127,7 @@ describe("migration 0076's plan against the cluster", () => {
 	it("drops a RetentionDays an older apply added outside the key, then stops merges before dropping the view", async () => {
 		const sql = sqlOf(
 			await expandMigrationToSteps(
-				migration_0076_retention_storage,
+				migration_0077_retention_storage,
 				"maple",
 				clusterWith(["trace_index"]).exec,
 			),
@@ -145,14 +145,14 @@ describe("migration 0076's plan against the cluster", () => {
 
 	it("plans no drop where the column is absent or already in the key", async () => {
 		const sql = sqlOf(
-			await expandMigrationToSteps(migration_0076_retention_storage, "maple", clusterWith([]).exec),
+			await expandMigrationToSteps(migration_0077_retention_storage, "maple", clusterWith([]).exec),
 		)
 		expect(Arr.filter(sql, (statement) => Str.includes("DROP COLUMN")(statement))).toEqual([])
 	})
 
 	it("plans each repair right after merges restart, before the column exists, and before the facet TTL", async () => {
 		const steps = await expandMigrationToSteps(
-			migration_0076_retention_storage,
+			migration_0077_retention_storage,
 			"maple",
 			clusterWith([]).exec,
 		)
@@ -220,7 +220,7 @@ describe("migration 0076's plan against the cluster", () => {
 
 	it("quotes a database name in every repair statement", async () => {
 		const cluster = clusterWith([], ["trace_index"], true)
-		const steps = await expandMigrationToSteps(migration_0076_retention_storage, "ma`ple", cluster.exec)
+		const steps = await expandMigrationToSteps(migration_0077_retention_storage, "ma`ple", cluster.exec)
 		const repair = Option.getOrThrow(
 			Arr.findFirst(steps, (step) => step.repair?.spec.table === "trace_index").pipe(
 				Option.flatMapNullishOr((step) => step.repair),
@@ -235,7 +235,7 @@ describe("migration 0076's plan against the cluster", () => {
 
 	it("restarts merges when a step between a stop and its start fails, and only there", async () => {
 		const steps = await expandMigrationToSteps(
-			migration_0076_retention_storage,
+			migration_0077_retention_storage,
 			"maple",
 			clusterWith([]).exec,
 		)
@@ -256,7 +256,7 @@ describe("migration 0076's plan against the cluster", () => {
 
 	it("restores each pair's DEFAULT before restarting, and lets merges restart only once it reads back", async () => {
 		const steps = await expandMigrationToSteps(
-			migration_0076_retention_storage,
+			migration_0077_retention_storage,
 			"maple",
 			clusterWith([]).exec,
 		)

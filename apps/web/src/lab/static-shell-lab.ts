@@ -14,6 +14,8 @@ export const defineStaticShellLab = (
 		currentPath: string
 		breadcrumbs: ReadonlyArray<Shell.BreadcrumbEntry>
 		page: (h: HtmlBuilder<never>) => Html
+		/** Who the shell is drawn for; an operator when absent. */
+		clerk?: Shell.ShellClerk
 	}>,
 ): LabEntry =>
 	defineShellLab(title, {
@@ -26,4 +28,5 @@ export const defineStaticShellLab = (
 		view: (_model, h) => frame.page(h),
 		currentPath: frame.currentPath,
 		breadcrumbs: frame.breadcrumbs,
+		clerk: frame.clerk,
 	})

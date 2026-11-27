@@ -1,19 +1,20 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Context, Option } from "effect"
 import * as Policy from "../policy"
+import { TENANT_GATES } from "./access-catalog"
 import { MapleAiApi } from "./ai-api"
 import { MapleApi } from "./api"
-import { Authorization, RegionlessSessionAuthorization, SessionAuthorization } from "./current-tenant"
+import { SessionAuthorization } from "./current-tenant"
 import {
 	type CalledEndpoint,
 	decideEndpointAccess,
 	EndpointAccess,
 	endpointAccessRules,
+	handlerChecks,
 	requires,
 	ScopedTelemetry,
 } from "./endpoint-access"
 import { MapleInternalApi } from "./internal-api"
-import { AuthorizationV2 } from "./v2/auth"
 import { MapleApiV2 } from "./v2/api"
 
 type Endpoint = CalledEndpoint["endpoint"] & {
@@ -25,13 +26,7 @@ type Group = CalledEndpoint["group"] & {
 	readonly endpoints: { readonly [name: string]: Endpoint }
 }
 
-/** The middlewares that resolve a tenant, and so run the endpoint gate. */
-const gated: ReadonlyArray<unknown> = [
-	Authorization,
-	SessionAuthorization,
-	RegionlessSessionAuthorization,
-	AuthorizationV2,
-]
+const gated = TENANT_GATES
 
 const apis = [MapleApi, MapleInternalApi, MapleApiV2, MapleAiApi] as const
 
@@ -271,6 +266,47 @@ describe("EndpointAccess", () => {
 			permission: "error_issues:triage",
 		})
 		expect(decideEndpointAccess(MEMBER, transition)._tag).toBe("Allowed")
+	})
+
+	it("asks at the gate only for what a list mark requires, not for what its handler checks", () => {
+		const called: CalledEndpoint = {
+			group: { annotations: Context.empty() },
+			endpoint: {
+				method: "POST",
+				annotations: Context.make(EndpointAccess, [
+					requires("dashboards:edit"),
+					handlerChecks("query:sql"),
+				]),
+			},
+		}
+		expect(decideEndpointAccess(["dashboards:edit"], called)._tag).toBe("Allowed")
+		expect(decideEndpointAccess(["query:sql"], called)).toEqual({
+			_tag: "Denied",
+			permission: "dashboards:edit",
+		})
+	})
+
+	it("keeps a read marked personal open when its mark also names a handler check", () => {
+		const open: CalledEndpoint = {
+			group: { annotations: Context.empty() },
+			endpoint: {
+				method: "GET",
+				annotations: Context.make(EndpointAccess, ["personal", handlerChecks("billing:manage")]),
+			},
+		}
+		expect(decideEndpointAccess([], open)._tag).toBe("Allowed")
+		// Without "personal", the handler mark alone leaves the read default in place.
+		const checked: CalledEndpoint = {
+			group: { annotations: Context.empty() },
+			endpoint: {
+				method: "GET",
+				annotations: Context.make(EndpointAccess, handlerChecks("billing:manage")),
+			},
+		}
+		expect(decideEndpointAccess(["billing:manage"], checked)).toEqual({
+			_tag: "Denied",
+			permission: "telemetry:read",
+		})
 	})
 
 	it("leaves a billing write to its handler, which checks billing:manage", () => {

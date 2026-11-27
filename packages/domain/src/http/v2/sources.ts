@@ -22,7 +22,7 @@ import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 /** `src_…` public ID ⇄ internal `SourceId` (raw UUID). */
 export const SourcePublicId = PublicId(PublicIdPrefixes.source, SourceId)
@@ -540,4 +540,4 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				"Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. Every member can read sources; changing them needs an org-admin or engineer role.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("sources:manage")) {}

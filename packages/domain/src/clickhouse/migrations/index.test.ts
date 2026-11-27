@@ -18,7 +18,7 @@ import { migration_0037_service_overview_spans_span_kind } from "./0037_service_
 import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
 import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
-import { migration_0076_retention_storage } from "./0076_retention_storage"
+import { migration_0077_retention_storage } from "./0077_retention_storage"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { migrationFailureIsSkippable, migrations } from "./index"
 
@@ -349,7 +349,7 @@ describe("migration 0034: trace_facets_hourly", () => {
 		expect(drop).toBe("DROP VIEW IF EXISTS trace_facets_hourly_mv")
 		expect(truncate).toBe("TRUNCATE TABLE IF EXISTS trace_facets_hourly")
 		expect(backfill).toBe(traceFacetsHourlyBackfill)
-		// 0045 moved its TTL onto the partition's day and 0076 added RetentionDays, so the table and
+		// 0045 moved its TTL onto the partition's day and 0077 added RetentionDays, so the table and
 		// view are checked for what this one created.
 		// 0034 predates per-row retention: its table has the fixed TTL and no RetentionDays column.
 		expect(table).toContain("TTL Hour + INTERVAL 30 DAY")
@@ -369,15 +369,15 @@ describe("migration 0037: service_overview_spans records why a row is an entry p
 		expect(addKind).toContain("ADD COLUMN IF NOT EXISTS SpanKind")
 		expect(addRoot).toContain("ADD COLUMN IF NOT EXISTS IsRoot")
 		expect(drop).toBe("DROP VIEW IF EXISTS service_overview_spans_mv")
-		// Migration 0076 recreated the view again, so this one is checked for what it added.
+		// Migration 0077 recreated the view again, so this one is checked for what it added.
 		expect(create).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS service_overview_spans_mv TO")
 		expect(create).toContain("SpanKind")
 		expect(create).toContain("toUInt8(ParentSpanId = '') AS IsRoot")
 	})
 })
 
-describe("migration 0076: span projections and product events carry their retention", () => {
-	const statements = Arr.filter(migration_0076_retention_storage.statements, Predicate.isString)
+describe("migration 0077: span projections and product events carry their retention", () => {
+	const statements = Arr.filter(migration_0077_retention_storage.statements, Predicate.isString)
 	const creates = Arr.filter(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
 	const viewName = (stmt: string) => Arr.getUnsafe(Str.split(" ")(stmt), 6)
 
@@ -410,7 +410,7 @@ describe("migration 0076: span projections and product events carry their retent
 	})
 
 	it("repairs stored 0s after merges restart and before the facet TTL reads RetentionDays", () => {
-		const all = migration_0076_retention_storage.statements
+		const all = migration_0077_retention_storage.statements
 		const at = (predicate: (stmt: (typeof all)[number]) => boolean) => indexWhere(all, predicate)
 		for (const table of ["trace_index", "trace_facets_hourly"]) {
 			const repair = at(
@@ -444,10 +444,10 @@ describe("migration 0076: span projections and product events carry their retent
 			)
 			expect(fromTraces || fromTraceList || intoEvents, viewName(create)).toBe(true)
 		}
-		expect(migration_0076_retention_storage.requiredForIngest).toBe(false)
+		expect(migration_0077_retention_storage.requiredForIngest).toBe(false)
 	})
 	it("fails the apply when a statement fails, so a dropped view is never left missing", () => {
-		expect(migrationFailureIsSkippable(migration_0076_retention_storage)).toBe(false)
+		expect(migrationFailureIsSkippable(migration_0077_retention_storage)).toBe(false)
 		expect(migrationFailureIsSkippable(migration_0068_service_usage_profiles)).toBe(true)
 	})
 	it("adds trace_index's column to its sorting key, then its default, as the schema ships it", () => {

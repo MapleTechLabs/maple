@@ -316,7 +316,7 @@ describe("current local schema identity", () => {
 			"SpanId",
 			"RetentionDays",
 		])
-		// Aggregating: v68 appends its RetentionDays to the sorting key.
+		// Aggregating: v69 appends its RetentionDays to the sorting key.
 		const traceIndex = Option.getOrUndefined(
 			Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === "trace_index"),
 		)

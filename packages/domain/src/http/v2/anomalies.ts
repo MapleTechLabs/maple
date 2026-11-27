@@ -25,7 +25,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicError, publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { AnomalyIncidentPublicId, ErrorIssuePublicId } from "./resource-ids"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 export { AnomalyIncidentPublicId } from "./resource-ids"
 
@@ -483,7 +483,7 @@ export class V2AnomaliesApiGroup extends HttpApiGroup.make("anomalies")
 			success: V2AnomalySettings,
 			error: [anomalyForbidden, anomalyPersistence],
 		})
-			.annotate(EndpointAccess, "handler")
+			.annotate(EndpointAccess, handlerChecks("anomalies:configure"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "updateAnomalySettings",

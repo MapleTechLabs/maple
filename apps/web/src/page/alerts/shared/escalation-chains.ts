@@ -10,12 +10,16 @@ import {
 	type V2AlertIncidentEscalation,
 	type V2EscalationChain,
 	type V2EscalationChainCreateParams,
+	type V2EscalationTarget,
 } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
+import { countLabel } from "@maple/ui/lib/format"
 import { formatAlertTimeNear } from "@maple/web-data/alerts/form-utils"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
+import { memberOf, type OrgMember } from "./org-members"
 
 /** An org holds at most 100 chains, one v2 page. */
 export const CHAIN_LIST_LIMIT = 100
@@ -144,6 +148,57 @@ export const chainSummary = (
 		return previous === undefined ? names : `then ${names} after ${formatWait(previous.wait_minutes)}`
 	})
 	return `${Arr.join(parts, ", ")}${repeatPhrase(chain.repeat_count)}`
+}
+
+const RESPOND = Policy.permissions["incidents:respond"]
+
+/** Why a paged person is marked: "Can't acknowledge or resolve: their role lacks Respond to incidents." */
+export const CANNOT_RESPOND_REASON = `Can't acknowledge or resolve: their role lacks ${RESPOND.label}.`
+
+/**
+ * The people `targets` page by name whose role cannot respond to incidents, each once. Schedules
+ * are not followed, and someone the member list does not name is not guessed at.
+ */
+export const unableToRespond = (
+	targets: ReadonlyArray<V2EscalationTarget>,
+	members: ReadonlyArray<OrgMember> | null,
+): ReadonlyArray<OrgMember> =>
+	Arr.dedupeWith(
+		Arr.flatMap(targets, (target) =>
+			target.type === "user"
+				? Arr.filter(
+						Option.toArray(memberOf(members, target.user_id)),
+						(member) => !member.canRespondToIncidents,
+					)
+				: [],
+		),
+		(a, b) => a.userId === b.userId,
+	)
+
+const nameList = new Intl.ListFormat("en-GB", { type: "conjunction" })
+
+/** A step's line: "Mei Chen can't acknowledge or resolve: their role lacks Respond to incidents." */
+export const cannotRespondSentence = (people: ReadonlyArray<OrgMember>): Option.Option<string> =>
+	people.length === 0
+		? Option.none()
+		: Option.some(
+				`${nameList.format(Arr.map(people, (member) => member.name))} can't acknowledge or resolve: ${
+					people.length === 1 ? "their role lacks" : "their roles lack"
+				} ${RESPOND.label}.`,
+			)
+
+/** A chain row's few words: "Pages 2 people who can't acknowledge and resolve incidents". */
+export const cannotRespondCountText = (
+	chain: ChainOutline,
+	members: ReadonlyArray<OrgMember> | null,
+): Option.Option<string> => {
+	const count = unableToRespond(
+		Arr.flatMap(chain.steps, (step) => step.targets),
+		members,
+	).length
+	return count === 0
+		? Option.none()
+		: Option.some(`Pages ${countLabel(count, "person", "people")} who can't ${RESPOND.action}`)
 }
 
 export type RunState = "escalating" | "paused" | "finished"

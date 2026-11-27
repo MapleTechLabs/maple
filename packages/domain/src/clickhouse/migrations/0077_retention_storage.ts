@@ -1,5 +1,5 @@
 /**
- * Migration 0076: `RetentionDays` on the row-level projections of `traces` and on `product_events`,
+ * Migration 0077: `RetentionDays` on the row-level projections of `traces` and on `product_events`,
  * and `EventsRetentionDays` on `traces` and `session_events` (the source's events period the two
  * product_events views copy), and on `trace_facets_hourly`, rolled up from trace_list_mv. The
  * eleven views that fill them are recreated to select the columns.
@@ -25,7 +25,7 @@
  * in the key. trace_facets_hourly's TTL reads the column, capped at 30 days, so it stays 30
  * here. No other TTL or partition change: self-managed inserts never stamp these columns
  * (`SELF_MANAGED_INSERT_OMITTED_COLUMNS`), so every row holds its default and each table keeps
- * one period. `requiredForIngest: false` for the same reason. Frozen v76 DDL.
+ * one period. `requiredForIngest: false` for the same reason. Frozen v77 DDL.
  *
  * A view's SELECT is frozen at creation, so each other view is dropped and IMMEDIATELY recreated, as in 0020
  * and 0028: a span or session event inserted in that gap never reaches that one target, and
@@ -43,8 +43,8 @@ export const sortingKeyMigrationColumns: ReadonlySet<string> = new Set([
 	"trace_facets_hourly.RetentionDays",
 ])
 
-export const migration_0076_retention_storage = {
-	version: 76,
+export const migration_0077_retention_storage = {
+	version: 77,
 	description:
 		"Add RetentionDays to the span projections and product_events, EventsRetentionDays to traces and session_events, and recreate their views",
 	requiredForIngest: false,

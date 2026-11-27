@@ -22,7 +22,7 @@ export {
 	type MigrationStatement,
 } from "./migrations"
 export { performanceOnlySearchColumns } from "./migrations/0010_search_indexes"
-export { sortingKeyMigrationColumns } from "./migrations/0076_retention_storage"
+export { sortingKeyMigrationColumns } from "./migrations/0077_retention_storage"
 export {
 	type DropUnkeyedColumnSpec,
 	type RepairZeroKeyColumnSpec,

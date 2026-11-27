@@ -59,6 +59,10 @@ enum Telemetry {
 		static let widgetCredential = "widget.credential"
 		static let liveActivitySubmit = "live_activity.submit"
 		static let liveActivityEnd = "live_activity.end"
+		/// Acknowledge, unacknowledge or resolve, from any surface that offers one.
+		static let incidentAction = "incident.action"
+		/// "Send a test page": the request, from the tap to the server's counts.
+		static let testPage = "push.test_page"
 	}
 
 	enum Key {
@@ -80,6 +84,14 @@ enum Telemetry {
 		static let authHasToken = "maple.app.auth.has_token"
 		static let membershipCount = "maple.app.auth.membership_count"
 		static let pushKind = "maple.app.push.kind"
+		static let incidentAction = "maple.app.incident.action"
+		/// Where it was taken: `incident`, `triage`, `overview`, `notification`.
+		static let incidentActionSurface = "maple.app.incident.action_surface"
+		/// Where the test page was asked for: `settings` or `on_call`.
+		static let testPageSurface = "maple.app.test_page.surface"
+		/// What it came to: `sent`, `no_phone`, `not_configured`, `failed`.
+		static let testPageOutcome = "maple.app.test_page.outcome"
+		static let testPageSentCount = "maple.app.test_page.sent_count"
 		static let pushColdStart = "maple.app.push.cold_start"
 		static let widgetTrigger = "maple.app.widget.trigger"
 		static let widgetOrganizationCount = "maple.app.widget.organization_count"
@@ -112,6 +124,14 @@ enum Telemetry {
 		// change exists to fix. Drained by WidgetPublisher on the next round.
 		/// How the extension's last fetch ended: success, unauthorized, …
 		static let widgetFetchOutcome = "maple.app.widget.fetch.outcome"
+		static let widgetPagesTapOutcome = "maple.app.widget.pages.tap.outcome"
+		static let widgetPagesReadOutcome = "maple.app.widget.pages.read.outcome"
+		static let widgetPagesReadFailures = "maple.app.widget.pages.read.consecutive_failures"
+		static let widgetPagesTapAgeSeconds = "maple.app.widget.pages.tap.age_seconds"
+		/// How the last on-call read ended, from a widget or the app: fetched,
+		/// no_credential, needs_app, failed.
+		static let widgetOnCallReadOutcome = "maple.app.widget.oncall.read.outcome"
+		static let widgetOnCallReadFailures = "maple.app.widget.oncall.read.consecutive_failures"
 		/// Seconds since the extension last fetched successfully. Absent when it
 		/// never has, which is a different statement from "a long time ago".
 		static let widgetFetchAgeSeconds = "maple.app.widget.fetch.age_seconds"
@@ -150,6 +170,8 @@ enum Telemetry {
 		static let serviceOperationsSorted = "service.operations.sorted"
 		static let notificationsPrompted = "notifications.prompted"
 		static let pushOpened = "push.opened"
+		static let incidentActed = "incident.acted"
+		static let testPageSent = "test_page.sent"
 		static let widgetOpened = "widget.opened"
 		static let apiFailed = "api.failed"
 	}
@@ -202,6 +224,8 @@ enum Screen {
 	static let issueDetail = "Issue"
 	static let anomalies = "Anomalies"
 	static let anomalyDetail = "Anomaly"
+	static let onCall = "On Call"
+	static let onCallSchedule = "On Call Schedule"
 	static let traces = "Traces"
 	static let traceDetail = "Trace"
 	static let logs = "Logs"
@@ -636,6 +660,7 @@ extension LoadReason {
 		case .initial: "initial"
 		case .refresh: "refresh"
 		case .replace: "replace"
+		case .afterWrite: "after_write"
 		}
 	}
 }

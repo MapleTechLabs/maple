@@ -111,6 +111,8 @@ export const Model = Schema.Struct({
 	supportChannel: SupportChannel.Model,
 	/** `quota-banner-approaching` in sessionStorage: the approaching-quota banner was dismissed. */
 	isQuotaApproachingDismissed: Schema.Boolean,
+	/** `maple.ios-app-prompt.dismissed.<userId>`: the users who closed the iPhone app card here. */
+	iosPromptDismissedUsers: Schema.Array(Schema.String),
 	/** The server serves a newer build than this tab. */
 	isAppOutdated: Schema.Boolean,
 	/** The command palette and the shortcuts dialog, `null` while unmounted. */
@@ -126,6 +128,8 @@ export type Model = typeof Model.Type
  * self-hosted.
  */
 export type ShellClerk = Readonly<{
+	/** Keys what one user dismissed in this browser. */
+	maybeUserId: Option.Option<string>
 	maybeUser: Option.Option<ClerkUser>
 	maybeOrganization: Option.Option<ClerkOrganization>
 	memberships: ReadonlyArray<ClerkOrganization>
@@ -175,6 +179,7 @@ export type ShellFlags = Readonly<{
 	noScheduleOrgs?: Readonly<Record<string, number>>
 	rememberedSurfaces?: Readonly<Record<string, ReadonlyArray<NavSurface>>>
 	isQuotaApproachingDismissed?: boolean
+	iosPromptDismissedUsers?: ReadonlyArray<string>
 	platform?: Platform
 }>
 
@@ -214,6 +219,7 @@ export const init = (flags: ShellFlags): Model => ({
 	connect: ConnectPanel.init(),
 	supportChannel: SupportChannel.init(),
 	isQuotaApproachingDismissed: flags.isQuotaApproachingDismissed ?? false,
+	iosPromptDismissedUsers: flags.iosPromptDismissedUsers ?? [],
 	palette: null,
 	shortcutsDialog: null,
 	platform: flags.platform ?? "mac",

@@ -34,6 +34,8 @@ const evaluator = (name: string, overrides: Partial<AiEvaluatorSummary> = {}): A
 	avgValue: 0.75,
 	errorCount: 0,
 	traceCount: 9,
+	filterablePassCount: 8,
+	filterableFailCount: 2,
 	sources: ["log"],
 	annotatorKinds: ["llm"],
 	lastSeen: "2026-10-01 11:00:00",

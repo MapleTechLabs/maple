@@ -25,15 +25,38 @@ import {
 	ChatWorkspaces,
 	type AlertMemberNotificationRow,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, Exit, Layer, Option, Random, Ref, Schema } from "effect"
+import {
+	Array as Arr,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Random,
+	Ref,
+	Schema,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
-import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import {
+	MobilePushService,
+	renderLiveActivityAttributes,
+	renderLiveActivityState,
+	type LiveActivitySubject,
+} from "@maple/backend/services/push/MobilePushService"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { buildAlertEmailContent } from "./alert-email"
+import {
+	displayGroup,
+	formatObservedSummary,
+	signalCarriesDetail,
+	signalDisplayOf,
+	truncate,
+} from "./alert-formatting"
 import { PUSH_CHANNEL } from "./alert-escalation-runs"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
@@ -71,6 +94,40 @@ const FailureMessages = {
 } as const
 
 export const LAST_RESORT_SUBJECT_PREFIX = "Nobody on call was reached: "
+/** A check's own sentence can run long; the banner shows a few lines at most. */
+const PAGE_BODY_LIMIT = 160
+
+/**
+ * A page's banner: who it is for in the title, what breached in the body, so the lock screen is
+ * enough to decide whether to acknowledge.
+ */
+export const renderPagePush = (
+	context: ChatAlertCardInput["context"],
+): { title: string; subtitle: string | undefined; body: string } => {
+	const severity = context.severity === "critical" ? "Critical" : "Warning"
+	const observed = truncate(formatObservedSummary(context), PAGE_BODY_LIMIT)
+	// An uptime error, an anomaly, a check's own reason or "No data" is already a sentence; a
+	// measured value needs its name. A query rule's name and unit live on the rule, which a queued
+	// page does not carry, so its numbers stand bare rather than under the word "query".
+	const saysItself =
+		context.signalType === "uptime" ||
+		context.signalType === "anomaly" ||
+		context.value === null ||
+		(signalCarriesDetail(context.signalType) && context.detail != null) ||
+		(context.signalDisplay == null &&
+			(context.signalType === "builder_query" || context.signalType === "raw_query"))
+	const breach = saysItself ? observed : `${signalDisplayOf(context).label} ${observed}`
+	const sentence = /[.!?…]$/u.test(breach) ? breach : `${breach}.`
+	return {
+		title: `You are paged · ${truncate(context.ruleName, 60)}`,
+		// Which group or service breached, for a rule that watches several.
+		subtitle: displayGroup(context) ?? undefined,
+		// "Critical anomaly." already leads with the severity; it is not said twice.
+		body: Str.startsWith(Str.toLowerCase(severity))(Str.toLowerCase(sentence))
+			? sentence
+			: `${severity}. ${sentence}`,
+	}
+}
 
 /** The stored step payload, read leniently: only what the email and the card show. */
 const MemberPayload = Schema.Struct({
@@ -84,6 +141,7 @@ const MemberPayload = Schema.Struct({
 			signalType: Schema.optionalKey(Schema.String),
 			severity: Schema.optionalKey(Schema.String),
 			groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			groupLabel: Schema.optionalKey(Schema.NullOr(Schema.String)),
 			comparator: Schema.optionalKey(Schema.String),
 			threshold: Schema.optionalKey(Schema.Number),
 			thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
@@ -144,6 +202,7 @@ const cardInput = (
 			ruleId: rule?.id ?? "",
 			ruleName: rule?.name ?? "Alert",
 			groupKey: rule?.groupKey ?? null,
+			groupLabel: rule?.groupLabel ?? null,
 			signalType: Option.getOrElse(decodeSignalType(rule?.signalType), () => "throughput" as const),
 			severity: Option.getOrElse(decodeSeverity(rule?.severity), () => "warning" as const),
 			comparator: Option.getOrElse(decodeComparator(rule?.comparator), () => "gt" as const),
@@ -264,7 +323,14 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 				dbExecute((db) =>
 					db.run(
 						PG.from(AlertIncidents)
-							.select("status", "acknowledgedAt")
+							.select(
+								"status",
+								"acknowledgedAt",
+								"firstTriggeredAt",
+								"severity",
+								"lastObservedValue",
+								"lastEvaluatedAt",
+							)
 							.where(($) => [$.id.eq(row.incidentId), $.orgId.eq(row.orgId)])
 							.limit(1),
 					),
@@ -327,18 +393,54 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 			 * connector is tried, oldest first; only "no such user" moves on to the next one.
 			 */
 			/** The member's own phones. A phone that has gone since the step queued this is no failure. */
-			const sendPush = (row: AlertMemberNotificationRow, input: ChatAlertCardInput) =>
+			const sendPush = (
+				row: AlertMemberNotificationRow,
+				input: ChatAlertCardInput,
+				incident: {
+					readonly firstTriggeredAt: number
+					readonly severity: string
+					readonly lastObservedValue: number | null
+					readonly lastEvaluatedAt: number | null
+				},
+			) =>
 				Effect.gen(function* () {
 					const context = input.context
+					const nowMs = yield* runtime.now
+					const openForMs = Math.max(0, nowMs - incident.firstTriggeredAt)
+					// What the phone's Lock Screen card is drawn from, as an incident push draws it.
+					const subject: LiveActivitySubject = {
+						orgId: row.orgId,
+						incidentId: row.incidentId,
+						ruleName: context.ruleName,
+						groupKey: context.groupKey,
+						groupLabel: context.groupLabel ?? null,
+						signalType: context.signalType,
+						signalDisplay: signalDisplayOf(context),
+						serviceNames: [],
+						openForMs,
+						// The latest reading, not the one the step was queued with: the banner is what the
+						// page said, the card is what the incident says now.
+						value: incident.lastObservedValue ?? context.value,
+						comparator: context.comparator,
+						threshold: context.threshold,
+						thresholdUpper: context.thresholdUpper,
+						eventType: "trigger",
+					}
 					const summary = yield* mobilePush.pageMember({
 						orgId: row.orgId,
 						userId: row.userId,
 						incidentId: row.incidentId,
 						ruleId: context.ruleId,
-						title: `You are paged · ${context.ruleName}`,
-						body: `${context.severity === "critical" ? "Critical" : "Warning"} incident, unacknowledged. Open it to acknowledge.`,
+						...renderPagePush(context),
 						linkUrl: input.linkUrl,
 						collapseId: `page:${row.incidentId}`,
+						// The incident's severity now, which a tier change may have moved since the page was queued.
+						severity: Option.getOrElse(decodeSeverity(incident.severity), () => context.severity),
+						openForMs,
+						liveActivity: {
+							attributes: renderLiveActivityAttributes(subject, nowMs),
+							contentState: renderLiveActivityState(subject, incident.lastEvaluatedAt ?? nowMs),
+						},
 					})
 					// Without push credentials nothing was tried: say that, not that the member has no phone.
 					const attempt: Attempt = !summary.configured
@@ -479,7 +581,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 									payload.value.recipient.lastResort === true,
 								)
 							: row.channel === PUSH_CHANNEL
-								? yield* sendPush(row, input.value)
+								? yield* sendPush(row, input.value, incident.value)
 								: yield* sendDirectMessage(row, payload.value, input.value)
 				const attemptedAt = yield* runtime.now
 				if (attempt.status === "sent") {

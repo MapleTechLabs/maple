@@ -176,6 +176,12 @@ describe("permission codes", () => {
 			"query:sql",
 		])
 	})
+
+	it("stores a permission named twice once", () => {
+		expect(Policy.encodePermissions(["query:sql", "alerts:manage", "query:sql"])).toEqual(
+			Policy.encodePermissions(["query:sql", "alerts:manage"]),
+		)
+	})
 })
 
 describe("custom role metadata", () => {
@@ -243,6 +249,12 @@ describe("namespace-limited roles", () => {
 		expect(scopedGrants).toEqual([Policy.SCOPED_READ, "support:join"])
 		expect(Policy.can(scopedGrants, "telemetry:read")).toBe(false)
 		expect(Policy.isScoped(scopedGrants)).toBe(true)
+	})
+
+	it("is not limited when it also holds Read telemetry, or holds neither read", () => {
+		expect(Policy.isScoped(["telemetry:read", Policy.SCOPED_READ])).toBe(false)
+		expect(Policy.isScoped(["telemetry:read"])).toBe(false)
+		expect(Policy.isScoped(["billing:manage"])).toBe(false)
 	})
 
 	// Only the roles API keeps the two apart when a role is saved; stored codes are not trusted to.

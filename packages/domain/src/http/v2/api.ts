@@ -4,6 +4,7 @@ import { V2AlertDestinationsApiGroup } from "./alert-destinations"
 import { V2AnomaliesApiGroup } from "./anomalies"
 import { V2AlertIncidentsApiGroup } from "./alert-incidents"
 import { V2EscalationChainsApiGroup } from "./escalation-chains"
+import { V2OnCallOverviewApiGroup, V2WidgetOnCallApiGroup } from "./oncall-overview"
 import { V2OnCallSchedulesApiGroup } from "./oncall-schedules"
 import { V2AlertSilencesApiGroup } from "./alert-silences"
 import { V2AlertMaintenanceWindowsApiGroup } from "./alert-maintenance-windows"
@@ -43,6 +44,7 @@ import { V2SupportChannelApiGroup } from "./support-channel"
 import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
 import { V2SharePublicApiGroup } from "./share"
 import { V2WidgetCredentialsApiGroup } from "./widget-credentials"
+import { V2WidgetPagesApiGroup } from "./widget-pages"
 import { V2WidgetSummaryApiGroup } from "./widget-summary"
 import {
 	V2EnvironmentsApiGroup,
@@ -53,6 +55,8 @@ import {
 	V2TracesApiGroup,
 } from "./telemetry"
 import { V2SchemaErrors, V2UnexpectedErrors } from "./auth"
+import { accessCatalogOf } from "../access-catalog"
+import { addAccessRequirements } from "./openapi-access"
 import { collapseQueryParameterNullBranches } from "./openapi-nullable"
 import { Predicate, Record as Rec, Array as Arr } from "effect"
 
@@ -94,19 +98,8 @@ const addRateLimitResponseHeaders = <S extends OpenApiSpec>(spec: S): S => {
 	return spec
 }
 
-/**
- * The Maple v2 public API (see docs/api-v2.md).
- *
- * Stripe-style conventions: `/v2/<resource>` nouns, prefixed public IDs,
- * `{object:"list",data,has_more,next_cursor}` list envelopes, the
- * `{error:{type,code,message}}` error envelope, snake_case wire fields,
- * ISO-8601 timestamps, and scoped API keys.
- *
- * Mounted alongside the unversioned `MapleApi` (auth protocols) and the
- * session-only `MapleInternalApi`; groups are added here as they are promoted
- * to the public surface. Dashboard-only operations go to `MapleInternalApi`.
- */
-export class MapleApiV2 extends HttpApi.make("MapleApiV2")
+// The groups, named apart from the class so the document transform can read their access marks.
+const v2Groups = HttpApi.make("MapleApiV2")
 	.add(V2ApiKeysApiGroup)
 	.add(V2DashboardsApiGroup)
 	.add(V2AlertRulesApiGroup)
@@ -115,6 +108,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AlertIncidentsApiGroup)
 	.add(V2EscalationChainsApiGroup)
 	.add(V2OnCallSchedulesApiGroup)
+	.add(V2OnCallOverviewApiGroup)
 	.add(V2AlertSilencesApiGroup)
 	.add(V2AlertMaintenanceWindowsApiGroup)
 	.add(V2IngestKeysApiGroup)
@@ -157,63 +151,76 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2EnvironmentsApiGroup)
 	.add(V2SharePublicApiGroup)
 	.add(V2WidgetSummaryApiGroup)
+	.add(V2WidgetPagesApiGroup)
+	.add(V2WidgetOnCallApiGroup)
 	.add(V2WidgetCredentialsApiGroup)
 	.add(V2DeviceCredentialsApiGroup)
 	.add(V2DeviceTokensApiGroup)
 	.middleware(V2SchemaErrors)
 	.middleware(V2UnexpectedErrors)
-	.annotateMerge(
-		OpenApi.annotations({
-			title: "Maple API",
-			version: "2.0.0",
-			summary: "The public, stability-committed HTTP API for the Maple observability platform.",
-			description: Arr.join(
-				[
-					"The Maple public API is a resource-oriented REST interface for customer-stable resources and workflows.",
-					"It follows Stripe's design philosophy, modernized where useful:",
-					"",
-					"- **Resources** are plural nouns under `/v2` (`/v2/api_keys`). Related resources share a product namespace (`/v2/alerts/rules`, `/v2/alerts/destinations`). Non-CRUD verbs are sub-resource POSTs (`/v2/api_keys/{id}/roll`).",
-					"- **Object IDs** are opaque, prefixed strings (`key_…`, `dash_…`) — reversible encodings of internal IDs.",
-					"- **Wire format** is snake_case JSON with an `object` type field on every resource and ISO-8601 UTC timestamps.",
-					'- **Lists** use cursor pagination and a uniform `{ object: "list", data, has_more, next_cursor }` envelope.',
-					"- **Errors** use a uniform `{ error: { _tag, type, code, title, message, retryable, recovery } }` envelope. `_tag` is the semantic Maple error identity; `code` remains the stable public integration key.",
-					"- **Auth** is a Bearer API key (`maple_ak_…`) or dashboard session token; keys can be restricted with scopes.",
-					"",
-					"See `docs/api-v2.md` for the full conventions.",
-				],
-				"\n",
-			),
-			servers: [
-				{ url: "https://api.maple.dev", description: "Production" },
-				{ url: "https://api.eu.maple.dev", description: "Production, EU region" },
+
+/**
+ * The Maple v2 public API (see docs/api-v2.md).
+ *
+ * Stripe-style conventions: `/v2/<resource>` nouns, prefixed public IDs,
+ * `{object:"list",data,has_more,next_cursor}` list envelopes, the
+ * `{error:{type,code,message}}` error envelope, snake_case wire fields,
+ * ISO-8601 timestamps, and scoped API keys.
+ *
+ * Mounted alongside the unversioned `MapleApi` (auth protocols) and the
+ * session-only `MapleInternalApi`; groups are added here as they are promoted
+ * to the public surface. Dashboard-only operations go to `MapleInternalApi`.
+ */
+export class MapleApiV2 extends v2Groups.annotateMerge(
+	OpenApi.annotations({
+		title: "Maple API",
+		version: "2.0.0",
+		summary: "The public, stability-committed HTTP API for the Maple observability platform.",
+		description: Arr.join(
+			[
+				"The Maple public API is a resource-oriented REST interface for customer-stable resources and workflows.",
+				"It follows Stripe's design philosophy, modernized where useful:",
+				"",
+				"- **Resources** are plural nouns under `/v2` (`/v2/api_keys`). Related resources share a product namespace (`/v2/alerts/rules`, `/v2/alerts/destinations`). Non-CRUD verbs are sub-resource POSTs (`/v2/api_keys/{id}/roll`).",
+				"- **Object IDs** are opaque, prefixed strings (`key_…`, `dash_…`) — reversible encodings of internal IDs.",
+				"- **Wire format** is snake_case JSON with an `object` type field on every resource and ISO-8601 UTC timestamps.",
+				'- **Lists** use cursor pagination and a uniform `{ object: "list", data, has_more, next_cursor }` envelope.',
+				"- **Errors** use a uniform `{ error: { _tag, type, code, title, message, retryable, recovery } }` envelope. `_tag` is the semantic Maple error identity; `code` remains the stable public integration key.",
+				"- **Auth** is a Bearer API key (`maple_ak_…`) or dashboard session token; keys can be restricted with scopes.",
+				"",
+				"See `docs/api-v2.md` for the full conventions.",
 			],
-			// `info.contact` and top-level `externalDocs` have no dedicated annotation
-			// key (they are not in `OpenAPISpecInfo`), so inject them via the api-level
-			// spec transform, which receives the whole generated document.
-			transform: (spec) => {
-				const withRateLimitHeaders = collapseQueryParameterNullBranches(
-					addRateLimitResponseHeaders(spec),
-				)
-				// The generated document is `Record<string, any>`; `info` is checked before it is spread.
-				const generatedInfo: unknown = withRateLimitHeaders.info
-				const info: Record<PropertyKey, unknown> = Predicate.isObject(generatedInfo)
-					? generatedInfo
-					: {}
-				return {
-					...withRateLimitHeaders,
-					info: {
-						...info,
-						contact: {
-							name: "Maple Support",
-							url: "https://maple.dev",
-							email: "support@maple.dev",
-						},
+			"\n",
+		),
+		servers: [
+			{ url: "https://api.maple.dev", description: "Production" },
+			{ url: "https://api.eu.maple.dev", description: "Production, EU region" },
+		],
+		// `info.contact` and top-level `externalDocs` have no dedicated annotation
+		// key (they are not in `OpenAPISpecInfo`), so inject them via the api-level
+		// spec transform, which receives the whole generated document.
+		transform: (spec) => {
+			const withRateLimitHeaders = addAccessRequirements(accessCatalogOf([v2Groups]))(
+				collapseQueryParameterNullBranches(addRateLimitResponseHeaders(spec)),
+			)
+			// The generated document is `Record<string, any>`; `info` is checked before it is spread.
+			const generatedInfo: unknown = withRateLimitHeaders.info
+			const info: Record<PropertyKey, unknown> = Predicate.isObject(generatedInfo) ? generatedInfo : {}
+			return {
+				...withRateLimitHeaders,
+				info: {
+					...info,
+					contact: {
+						name: "Maple Support",
+						url: "https://maple.dev",
+						email: "support@maple.dev",
 					},
-					externalDocs: {
-						url: "https://api.maple.dev/v2/docs",
-						description: "Interactive Maple API reference",
-					},
-				}
-			},
-		}),
-	) {}
+				},
+				externalDocs: {
+					url: "https://api.maple.dev/v2/docs",
+					description: "Interactive Maple API reference",
+				},
+			}
+		},
+	}),
+) {}

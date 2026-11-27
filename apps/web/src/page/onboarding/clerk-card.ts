@@ -1,5 +1,6 @@
 import { clerkAuthCardAppearance } from "../../platform/clerk-appearance"
-import { Effect, Schema } from "effect"
+import { clearAdClickCookies, readAdClick } from "../../platform/ad-click"
+import { Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./index"
@@ -24,8 +25,21 @@ export const MountClerkCard = Mount.define("MountClerkCard", {
 				const props = forceRedirectUrl === null ? { appearance } : { appearance, forceRedirectUrl }
 				const taskProps = { appearance, redirectUrlComplete: forceRedirectUrl ?? "/" }
 				if (component === "SignIn") clerk.mountSignIn(element, props)
-				else if (component === "SignUp") clerk.mountSignUp(element, props)
-				else if (component === "TaskResetPassword") clerk.mountTaskResetPassword(element, taskProps)
+				else if (component === "SignUp") {
+					// The landing site's ad click rides along, so the API can report the sign-up.
+					// Global Privacy Control turned on after the click still keeps it out of sign-up.
+					const gpc = "globalPrivacyControl" in navigator && navigator.globalPrivacyControl === true
+					if (gpc) {
+						for (const cookie of clearAdClickCookies(location.hostname)) document.cookie = cookie
+					}
+					const adClick = gpc ? Option.none() : readAdClick(document.cookie)
+					clerk.mountSignUp(
+						element,
+						Option.isSome(adClick)
+							? { ...props, unsafeMetadata: { adClick: adClick.value } }
+							: props,
+					)
+				} else if (component === "TaskResetPassword") clerk.mountTaskResetPassword(element, taskProps)
 				else clerk.mountTaskSetupMFA(element, taskProps)
 			}),
 			() =>

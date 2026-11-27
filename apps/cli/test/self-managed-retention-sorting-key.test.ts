@@ -293,7 +293,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 		)
 	}
 
-	test("the local v68 step moves 0s a resumed store holds to 30, and no row is lost", async () => {
+	test("the local v69 step moves 0s a resumed store holds to 30, and no row is lost", async () => {
 		const db = await open("local-zeros", v75Table)
 		failBeforeDefault(db, keyAlter)
 		applyStepOperations(db, localOperations())
@@ -303,7 +303,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 	}, 60_000)
 
 	for (const [point, crashedAfter] of crashPoints)
-		test(`the local v68 step resumed after a crash after ${point} neither duplicates nor leaves a 0`, async () => {
+		test(`the local v69 step resumed after a crash after ${point} neither duplicates nor leaves a 0`, async () => {
 			const db = await open(`local-crash-${point}`, v75Table)
 			failBeforeDefault(db, keyAlter)
 			let crashed = false

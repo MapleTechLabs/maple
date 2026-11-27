@@ -1,5 +1,5 @@
 import { encodeJson } from "@maple/views/data/request-key"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 import type { ListAiSessionsInput } from "@maple/web-data/warehouse/ai-sessions"
 import type { Types } from "effect"
@@ -38,6 +38,8 @@ export const FILTER_KEYS = [
 	"llmCallsMax",
 	"toolCallsMin",
 	"toolCallsMax",
+	"evaluator",
+	"evaluatorVerdict",
 ] as const satisfies ReadonlyArray<keyof Search>
 
 /** Each range section's URL params. */
@@ -76,6 +78,32 @@ const some = (values: ReadonlyArray<string> | undefined) =>
 
 export type FilterInputs = Omit<ListAiSessionsInput, "limit" | "offset">
 
+/** The search an org reads under: the evaluation filter only inside the `llmEvals` rollout. */
+export const effectiveSearch = (search: Search, hasEvals: boolean): Search =>
+	hasEvals ? search : { ...search, evaluator: undefined, evaluatorVerdict: undefined }
+
+/** The evaluation filter of a search; a verdict alone filters nothing, a name alone means `fail`. */
+export const evaluationOf = (search: Search) => {
+	const name = search.evaluator === undefined ? "" : Str.trim(search.evaluator)
+	return name === "" ? undefined : { name, verdict: search.evaluatorVerdict ?? "fail" }
+}
+
+/** A facet option of the evaluation section: the verdict, a colon, the evaluator's name. */
+export const evaluationOptionKey = (evaluation: { readonly name: string; readonly verdict: string }) =>
+	`${evaluation.verdict}:${evaluation.name}`
+
+const EVALUATION_OPTION = /^(pass|fail):([\s\S]+)$/
+
+/** The evaluator and verdict an option key names; undefined for a key no option has. */
+export const parseEvaluationOptionKey = (
+	key: string,
+): { readonly name: string; readonly verdict: "pass" | "fail" } | undefined => {
+	const match = Option.getOrUndefined(Str.match(EVALUATION_OPTION)(key))
+	const verdict = match?.[1]
+	const name = match?.[2]
+	return (verdict === "pass" || verdict === "fail") && name !== undefined ? { name, verdict } : undefined
+}
+
 /** The warehouse filter inputs for a search and the resolved window. */
 export const filterInputs = (search: Search, window: TimeWindow): FilterInputs => {
 	const sort = sortOf(search)
@@ -102,6 +130,7 @@ export const filterInputs = (search: Search, window: TimeWindow): FilterInputs =
 		llmCallsMax: search.llmCallsMax,
 		toolCallsMin: search.toolCallsMin,
 		toolCallsMax: search.toolCallsMax,
+		evaluation: evaluationOf(search),
 		...(isDefaultSort(sort) ? undefined : sort),
 	}
 }
@@ -126,6 +155,7 @@ const OPTIONAL_INPUT_KEYS = [
 	"llmCallsMax",
 	"toolCallsMin",
 	"toolCallsMax",
+	"evaluation",
 	"sortBy",
 	"sortDir",
 ] as const satisfies ReadonlyArray<keyof FilterInputs>

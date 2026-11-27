@@ -37,11 +37,18 @@ import {
 } from "./device/dpop-proof"
 import { base64url } from "@maple/backend/platform/jwt"
 import { EcPublicJwk, importEcPublicJwk, jwkThumbprint, sha256 } from "./device/jose"
-import type * as Policy from "@maple/domain/policy"
+import * as Policy from "@maple/domain/policy"
 import { pinAuthority, pinnedGrants } from "./pinned-authority"
 
-/** Every ceiling is the server's: a registering client names a key and nothing else. */
-export const DEVICE_CREDENTIAL_SCOPES = ["widget_summary:read"] as const
+/**
+ * Every ceiling is the server's: a registering client names a key and nothing else. `write` is
+ * acknowledging a page from the Pages widget, the one write under `/v2/widget_summary`, so only a
+ * member who may respond to incidents gets it: the widget offers its button by this scope.
+ */
+export const deviceCredentialScopes = (permissions: Policy.Grants): ReadonlyArray<string> =>
+	Policy.can(permissions, "incidents:respond")
+		? ["widget_summary:read", "widget_summary:write"]
+		: ["widget_summary:read"]
 const ROLLING_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const HARD_CAP_MS = 90 * 24 * 60 * 60 * 1000
 export const DEVICE_TOKEN_TTL_SECONDS = 60 * 60
@@ -303,6 +310,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 				// The credential re-pins the session's authority on every registration.
 				const pinned = pinAuthority(tenant)
 				const pinnedColumns = { roles: pinned.roles, permissions: pinned.permissions ?? null }
+				const scopes = [...deviceCredentialScopes(tenant.permissions)]
 				yield* Effect.annotateCurrentSpan({
 					orgId: tenant.orgId,
 					"tenant.userId": tenant.userId,
@@ -393,6 +401,9 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 													existing.hardExpiresAt,
 												),
 												...pinnedColumns,
+												// A scope added since this key registered reaches it here, and
+												// one the member's role no longer earns leaves.
+												scopes,
 												...(attestation === undefined
 													? undefined
 													: { attested: true, attestation: attestation.metadata }),
@@ -446,7 +457,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 											publicJwk: params.publicJwk,
 											jkt,
 											...pinnedColumns,
-											scopes: [...DEVICE_CREDENTIAL_SCOPES],
+											scopes,
 											attested: attestation !== undefined,
 											attestation: attestation?.metadata ?? null,
 											createdAt: now,

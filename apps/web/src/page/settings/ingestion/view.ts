@@ -7,7 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
-import { icon } from "@maple/views/ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../../kit/settings-section"
@@ -100,7 +100,7 @@ const statusBanner = (h: H, model: Model): Html => {
 }
 
 /** The OTLP endpoint plus the org's ingest key pair. The pair is admin-only, so members see the endpoint. */
-const endpointAndKeysSection = (h: H, model: Model): Html =>
+export const endpointAndKeysSection = (h: H, model: Model, isHosted: boolean): Html =>
 	settingsSection(
 		h,
 		{
@@ -137,21 +137,48 @@ const endpointAndKeysSection = (h: H, model: Model): Html =>
 					}),
 					...(canViewKeys(model) ? ingestKeyRows(h, model) : []),
 					manageSourcesRow(h),
+					// PrivateLink reaches Maple's own ingest, so a self-hosted install has nothing to request.
+					...(isHosted ? [privateLinkRow(h)] : []),
 				],
 			),
 		],
 	)
 
+/** A one-line pointer under the keys: an icon, a sentence and a link out. */
+const pointerRow = (
+	h: H,
+	options: { readonly icon: IconName; readonly text: string; readonly href: string; readonly link: string },
+): Html =>
+	hstack(h, { gap: "2", align: "center", className: "text-muted-foreground px-4 py-2.5 text-xs" }, [
+		icon(h, options.icon, { size: 12, className: "shrink-0" }),
+		h.span([h.Class("grow font-prose")], [options.text]),
+		textLink(
+			h,
+			{ href: options.href, tone: "inherit", className: "text-foreground shrink-0 whitespace-nowrap" },
+			[options.link, icon(h, "ChevronRightIcon", { size: 12 })],
+		),
+	])
+
 /** The pointer to `/sources` under the keys. */
 const manageSourcesRow = (h: H): Html =>
-	hstack(h, { gap: "2", align: "center", className: "text-muted-foreground px-4 py-2.5 text-xs" }, [
-		icon(h, "ConnectionIcon", { size: 12, className: "shrink-0" }),
-		h.span([h.Class("grow font-prose")], ["Give each sender its own token, rules and pause switch."]),
-		textLink(h, { href: "/sources", tone: "inherit", className: "text-foreground" }, [
-			"Manage sources",
-			icon(h, "ChevronRightIcon", { size: 12 }),
-		]),
-	])
+	pointerRow(h, {
+		icon: "ConnectionIcon",
+		text: "Give each sender its own token, rules and pause switch.",
+		href: "/sources",
+		link: "Manage sources",
+	})
+
+/** PrivateLink is set up per org by hand, so the request is an email with what we need to start. */
+const PRIVATE_LINK_REQUEST_URL = `mailto:support@maple.dev?subject=${encodeURIComponent("AWS PrivateLink request")}&body=${encodeURIComponent("AWS region:\nAWS account ID that will connect:\nMaple organization:\n")}`
+
+/** AWS PrivateLink is available on request, so it is a pointer, not a setting. */
+const privateLinkRow = (h: H): Html =>
+	pointerRow(h, {
+		icon: "LockIcon",
+		text: "Sending from AWS? Reach Maple over PrivateLink, off the public internet. On request.",
+		href: PRIVATE_LINK_REQUEST_URL,
+		link: "Request PrivateLink",
+	})
 
 const rollKeyDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {
@@ -220,13 +247,13 @@ const addServiceSection = (h: H, model: Model): Html => {
 	)
 }
 
-/** The tab takes everything from its Model. */
-type NoInputs = Readonly<{ readonly none?: never }>
+/** Whether this is hosted Maple (Clerk auth) rather than a self-hosted install. */
+export type ViewInputs = Readonly<{ readonly isHosted: boolean }>
 
-export const view = Submodel.defineView<Model, Message, NoInputs>((model, _inputs, h) =>
+export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	settingsSections(h, [
 		statusBanner(h, model),
-		endpointAndKeysSection(h, model),
+		endpointAndKeysSection(h, model, inputs.isHosted),
 		addServiceSection(h, model),
 		...recommendationsSection(h, model),
 		ingestRulesSection(h, model.ingestRules, canManageRules(model)),

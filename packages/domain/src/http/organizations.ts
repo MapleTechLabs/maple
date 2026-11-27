@@ -8,7 +8,7 @@ import {
 	UserSessionAuthorization,
 } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 export class DeleteOrganizationResponse extends Schema.Class<DeleteOrganizationResponse>(
 	"DeleteOrganizationResponse",
@@ -103,7 +103,7 @@ export class OrganizationsApiGroup extends HttpApiGroup.make("organizations")
 	)
 	.prefix("/internal/organizations")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("organization:manage")) {}
 
 export class CreateOrganizationRequest extends Schema.Class<CreateOrganizationRequest>(
 	"CreateOrganizationRequest",
@@ -153,4 +153,4 @@ export class OrganizationRegionApiGroup extends HttpApiGroup.make("organizationR
 	)
 	.prefix("/internal/organizations")
 	.middleware(RegionlessSessionAuthorization)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("organization:manage")) {}

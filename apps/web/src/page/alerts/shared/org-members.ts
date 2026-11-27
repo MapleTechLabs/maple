@@ -1,10 +1,12 @@
 import { UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import {
 	type ClerkMembershipResource,
 	type ClerkOrganizationResource,
 	clerkTry,
 	currentClerkOrganization,
+	membershipGrants,
 } from "../../../platform/clerk"
 
 // The org's members as the on-call pickers and names read them: Clerk's memberships, every page
@@ -19,10 +21,19 @@ export const OrgMember = Schema.Struct({
 	email: Schema.String,
 	/** `""` without an uploaded image: the warm initials tile stands in. */
 	imageUrl: Schema.String,
+	/** Holds `incidents:respond`; true while Clerk has not reported a role, so nobody is warned about by guess. */
+	canRespondToIncidents: Schema.Boolean,
 })
 export type OrgMember = typeof OrgMember.Type
 
 const decodeUserIdOption = Schema.decodeUnknownOption(UserId)
+
+/** Whether a membership's role holds `incidents:respond`; true until Clerk reports the role. */
+export const respondsToIncidents = (membership: Parameters<typeof membershipGrants>[0]): boolean =>
+	Option.match(membershipGrants(membership), {
+		onNone: () => true,
+		onSome: (grants) => Policy.can(grants, "incidents:respond"),
+	})
 
 const memberOfMembership = (member: ClerkMembershipResource): ReadonlyArray<OrgMember> => {
 	const user = member.publicUserData
@@ -39,6 +50,7 @@ const memberOfMembership = (member: ClerkMembershipResource): ReadonlyArray<OrgM
 				name: name || email || "Unknown member",
 				email,
 				imageUrl: user?.hasImage === true ? user.imageUrl : "",
+				canRespondToIncidents: respondsToIncidents(member),
 			},
 		],
 	})

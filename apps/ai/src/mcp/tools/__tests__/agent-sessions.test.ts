@@ -12,6 +12,8 @@ import { aiSpanRow } from "../../__evals__/fixtures"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import {
 	GetAgentSessionOutput,
 	GetAgentSessionTranscriptOutput,
@@ -160,7 +162,41 @@ const BIG_PAGE_CURSOR_SPAN_ID = bigSpanId(AI_SESSION_SPANS_MAX_SPANS - 1)
 
 // First match wins: the span reads over `traces` are told apart by the
 // session ids their SQL names.
+const scoreRow = (name: string, source: string, verdict: string, explanation: string) => ({
+	timestamp: "2026-08-19 10:20:00.000000000",
+	name,
+	traceId: TRACE_ID,
+	spanId: "2222222222222222",
+	responseId: "",
+	scope: "span",
+	sessionId: "",
+	scoreValue: 0,
+	hasScore: 0,
+	scoreLabel: verdict,
+	verdict,
+	explanation,
+	errorType: "",
+	annotatorKind: "llm",
+	source,
+	evaluatorVersion: "",
+	judgeModel: "",
+	serviceName: "agent-runner",
+})
+
 const fixtures: FixtureRule[] = [
+	// The session's evaluation scores: by its traces only; the response read finds no responses.
+	{ match: (sql) => Str.includes("GROUP BY responseId")(sql), rows: [] },
+	{
+		// A score read, not the sessions list's evaluation filter (which joins the trace index).
+		match: (sql) => Str.includes("FROM ai_evaluations")(sql) && !Str.includes("ai_trace_index")(sql),
+		rows: (sql) =>
+			Str.includes(`IN ('${TRACE_ID}')`)(sql)
+				? [
+						scoreRow("Grounded answer", "otel", "fail", "Cites a table that does not exist"),
+						scoreRow("Session check: Tool errors", "maple_check", "fail", "1 tool call failed"),
+					]
+				: [],
+	},
 	{ match: (sql) => Str.includes(EMPTY_SESSION_ID)(sql), rows: [] },
 	{ match: (sql) => Str.includes(BIG_SESSION_ID)(sql), rows: bigSessionSpanRows },
 	{ match: (sql) => readsTraceSpans(sql), rows: sessionSpanRows },
@@ -297,6 +333,44 @@ describe("list_agent_sessions rendering", () => {
 	})
 })
 
+describe("list_agent_sessions evaluation filter", () => {
+	const withFlags = (llmEvals: boolean) =>
+		makeEvalRuntime(
+			OrganizationFeatureFlagsService.fixed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, llmEvals }),
+		)
+	const EVALUATION = { evaluation: "Context window", evaluation_verdict: "fail" }
+
+	it("filters by an evaluator's verdict, and the next page repeats it", async () => {
+		const enabled = withFlags(true)
+		try {
+			const answer = (await runToolDirect(enabled, "list_agent_sessions", {
+				...WINDOW,
+				...EVALUATION,
+				limit: 1,
+			})) as McpToolResult
+			const structured = Schema.decodeUnknownSync(ListAgentSessionsOutput)(answer.structuredContent)
+			expect(structured.filters.evaluation).toEqual({ name: "Context window", verdict: "fail" })
+			expect(markdown(answer)).toContain('evaluation="Context window" evaluation_verdict="fail"')
+		} finally {
+			await enabled.dispose()
+		}
+	})
+
+	it("refuses the filter outside the llmEvals rollout", async () => {
+		const disabled = withFlags(false)
+		try {
+			const answer = (await runToolDirect(disabled, "list_agent_sessions", {
+				...WINDOW,
+				...EVALUATION,
+			})) as McpToolResult
+			expect(answer.isError).toBe(true)
+			expect(markdown(answer)).toContain("needs LLM evals")
+		} finally {
+			await disabled.dispose()
+		}
+	})
+})
+
 describe("get_agent_session rendering", () => {
 	it("renders the verdict, findings, tokens and tools of a failed session", async () => {
 		const answer = await result("get_agent_session", { session_id: SESSION_ID, ...WINDOW })
@@ -321,6 +395,17 @@ describe("get_agent_session rendering", () => {
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")
 		expect(output).toContain("2 LLM calls")
 		expect(output).toContain(`inspect_span trace_id="${TRACE_ID}"`)
+	})
+
+	it("lists the session's evaluation scores, without Maple's own checks", async () => {
+		const answer = await result("get_agent_session", { session_id: SESSION_ID, ...WINDOW })
+		const structured = Schema.decodeUnknownSync(GetAgentSessionOutput)(answer.structuredContent)
+		expect(structured.scores?.total).toBe(1)
+		expect(structured.scores?.items[0]).toMatchObject({ name: "Grounded answer", verdict: "fail" })
+		const output = markdown(answer)
+		expect(output).toContain("### Evaluation scores (1)")
+		expect(rowCells(output, "Grounded answer")?.[3]).toBe("Cites a table that does not exist")
+		expect(output).not.toContain("Session check: Tool errors")
 	})
 
 	// No window: the session's bounds are resolved from the id.
