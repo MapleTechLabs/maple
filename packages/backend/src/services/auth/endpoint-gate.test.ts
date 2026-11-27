@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { type CalledEndpoint, CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Context, Effect, Exit } from "effect"
+import { Context, Effect, Exit, Ref } from "effect"
 import { checkEndpointAccess, checkEndpointAccessV2 } from "./endpoint-gate"
 
 const errors = MapleInternalApi.groups.errors
@@ -83,5 +83,49 @@ describe("checkEndpointAccessV2", () => {
 			)
 			expect(error.message).toBe(Policy.limitedAccessMessage)
 		}),
+	)
+})
+
+describe("what the gate leaves on the request's span", () => {
+	const accessOf = Effect.map(Effect.currentSpan, (span) => ({
+		outcome: span.attributes.get("maple.access.outcome"),
+		site: span.attributes.get("maple.access.site"),
+		permission: span.attributes.get("maple.access.permission"),
+	}))
+
+	it.effect("an allowed call", () =>
+		Effect.gen(function* () {
+			yield* checkEndpointAccess(Policy.grantsOf(["org:member"]), transition)
+			expect(yield* accessOf).toEqual({ outcome: "allowed", site: "edge", permission: undefined })
+		}).pipe(Effect.withSpan("http.server")),
+	)
+
+	it.effect("a refused call names the missing permission, and hands the refusal on before failing", () =>
+		Effect.gen(function* () {
+			const handed = yield* Ref.make<ReadonlyArray<unknown>>([])
+			yield* Effect.flip(
+				checkEndpointAccess(Policy.grantsOf(["org:analyst"]), transition, (denial) =>
+					Ref.update(handed, (seen) => [...seen, denial]),
+				),
+			)
+			expect(yield* accessOf).toEqual({
+				outcome: "denied",
+				site: "edge",
+				permission: "error_issues:triage",
+			})
+			expect(yield* Ref.get(handed)).toEqual([
+				{
+					permission: "error_issues:triage",
+					reason: Policy.denialFor("error_issues:triage").message,
+				},
+			])
+		}).pipe(Effect.withSpan("http.server")),
+	)
+
+	it.effect("a write nobody marked is told apart from a missing permission", () =>
+		Effect.gen(function* () {
+			yield* Effect.flip(checkEndpointAccessV2(Policy.allPermissions, unmarked("POST"), "/v2/slos"))
+			expect(yield* accessOf).toEqual({ outcome: "unmarked", site: "edge", permission: undefined })
+		}).pipe(Effect.withSpan("http.server")),
 	)
 })

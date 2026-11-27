@@ -876,16 +876,28 @@ const refuseCaller = (
 		readOnly: entry.hints.readOnly,
 	})
 	if (refusal === undefined) return Effect.void
+	if (refusal._tag === "permission") {
+		// The same keys the HTTP gate writes, so a refused tool call is found by the same query.
+		return Effect.annotateCurrentSpan({
+			"maple.access.outcome": "denied",
+			"maple.access.site": "tool",
+			"maple.access.permission": refusal.permission,
+		}).pipe(
+			Effect.andThen(
+				Effect.fail(
+					new McpAuthInvalidError({
+						message: Policy.denialFor(refusal.permission).message,
+						reason: "insufficient_permission",
+					}),
+				),
+			),
+		)
+	}
 	return Effect.fail(
-		refusal._tag === "permission"
-			? new McpAuthInvalidError({
-					message: Policy.denialFor(refusal.permission).message,
-					reason: "insufficient_permission",
-				})
-			: new McpAuthInvalidError({
-					message: `\`${entry.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
-					reason: "insufficient_scope",
-				}),
+		new McpAuthInvalidError({
+			message: `\`${entry.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+			reason: "insufficient_scope",
+		}),
 	)
 }
 

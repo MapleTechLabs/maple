@@ -392,6 +392,17 @@ describe("v2 status pages", () => {
 				403,
 			)
 			expect((await harness.request("GET", path, member)).body.visibility).toBe("public")
+			// Refused inside the handler, and recorded like a refusal at the gate.
+			const denied = await harness.auditEntries("api.request")
+			expect(Arr.map(denied, (entry) => [entry.outcome, entry.metadata])).toEqual(
+				expect.arrayContaining([
+					[
+						"denied",
+						{ method: "PUT", path: `${path}/password`, permission: "status_pages:access" },
+					],
+					["denied", { method: "PATCH", path, permission: "status_pages:edit" }],
+				]),
+			)
 
 			const short = await harness.request("PUT", `${path}/password`, engineer, { password: "short" })
 			expect(short.status).toBe(400)

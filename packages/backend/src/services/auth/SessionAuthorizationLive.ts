@@ -11,6 +11,8 @@ import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { getBearerToken } from "./bearer-token"
+import { recordAccessDenial } from "@maple/backend/services/auth/audit-denial"
+import { type AccessDenial, watchHandlerAccess } from "./access-span"
 import { checkEndpointAccess } from "./endpoint-gate"
 import { provideRequestTenant } from "./request-tenant"
 import { OrgMembershipService } from "./OrgMembershipService"
@@ -62,17 +64,21 @@ export const SessionAuthorizationLive = Layer.effect(
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					yield* regions.ensureServedHere(tenant.orgId)
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
-					yield* checkEndpointAccess(tenant.permissions, options)
 					const actor = { type: "user", source: "dashboard" } as const
+					const caller = {
+						orgId: tenant.orgId,
+						actor: { type: "user", userId: tenant.userId },
+						source: actor.source,
+					} as const
+					const recordDenied = (denial: AccessDenial) =>
+						recordAccessDenial(audit, request, caller, denial)
+					yield* checkEndpointAccess(tenant.permissions, options, recordDenied)
 					return yield* httpEffect.pipe(
+						watchHandlerAccess(recordDenied),
 						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, actor),
 						// Telemetry and replay reads are recorded (see `AuditedRead`).
-						withAuditedRead(audit, request, options, {
-							orgId: tenant.orgId,
-							actor: { type: "user", userId: tenant.userId },
-							source: actor.source,
-						}),
+						withAuditedRead(audit, request, options, caller),
 					)
 				}),
 		})
@@ -101,16 +107,20 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
-					yield* checkEndpointAccess(tenant.permissions, options)
 					const actor = { type: "user", source: "dashboard" } as const
+					const caller = {
+						orgId: tenant.orgId,
+						actor: { type: "user", userId: tenant.userId },
+						source: actor.source,
+					} as const
+					const recordDenied = (denial: AccessDenial) =>
+						recordAccessDenial(audit, request, caller, denial)
+					yield* checkEndpointAccess(tenant.permissions, options, recordDenied)
 					return yield* httpEffect.pipe(
+						watchHandlerAccess(recordDenied),
 						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, actor),
-						withAuditedRead(audit, request, options, {
-							orgId: tenant.orgId,
-							actor: { type: "user", userId: tenant.userId },
-							source: actor.source,
-						}),
+						withAuditedRead(audit, request, options, caller),
 					)
 				}),
 		})

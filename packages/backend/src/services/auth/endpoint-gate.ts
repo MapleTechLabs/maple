@@ -7,32 +7,63 @@ import {
 import { requiredScopeForRoute, V2InsufficientPermissions } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
 import { Effect } from "effect"
+import { type AccessDenial, annotateAccessSpan } from "./access-span"
 
-/** The message a refused decision carries; `undefined` when the call is allowed. */
-const refusalMessage = (decision: EndpointAccessDecision, permissions: Policy.Grants): string | undefined => {
+/** The refusal a decision is, with the message its error carries; `undefined` when the call is allowed. */
+const refusalOf = (
+	decision: EndpointAccessDecision,
+	permissions: Policy.Grants,
+): AccessDenial | undefined => {
 	switch (decision._tag) {
 		case "Allowed":
 			return undefined
 		case "Denied":
-			return decision.permission === "telemetry:read" && Policy.isScoped(permissions)
-				? Policy.scopedAccessMessage
-				: Policy.denialFor(decision.permission).message
+			return {
+				permission: decision.permission,
+				reason:
+					decision.permission === "telemetry:read" && Policy.isScoped(permissions)
+						? Policy.scopedAccessMessage
+						: Policy.denialFor(decision.permission).message,
+			}
 		case "Unmarked":
-			return Policy.limitedAccessMessage
+			return { reason: Policy.limitedAccessMessage }
 	}
 }
 
+/** Marks the request's span with the decision, and fails with the caller's error when it refuses. */
+const settle = <E>(
+	decision: EndpointAccessDecision,
+	permissions: Policy.Grants,
+	onDenied: (denial: AccessDenial) => Effect.Effect<void>,
+	refuse: (message: string) => E,
+): Effect.Effect<void, E> => {
+	const refusal = refusalOf(decision, permissions)
+	if (refusal === undefined) return annotateAccessSpan("allowed", "edge")
+	return annotateAccessSpan(
+		decision._tag === "Unmarked" ? "unmarked" : "denied",
+		"edge",
+		refusal.permission,
+	).pipe(Effect.andThen(onDenied(refusal)), Effect.andThen(Effect.fail(refuse(refusal.reason))))
+}
+
+const unrecorded = (): Effect.Effect<void> => Effect.void
+
 /**
  * Fails unless `permissions` reach the endpoint's `EndpointAccess` rule. It runs in the auth
- * layers, so a non-GET endpoint added later is refused until it, or its group, is marked.
+ * layers, so a non-GET endpoint added later is refused until it, or its group, is marked. A
+ * refusal is handed to `onDenied` before it fails.
  */
 export const checkEndpointAccess = (
 	permissions: Policy.Grants,
 	called: CalledEndpoint,
-): Effect.Effect<void, CurrentTenant.LimitedRoleError> => {
-	const message = refusalMessage(decideEndpointAccess(permissions, called), permissions)
-	return message === undefined ? Effect.void : Effect.fail(new CurrentTenant.LimitedRoleError({ message }))
-}
+	onDenied: (denial: AccessDenial) => Effect.Effect<void> = unrecorded,
+): Effect.Effect<void, CurrentTenant.LimitedRoleError> =>
+	settle(
+		decideEndpointAccess(permissions, called),
+		permissions,
+		onDenied,
+		(message) => new CurrentTenant.LimitedRoleError({ message }),
+	)
 
 /**
  * {@link checkEndpointAccess} for `/v2`. An unmarked POST the scope registry names as a read needs
@@ -42,6 +73,7 @@ export const checkEndpointAccessV2 = (
 	permissions: Policy.Grants,
 	called: CalledEndpoint,
 	routePath: string,
+	onDenied: (denial: AccessDenial) => Effect.Effect<void> = unrecorded,
 ): Effect.Effect<void, ReturnType<typeof V2InsufficientPermissions.make>> => {
 	const decision = decideEndpointAccess(permissions, called)
 	const effective: EndpointAccessDecision =
@@ -51,6 +83,5 @@ export const checkEndpointAccessV2 = (
 				? { _tag: "Allowed" }
 				: { _tag: "Denied", permission: "telemetry:read" }
 			: decision
-	const message = refusalMessage(effective, permissions)
-	return message === undefined ? Effect.void : Effect.fail(V2InsufficientPermissions.make(message))
+	return settle(effective, permissions, onDenied, (message) => V2InsufficientPermissions.make(message))
 }

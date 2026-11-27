@@ -1,7 +1,13 @@
 import { Clock, Effect, Option, String as Str } from "effect"
 import type { HttpServerRequest } from "effect/http"
-import type { ApiKeyId, OrgId, UserId } from "@maple/primitives"
-import { httpRequestForensics, type AuditLogServiceApi } from "@maple/backend/services/audit/AuditLogService"
+import type { AuditLogSource } from "@maple/domain/http"
+import type { OrgId } from "@maple/primitives"
+import {
+	httpRequestForensics,
+	type AuditActorRef,
+	type AuditLogServiceApi,
+} from "@maple/backend/services/audit/AuditLogService"
+import type { AccessDenial } from "./access-span"
 
 /** Suppress duplicate denial rows for the same key/reason within this window. */
 export const AUDIT_DENIAL_COALESCE_WINDOW_MS = 60_000
@@ -35,13 +41,11 @@ const shouldRecordDenial = (signature: string, now: number): boolean => {
 	return true
 }
 
-export interface ApiDenialInput {
+/** Who was refused: an API key, or a person on a session or device credential. */
+export interface DeniedCaller {
 	readonly orgId: OrgId
-	readonly userId: UserId
-	readonly apiKeyId: ApiKeyId
-	/** The key's name, frozen onto the entry: a refused key is often revoked next. */
-	readonly apiKeyName: string
-	readonly denialReason: string
+	readonly actor: AuditActorRef
+	readonly source: AuditLogSource
 }
 
 const requestPath = (url: string): string => {
@@ -51,36 +55,43 @@ const requestPath = (url: string): string => {
 	})
 }
 
+// A refused key is always a row. A person refused Read telemetry is not: a role without it opens
+// pages that ask for telemetry as they load, and those refusals stay on the span.
+const isRecorded = (caller: DeniedCaller, denial: AccessDenial): boolean =>
+	caller.actor.type === "api_key" || denial.permission !== "telemetry:read"
+
 /**
- * Record a denied public-API request with full forensics (method+path plus the
+ * Record a refused request with full forensics (method+path plus the
  * `cf-ray`/`cf-connecting-ip`/`cf-ipcountry` headers), coalescing duplicates:
- * the same (org, key, method+path, reason) is written at most once per window
- * so a client looping mis-scoped requests cannot amplify into unbounded queue
+ * the same (org, caller, method+path, reason) is written at most once per window
+ * so a client looping refused requests cannot amplify into unbounded queue
  * messages, rows, and warn logs. Never fails, same contract as `record`.
  */
-export const recordApiDenial = (
+export const recordAccessDenial = (
 	audit: AuditLogServiceApi,
 	request: HttpServerRequest.HttpServerRequest,
-	input: ApiDenialInput,
+	caller: DeniedCaller,
+	denial: AccessDenial,
 ): Effect.Effect<void> =>
 	Effect.gen(function* () {
+		if (!isRecorded(caller, denial)) return
 		const now = yield* Clock.currentTimeMillis
 		const path = requestPath(request.url)
-		const signature = `${input.orgId}|${input.apiKeyId}|${request.method} ${path}|${input.denialReason}`
+		const who = caller.actor.apiKeyId ?? caller.actor.userId ?? caller.actor.type
+		const signature = `${caller.orgId}|${who}|${request.method} ${path}|${denial.reason}`
 		if (!shouldRecordDenial(signature, now)) return
 		yield* audit.record({
-			orgId: input.orgId,
-			actor: {
-				type: "api_key",
-				userId: input.userId,
-				apiKeyId: input.apiKeyId,
-				label: input.apiKeyName,
-			},
-			source: "api",
+			orgId: caller.orgId,
+			actor: caller.actor,
+			source: caller.source,
 			action: "api.request",
 			outcome: "denied",
-			denialReason: input.denialReason,
-			metadata: { method: request.method, path },
+			denialReason: denial.reason,
+			metadata: {
+				method: request.method,
+				path,
+				...(denial.permission === undefined ? undefined : { permission: denial.permission }),
+			},
 			...httpRequestForensics(request),
 		})
 	})

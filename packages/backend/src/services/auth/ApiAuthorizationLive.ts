@@ -7,11 +7,12 @@ import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { recordImpersonation } from "@maple/backend/services/auth/impersonation-audit"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
-import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
+import { recordAccessDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
+import { type AccessDenial, watchHandlerAccess } from "./access-span"
 import { checkEndpointAccess } from "./endpoint-gate"
 import { provideRequestTenant } from "./request-tenant"
 import { OrgMembershipService } from "./OrgMembershipService"
@@ -49,22 +50,27 @@ export const ApiAuthorizationLive = Layer.effect(
 						// successes: a key probing a surface it is not valid for is
 						// exactly what the audit log exists to surface. This layer has
 						// no rate limiter, so coalescing is what bounds the volume.
-						const recordDenied = (denialReason: string) =>
-							recordApiDenial(audit, request, {
-								orgId: resolved.orgId,
-								userId: resolved.userId,
-								apiKeyId: resolved.keyId,
-								apiKeyName: resolved.name,
-								denialReason,
-							})
+						const actor = {
+							type: "api_key",
+							userId: resolved.userId,
+							apiKeyId: resolved.keyId,
+							label: resolved.name,
+						} as const
+						const recordDenied = (denial: AccessDenial) =>
+							recordAccessDenial(
+								audit,
+								request,
+								{ orgId: resolved.orgId, actor, source: "api" },
+								denial,
+							)
 						if (resolved.kind !== "standard") {
-							yield* recordDenied("This API key is only valid for the MCP server")
+							yield* recordDenied({ reason: "This API key is only valid for the MCP server" })
 							return yield* new UnauthorizedError({
 								message: "This API key is only valid for the MCP server",
 							})
 						}
 						if (resolved.scopes !== null) {
-							yield* recordDenied("Restricted API keys must use the /v2 API")
+							yield* recordDenied({ reason: "Restricted API keys must use the /v2 API" })
 							return yield* new UnauthorizedError({
 								message: "Restricted API keys must use the /v2 API",
 							})
@@ -81,10 +87,9 @@ export const ApiAuthorizationLive = Layer.effect(
 							permissions: resolved.permissions,
 							authMode: "self_hosted",
 						})
-						yield* checkEndpointAccess(tenant.permissions, options).pipe(
-							Effect.tapError((error) => recordDenied(error.message)),
-						)
+						yield* checkEndpointAccess(tenant.permissions, options, recordDenied)
 						return yield* httpEffect.pipe(
+							watchHandlerAccess(recordDenied),
 							provideRequestTenant(tenant),
 							Effect.provideService(CurrentAuditActor, {
 								type: "api_key",
@@ -94,12 +99,7 @@ export const ApiAuthorizationLive = Layer.effect(
 							}),
 							withAuditedRead(audit, request, options, {
 								orgId: resolved.orgId,
-								actor: {
-									type: "api_key",
-									userId: resolved.userId,
-									apiKeyId: resolved.keyId,
-									label: resolved.name,
-								},
+								actor,
 								source: "api",
 							}),
 						)
@@ -110,15 +110,19 @@ export const ApiAuthorizationLive = Layer.effect(
 					// API keys are minted per instance; only a session can name an org from elsewhere.
 					yield* regions.ensureServedHere(tenant.orgId)
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
-					yield* checkEndpointAccess(tenant.permissions, options)
+					const caller = {
+						orgId: tenant.orgId,
+						actor: { type: "user", userId: tenant.userId },
+						source: "dashboard",
+					} as const
+					const recordDenied = (denial: AccessDenial) =>
+						recordAccessDenial(audit, request, caller, denial)
+					yield* checkEndpointAccess(tenant.permissions, options, recordDenied)
 					return yield* httpEffect.pipe(
+						watchHandlerAccess(recordDenied),
 						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
-						withAuditedRead(audit, request, options, {
-							orgId: tenant.orgId,
-							actor: { type: "user", userId: tenant.userId },
-							source: "dashboard",
-						}),
+						withAuditedRead(audit, request, options, caller),
 					)
 				}),
 		})

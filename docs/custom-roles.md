@@ -15,6 +15,14 @@
 - Enforcement: `EndpointAccess` on HTTP endpoints (`packages/domain/src/http/endpoint-access.ts`),
   `permission` on MCP tools, and `MembershipRevocationService.demoteMembership` retiring
   credentials, links, digests and phones a narrower role no longer covers.
+- Every decision is on the request's span: `maple.access.outcome` (`allowed`, `denied`, `unmarked`),
+  `maple.access.site` (`edge` for the endpoint gate, `handler` for a `Policy.check` inside the
+  handler, `tool` for an MCP tool) and `maple.access.permission` on a refusal. `Policy.check`
+  reports to `Policy.AccessSink`, which the auth layers set per request (`auth/access-span.ts`). A
+  refusal built by hand after `Policy.can` is not reported.
+- A refusal is an `api.request` audit entry with `outcome: "denied"` (`auth/audit-denial.ts`),
+  written at most once a minute per caller, request and reason. A person refused Read telemetry is
+  the exception and stays on the span: a role without it asks for telemetry on every page it opens.
 
 ## Roles limited to namespaces
 
