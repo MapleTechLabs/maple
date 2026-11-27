@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Context, Option } from "effect"
 import { accessCatalogOf, type CatalogApi, endpointsBehind, TENANT_GATES } from "./access-catalog"
-import { EndpointAccess, handlerChecks, requires } from "./endpoint-access"
+import { EndpointAccess, handlerChecks, requires, ScopedTelemetry } from "./endpoint-access"
 
 type Mark = Context.Service.Shape<typeof EndpointAccess>
 
@@ -9,12 +9,15 @@ const endpoint = (
 	identifier: string,
 	method: string,
 	path: string,
-	options: { readonly mark?: Mark; readonly gated?: boolean } = {},
+	options: { readonly mark?: Mark; readonly gated?: boolean; readonly scoped?: boolean } = {},
 ) => ({
 	identifier,
 	method,
 	path,
-	annotations: options.mark === undefined ? Context.empty() : Context.make(EndpointAccess, options.mark),
+	annotations: Context.empty().pipe(
+		Context.add(EndpointAccess, options.mark),
+		Context.add(ScopedTelemetry, options.scoped === true),
+	),
 	middlewares: new Set(options.gated === false ? [] : [TENANT_GATES[0]]),
 })
 
@@ -30,6 +33,7 @@ const api: CatalogApi = {
 				create: endpoint("create", "POST", "/boards", {
 					mark: [requires("telemetry:read", "dashboards:edit"), handlerChecks("query:sql")],
 				}),
+				query: endpoint("query", "POST", "/boards/query", { scoped: true }),
 				webhook: endpoint("webhook", "POST", "/boards/webhook", { gated: false }),
 			},
 		},
@@ -43,6 +47,7 @@ const api: CatalogApi = {
 				secret: endpoint("secret", "GET", "/rules/:id/secret", {
 					mark: handlerChecks("integrations:manage"),
 				}),
+				link: endpoint("link", "POST", "/rules/link", { mark: "personal" }),
 				spend: endpoint("spend", "GET", "/rules/spend", {
 					mark: ["personal", handlerChecks("billing:manage")],
 				}),
@@ -68,7 +73,7 @@ const names = (entries: ReadonlyArray<{ readonly group: string; readonly endpoin
 describe("the access catalog", () => {
 	it("leaves out an endpoint no tenant gate guards", () => {
 		expect(names(catalog)).not.toContain("boards.webhook")
-		expect(catalog).toHaveLength(8)
+		expect(catalog).toHaveLength(10)
 	})
 
 	it("lists a permission once when the endpoint and its group both ask for it", () => {
@@ -95,6 +100,10 @@ describe("the access catalog", () => {
 		})
 	})
 
+	it("gives a group's handler mark to no endpoint that carries a rule of its own", () => {
+		expect(entry("rules", "link")).toMatchObject({ requires: [], handler: [] })
+	})
+
 	it("asks nothing at the gate of a read open to every member, and still names its handler check", () => {
 		expect(entry("rules", "spend")).toMatchObject({ requires: [], handler: ["billing:manage"] })
 	})
@@ -118,10 +127,15 @@ describe("endpointsBehind", () => {
 		const read = endpointsBehind(catalog, "telemetry:read")
 		expect(Arr.map(read, (one) => [`${one.group}.${one.endpoint}`, one.use])).toEqual([
 			["boards.create", "requires"],
+			["boards.query", "requires"],
 			["rules.list", "requires"],
 			["rules.secret", "requires"],
 			["unmarked.search", "requires"],
 		])
+	})
+
+	it("lists the scoped read for the endpoints marked for it, where it stands in for Read telemetry", () => {
+		expect(names(endpointsBehind(catalog, "telemetry:read_scoped"))).toEqual(["boards.query"])
 	})
 
 	it("opens nothing for a permission no endpoint asks for", () => {
