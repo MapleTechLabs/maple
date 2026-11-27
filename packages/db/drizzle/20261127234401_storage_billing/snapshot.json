@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "6669b9f1810bbd67f20a7c8c6421527bd7be31344b2f8947f5b5bc09da9b1061",
+	"id": "3d86e38bf75b01db98e87fe1d6d2170874601ec7410c8d14b9934fd69a2edc8d",
 	"prevIds": [
-		"a98e03ed376e1295a0440a1876c28a82e60de7b94266c623366c3cda4978ea48"
+		"af61a58db72d3e31ed8e6e7f22e22e67ee886f41c7961d533c9190edf7e21024"
 	],
 	"entities": [
 		{
@@ -18,11 +18,43 @@
 		},
 		{
 			"kind": "table",
+			"name": "ad_click_erasures",
+			"primaryKey": {
+				"name": "ad_click_erasures_pkey",
+				"columns": [
+					"user_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "ad_conversions",
+			"primaryKey": {
+				"name": "ad_conversions_pkey",
+				"columns": [
+					"user_id",
+					"conversion"
+				]
+			}
+		},
+		{
+			"kind": "table",
 			"name": "agent_feedback",
 			"primaryKey": {
 				"name": "agent_feedback_pkey",
 				"columns": [
 					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "ai_evaluation_runs",
+			"primaryKey": {
+				"name": "ai_evaluation_runs_pkey",
+				"columns": [
+					"org_id",
+					"scorer"
 				]
 			}
 		},
@@ -1677,6 +1709,86 @@
 		},
 		{
 			"kind": "column",
+			"table": "ad_click_erasures",
+			"name": "user_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_click_erasures",
+			"name": "erased_at",
+			"position": 1,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_conversions",
+			"name": "user_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_conversions",
+			"name": "conversion",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_conversions",
+			"name": "click_type",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_conversions",
+			"name": "click_id",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_conversions",
+			"name": "click_at",
+			"position": 4,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_conversions",
+			"name": "converted_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "agent_feedback",
 			"name": "id",
 			"position": 0,
@@ -1820,6 +1932,66 @@
 			"table": "agent_feedback",
 			"name": "created_at",
 			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ai_evaluation_runs",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ai_evaluation_runs",
+			"name": "scorer",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ai_evaluation_runs",
+			"name": "cursor_at",
+			"position": 2,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ai_evaluation_runs",
+			"name": "last_run_at",
+			"position": 3,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ai_evaluation_runs",
+			"name": "last_error",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ai_evaluation_runs",
+			"name": "created_at",
+			"position": 5,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -22273,6 +22445,17 @@
 		},
 		{
 			"kind": "index",
+			"table": "ad_conversions",
+			"name": "ad_conversions_click_at_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"click_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "agent_feedback",
 			"name": "agent_feedback_kind_created_idx",
 			"unique": false,
@@ -22599,6 +22782,18 @@
 			"columns": [
 				"\"org_id\"",
 				"\"incident_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "alert_member_notifications",
+			"name": "alert_member_notifications_org_user_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"user_id\""
 			],
 			"where": null
 		},
