@@ -22,7 +22,6 @@ import {
 	money,
 	rateBlock,
 	rateLabel,
-	retainedFor,
 	volume,
 	type Allotment,
 } from "../lib/pricing-offer";
@@ -175,19 +174,29 @@ const RETENTION_DAYS = 30;
 									</>
 								)}
 							</div>
-							<div class="mt-2 text-[11.5px] text-fg-muted">
-								{a.unlimited || isUsageCredit(a)
-									? rateSentence(a)
-									: m.pricing_rate_included({ amount: volume(a, a.included) })}
-							</div>
-							{/* Short lines of their own: one joined sentence wrapped mid-phrase in a six-column cell. */}
-							{a.retention !== undefined && (
-								<div class="text-[11.5px] text-fg-muted">{retainedFor(a.retention)}</div>
-							)}
-							{a.retention?.rate !== undefined && (
-								<div class="mt-1.5 whitespace-nowrap text-[11.5px] text-fg-muted">
-									{m.pricing_rate_storage({ rate: rateLabel(a.retention.rate) })}
-								</div>
+							{a.unlimited || isUsageCredit(a) ? (
+								<div class="mt-2 text-[11.5px] leading-relaxed text-fg-muted">{rateSentence(a)}</div>
+							) : (
+								/* The same labels as the offer card's columns, so the two read as one table. */
+								<dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11.5px]">
+									<dt class="text-fg-muted">{m.pricing_col_included()}</dt>
+									<dd class="font-mono tabular-nums text-fg">{volume(a, a.included)}</dd>
+									{a.retention !== undefined && (
+										<>
+											<dt class="text-fg-muted">{m.pricing_col_kept()}</dt>
+											<dd class="font-mono tabular-nums text-fg">{m.pricing_days({ days: String(a.retention.days) })}</dd>
+										</>
+									)}
+									{a.retention?.rate !== undefined && (
+										<>
+											<dt class="text-fg-muted">{m.pricing_col_storage()}</dt>
+											<dd class="whitespace-nowrap font-mono tabular-nums text-fg">
+												{rateLabel(a.retention.rate)}
+												<span class="text-fg-muted"> / GB-month</span>
+											</dd>
+										</>
+									)}
+								</dl>
 							)}
 						</div>
 					))

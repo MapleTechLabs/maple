@@ -88,11 +88,13 @@
 .pricing-rates__cell:last-child {
 	border-right: 0;
 }
+/* Price over its unit in every cell: inline, "$0.002" pushed "/ session" to a line of its own
+   while "$0.15 / GB" stayed on one, so the cells read unevenly. */
 .pricing-rates__amount {
 	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 6px;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
 	margin-top: 14px;
 }
 .pricing-rates__amount > span:first-child {

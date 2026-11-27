@@ -27,7 +27,6 @@ import {
     platformFeatures,
     rateBlock,
     rateLabel,
-    retainedFor,
     volume,
     type Allotment,
 } from "../lib/pricing-offer";
@@ -38,68 +37,53 @@ import {
 const offer = await getOffer()
 const PLATFORM_FEATURES = platformFeatures()
 
-// Each row states its own rate, in its own unit. A shared summary line below the
-// list read as detached from the rows it described, and it can't carry two units
-// without becoming a sentence.
-//
-// The amount comes back as its own piece rather than baked into the sentence:
-// this is a mono column, so "$0.30" (5 glyphs) and "$0.002" (6) push their
-// trailing "/ unit" one character apart and the rows read as misaligned. The
-// template gives the amount a fixed `ch` slot instead. Splitting on a sentinel
-// keeps every locale's own word order intact: ja renders "超過分 {rate} / セッション".
-// Events are quoted per block ("then $0.05 / 1,000 events"): the per-event rate
-// is a fraction of a cent and would render as "$0.000".
-const RATE_SLOT = "\u0000"
-const rowRate = (a: Allotment) => {
-    // Unlimited beta rows have no overage: the cell carries the beta note in
-    // "then" position; the (empty) amount slot trails it harmlessly.
-    if (a.unlimited) return { before: m.pricing_free_beta(), amount: "", after: "" }
-    if (isUsageCredit(a)) return { before: m.pricing_rate_ai_usage(), amount: "", after: "" }
-    if (a.rate === undefined) return undefined
-    const rendered =
-        a.unit === "gb"
-            ? m.pricing_rate_gb({ rate: RATE_SLOT })
-            : a.unit === "sessions"
-              ? m.pricing_rate_session({ rate: RATE_SLOT })
-              : m.pricing_rate_events({ rate: RATE_SLOT, block: rateBlock(a) })
-    const [before, after = ""] = rendered.split(RATE_SLOT)
-    return { before, amount: rateLabel(a.rate), after }
-}
+// The meter is a table: one head row names the columns, so each cell carries a value only
+// ("$0.15 / GB", "30 days") instead of a sentence ("then $0.15 / GB"). Amounts are bright and
+// start flush under their head; units are muted.
+/** A charge as an amount and its unit, or a note for a row billed some other way. */
+type Charge = { amount: string; unit: string } | { note: string }
 
-// Storage is its own price, as ingestion is: "and $0.15 / GB-month stored" under the
-// ingest rate, for storage past what the included volume needs for its period.
-const rowRetention = (a: Allotment) => {
-    const rate = a.retention?.rate
-    if (rate === undefined) return undefined
-    const [before, after = ""] = m.pricing_rate_retention({ rate: RATE_SLOT }).split(RATE_SLOT)
-    return { before, amount: rateLabel(rate), after }
-}
+const unitOf = (a: Allotment) =>
+    a.unit === "gb" ? "GB" : a.unit === "sessions" ? "session" : `${rateBlock(a)} events`
 
-// Widest amount in the list, so every row's unit starts on the same axis.
-const rateSlotCh = Math.max(
-    ...offer.allotments.map((a) => (a.rate === undefined || isUsageCredit(a) ? 0 : rateLabel(a.rate).length)),
-    1,
-)
+const thenCharge = (a: Allotment): Charge | undefined =>
+    a.unlimited
+        ? { note: m.pricing_free_beta() }
+        : isUsageCredit(a)
+          ? { note: m.pricing_ai_billed() }
+          : a.rate === undefined
+            ? undefined
+            : { amount: rateLabel(a.rate), unit: unitOf(a) }
 
 /** Everything a meter row renders, resolved once. */
-const meterRows = offer.allotments.map((a) => ({
-    featureId: a.featureId,
-    label: a.label,
-    included: volume(a, a.included),
-    retainedFor: a.retention === undefined ? undefined : retainedFor(a.retention),
-    rate: rowRate(a),
-    retention: rowRetention(a),
-}))
+const meterRows = offer.allotments.map((a) => {
+    const then = thenCharge(a)
+    const storage: Charge | undefined =
+        a.retention?.rate === undefined ? undefined : { amount: rateLabel(a.retention.rate), unit: "GB-month" }
+    return {
+        featureId: a.featureId,
+        label: a.label,
+        included: volume(a, a.included),
+        kept: a.retention === undefined ? undefined : m.pricing_days({ days: String(a.retention.days) }),
+        then,
+        storage,
+        // Below md the columns fold into a label/value list under the row, as on the rates strip.
+        folded: [
+            ...(a.retention === undefined
+                ? []
+                : [{ label: m.pricing_col_kept(), value: m.pricing_days({ days: String(a.retention.days) }) }]),
+            ...(then === undefined
+                ? []
+                : [{ label: m.pricing_col_then(), value: "note" in then ? then.note : `${then.amount} / ${then.unit}` }]),
+            ...(storage === undefined || "note" in storage
+                ? []
+                : [{ label: m.pricing_col_storage(), value: `${storage.amount} / ${storage.unit}` }]),
+        ],
+    }
+})
 
-// Both lines of a rate cell start their amount on the same axis.
-// Only rows with an amount: AI usage's lead is a whole sentence and would push every amount out.
-const rateLeadCh = Math.max(
-    ...meterRows.flatMap((a) => [
-        a.rate === undefined || a.rate.amount === "" ? 0 : a.rate.before.length,
-        a.retention?.before.length ?? 0,
-    ]),
-    1,
-)
+// One template for every row and the head: fixed value columns, so separate rows line up.
+const METER_COLUMNS = "md:grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_10rem_9.5rem]"
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 // `variant` is explicit rather than inferred from whether copy props are set:
@@ -204,15 +188,18 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                         {m.pricing_included_monthly()}
                     </span>
 
-                    {/* One grid for the whole list, not one per row: the included and
-                        rate columns have to line up down the list, and per-row grids
-                        size their own columns independently. Column spacing is cell
-                        padding rather than gap-x, so the row hairline stays continuous
-                        instead of breaking into three segments. */}
-                    <div class="mt-4 grid grid-cols-[1fr_auto] items-center sm:grid-cols-[1fr_auto_auto]">
+                    {/* Head row, md and up: it names the columns, so the cells below hold values only. */}
+                    <div class={`mt-5 hidden border-b border-border/60 pb-2.5 text-[10px] uppercase tracking-[0.16em] text-fg-muted md:grid ${METER_COLUMNS}`}>
+                        <span></span>
+                        <span class="text-right">{m.pricing_col_included()}</span>
+                        <span class="text-right">{m.pricing_col_kept()}</span>
+                        <span class="pl-8">{m.pricing_col_then()}</span>
+                        <span class="pl-4">{m.pricing_col_storage()}</span>
+                    </div>
+                    <div class="mt-4 md:mt-0">
                         {meterRows.map((a) => (
-                            <>
-                                <div class="flex items-center gap-2.5 pb-1 pt-3 sm:border-b sm:border-border/60 sm:py-3 sm:pr-4">
+                            <div class={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-y-1 border-b border-border/60 py-3 last:border-b-0 ${METER_COLUMNS}`}>
+                                <div class="flex min-w-0 items-center gap-2.5">
                                     {a.featureId === "logs" && (
                                         <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M8 18H16"/><path d="M8 14L11 14"/><path d="M12 4V10H8"/><path d="M4 20L4 10"/><path d="M20 20L20 4"/><path d="M12 2L18 2"/><path d="M6 22L18 22"/><path d="M6 8H6.01"/><path d="M8 6H8.01"/><path d="M10 4H10.01"/></svg>
                                     )}
@@ -233,42 +220,39 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     )}
                                     <span class="text-[12.5px] text-fg">{a.label}</span>
                                 </div>
-                                <div class="whitespace-nowrap pb-1 pt-3 text-right font-mono text-[12.5px] tabular-nums text-fg sm:border-b sm:border-border/60 sm:py-3">
-                                    {a.included}
-                                    {a.retainedFor && (
-                                        <div class="mt-0.5 text-[11px] text-fg-muted">{a.retainedFor}</div>
-                                    )}
-                                </div>
-                                {/* Below sm the rate drops to its own full-width line:
-                                    three columns squeezed the label column hard enough
-                                    to wrap "Browser Sessions" (and worse in ja/ko).
-                                    From sm it's a real column, left-aligned so every
-                                    "then" starts on the same axis: right-aligning left
-                                    it ragged. */}
-                                <div class="col-span-2 flex justify-end whitespace-nowrap border-b border-border/60 pb-3 font-mono text-[11px] tabular-nums text-fg-muted sm:col-span-1 sm:block sm:py-3 sm:pl-6 sm:text-[11.5px]">
-                                    {/* One left-aligned block, pushed right below sm: both amounts share an axis there too. */}
-                                    <div class="space-y-0.5">
-                                    {a.rate && (
-                                        <div>
-                                            <span class="inline-block" style={`min-width:${rateLeadCh}ch`}>{a.rate.before}</span>
-                                            <span class="inline-block text-right" style={`min-width:${rateSlotCh}ch`}>
-                                                {a.rate.amount}
-                                            </span>
-                                            {a.rate.after}
+                                <div class="whitespace-nowrap text-right font-mono text-[12.5px] tabular-nums text-fg">{a.included}</div>
+                                <div class="hidden whitespace-nowrap text-right font-mono text-[12px] tabular-nums text-fg-muted md:block">{a.kept}</div>
+                                {a.then !== undefined && "note" in a.then ? (
+                                    <div class="hidden pl-8 text-[12px] leading-snug text-fg-muted md:col-span-2 md:block">{a.then.note}</div>
+                                ) : (
+                                    <>
+                                        <div class="hidden whitespace-nowrap pl-8 font-mono text-[12px] tabular-nums md:block">
+                                            {a.then !== undefined && (
+                                                <>
+                                                    <span class="text-fg">{a.then.amount}</span>
+                                                    <span class="text-fg-muted"> / {a.then.unit}</span>
+                                                </>
+                                            )}
                                         </div>
-                                    )}
-                                    {a.retention && (
-                                        <div>
-                                            <span class="inline-block" style={`min-width:${rateLeadCh}ch`}>{a.retention.before}</span>
-                                            <span class="inline-block text-right" style={`min-width:${rateSlotCh}ch`}>
-                                                {a.retention.amount}
-                                            </span>
-                                            {a.retention.after}
+                                        <div class="hidden whitespace-nowrap pl-4 font-mono text-[12px] tabular-nums md:block">
+                                            {a.storage !== undefined && !("note" in a.storage) && (
+                                                <>
+                                                    <span class="text-fg">{a.storage.amount}</span>
+                                                    <span class="text-fg-muted"> / {a.storage.unit}</span>
+                                                </>
+                                            )}
                                         </div>
-                                    )}
-                                    </div>
-                                </div>
-                            </>
+                                    </>
+                                )}
+                                <dl class="col-span-2 mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11.5px] md:hidden">
+                                    {a.folded.map((d) => (
+                                        <>
+                                            <dt class="text-fg-muted">{d.label}</dt>
+                                            <dd class="font-mono tabular-nums text-fg">{d.value}</dd>
+                                        </>
+                                    ))}
+                                </dl>
+                            </div>
                         ))}
                     </div>
 

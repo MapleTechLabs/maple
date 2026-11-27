@@ -146,7 +146,6 @@ const dataFeatureLabels = (): Record<string, string> => ({
  * checklist, since a checklist implies some rows might have been withheld.
  */
 export const platformFeatures = (): string[] => [
-	m.pricing_30day_retention(),
 	m.pricing_private_channel(),
 	m.pricing_unlimited_dashboards(),
 	m.pricing_advanced_alerting(),
