@@ -46,7 +46,7 @@ with `packageManager`.
   metadata (members hold `org:custom`, their permissions sit on the membership). Checks read
   `tenant.permissions`, never a role. Endpoints carry `EndpointAccess`
   (`packages/domain/src/http/endpoint-access.ts`): `requires(permission)`, `"personal"` for the caller's own
-  state, `"handler"` when the handler checks. Endpoint and group rules both apply; an unmarked non-GET is
+  state, `handlerChecks(permission)` when the handler checks. Endpoint and group rules both apply; an unmarked non-GET is
   refused, and a GET no `requires` or `"personal"` covers needs `telemetry:read`. Every MCP tool declares
   its `permission`.
 - A role limited to namespaces holds `telemetry:read_scoped`, not `telemetry:read` (`docs/custom-roles.md`).

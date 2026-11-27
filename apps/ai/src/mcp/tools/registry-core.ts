@@ -45,6 +45,7 @@ import { stringifyJson } from "../lib/json"
 import { renderToolDocWithinBudget } from "./tool-output"
 import { CurrentWindowNotes, WindowNotes } from "../lib/window-notes"
 import type { McpToolRequirements } from "./runtime-services"
+import { annotateAccessSpan } from "@maple/backend/services/auth/access-span"
 
 /** What a tool's handler produced: its typed output, rendered and encoded. */
 interface ToolRun {
@@ -877,12 +878,7 @@ const refuseCaller = (
 	})
 	if (refusal === undefined) return Effect.void
 	if (refusal._tag === "permission") {
-		// The same keys the HTTP gate writes, so a refused tool call is found by the same query.
-		return Effect.annotateCurrentSpan({
-			"maple.access.outcome": "denied",
-			"maple.access.site": "tool",
-			"maple.access.permission": refusal.permission,
-		}).pipe(
+		return annotateAccessSpan("denied", "tool", refusal.permission).pipe(
 			Effect.andThen(
 				Effect.fail(
 					new McpAuthInvalidError({

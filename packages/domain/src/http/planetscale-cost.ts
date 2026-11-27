@@ -8,7 +8,7 @@ import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
 } from "./integrations"
-import { EndpointAccess, handler } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 /** What the Cost page needs to offer PlanetScale: the connected organization, if any, and whether it is a source. */
 export class PlanetScaleCostStatus extends Schema.Class<PlanetScaleCostStatus>("PlanetScaleCostStatus")({
@@ -107,4 +107,4 @@ export class PlanetScaleCostApiGroup extends HttpApiGroup.make("planetScaleCost"
 	)
 	.prefix("/internal/cost/planetscale")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, handler("integrations:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("integrations:manage")) {}

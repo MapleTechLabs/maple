@@ -40,7 +40,7 @@ import {
 export { GcpCloudSqlSettings } from "../gcp"
 
 import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "../supabase"
-import { EndpointAccess, handler, requires } from "./endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "./endpoint-access"
 export {
 	SupabaseAdvisorKind,
 	SupabaseAdvisorLevel,
@@ -1808,7 +1808,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}).annotate(EndpointAccess, handler("alerts:manage", "integrations:manage")),
+		}).annotate(EndpointAccess, handlerChecks("alerts:manage", "integrations:manage")),
 	)
 	.add(
 		// Read by the next delivery; nothing is set up in Linear for them.
@@ -1850,7 +1850,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}).annotate(EndpointAccess, handler("integrations:manage")),
+		}).annotate(EndpointAccess, handlerChecks("integrations:manage")),
 	)
 	.add(
 		HttpApiEndpoint.put("searchConsoleSaveSites", "/google-search-console/sites", {
@@ -2164,7 +2164,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			payload: OAuthCompleteRequest,
 			success: OAuthCompleteResponse,
 			error: IntegrationsForbiddenError,
-		}).annotate(EndpointAccess, handler("integrations:manage", "devices:connect")),
+		}).annotate(EndpointAccess, handlerChecks("integrations:manage", "devices:connect")),
 	)
 	.add(
 		HttpApiEndpoint.post("githubStart", "/github/start", {
@@ -2375,5 +2375,5 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.middleware(SessionAuthorization)
 	.annotate(
 		EndpointAccess,
-		handler("integrations:manage", "code_review:configure", "code_review:auto_approve"),
+		handlerChecks("integrations:manage", "code_review:configure", "code_review:auto_approve"),
 	) {}

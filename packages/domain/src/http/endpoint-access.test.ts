@@ -10,6 +10,7 @@ import {
 	decideEndpointAccess,
 	EndpointAccess,
 	endpointAccessRules,
+	handlerChecks,
 	requires,
 	ScopedTelemetry,
 } from "./endpoint-access"
@@ -265,6 +266,47 @@ describe("EndpointAccess", () => {
 			permission: "error_issues:triage",
 		})
 		expect(decideEndpointAccess(MEMBER, transition)._tag).toBe("Allowed")
+	})
+
+	it("asks at the gate only for what a list mark requires, not for what its handler checks", () => {
+		const called: CalledEndpoint = {
+			group: { annotations: Context.empty() },
+			endpoint: {
+				method: "POST",
+				annotations: Context.make(EndpointAccess, [
+					requires("dashboards:edit"),
+					handlerChecks("query:sql"),
+				]),
+			},
+		}
+		expect(decideEndpointAccess(["dashboards:edit"], called)._tag).toBe("Allowed")
+		expect(decideEndpointAccess(["query:sql"], called)).toEqual({
+			_tag: "Denied",
+			permission: "dashboards:edit",
+		})
+	})
+
+	it("keeps a read marked personal open when its mark also names a handler check", () => {
+		const open: CalledEndpoint = {
+			group: { annotations: Context.empty() },
+			endpoint: {
+				method: "GET",
+				annotations: Context.make(EndpointAccess, ["personal", handlerChecks("billing:manage")]),
+			},
+		}
+		expect(decideEndpointAccess([], open)._tag).toBe("Allowed")
+		// Without "personal", the handler mark alone leaves the read default in place.
+		const checked: CalledEndpoint = {
+			group: { annotations: Context.empty() },
+			endpoint: {
+				method: "GET",
+				annotations: Context.make(EndpointAccess, handlerChecks("billing:manage")),
+			},
+		}
+		expect(decideEndpointAccess(["billing:manage"], checked)).toEqual({
+			_tag: "Denied",
+			permission: "telemetry:read",
+		})
 	})
 
 	it("leaves a billing write to its handler, which checks billing:manage", () => {

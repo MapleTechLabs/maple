@@ -1,81 +1,130 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Array as Arr, Option } from "effect"
-import { accessEntryOf, endpointsBehind, type EndpointAccessEntry, gatedEndpointsOf } from "./access-catalog"
-import { decideEndpointAccess } from "./endpoint-access"
-import { accessCatalog, mapleApis } from "./maple-access-catalog"
+import { Array as Arr, Context, Option } from "effect"
+import { accessCatalogOf, type CatalogApi, endpointsBehind, TENANT_GATES } from "./access-catalog"
+import { EndpointAccess, handlerChecks, requires } from "./endpoint-access"
 
-const catalog = accessCatalog()
+type Mark = Context.Service.Shape<typeof EndpointAccess>
 
-const entry = (group: string, endpoint: string): EndpointAccessEntry =>
-	Option.getOrThrow(Arr.findFirst(catalog, (one) => one.group === group && one.endpoint === endpoint))
+const endpoint = (
+	identifier: string,
+	method: string,
+	path: string,
+	options: { readonly mark?: Mark; readonly gated?: boolean } = {},
+) => ({
+	identifier,
+	method,
+	path,
+	annotations: options.mark === undefined ? Context.empty() : Context.make(EndpointAccess, options.mark),
+	middlewares: new Set(options.gated === false ? [] : [TENANT_GATES[0]]),
+})
 
-const nameOf = (one: EndpointAccessEntry): string => `${one.group}.${one.endpoint}`
+// One of each shape a mark can take: a group that requires, a group whose handlers check, a list
+// mark, an open read with a handler check, an endpoint outside the gate, and writes nobody marked.
+const api: CatalogApi = {
+	identifier: "Example",
+	groups: {
+		boards: {
+			identifier: "boards",
+			annotations: Context.make(EndpointAccess, requires("telemetry:read")),
+			endpoints: {
+				create: endpoint("create", "POST", "/boards", {
+					mark: [requires("telemetry:read", "dashboards:edit"), handlerChecks("query:sql")],
+				}),
+				webhook: endpoint("webhook", "POST", "/boards/webhook", { gated: false }),
+			},
+		},
+		rules: {
+			identifier: "rules",
+			annotations: Context.make(EndpointAccess, handlerChecks("alerts:manage", "query:sql")),
+			endpoints: {
+				list: endpoint("list", "GET", "/rules"),
+				create: endpoint("create", "POST", "/rules"),
+				mute: endpoint("mute", "POST", "/rules/:id/mute", { mark: handlerChecks("alerts:manage") }),
+				secret: endpoint("secret", "GET", "/rules/:id/secret", {
+					mark: handlerChecks("integrations:manage"),
+				}),
+				spend: endpoint("spend", "GET", "/rules/spend", {
+					mark: ["personal", handlerChecks("billing:manage")],
+				}),
+			},
+		},
+		unmarked: {
+			identifier: "unmarked",
+			annotations: Context.empty(),
+			endpoints: {
+				search: endpoint("search", "POST", "/v2/traces/search"),
+				create: endpoint("create", "POST", "/v2/slos"),
+			},
+		},
+	},
+}
+
+const catalog = accessCatalogOf([api])
+const entry = (group: string, name: string) =>
+	Option.getOrThrow(Arr.findFirst(catalog, (one) => one.group === group && one.endpoint === name))
+const names = (entries: ReadonlyArray<{ readonly group: string; readonly endpoint: string }>) =>
+	Arr.map(entries, (one) => `${one.group}.${one.endpoint}`)
 
 describe("the access catalog", () => {
-	// The catalog is only worth showing if the gate does what it says.
-	it("names exactly what the gate asks: holding it gets in, lacking any one of it does not", () => {
-		const wrong = Arr.filter(gatedEndpointsOf(mapleApis), (gated) => {
-			const { requires, unmarked } = accessEntryOf(gated)
-			if (unmarked) return false
-			const letsIn = decideEndpointAccess(requires, gated)._tag === "Allowed"
-			const needsEach = Arr.every(
-				requires,
-				(permission) =>
-					decideEndpointAccess(
-						Arr.filter(requires, (held) => held !== permission),
-						gated,
-					)._tag === "Denied",
-			)
-			return !letsIn || !needsEach
-		})
-		expect(Arr.map(wrong, (gated) => nameOf(accessEntryOf(gated)))).toEqual([])
+	it("leaves out an endpoint no tenant gate guards", () => {
+		expect(names(catalog)).not.toContain("boards.webhook")
+		expect(catalog).toHaveLength(8)
 	})
 
-	it("has no write left without a rule", () => {
-		expect(
-			Arr.map(
-				Arr.filter(catalog, (one) => one.unmarked),
-				nameOf,
-			),
-		).toEqual([])
-	})
-
-	it("tells what the gate asks apart from what the handler asks for some requests", () => {
-		expect(entry("alertRules", "create")).toMatchObject({
-			method: "POST",
-			path: "/v2/alerts/rules",
-			requires: [],
-			handler: expect.arrayContaining(["alerts:manage", "query:sql"]),
-		})
-		expect(entry("dashboards", "upsertShare").requires).toEqual(
-			expect.arrayContaining(["telemetry:read", "dashboards:share"]),
-		)
+	it("lists a permission once when the endpoint and its group both ask for it", () => {
+		expect(entry("boards", "create").requires).toEqual(["telemetry:read", "dashboards:edit"])
 	})
 
 	it("carries a handler's own permission beside the gate's rule on one endpoint", () => {
-		// Creating a board needs Build dashboards; one that holds raw SQL also needs Run raw SQL.
-		expect(entry("dashboards", "create")).toMatchObject({
-			requires: expect.arrayContaining(["dashboards:edit", "telemetry:read"]),
-			handler: ["query:sql"],
+		expect(entry("boards", "create").handler).toEqual(["query:sql"])
+	})
+
+	it("gives a group's handler mark to its writes, and Read telemetry to its reads", () => {
+		expect(entry("rules", "create")).toMatchObject({
+			requires: [],
+			handler: ["alerts:manage", "query:sql"],
 		})
-		// Open to every member, and the handler asks billing of one who cannot read telemetry.
-		expect(entry("billing", "getDailySpend")).toMatchObject({ requires: [], handler: ["billing:manage"] })
+		expect(entry("rules", "list")).toMatchObject({ requires: ["telemetry:read"], handler: [] })
 	})
 
-	it("reads nothing into a group's handler mark for its reads, which need Read telemetry", () => {
-		expect(entry("alertRules", "list")).toMatchObject({ requires: ["telemetry:read"], handler: [] })
+	it("lets an endpoint's handler mark replace its group's, on a write and on a read", () => {
+		expect(entry("rules", "mute").handler).toEqual(["alerts:manage"])
+		expect(entry("rules", "secret")).toMatchObject({
+			requires: ["telemetry:read"],
+			handler: ["integrations:manage"],
+		})
 	})
 
+	it("asks nothing at the gate of a read open to every member, and still names its handler check", () => {
+		expect(entry("rules", "spend")).toMatchObject({ requires: [], handler: ["billing:manage"] })
+	})
+
+	it("reads an unmarked v2 POST the scope registry calls a read as needing Read telemetry", () => {
+		expect(entry("unmarked", "search")).toMatchObject({ requires: ["telemetry:read"], unmarked: false })
+	})
+
+	it("calls any other write without a rule unmarked", () => {
+		expect(entry("unmarked", "create")).toMatchObject({ requires: [], unmarked: true })
+	})
+})
+
+describe("endpointsBehind", () => {
 	it("lists what a permission opens, with whether the gate or the handler asks for it", () => {
-		const share = endpointsBehind(catalog, "dashboards:share")
-		expect(Arr.map(share, (one) => [nameOf(one), one.use])).toContainEqual([
-			"dashboards.upsertShare",
-			"requires",
+		const sql = endpointsBehind(catalog, "query:sql")
+		expect(Arr.map(sql, (one) => [`${one.group}.${one.endpoint}`, one.use])).toEqual([
+			["boards.create", "handler"],
+			["rules.create", "handler"],
 		])
-		const alerts = endpointsBehind(catalog, "alerts:manage")
-		expect(Arr.map(alerts, (one) => [nameOf(one), one.use])).toContainEqual([
-			"alertRules.create",
-			"handler",
+		const read = endpointsBehind(catalog, "telemetry:read")
+		expect(Arr.map(read, (one) => [`${one.group}.${one.endpoint}`, one.use])).toEqual([
+			["boards.create", "requires"],
+			["rules.list", "requires"],
+			["rules.secret", "requires"],
+			["unmarked.search", "requires"],
 		])
+	})
+
+	it("opens nothing for a permission no endpoint asks for", () => {
+		expect(endpointsBehind(catalog, "sso:manage")).toEqual([])
 	})
 })

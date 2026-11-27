@@ -7,7 +7,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { publicError } from "./public-error"
-import { EndpointAccess, handler } from "../endpoint-access"
+import { EndpointAccess, handlerChecks } from "../endpoint-access"
 
 /** `key_…` public ID ⇄ internal `ApiKeyId` (raw UUID). */
 export const ApiKeyPublicId = PublicId(PublicIdPrefixes.apiKey, ApiKeyId)
@@ -282,5 +282,5 @@ export class V2ApiKeysApiGroup extends HttpApiGroup.make("apiKeys")
 	// A restricted key also takes the permission behind each scope it carries (`apiKeyScopeFamilies`).
 	.annotate(
 		EndpointAccess,
-		handler("api_keys:manage", "api_keys:create_restricted", "api_keys:create_mcp"),
+		handlerChecks("api_keys:manage", "api_keys:create_restricted", "api_keys:create_mcp"),
 	) {}

@@ -8,7 +8,9 @@ import { accessSentences } from "./openapi-access"
 const document = OpenApi.fromApi(MapleApiV2)
 
 const operation = (method: string, path: string): Record<string, unknown> => {
-	const found: unknown = document.paths[path]?.[method]
+	const paths: unknown = document.paths
+	const pathItem: unknown = Predicate.isObject(paths) ? paths[path] : undefined
+	const found: unknown = Predicate.isObject(pathItem) ? pathItem[method] : undefined
 	return Predicate.isObject(found) ? found : {}
 }
 

@@ -44,7 +44,7 @@ import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { UptimeMonitorPublicId } from "./uptime-monitors"
-import { EndpointAccess, handler, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 /** `stp_…` public ID ⇄ internal `StatusPageId` (raw UUID). */
 export const StatusPagePublicId = PublicId(PublicIdPrefixes.statusPage, StatusPageId)
@@ -1552,7 +1552,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 	)
 	.annotate(
 		EndpointAccess,
-		handler("status_pages:edit", "status_pages:access", "status_pages:break_glass"),
+		handlerChecks("status_pages:edit", "status_pages:access", "status_pages:break_glass"),
 	) {}
 
 export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPageIncidents")

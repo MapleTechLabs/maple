@@ -6,7 +6,7 @@ import { IssueSeverity } from "./errors"
 import { normalizeRepoFullName } from "./vcs"
 
 import { AiTriageResult, AiTriageSuspectCommit, SUSPECT_SHA } from "../ai-triage"
-import { EndpointAccess, handler } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 export { AiTriageEvidence, AiTriageIncidentKind, AiTriageResult, AiTriageSuspectCommit } from "../ai-triage"
 
 /**
@@ -311,4 +311,4 @@ export class AiTriageApiGroup extends HttpApiGroup.make("aiTriage")
 	)
 	.prefix("/internal/ai-triage")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, handler("ai_triage:configure")) {}
+	.annotate(EndpointAccess, handlerChecks("ai_triage:configure")) {}
