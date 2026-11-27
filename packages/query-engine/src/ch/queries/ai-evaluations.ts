@@ -26,9 +26,10 @@ const windowConds = ($: Columns, tailSeconds = 0) => [
 /**
  * The window's scores, one per re-scored target: a later score with the same target, evaluator
  * and `Identifier` replaces the earlier one. A keyed session-scope score's target is its named
- * session, so a judge re-scoring a session from another trace replaces its earlier score. A score with no identifier is keyed by its timestamp
- * and content, so only an exact resend (an OTLP retry) merges into it. `conds` narrow the raw rows, and may only
- * name columns of the key; a filter on what a re-score can change (the verdict) goes outside.
+ * session, so a judge re-scoring a session from another trace replaces its earlier score. A score
+ * with no identifier is keyed by its timestamp and source content (not the derived verdict), so
+ * only an exact resend merges into it. `conds` narrow the raw rows; a filter on what a re-score
+ * can change (the verdict) goes outside.
  */
 const latestScores = (
 	conds: ($: Columns) => ReadonlyArray<CH.Condition | undefined> = () => [],
@@ -53,7 +54,14 @@ const latestScores = (
 				scoreKey: CH.if_(
 					$.Identifier.eq(""),
 					CH.toString_(
-						CH.cityHash64($.Timestamp, $.ScoreValue, $.ScoreLabel, $.Verdict, $.Explanation),
+						CH.cityHash64(
+							$.Timestamp,
+							$.ScoreValue,
+							$.HasScore,
+							$.ScoreLabel,
+							$.ErrorType,
+							$.Explanation,
+						),
 					),
 					$.Identifier,
 				),
