@@ -172,7 +172,6 @@ describe("pricing offer", () => {
 			"metrics",
 			"browser_sessions",
 			"product_events",
-			"ai_credits",
 		])
 	})
 

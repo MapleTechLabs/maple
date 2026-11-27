@@ -23,6 +23,8 @@ import LedgerHead from "./home/LedgerHead.astro";
 import {
     getOffer,
     isUsageCredit,
+    otherAllotments,
+    telemetryGroups,
     money,
     platformFeatures,
     rateBlock,
@@ -40,39 +42,19 @@ const PLATFORM_FEATURES = platformFeatures()
 // Telemetry is one small table, as Better Stack prices it: a column per group of signals that
 // share terms (logs and traces, then metrics) and a row each for what is included, ingestion and
 // retention. Everything else metered sits on the same columns under it.
-const GB_SIGNALS = offer.allotments.filter((a) => a.unit === "gb" && a.retention !== undefined)
+const telemetryColumns = telemetryGroups(offer).map((g) => ({
+    key: g.key,
+    label: g.label,
+    included:
+        g.size > 1
+            ? m.pricing_included_each_kept({ amount: g.included, days: String(g.days) })
+            : m.pricing_included_kept({ amount: g.included, days: String(g.days) }),
+    ingestion: g.ingestion === undefined ? undefined : rateLabel(g.ingestion),
+    retention: g.retention === undefined ? undefined : rateLabel(g.retention),
+}))
 
-/** Signals with the same allowance, period and rates share a column. */
-const telemetryColumns = Object.values(
-    Object.groupBy(GB_SIGNALS, (a) =>
-        [a.included, a.rate, a.retention?.days, a.retention?.rate].join(":"),
-    ),
-).flatMap((group) => {
-    const first = group?.[0]
-    if (group === undefined || first === undefined || first.retention === undefined) return []
-    const labels = group.map((a) => a.label)
-    const amount = volume(first, first.included)
-    return [
-        {
-            key: first.featureId,
-            label:
-                labels.length === 2
-                    ? m.pricing_signal_pair({ a: labels[0] ?? "", b: labels[1] ?? "" })
-                    : labels.join(", "),
-            included:
-                group.length > 1
-                    ? m.pricing_included_each_kept({ amount, days: String(first.retention.days) })
-                    : m.pricing_included_kept({ amount, days: String(first.retention.days) }),
-            ingestion: first.rate === undefined ? undefined : rateLabel(first.rate),
-            retention: first.retention.rate === undefined ? undefined : rateLabel(first.retention.rate),
-        },
-    ]
-})
-
-/** Sessions, events and AI usage: what is included and what each costs past it. */
-const otherMeters = offer.allotments
-    .filter((a) => !GB_SIGNALS.includes(a))
-    .map((a) => ({
+/** Sessions and events: what is included and what each costs past it. */
+const otherMeters = otherAllotments(offer).map((a) => ({
         featureId: a.featureId,
         label: a.label,
         included: volume(a, a.included),

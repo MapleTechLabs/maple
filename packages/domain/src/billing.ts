@@ -168,7 +168,8 @@ export const isPricingCardFeature = (featureId: string | null | undefined): feat
 	featureId !== null && featureId !== undefined && pricingCardFeatureIds.has(featureId)
 
 /** Billed features not yet advertised: kept off the public pricing page and the onboarding plan cards. */
-const UNADVERTISED_FEATURE_IDS: ReadonlySet<string> = new Set(["profiles"])
+// AI usage is billed but off the public pricing: its included credits are being retired.
+const UNADVERTISED_FEATURE_IDS: ReadonlySet<string> = new Set(["profiles", "ai_credits"])
 
 /** A pricing card feature the public pricing surfaces list; the billing page lists every card feature. */
 export const isAdvertisedPricingFeature = (featureId: string | null | undefined): featureId is string =>

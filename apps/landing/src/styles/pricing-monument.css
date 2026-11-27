@@ -73,7 +73,7 @@
 }
 .pricing-rates__grid {
 	display: grid;
-	grid-template-columns: repeat(6, minmax(0, 1fr));
+	grid-template-columns: repeat(4, minmax(0, 1fr));
 	margin-top: 18px;
 	border-block: 1px solid var(--border);
 	background: var(--background);
@@ -88,13 +88,12 @@
 .pricing-rates__cell:last-child {
 	border-right: 0;
 }
-/* Price over its unit in every cell: inline, "$0.002" pushed "/ session" to a line of its own
-   while "$0.15 / GB" stayed on one, so the cells read unevenly. */
+/* Price and unit on one line: four cells leave room for "$0.002 / session". */
 .pricing-rates__amount {
 	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: 2px;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px;
 	margin-top: 14px;
 }
 .pricing-rates__amount > span:first-child {

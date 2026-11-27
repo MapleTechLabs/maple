@@ -286,6 +286,51 @@ const mirrorRetention = (featureId: "logs" | "traces" | "metrics"): Retention =>
 	rate: DATA_RATES.storagePerGbMonth,
 })
 
+/** GB signals with the same allowance, period and rates: one column of the table, one cell of the strip. */
+export interface TelemetryGroup {
+	key: string
+	label: string
+	/** How many signals share these terms ("100 GB each"). */
+	size: number
+	included: string
+	days: number
+	ingestion: number | undefined
+	retention: number | undefined
+}
+
+export const telemetryGroups = (offer: Offer): ReadonlyArray<TelemetryGroup> =>
+	Arr.flatMap(
+		Object.values(
+			Arr.groupBy(
+				Arr.filter(offer.allotments, (a) => a.unit === "gb" && a.retention !== undefined),
+				(a) => [a.included, a.rate, a.retention?.days, a.retention?.rate].join(":"),
+			),
+		),
+		(group) => {
+			const first = group[0]
+			if (first.retention === undefined) return []
+			const labels = Arr.map(group, (a) => a.label)
+			return [
+				{
+					key: first.featureId,
+					label:
+						labels.length === 2
+							? m.pricing_signal_pair({ a: labels[0] ?? "", b: labels[1] ?? "" })
+							: Arr.join(labels, ", "),
+					size: group.length,
+					included: volume(first, first.included),
+					days: first.retention.days,
+					ingestion: first.rate,
+					retention: first.retention.rate,
+				},
+			]
+		},
+	)
+
+/** Everything metered that is not a GB signal with a retention period: sessions, events. */
+export const otherAllotments = (offer: Offer): ReadonlyArray<Allotment> =>
+	Arr.filter(offer.allotments, (a) => !(a.unit === "gb" && a.retention !== undefined))
+
 const fallbackOffer = (labels: Record<string, string>): Offer => ({
 	name: "Startup",
 	price: 39,
@@ -336,14 +381,6 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 			included: 1_000_000,
 			rate: 5,
 			rateUnits: EVENTS_QUOTE_UNITS,
-		},
-		{
-			featureId: "ai_credits",
-			label: labels.ai_credits,
-			unit: "usd",
-			included: 10,
-			rate: 1,
-			rateUnits: 1,
 		},
 	],
 	ctaLabel: m.pricing_start_trial({ duration: "14" }),

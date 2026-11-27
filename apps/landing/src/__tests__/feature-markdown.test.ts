@@ -40,7 +40,7 @@ describe("feature page markdown twins", () => {
 
 	it("bills code review against AI usage", async () => {
 		const text = await renderFeature("github")
-		expect(text).toMatch(/- \*\*billed as\*\*: AI usage: \$10 included, then billed per model/)
+		expect(text).toMatch(/- \*\*billed as\*\*: AI usage, billed per model by tokens used/)
 	})
 
 	it("says an unmetered feature has no separate charge", async () => {

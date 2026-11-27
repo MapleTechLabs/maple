@@ -18,12 +18,12 @@ import RegionChip from "./RegionChip.astro";
 import ProductFrame from "./marketing/ProductFrame.astro";
 import {
 	getOffer,
-	isUsageCredit,
 	money,
+	otherAllotments,
 	rateBlock,
 	rateLabel,
+	telemetryGroups,
 	volume,
-	type Allotment,
 } from "../lib/pricing-offer";
 
 const offer = await getOffer();
@@ -35,20 +35,38 @@ const gbSignal = offer.allotments.find((a) => a.unit === "gb") ?? offer.allotmen
 const includedGB = gbSignal?.included ?? 0;
 const gbRate = gbSignal?.rate ?? 0;
 
-// Same sentence templates as the offer card so the two never disagree.
-const RATE_SLOT = "%RATE%";
-const rateSentence = (a: Allotment): string => {
-	if (a.unlimited) return m.pricing_free_beta();
-	if (isUsageCredit(a)) return m.pricing_rate_ai_usage();
-	if (a.rate === undefined) return "";
-	const rendered =
-		a.unit === "gb"
-			? m.pricing_rate_gb({ rate: RATE_SLOT })
-			: a.unit === "sessions"
-				? m.pricing_rate_session({ rate: RATE_SLOT })
-				: m.pricing_rate_events({ rate: RATE_SLOT, block: rateBlock(a) });
-	return rendered.replace(RATE_SLOT, rateLabel(a.rate));
-};
+// The strip's cells follow the offer table's grouping: logs and traces share one, metrics has
+// its own, then each other meter. A cell is a name, the price with its unit, and one or two
+// plain lines: what is included, and for telemetry how long it is kept free.
+interface RateCell {
+	key: string
+	label: string
+	price: string
+	unit: string
+	lines: ReadonlyArray<string>
+}
+
+const rateCells: ReadonlyArray<RateCell> = [
+	...telemetryGroups(offer).map((g) => ({
+		key: g.key,
+		label: g.label,
+		price: g.ingestion === undefined ? "" : rateLabel(g.ingestion),
+		unit: "/ GB",
+		lines: [
+			g.size > 1 ? m.pricing_includes_each({ amount: g.included }) : m.pricing_rate_included({ amount: g.included }),
+			...(g.retention === undefined
+				? []
+				: [m.pricing_kept_free_then({ days: String(g.days), rate: rateLabel(g.retention) })]),
+		],
+	})),
+	...otherAllotments(offer).map((a) => ({
+		key: a.featureId,
+		label: a.label,
+		price: a.unlimited ? m.pricing_unlimited() : a.rate === undefined ? "" : rateLabel(a.rate),
+		unit: a.unlimited ? "" : a.unit === "sessions" ? "/ session" : `/ ${rateBlock(a)} events`,
+		lines: [a.unlimited ? m.pricing_free_beta() : m.pricing_rate_included({ amount: volume(a, a.included) })],
+	})),
+];
 
 const claims = [m.pricing_no_seat(), m.pricing_no_host(), m.pricing_no_series()];
 ---
@@ -143,61 +161,18 @@ const claims = [m.pricing_no_seat(), m.pricing_no_host(), m.pricing_no_series()]
 				class="pricing-rates__grid"
 			>
 				{
-					offer.allotments.map((a) => (
+					rateCells.map((c) => (
 						<div class="pricing-rates__cell">
-							<div class="text-[12.5px] text-fg">{a.label}</div>
+							<div class="text-[12.5px] text-fg">{c.label}</div>
 							<div class="pricing-rates__amount">
-								{a.unlimited ? (
-									<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">
-										{m.pricing_unlimited()}
-									</span>
-								) : isUsageCredit(a) ? (
-									<>
-										<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">
-											{volume(a, a.included)}
-										</span>
-										<span class="font-mono text-[11px] text-fg-muted">{m.pricing_ai_usage_included()}</span>
-									</>
-								) : (
-									<>
-										<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">
-											{a.rate === undefined ? "—" : rateLabel(a.rate)}
-										</span>
-										<span class="font-mono text-[11px] text-fg-muted">
-											{a.unit === "gb"
-												? "/ GB"
-												: a.unit === "sessions"
-													? "/ session"
-													: `/ ${rateBlock(a)} events`}
-										</span>
-									</>
-								)}
+								<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">{c.price}</span>
+								<span class="font-mono text-[11px] text-fg-muted">{c.unit}</span>
 							</div>
-							{a.unlimited || isUsageCredit(a) ? (
-								<div class="mt-2 text-[11.5px] leading-relaxed text-fg-muted">{rateSentence(a)}</div>
-							) : (
-								/* The same labels as the offer card's columns, so the two read as one table. */
-								<dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11.5px]">
-									<dt class="text-fg-muted">{m.pricing_col_included()}</dt>
-									<dd class="font-mono tabular-nums text-fg">{volume(a, a.included)}</dd>
-									{a.retention !== undefined && (
-										<>
-											<dt class="text-fg-muted">{m.pricing_col_kept()}</dt>
-											<dd class="font-mono tabular-nums text-fg">{m.pricing_days({ days: String(a.retention.days) })}</dd>
-										</>
-									)}
-									{a.retention?.rate !== undefined && (
-										<>
-											<dt class="text-fg-muted">{m.pricing_row_retention()}</dt>
-											<dd class="font-mono tabular-nums text-fg">
-												{rateLabel(a.retention.rate)}{" "}
-												{/* The unit wraps whole rather than running into the cell's padding. */}
-												<span class="inline-block whitespace-nowrap text-fg-muted">/ GB-month</span>
-											</dd>
-										</>
-									)}
-								</dl>
-							)}
+							<div class="mt-3 space-y-1 text-[12px] leading-relaxed text-fg-muted">
+								{c.lines.map((line) => (
+									<p>{line}</p>
+								))}
+							</div>
 						</div>
 					))
 				}
