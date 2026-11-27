@@ -187,7 +187,8 @@ const fixtures: FixtureRule[] = [
 	// The session's evaluation scores: by its traces only; the response read finds no responses.
 	{ match: (sql) => Str.includes("GROUP BY responseId")(sql), rows: [] },
 	{
-		match: (sql) => Str.includes("FROM ai_evaluations")(sql),
+		// A score read, not the sessions list's evaluation filter (which joins the trace index).
+		match: (sql) => Str.includes("FROM ai_evaluations")(sql) && !Str.includes("ai_trace_index")(sql),
 		rows: (sql) =>
 			Str.includes(`IN ('${TRACE_ID}')`)(sql)
 				? [
