@@ -58,4 +58,13 @@ describe("withAdClickCookie", () => {
 		const missing = withAdClickCookie(request, new Response("no", { status: 404 }), "NZ", NOW)
 		expect(missing.headers.get("Set-Cookie")).toBeNull()
 	})
+
+	it("keeps the click on a trailing-slash redirect, with its status and target", () => {
+		const request = page("https://maple.dev/pricing?gclid=abc")
+		const redirect = new Response(null, { status: 308, headers: { Location: "/pricing/?gclid=abc" } })
+		const kept = withAdClickCookie(request, redirect, "US", NOW)
+		expect(kept.status).toBe(308)
+		expect(kept.headers.get("Location")).toBe("/pricing/?gclid=abc")
+		expect(kept.headers.get("Set-Cookie")).toContain("maple_ad_click=gclid.abc.")
+	})
 })
