@@ -22,24 +22,30 @@ const documentPath = (routePath: string): string => Str.replaceAll(/:([A-Za-z0-9
 
 const named = (permission: Permission): string => `${permissions[permission].label} (\`${permission}\`)`
 
-const listed = (names: ReadonlyArray<string>, last: "and" | "or"): string =>
+const listed = (names: ReadonlyArray<string>): string =>
 	names.length <= 1
 		? Arr.join(names, "")
-		: `${Arr.join(names.slice(0, -1), ", ")} ${last} ${names[names.length - 1]}`
+		: `${Arr.join(names.slice(0, -1), ", ")} and ${names[names.length - 1]}`
 
-/** The sentences an operation's description gains, or none for an endpoint that asks nothing. */
-export const accessSentences = (entry: Pick<EndpointAccessEntry, "requires" | "handler">): string =>
-	Arr.join(
+/**
+ * The sentences an operation's description gains, or none for an endpoint that asks nothing. What
+ * a handler asks is a "may": which of them a request needs depends on what it changes.
+ */
+export const accessSentences = (entry: Pick<EndpointAccessEntry, "requires" | "handler">): string => {
+	const required = listed(Arr.map(entry.requires, named))
+	const conditional = listed(Arr.map(entry.handler, named))
+	return Arr.join(
 		[
-			...(entry.requires.length > 0
-				? [`The caller's role needs ${listed(Arr.map(entry.requires, named), "and")}.`]
-				: []),
-			...(entry.handler.length > 0
-				? [`Depending on the request, it also needs ${listed(Arr.map(entry.handler, named), "or")}.`]
-				: []),
+			...(entry.requires.length > 0 ? [`The caller's role needs ${required}.`] : []),
+			...(entry.handler.length === 0
+				? []
+				: entry.requires.length > 0
+					? [`Depending on the request, it may also need ${conditional}.`]
+					: [`Depending on the request, the caller's role may need ${conditional}.`]),
 		],
 		" ",
 	)
+}
 
 /** Adds each operation's role permissions: as `x-…-permissions` fields and in its description. */
 export const addAccessRequirements =

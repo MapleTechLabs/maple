@@ -20,7 +20,7 @@ describe("role permissions in the OpenAPI document", () => {
 		expect(create["x-required-permissions"]).toEqual(["dashboards:edit", "telemetry:read"])
 		expect(create["x-conditional-permissions"]).toEqual(["query:sql"])
 		expect(create["description"]).toContain(
-			"The caller's role needs Build dashboards (`dashboards:edit`) and Read telemetry (`telemetry:read`). Depending on the request, it also needs Run raw SQL (`query:sql`).",
+			"The caller's role needs Build dashboards (`dashboards:edit`) and Read telemetry (`telemetry:read`). Depending on the request, it may also need Run raw SQL (`query:sql`).",
 		)
 	})
 
@@ -53,6 +53,12 @@ describe("role permissions in the OpenAPI document", () => {
 				),
 		)
 		expect(Arr.map(missed, (entry) => `${entry.method} ${entry.path}`)).toEqual([])
+	})
+
+	it('does not say "also" when the gate asks for nothing and only the handler checks', () => {
+		expect(accessSentences({ requires: [], handler: ["oncall:manage"] })).toBe(
+			"Depending on the request, the caller's role may need Manage on-call schedules (`oncall:manage`).",
+		)
 	})
 
 	it("says nothing for an endpoint open to every member", () => {
