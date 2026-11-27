@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
+import * as Integrations from "@maple/query-engine-integrations"
 import { CH as Compile, formatWarehouseDateTime } from "@maple/query-engine"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import { OrgId } from "@maple/domain"
@@ -208,6 +209,178 @@ describeWithChdb("ai_evaluations views", () => {
 				DeploymentEnv: "production",
 			},
 		])
+	})
+
+	test("reads a verdict from a boolean value", () => {
+		const scored = (name: string, value: string, type = "") =>
+			insertLog(db, {
+				"event.name": "gen_ai.evaluation.result",
+				"gen_ai.evaluation.name": name,
+				"gen_ai.evaluation.score.value": value,
+				"maple_ai.evaluation.score.type": type,
+			})
+		scored("Bool true", "true")
+		scored("Bool false", " False ")
+		scored("Typed one", "1", "Boolean")
+		scored("Typed zero", "0.0", "boolean")
+		scored("Typed one, long", "1.00", "boolean")
+		// An untyped 0 / 1 may be a 0..1 score: no verdict.
+		scored("Untyped one", "1")
+		const verdicts = Rec.fromEntries(
+			Arr.map(rows(db), (row): [string, string] => [row.Name, row.Verdict]),
+		)
+		expect({
+			"Bool true": verdicts["Bool true"],
+			"Bool false": verdicts["Bool false"],
+			"Typed one": verdicts["Typed one"],
+			"Typed zero": verdicts["Typed zero"],
+			"Typed one, long": verdicts["Typed one, long"],
+			"Untyped one": verdicts["Untyped one"],
+		}).toEqual({
+			"Bool true": "pass",
+			"Bool false": "fail",
+			"Typed one": "pass",
+			"Typed zero": "fail",
+			"Typed one, long": "pass",
+			"Untyped one": "",
+		})
+	})
+})
+
+describeWithChdb("ai_evaluations re-scores and response-only scores", () => {
+	let root = ""
+	let db: Chdb
+	const params = {
+		orgId: Schema.decodeSync(OrgId)(ORG),
+		startTime: formatWarehouseDateTime(AT_MS - 3_600_000),
+		endTime: formatWarehouseDateTime(AT_MS + 3_600_000),
+	}
+	const run = <A>(compiled: { readonly sql: string }, schema: Schema.Codec<A, unknown>) =>
+		decodeJsonEachRow(schema)(db.query(normalizeSqlForClickHouseClient(compiled.sql)))
+	const score = (
+		extra: Readonly<Record<string, string>>,
+		opts: { readonly atMs?: number; readonly traceId?: string; readonly spanId?: string } = {},
+	) =>
+		insertLog(
+			db,
+			{ "event.name": "gen_ai.evaluation.result", "gen_ai.evaluation.name": "Correctness", ...extra },
+			opts.traceId ?? TRACE,
+			opts.spanId ?? SPAN,
+			opts.atMs ?? AT_MS,
+		)
+	const Summary = Schema.Struct({
+		name: Schema.String,
+		scoreCount: CH.CHNumber,
+		passCount: CH.CHNumber,
+		failCount: CH.CHNumber,
+	})
+	const Score = Schema.Struct({
+		verdict: Schema.String,
+		traceId: Schema.String,
+		responseId: Schema.String,
+	})
+
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), "maple-ai-evaluations-rescores-"))
+		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
+		// A judge re-scores one span under one identifier: the later verdict replaces the first.
+		score(
+			{ "gen_ai.evaluation.score.label": "fail", "maple_ai.evaluation.identifier": "run-1" },
+			{ atMs: AT_MS - 60_000 },
+		)
+		score({ "gen_ai.evaluation.score.label": "pass", "maple_ai.evaluation.identifier": "run-1" })
+		// An OTLP retry of an unkeyed score is one score; a different score at the same instant is not.
+		score({ "gen_ai.evaluation.score.label": "fail" }, { spanId: "d2d2d2d2d2d2d2d2" })
+		score({ "gen_ai.evaluation.score.label": "fail" }, { spanId: "d2d2d2d2d2d2d2d2" })
+		score({ "gen_ai.evaluation.score.label": "pass" }, { spanId: "d2d2d2d2d2d2d2d2" })
+		// A score written with no trace context, naming only the provider's response.
+		score(
+			{ "gen_ai.evaluation.score.label": "pass", "gen_ai.response.id": "resp_42" },
+			{ traceId: "", spanId: "" },
+		)
+		db.exec(
+			`INSERT INTO ai_trace_index (OrgId, Timestamp, TraceId, SpanId, ResponseId) VALUES ('${ORG}', '${ts(AT_MS)}', '${TRACE}', 'e3e3e3e3e3e3e3e3', 'resp_42'), ('${ORG}', '${ts(AT_MS)}', '${TRACE}', 'f4f4f4f4f4f4f4f4', '')`,
+		)
+	})
+
+	afterAll(() => {
+		db.close()
+		rmSync(root, { recursive: true, force: true })
+	})
+
+	test("counts a re-scored target and a resent score once, with the latest verdict", () => {
+		expect(run(Compile.compileUnsafe(CH.aiEvaluationsSummaryQuery(), params), Summary)).toEqual([
+			{ name: "Correctness", scoreCount: 4, passCount: 3, failCount: 1 },
+		])
+		const failures = run(
+			Compile.compileUnsafe(CH.aiEvaluationScoresQuery({ verdict: "fail" }), params),
+			Score,
+		)
+		// The replaced `fail` of run-1 is not a failure any more.
+		expect(failures).toEqual([{ verdict: "fail", traceId: TRACE, responseId: "" }])
+	})
+
+	test("a later span event re-scoring the same span wins, by the event's own time", () => {
+		const correctness = (verdict: string) => ({
+			"gen_ai.evaluation.name": "Span judge",
+			"gen_ai.evaluation.score.label": verdict,
+			"maple_ai.evaluation.identifier": "judge-2",
+		})
+		db.exec(
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ServiceName, SpanName, EventsTimestamp, EventsName, EventsAttributes) VALUES ('${ORG}', '${ts(AT_MS)}', '${TRACE}', 'a9a9a9a9a9a9a9a9', 'agent', 'chat', ['${ts(AT_MS + 60_000)}', '${ts(AT_MS + 120_000)}'], ['gen_ai.evaluation.result', 'gen_ai.evaluation.result'], [${map(correctness("fail"))}, ${map(correctness("pass"))}])`,
+		)
+		expect(
+			run(Compile.compileUnsafe(CH.aiEvaluationsSummaryQuery({ name: "Span judge" }), params), Summary),
+		).toEqual([{ name: "Span judge", scoreCount: 1, passCount: 1, failCount: 0 }])
+	})
+
+	test("a keyed session score re-graded from another trace replaces the first", () => {
+		const graded = (verdict: string, traceId: string, atMs: number) =>
+			score(
+				{
+					"gen_ai.evaluation.name": "Session judge",
+					"gen_ai.evaluation.score.label": verdict,
+					"maple_ai.evaluation.scope": "session",
+					"maple_ai.evaluation.session.id": "session-7",
+					"maple_ai.evaluation.identifier": "judge-3",
+				},
+				{ traceId, atMs },
+			)
+		graded("fail", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", AT_MS - 60_000)
+		graded("pass", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", AT_MS)
+		expect(
+			run(Compile.compileUnsafe(CH.aiEvaluationScoresQuery({ sessionId: "session-7" }), params), Score),
+		).toEqual([{ verdict: "pass", traceId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", responseId: "" }])
+	})
+
+	test("finds response-only scores by response, and the span each response came from", () => {
+		expect(
+			run(
+				Compile.compileUnsafe(CH.aiEvaluationScoresQuery({ responseIds: ["resp_42"] }), params),
+				Score,
+			),
+		).toEqual([{ verdict: "pass", traceId: "", responseId: "resp_42" }])
+		const spans = Schema.Struct({
+			responseId: Schema.String,
+			traceId: Schema.String,
+			spanId: Schema.String,
+		})
+		const expected = [{ responseId: "resp_42", traceId: TRACE, spanId: "e3e3e3e3e3e3e3e3" }]
+		expect(
+			run(
+				Compile.compileUnsafe(Integrations.aiResponseSpansQuery({ traceIds: [TRACE] }), params),
+				spans,
+			),
+		).toEqual(expected)
+		expect(
+			run(
+				Compile.compileUnsafe(
+					Integrations.aiResponseSpansQuery({ responseIds: ["resp_42"] }),
+					params,
+				),
+				spans,
+			),
+		).toEqual(expected)
 	})
 })
 
@@ -413,5 +586,148 @@ describeWithChdb("ai_evaluations reads", () => {
 		)
 		expect(rows).toHaveLength(2)
 		expect(new Set(Arr.map(rows, (row) => row.traceId))).toEqual(new Set([TRACE, ""]))
+	})
+})
+
+describeWithChdb("the Agent Sessions evaluation filter", () => {
+	let root = ""
+	let db: Chdb
+	const params = {
+		orgId: Schema.decodeSync(OrgId)(ORG),
+		startTime: formatWarehouseDateTime(AT_MS - 3_600_000),
+		endTime: formatWarehouseDateTime(AT_MS + 3_600_000),
+	}
+	const trace = (digit: string) => Str.repeat(32)(digit)
+	const Ranked = Schema.Struct({ sessionId: Schema.String })
+	const matching = (
+		verdict: "pass" | "fail",
+		name = "Context window",
+		extra: { readonly toolNames?: ReadonlyArray<string> } = {},
+	) => {
+		const evaluation = { name, verdict }
+		const ranked = decodeJsonEachRow(Ranked)(
+			db.query(
+				normalizeSqlForClickHouseClient(
+					Compile.compileUnsafe(Integrations.aiSessionRankQuery({ evaluation, ...extra }), params)
+						.sql,
+				),
+			),
+		)
+		// A usage sort ranks on the netted level instead: the same sessions must match there.
+		const netted = decodeJsonEachRow(Ranked)(
+			db.query(
+				normalizeSqlForClickHouseClient(
+					Compile.compileUnsafe(
+						Integrations.aiSessionPageQuery({ evaluation, sortBy: "cost", ...extra }),
+						params,
+					).sql,
+				),
+			),
+		)
+		const ids = (rows: ReadonlyArray<{ readonly sessionId: string }>) =>
+			Arr.sort(
+				Arr.map(rows, (row) => row.sessionId),
+				Str.Order,
+			)
+		expect(ids(netted)).toEqual(ids(ranked))
+		return ids(ranked)
+	}
+
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), "maple-ai-evaluations-filter-"))
+		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
+		// sess-a, sess-b, sess-c, sess-e and sess-f carry a session id; trace 4 has none (`trace:` session).
+		const sessions: ReadonlyArray<readonly [string, string]> = [
+			[trace("1"), "sess-a"],
+			[trace("2"), "sess-b"],
+			[trace("3"), "sess-c"],
+			[trace("4"), ""],
+			[trace("5"), "sess-e"],
+			[trace("6"), "sess-f"],
+		]
+		db.exec(
+			`INSERT INTO ai_trace_index (OrgId, Timestamp, TraceId, SpanId, SessionId, IsLlmCall) VALUES ${Arr.join(
+				Arr.map(
+					sessions,
+					([traceId, sessionId]) =>
+						`('${ORG}', '${ts(AT_MS)}', '${traceId}', 'a1a1a1a1a1a1a1a1', '${sessionId}', 1)`,
+				),
+				", ",
+			)}`,
+		)
+		const score = (
+			name: string,
+			extra: Readonly<Record<string, string>>,
+			traceId: string,
+			atMs = AT_MS,
+		) =>
+			insertLog(
+				db,
+				{ "event.name": "gen_ai.evaluation.result", "gen_ai.evaluation.name": name, ...extra },
+				traceId,
+				SPAN,
+				atMs,
+			)
+		const fail = { "gen_ai.evaluation.score.label": "fail" }
+		// sess-a: a failing score on its trace.
+		score("Context window", fail, trace("1"))
+		// sess-b: a session-scope failure naming it, emitted on sess-e's trace, which it does not file under.
+		score(
+			"Context window",
+			{ ...fail, "maple_ai.evaluation.scope": "session", "maple_ai.evaluation.session.id": "sess-b" },
+			trace("5"),
+		)
+		// sess-c: failed, then re-scored to pass under the same identifier.
+		score(
+			"Context window",
+			{ ...fail, "maple_ai.evaluation.identifier": "judge-1" },
+			trace("3"),
+			AT_MS - 60_000,
+		)
+		score(
+			"Context window",
+			{ "gen_ai.evaluation.score.label": "pass", "maple_ai.evaluation.identifier": "judge-1" },
+			trace("3"),
+		)
+		// The sessionless trace 4: a failing score on it.
+		score("Context window", fail, trace("4"))
+		// sess-f: another evaluator's failure.
+		score("Relevance", fail, trace("6"))
+		// sess-g: its first trace called `search_logs`, its second was graded and failed.
+		db.exec(
+			`INSERT INTO ai_trace_index (OrgId, Timestamp, TraceId, SpanId, SessionId, IsLlmCall, IsToolCall, ToolName) VALUES ('${ORG}', '${ts(AT_MS)}', '${trace("7")}', 'a1a1a1a1a1a1a1a1', 'sess-g', 0, 1, 'search_logs'), ('${ORG}', '${ts(AT_MS)}', '${trace("8")}', 'a1a1a1a1a1a1a1a1', 'sess-g', 1, 0, '')`,
+		)
+		score("Grounded answer", fail, trace("8"))
+		// Judges score late: one written hours after the window ends counts, one past a day does not.
+		score("Late judge", fail, trace("6"), AT_MS + 3 * 3_600_000)
+		score("Late judge", fail, trace("1"), AT_MS + 30 * 3_600_000)
+		// A response-only failure is out of the filter's scope.
+		score("Context window", { ...fail, "gen_ai.response.id": "resp_9" }, "")
+	})
+
+	afterAll(() => {
+		db.close()
+		rmSync(root, { recursive: true, force: true })
+	})
+
+	test("matches sessions by trace-filed and session-scope scores, latest verdict only", () => {
+		expect(matching("fail")).toEqual(["sess-a", "sess-b", `trace:${trace("4")}`])
+	})
+
+	test("matches a re-scored session by its new verdict", () => {
+		expect(matching("pass")).toEqual(["sess-c"])
+	})
+
+	test("matches a session whose tool and failing score are on different traces", () => {
+		expect(matching("fail", "Grounded answer", { toolNames: ["search_logs"] })).toEqual(["sess-g"])
+	})
+
+	test("matches scores written up to a day after the window ends", () => {
+		expect(matching("fail", "Late judge")).toEqual(["sess-f"])
+	})
+
+	test("matches only the named evaluator", () => {
+		expect(matching("fail", "Relevance")).toEqual(["sess-f"])
+		expect(matching("fail", "Unknown")).toEqual([])
 	})
 })

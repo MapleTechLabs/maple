@@ -240,7 +240,7 @@ export const startup = plan({
 		{
 			// One credit is one dollar of model spend after markup.
 			featureId: "ai_credits",
-			included: 10,
+			included: 1,
 			price: {
 				amount: 1,
 				billingUnits: 1,

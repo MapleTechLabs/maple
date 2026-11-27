@@ -1,7 +1,9 @@
 import { Array as Arr, Effect, Record as Rec, Schema } from "effect"
+import { AccessSink } from "./access-sink"
 import { type Permission, permissions } from "./permissions"
 import { builtInRoles, NO_ROLE_PERMISSIONS, permissionsOfRole } from "./roles"
 
+export { type AccessCheck, AccessSink } from "./access-sink"
 export {
 	implicationsOf,
 	type Permission,
@@ -128,14 +130,20 @@ export const denialFor = (permission: Permission): Denial => {
 
 /**
  * Fail with the caller's forbidden error unless the grants hold `permission`. Each route group keeps
- * its own tagged error (their tags and codes are public), built from the {@link Denial}.
+ * its own tagged error (their tags and codes are public), built from the {@link Denial}. What was
+ * asked goes to the {@link AccessSink}.
  */
 export const check = <E>(
 	grants: Grants,
 	permission: Permission,
 	onDenied: (denial: Denial) => E,
 ): Effect.Effect<void, E> =>
-	can(grants, permission) ? Effect.void : Effect.fail(onDenied(denialFor(permission)))
+	Effect.gen(function* () {
+		const report = yield* AccessSink
+		const allowed = can(grants, permission)
+		yield* report({ permission, allowed })
+		if (!allowed) return yield* Effect.fail(onDenied(denialFor(permission)))
+	})
 
 /** What a role limited to namespaces is told where Read telemetry is asked: naming the permission would not help it. */
 export const scopedAccessMessage =

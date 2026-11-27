@@ -60,8 +60,9 @@ extension FixtureAPI {
 			let wobble = 1 + 0.08 * sin(Double(index) * 1.7)
 			let value: Double
 			if let trigger, at < resolved {
-				// -1 at 10 minutes before the trigger, 0 at the trigger, 1 at 10 after.
-				let phase = at.timeIntervalSince(trigger) / 600
+				// The breach leads the incident by the checks it took to open it: -1 at
+				// 14 minutes before the trigger, 0 at 4 before, 1 at 6 after.
+				let phase = (at.timeIntervalSince(trigger) + 240) / 600
 				let ramp = min(1, max(0, (phase + 1) / 2))
 				let crossing = rule.threshold * 1.15
 				value = (phase < 0 ? calm + (crossing - calm) * ramp * ramp : crossing + (peak - crossing) * min(1, phase)) * wobble

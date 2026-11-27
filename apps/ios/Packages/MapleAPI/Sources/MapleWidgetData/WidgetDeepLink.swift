@@ -22,6 +22,10 @@ public struct WidgetDeepLink: Hashable, Sendable {
 		case incidentsList
 		case issuesList
 		case servicesList
+		/// Who is on call and when the viewer is.
+		case onCall
+		/// One on-call schedule, by its `onc_…` id.
+		case schedule(id: String)
 	}
 
 	public var target: Target
@@ -81,6 +85,11 @@ public struct WidgetDeepLink: Hashable, Sendable {
 			target = resolve({ .service(name: $0) }, orElse: .servicesList)
 		case "services":
 			target = .servicesList
+		case "oncall":
+			target = .onCall
+		case "schedule":
+			// A schedule that lost its id still has a list to land on.
+			target = resolve({ .schedule(id: $0) }, orElse: .onCall)
 		default:
 			return nil
 		}
@@ -119,6 +128,12 @@ public struct WidgetDeepLink: Hashable, Sendable {
 			components.host = "issues"
 		case .servicesList:
 			components.host = "services"
+		case .onCall:
+			components.host = "oncall"
+		case .schedule(let id):
+			components.host = "schedule"
+			guard let path = Self.encodedSegment(id) else { return nil }
+			components.percentEncodedPath = path
 		}
 
 		if let organizationId, !organizationId.isEmpty {

@@ -472,6 +472,10 @@ export interface CumulativePoint {
 	readonly traces: number | null
 	readonly metrics: number | null
 	readonly profiles: number | null
+	readonly storage_traces: number | null
+	readonly storage_logs: number | null
+	readonly storage_metrics: number | null
+	readonly storage_profiles: number | null
 	readonly browser_sessions: number | null
 	readonly product_events: number | null
 	readonly ai_credits: number | null
@@ -610,6 +614,10 @@ export function buildCumulativeSeries({
 			traces: future ? null : accrued.traces,
 			metrics: future ? null : accrued.metrics,
 			profiles: future ? null : accrued.profiles,
+			storage_traces: future ? null : accrued.storage_traces,
+			storage_logs: future ? null : accrued.storage_logs,
+			storage_metrics: future ? null : accrued.storage_metrics,
+			storage_profiles: future ? null : accrued.storage_profiles,
 			browser_sessions: future ? null : accrued.browser_sessions,
 			product_events: future ? null : accrued.product_events,
 			ai_credits: future ? null : accrued.ai_credits,

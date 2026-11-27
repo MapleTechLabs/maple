@@ -21,8 +21,8 @@ describe("getFeatureRows", () => {
 				item("ai_input_tokens", 0),
 				item("some_future_feature", 5),
 				item("traces", 100),
-				// Billed, but off the public price list while its included credits are retired.
-				item("ai_credits", 10),
+				// Billed, but off the public price list.
+				item("ai_credits", 1),
 			],
 		})
 

@@ -24,6 +24,7 @@ export const foldLabShell = <Model extends { readonly shell: ShellModel }, Messa
 
 /** A signed-in analyst with nothing else read yet: all the shell needs to pick their sidebar. */
 export const ANALYST_CLERK: ShellClerk = {
+	maybeUserId: Option.none(),
 	maybeUser: Option.none(),
 	maybeOrganization: Option.none(),
 	memberships: [],
@@ -57,13 +58,13 @@ export const labShellView = <Message>(
 		model: shell,
 		view: sheetLayerView,
 		toParentMessage,
-		viewInputs: { currentPath: frame.currentPath },
+		viewInputs: { currentPath: frame.currentPath, clerk: frame.clerk },
 	}),
 	h.submodel({
 		slotId: "shell-menu",
 		model: shell,
 		view: menuLayerView,
 		toParentMessage,
-		viewInputs: { currentPath: frame.currentPath },
+		viewInputs: { currentPath: frame.currentPath, clerk: frame.clerk },
 	}),
 ]

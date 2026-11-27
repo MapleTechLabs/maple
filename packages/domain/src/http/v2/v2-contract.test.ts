@@ -649,6 +649,7 @@ describe("V2 alerts wire format", () => {
 				pass_count: 2,
 				steps_sent: 1,
 				next_step_at: "2026-07-15T09:25:00.000Z",
+				next_step_people: [{ user_id: "user_2Nk8mXqPfR3yZ1aB4cD5eF6g", name: "Priya Shah" }],
 			},
 			silence_id: null,
 			silenced_at: null,
@@ -676,6 +677,7 @@ describe("V2 alerts wire format", () => {
 			pass_count: 1,
 			steps_sent: 0,
 			next_step_at: null,
+			next_step_people: [],
 		}
 		expect(Result.isSuccess(decode(escalation))).toBe(true)
 		expect(Result.isSuccess(decode(null))).toBe(true)

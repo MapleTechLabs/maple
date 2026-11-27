@@ -1736,5 +1736,19 @@
 	"feat_cost_faq_6_q": "Does reading AWS cost add to my AWS bill?",
 	"feat_cost_faq_6_a": "A little. AWS charges $0.01 per Cost Explorer API request. Once a source passes 500 requests in a month, Maple waits until the next month to load older history. At 1,500 it stops reading until then, which keeps the charge to about $15 a month per AWS source.",
 	"feat_cost_cta_title": "Connect your first cost source.",
-	"feat_cost_cta_lede": "Add an AWS connection or an AI API key. This month and last month show up within minutes."
+	"feat_cost_cta_lede": "Add an AWS connection or an AI API key. This month and last month show up within minutes.",
+	"ios_title": "Maple on your iPhone.",
+	"ios_eyebrow": "iPhone app",
+	"ios_lede": "Maple Companion, free on the App Store, tells you when production breaks and why without opening a laptop.",
+	"ios_point_1_title": "Is anything wrong right now?",
+	"ios_point_1_body": "One screen for the state of production: open alerts with the last hour of their signal, the services that need attention, and what is new in the last 24 hours.",
+	"ios_point_2_title": "Why is it going off?",
+	"ios_point_2_body": "An incident shows what the rule saw, what changed on the service, and a timeline of what happened since it opened.",
+	"ios_point_3_title": "Which request failed?",
+	"ios_point_3_body": "Search traces and logs from your phone, and open any trace as a waterfall to see the span that broke.",
+	"ios_badge_alt": "Download on the App Store",
+	"ios_shot_overview_alt": "The iPhone app's overview: open alerts and the services that need attention",
+	"ios_shot_incident_alt": "An incident on the iPhone app: what the rule saw and what changed on the service",
+	"ios_shot_trace_alt": "A trace on the iPhone app, drawn as a waterfall",
+	"footer_ios_app": "iPhone app"
 }

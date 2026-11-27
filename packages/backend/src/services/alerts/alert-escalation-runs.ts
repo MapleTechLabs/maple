@@ -328,17 +328,14 @@ export interface StepRecipients {
 const DELETED_SCHEDULE_NAME = "a deleted schedule"
 
 /**
- * Who a step pages at `nowMs`: its user targets, plus whoever each schedule target has on call.
- * Each person gets an email row and one row per chat account they linked in the org, on a
- * connector in `directMessageConnectors` with a workspace linked in the org that has direct
- * messages on. With `members` known, a shift of someone who left passes to the next in rotation.
+ * Who a step names at `nowMs`: its user targets, and each schedule target with whoever it has on
+ * call. With `members` known, a shift of someone who left passes to the next in rotation.
  */
-export const loadStepRecipients = (
+export const loadStepPeople = (
 	db: MapleDb,
 	orgId: OrgId,
 	step: EscalationStep,
 	nowMs: number,
-	directMessageConnectors: ReadonlySet<ChatConnectorId>,
 	members: ReadonlySet<string> | null = null,
 ) =>
 	Effect.gen(function* () {
@@ -385,6 +382,25 @@ export const loadStepRecipients = (
 			)
 			return { scheduleId, name: schedule.value.name, userId: shift === null ? null : shift.userId }
 		})
+		return { directUserIds, shifts }
+	})
+
+/**
+ * Who a step pages at `nowMs`: its user targets, plus whoever each schedule target has on call.
+ * Each person gets an email row and one row per chat account they linked in the org, on a
+ * connector in `directMessageConnectors` with a workspace linked in the org that has direct
+ * messages on.
+ */
+export const loadStepRecipients = (
+	db: MapleDb,
+	orgId: OrgId,
+	step: EscalationStep,
+	nowMs: number,
+	directMessageConnectors: ReadonlySet<ChatConnectorId>,
+	members: ReadonlySet<string> | null = null,
+) =>
+	Effect.gen(function* () {
+		const { directUserIds, shifts } = yield* loadStepPeople(db, orgId, step, nowMs, members)
 		const onCall = Arr.flatMap(shifts, ({ scheduleId, userId }) =>
 			userId === null ? [] : [{ scheduleId, userId }],
 		)

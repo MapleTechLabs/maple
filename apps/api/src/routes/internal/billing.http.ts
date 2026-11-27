@@ -28,6 +28,7 @@ import {
 	decodeUpstream,
 	ensureOk,
 	readCustomerCached,
+	readCustomerFresh,
 	resolveAttachConflict,
 	summariseSubscriptions,
 } from "@maple/backend/services/billing/autumn-client"
@@ -40,7 +41,7 @@ import {
 } from "@maple/backend/services/billing/ai-credit-usage"
 import {
 	AI_CREDITS_FEATURE_ID,
-	hasHadPlan,
+	hasPlanHistory,
 	STARTUP_PLAN_ID,
 	startupTrialDays,
 	TRIAL_DURATION_DAYS,
@@ -145,11 +146,6 @@ const orgUsageTotals = (orgId: OrgId, spend: DailySpendResponse) =>
 		productEvents: Arr.reduce(spend.days, 0, (sum, day) => sum + (day.productEvents ?? 0)),
 	})
 
-/** Autumn's `trials_used` (expanded): the trials a customer has started, ended ones included. */
-const TrialsUsed = Schema.Struct({
-	trialsUsed: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Struct({ planId: Schema.String })))),
-})
-
 export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing", (handlers) =>
 	Effect.gen(function* () {
 		// Shared by every caller of the org, so never filed under a caller's cache partition.
@@ -175,14 +171,9 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 		const readCustomer = (orgId: OrgId) =>
 			Effect.gen(function* () {
 				const customerId = yield* billingCustomers.customerFor(orgId)
-				const cached = yield* readCustomerCached(
-					edgeCache,
-					customerId,
-					// The customer's OWN plan: for a custom-priced or grandfathered plan it is the
-					// only source of their real price and allotments. Without it the page would
-					// quote the public catalog's rates at them.
-					autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
-				)
+				// Expands the customer's OWN plan (a custom or grandfathered plan's only source of its
+				// real price) and `trials_used` (an ended no-card trial's only trace).
+				const cached = yield* readCustomerCached(edgeCache, autumn, customerId)
 				return { customerId, ...cached }
 			})
 
@@ -225,29 +216,21 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 			if (planId !== TRIAL_PLAN_ID && planId !== STARTUP_PLAN_ID) return planTerms
 			const read = yield* autumn.getOrCreateCustomer(customerId, { expand: ["trials_used"] })
 			const response = yield* ensureOk(read)
-			const customer = yield* decodeUpstream(BillingCustomer, response)
-			const { trialsUsed } = yield* decodeUpstream(TrialsUsed, response)
+			const { subscriptions, trialsUsed } = yield* decodeUpstream(BillingCustomer, response)
 			if (planId === STARTUP_PLAN_ID) {
 				const now = yield* Clock.currentTimeMillis
-				const carried = startupTrialDays(customer.subscriptions, now)
+				const carried = startupTrialDays(subscriptions, trialsUsed, now)
 				// An org that never held a plan or a trial gets the trial as a card trial: Startup
 				// no longer has one of its own, and the trial is still once per org.
-				const isFirstPlan =
-					!hasHadPlan(customer.subscriptions) && Arr.isReadonlyArrayEmpty(trialsUsed ?? [])
+				const isFirstPlan = !hasPlanHistory(subscriptions, trialsUsed)
 				return {
 					isHeld: false,
 					trialDays: carried === undefined && isFirstPlan ? TRIAL_DURATION_DAYS : carried,
 				}
 			}
-			if (
-				Arr.some(
-					customer.subscriptions,
-					(sub) => sub.planId === TRIAL_PLAN_ID && sub.status === "active",
-				)
-			)
+			if (Arr.some(subscriptions, (sub) => sub.planId === TRIAL_PLAN_ID && sub.status === "active"))
 				return { isHeld: true, trialDays: undefined }
-			const hasUsedTrial = Arr.some(trialsUsed ?? [], (trial) => trial.planId === TRIAL_PLAN_ID)
-			if (!hasUsedTrial && !hasHadPlan(customer.subscriptions)) return planTerms
+			if (!hasPlanHistory(subscriptions, trialsUsed)) return planTerms
 			return yield* new BillingConflictError({
 				message: "This organization has already had its free trial.",
 				code: "trial_already_used",
@@ -477,9 +460,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// the classified 4xx survives to the client instead of a blanket 502.
 						yield* classifyAutumn(result)
 						yield* invalidateCustomer(customerId, result)
-						const refreshed = yield* autumn.getOrCreateCustomer(customerId, {
-							expand: ["subscriptions.plan"],
-						})
+						const refreshed = yield* readCustomerFresh(autumn, customerId)
 						return yield* ensureOk(refreshed).pipe(
 							Effect.flatMap((response) => decodeUpstream(BillingCustomer, response)),
 						)
@@ -543,9 +524,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 								// plan is this a success; any other conflict still surfaces.
 								(conflict) =>
 									resolveAttachConflict(
-										autumn.getOrCreateCustomer(customerId, {
-											expand: ["subscriptions.plan"],
-										}),
+										readCustomerFresh(autumn, customerId),
 										attachedPlanId,
 										conflict,
 									),
@@ -689,11 +668,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 								),
 							),
 						)
-						const { result } = yield* readCustomerCached(
-							edgeCache,
-							customerId,
-							autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
-						)
+						const { result } = yield* readCustomerCached(edgeCache, autumn, customerId)
 						const okCustomer = yield* ensureOk(result)
 						const customer = yield* decodeUpstream(BillingCustomer, okCustomer)
 						const now = yield* Clock.currentTimeMillis

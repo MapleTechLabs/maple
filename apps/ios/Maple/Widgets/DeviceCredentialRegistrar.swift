@@ -36,7 +36,10 @@ struct DeviceCredentialRegistrar {
 		guard let stored = credentials.loadDevice(organizationId: organizationId),
 			let key = keys.load(organizationId: organizationId)
 		else { return false }
-		return key.thumbprint == stored.jkt && !stored.needsRefresh(at: now) && !stored.needsRotation(at: now)
+		// A record from before the app kept the granted scopes is refreshed once, which is
+		// also how a key registered before widgets could acknowledge gains that scope.
+		return key.thumbprint == stored.jkt && stored.scopes != nil && !stored.needsRefresh(at: now)
+			&& !stored.needsRotation(at: now)
 	}
 
 	func ensure(

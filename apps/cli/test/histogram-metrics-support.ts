@@ -344,6 +344,8 @@ export interface HistogramSample {
 	readonly scope?: string
 	readonly scopeVersion?: string
 	readonly temporality?: "delta" | "cumulative"
+	/** Resource attributes: what tells two instances of one service apart. */
+	readonly resource?: Readonly<Record<string, string>>
 }
 
 /** One series written sample by sample (cumulative unless a sample says otherwise). */
@@ -356,10 +358,10 @@ export const insertCumulativeSamples = (
 	const rows = Arr.map(
 		samples,
 		(s) =>
-			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], ${s.flags ?? 0}, ${quote(s.scope ?? "")}, ${quote(s.scopeVersion ?? "")}, ${s.temporality === "delta" ? 1 : 2})`,
+			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], ${s.flags ?? 0}, ${quote(s.scope ?? "")}, ${quote(s.scopeVersion ?? "")}, ${s.temporality === "delta" ? 1 : 2}, ${mapLiteral(s.resource ?? {})})`,
 	)
 	db.exec(
-		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, Flags, ScopeName, ScopeVersion, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
+		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, Flags, ScopeName, ScopeVersion, AggregationTemporality, ResourceAttributes) VALUES ${Arr.join(rows, ", ")}`,
 	)
 }
 

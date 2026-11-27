@@ -289,6 +289,22 @@ describeWithChdb("histogram metrics", () => {
 				scope: "b",
 			},
 		])
+		// Two instances of one service with the same labels and scope, told apart by their resource.
+		const instanceSample = (tickMs: number, count: number, pod: string) => ({
+			tickMs,
+			startMs: -HISTORY_MS,
+			count,
+			sum: count * 10,
+			bounds: [50],
+			buckets: [count, 0],
+			resource: { "k8s.pod.name": pod },
+		})
+		insertCumulativeSamples(db, "org_instances", "http.server.request.duration", [
+			instanceSample(-10 * SECOND_MS, 100, "a"),
+			instanceSample(-5 * SECOND_MS, 1000, "b"),
+			instanceSample(10 * SECOND_MS, 110, "a"),
+			instanceSample(15 * SECOND_MS, 1010, "b"),
+		])
 		// A sample with a finer layout and no observations, next to one that has them.
 		insertCumulativeSamples(db, "org_empty_layout", "http.server.request.duration", [
 			{
@@ -451,6 +467,11 @@ describeWithChdb("histogram metrics", () => {
 	test("two versions of one scope with the same labels are two series", () => {
 		expect(valueOf("org_scope_versions", "count")).toEqual([20])
 		expect(valueOf("org_scope_versions", "sum")).toEqual([200])
+	})
+
+	test("two instances of one service with the same labels are two series", () => {
+		expect(valueOf("org_instances", "count")).toEqual([20])
+		expect(valueOf("org_instances", "sum")).toEqual([200])
 	})
 
 	test("a sample that adds no observations does not move a bucket's lower edge", () => {

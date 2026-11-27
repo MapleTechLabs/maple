@@ -28,6 +28,7 @@ import { CloudflareZoneSettings } from "./cloudflare-zone-settings"
 import { DashboardShares } from "./dashboard-shares"
 import { Dashboards, DashboardVersions } from "./dashboards"
 import { DeviceCredentials, DeviceProofReplays } from "./device-credentials"
+import { AiEvaluationRuns } from "./ai-evaluation-runs"
 import { DigestSubscriptions } from "./digest"
 import {
 	Actors,
@@ -82,6 +83,7 @@ import {
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
 import { CostConnections } from "./cost-connections"
+import { AdClickErasures, AdConversions } from "./ad-conversions"
 import { CookielessSalts, CookielessVisits } from "./cookieless-visitors"
 import { FeatureRequests } from "./feature-requests"
 import { DevicePolicyFindings, DeviceVulnerabilityFindings } from "./device-findings"
@@ -156,6 +158,7 @@ export * from "./dashboard-shares"
 export * from "./dashboards"
 export * from "./device-credentials"
 export * from "./digest"
+export * from "./ai-evaluation-runs"
 export * from "./errors"
 export * from "./external-data-sources"
 export * from "./escalations"
@@ -163,6 +166,7 @@ export * from "./escalation-chains"
 export * from "./oncall-schedules"
 export * from "./aws-connections"
 export * from "./cost-sources"
+export * from "./ad-conversions"
 export * from "./cookieless-visitors"
 export * from "./gcp-connectors"
 export * from "./gcp-cost-exports"
@@ -244,6 +248,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	DeviceCredentials,
 	DeviceProofReplays,
 	DigestSubscriptions,
+	AiEvaluationRuns,
 	Actors,
 	ErrorIssues,
 	ErrorFingerprintCandidates,
@@ -296,6 +301,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	StorageBillingRuns,
 	OpenRouterCostConnections,
 	CostConnections,
+	AdConversions,
+	AdClickErasures,
 	CookielessSalts,
 	CookielessVisits,
 	FeatureRequests,

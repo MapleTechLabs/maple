@@ -4,7 +4,13 @@ A native SwiftUI client for Maple, reading the **v2 public API**. Four tabs
 and a search tab, in the order the questions get asked (see [`PRODUCT.md`](PRODUCT.md)):
 
 - **Overview**: is anything wrong right now? Status headline, open alerts with
-  the rule's own last hour, services needing attention, what's new in 24h.
+  the rule's own last hour, services needing attention, what's new in 24h. A
+  shift card leads the board when the organization has on-call schedules: on
+  call now and until when, or the next shift. It opens **On call** (your shifts,
+  who holds each schedule, coverage gaps), and a schedule row there opens the
+  read-only **Schedule** screen with who covers the next 14 days. Someone on
+  call, or within 7 days of a shift, is warned when a page would not reach
+  this phone.
 - **Services**: the list, and a detail that leads with a health verdict and
   its reason, one full-width scrubbable chart per golden signal (throughput,
   errors, latency percentiles), window aggregates, scoped alerts, the busiest
@@ -50,7 +56,7 @@ Config/                      xcconfigs; Secrets.xcconfig is gitignored
 Maple/App                    entry point, auth gate, build-time config, Route
 Maple/Auth                   token provider, session state machine, org picker
 Maple/DesignSystem           tokens, type scale, service colours, shared primitives
-Maple/Features               Home, Services, Alerts (incidents/anomalies), Issues, Explore, Search
+Maple/Features               Home, Services, Alerts (incidents/anomalies), Issues, Explore, Search, OnCall
 Maple/Components             LoadableView, formatting, Sparkline, alert formatting
 Maple/Fixtures               FixtureAPI — the app without Clerk or a network
 Maple/Widgets                publishes the widget's snapshot; background refresh
@@ -72,6 +78,33 @@ incident is opened (or from the bell on Home), receives the APNs token via
 (token, organization, permission, preferences) through one `.task(id:)` on the
 tab root. Registration is per organization; sign-out unregisters. A tapped
 notification lands on the incident (`AppNavigation.openIncident`).
+
+A page (an escalation step reaching you) arrives in the `MAPLE_PAGE` category,
+which `AppDelegate` registers at every launch with two actions. **Acknowledge**
+runs in the background without unlocking the phone
+(`PushRegistrar.acknowledgeFromNotification`), against the organization the page
+names; if the request fails a second banner says so and opens the incident.
+**Open incident** takes the same path as a tap. The category string is shared
+with `PAGE_NOTIFICATION_CATEGORY` in `MobilePushService.ts`.
+
+**Will a page reach this phone?** `PageReachability` (in `Packages/MapleAPI`,
+with tests) takes what the phone knows (permission, banners, sound, Time
+Sensitive, and whether the server holds its registration) and answers
+`.reachable` or the one most severe problem with its fix: ask for permission,
+open Maple's notification settings, or register again. `PushRegistrar` reads
+those facts whenever the app comes to the front, so a fix made in the Settings
+app shows on return. `PageReachabilityCard` draws the problem on Overview (under
+the shift card) and at the top of On call, only for someone on call now or
+within 7 days of a shift. The notification settings sheet shows it too, above
+**Send a test page**, except a permission problem its Permission card already
+states.
+
+**Send a test page** (`POST /v2/mobile_devices/test_page`, `sendTestPage()`)
+asks the server to page the caller's own phones the way a real page is
+delivered, and one line under the button says what came of it. The push carries
+`maple_kind: "test_page"`: it shows as a banner with its sound even with the app
+open, and a tap opens the app and goes nowhere. The button is in the settings
+sheet and at the bottom of On call, and each press is a `push.test_page` span.
 
 The server side is `packages/backend/src/services/push` + `packages/backend/src/platform/Apns.ts`; it sends
 only when `APNS_TEAM_ID` / `APNS_KEY_ID` / `APNS_PRIVATE_KEY` are set on the
@@ -132,11 +165,43 @@ pinned by tests in `MapleWidgetDataTests`:
   whose default date strategy is Apple's 2001 reference date — an ISO-8601
   string does not decode, and a failed decode is silence, not an error.
 
+### Answering from the card
+
+While the incident is firing and nobody has it, the card and the expanded
+Dynamic Island carry **Acknowledge**, with who the next escalation step pages and
+a countdown to it. The button is `AcknowledgeIncidentIntent` (in
+`MapleWidgetData`, which both targets link), a `LiveActivityIntent`: iOS performs
+it in the app's process, where `IncidentActivityActions.acknowledge`, set in
+`MapleApp.init`, sends the same request as the banner's Acknowledge with the same
+20 second deadline and failure banner.
+
+Who acknowledged and who is paged next are **not in the server's pushes**. The
+app reads the incident and writes them into the content state
+(`LiveActivityController.incidentChanged`): when a card starts, when the app
+comes to the front, and with the answer to an Acknowledge. A content state
+replaces the previous one whole, so a later push (a `renotify`) drops them again
+and the card reads "Unacknowledged" with no countdown until the app next runs.
+The card goes stale at the next page's time, and a stale card stops showing the
+countdown: by then the step has run and nothing on the Lock Screen knows what it
+did.
+
+A page also starts the card on the paged person's phones
+(`MobilePushService.pageMember`), so a warning incident that pages someone gets
+one too. A critical incident already started one for everyone who asked for
+critical incidents, so those phones are skipped, and the app takes a second card
+for the same incident down again if both ever arrive.
+
+Whether the button acts on a locked phone without Face ID is iOS's decision; the
+intent asks for `.alwaysAllowed`. This needs checking on a device.
+
 Live Activities render in the simulator but cannot receive pushes; verifying the
 push path needs a device. `NSSupportsLiveActivities` is on the **app's**
 Info.plist, not the extension's.
 
 ## The Home Screen widgets
+
+A third widget, **Pages**, is described under [The Pages widget](#the-pages-widget) below,
+and **On call** and **Schedule** under [The On call and Schedule widgets](#the-on-call-and-schedule-widgets).
 
 `Widgets/` is a WidgetKit extension with two widgets:
 
@@ -270,6 +335,76 @@ creates the group on first build; a mismatch between the two entitlements files
 and `IssuesSnapshotStore.appGroupIdentifier` is silent — the widget simply
 renders "Open Maple" forever.
 
+## The Pages widget
+
+`Widgets/PagesWidget.swift` shows what is paging you (small, medium, and the
+Lock Screen's rectangular and inline families) with **Acknowledge on the
+widget**. It follows the organization the app last showed.
+
+- **Read.** `GET /v2/widget_summary/pages`, through `WidgetPagesClient` and the
+  same device credential the other widgets use. Values arrive formatted, so the
+  extension carries no unit logic. The snapshot is `PagesSnapshot` in the App
+  Group, per organization.
+- **Acknowledge.** `AcknowledgePageIntent` is performed **in the extension**, not
+  the app, so it signs `POST /v2/widget_summary/pages/{id}/acknowledge` with the
+  device credential. That needs the `widget_summary:write` scope, which the
+  server grants at registration and on the next refresh of a key registered
+  before it existed. `DeviceCredentialRegistrar.isCurrent` refreshes once when
+  the stored record has no scopes at all. A widget whose credential cannot
+  acknowledge draws **Open** in place of the button, and a tap that did not
+  land turns the button into **Open to answer** until the next read.
+- **Staying current.** A widget is not live: it redraws when WidgetKit rebuilds
+  its timeline (every five minutes while a page waits, twenty otherwise, iOS
+  permitting), and when the app tells it to. `PagesWidgetPublisher` reads and
+  reloads it when the app comes to the front, when a push arrives, and when an
+  incident is answered on any of the app's screens. The countdown is a timer
+  text and ticks on its own; an extra timeline entry just after it runs out
+  takes it down.
+- **Fixture mode** has no server and no credential. `PagesWidgetPublisher`
+  writes the snapshot from the fixture incidents and marks it `isFixture`, which
+  makes the widget draw the button a registered phone gets. A tap there cannot
+  land, and shows "Open to answer".
+- **Quiet.** With nothing paging and the owner on call, the quiet state adds
+  their shift (`Platform primary until Mon 09:00`) from the on-call snapshot
+  below. It reads that snapshot from the App Group and makes no request for it.
+
+## The On call and Schedule widgets
+
+`Widgets/OnCallWidget.swift` says where you stand: small (`3d 6h` left on this
+shift and who is next, or the next shift and who has it before you), medium
+(**On call now**: schedule, who, until, with `Nobody` in the warning colour),
+and the Lock Screen's rectangular and inline families. It follows the
+organization the app last showed. `Widgets/ScheduleWidget.swift` is one rotation
+over the next seven days, medium only.
+
+- **Read.** One request serves both: `GET /v2/widget_summary/oncall`, through
+  `WidgetOnCallClient` and the same device credential (`widget_summary:read`).
+  The snapshot is `OnCallSnapshot` in the App Group, per organization, cleared
+  at sign-out with the others. An answer for another organization is refused,
+  and a revoked credential is recorded and then not used again.
+- **One read, many dates.** Everything the views say is a function on the
+  snapshot that takes the date (`viewerState(at:)`, `tableRows(at:)`,
+  `strip(for:at:)`, `scheduleLine(for:at:)`), covered by `WidgetOnCallTests`.
+  `timelineDates(from:)` gives the timeline an entry at each handoff, each
+  midnight, and each hour the coarse `3d 6h` drops, so a handoff shows on the
+  widget when it happens. Inside the last day the time left is a timer text.
+  A snapshot older than its own 14 day window draws "Open Maple" instead.
+- **Wording.** `MapleWidgetData` cannot import `MapleAPI`, so `WidgetTime.span`,
+  `remaining`, `lead` and `handoffTime` reproduce `IncidentWording.span`,
+  `OnCallWording` and `Format.handoffTime`. The tests pin the same strings.
+- **Picking a schedule.** `SelectScheduleIntent` with a `ScheduleEntity` whose
+  query lists the schedules in the stored snapshot. Unset means the schedule
+  the owner is on call for, else the first. A picked schedule is found in
+  whichever organization's snapshot holds it, and one that was deleted says so.
+- **Taps** open `maple://oncall` and `maple://schedule/<id>`, with the
+  organization as the `org` query item like every other widget link.
+- **Staying current.** `OnCallWidgetPublisher` reads and reloads both kinds when
+  the app comes to the front (once a minute per organization at most) and on a
+  switch of organization. The read's outcome goes on the `widget.refresh` span
+  as `maple.app.widget.oncall.read.*`.
+- **Fixture mode** writes the snapshot from `FixtureAPI.onCallOverview()`: four
+  schedules, the fixture user on call for Platform primary.
+
 ## Running without a sign-in
 
 Set `MAPLE_FIXTURES=1` in the scheme's environment (Product → Scheme → Edit →
@@ -284,11 +419,24 @@ if offline — the way to see the error state, the "Couldn't refresh" strip, and
 "Try again" without pulling the plug.
 
 `FixtureAPI` then stands in for the network with one believable organization
-(nine services, a critical incident, a warning, issues, an anomaly), generated
+(nine services, a critical incident, a warning, issues, an anomaly, four on-call
+schedules with the fixture user on call for one), generated
 relative to now so timestamps always read as current, and the session is pinned
 to `.ready` without touching Clerk. This is how screens get built and
 screenshotted; it is not a test double for logic — that stays in
 `Packages/MapleAPI`.
+
+In fixture mode "Send a test page" answers as one phone reached, and nothing
+arrives. To look at the reachability warning without touching the simulator's
+notification settings, open `maple://debug/reachability/<state>` in a Debug
+build, with `denied`, `timesensitive`, `unregistered` or `ok`:
+
+```bash
+xcrun simctl openurl booted maple://debug/reachability/timesensitive
+```
+
+The state holds until the app quits; any other word returns to what the phone
+really reports.
 
 ## The API client is generated
 

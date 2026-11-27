@@ -15,7 +15,7 @@ import {
 	LinkBillingOrgRequest,
 } from "./billing-account"
 import { WarehouseQueryError } from "./warehouse-errors"
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 // Contract for raw Autumn proxy responses. Schemas model only consumed fields
 // and tolerate additive upstream fields.
@@ -152,9 +152,16 @@ export class BillingControls extends Schema.Class<BillingControls>("BillingContr
 	usageAlerts: Schema.optionalKey(Schema.Array(BillingUsageAlert)),
 }) {}
 
+/** A trial the customer started (Autumn's `trials_used`), ended ones included. */
+export class BillingTrialUse extends Schema.Class<BillingTrialUse>("BillingTrialUse")({
+	planId: Schema.String,
+}) {}
+
 export class BillingCustomer extends Schema.Class<BillingCustomer>("BillingCustomer")({
 	id: Schema.String,
 	subscriptions: Schema.Array(BillingSubscription),
+	// Expanded on every cached read: the only trace of an ended no-card trial once Autumn drops its row.
+	trialsUsed: Schema.optionalKey(Schema.NullOr(Schema.Array(BillingTrialUse))),
 	balances: Schema.optionalKey(Schema.Record(Schema.String, BillingBalance)),
 	flags: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
 	billingControls: Schema.optionalKey(Schema.NullOr(BillingControls)),
@@ -709,7 +716,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getDailySpend", "/daily-spend", {
 			success: DailySpendResponse,
 			error: [BillingForbiddenError, ...billingTransportErrors, WarehouseQueryError],
-		}).annotate(EndpointAccess, "personal"),
+		}).annotate(EndpointAccess, ["personal", handlerChecks("telemetry:read", "billing:manage")]),
 	)
 	.add(
 		HttpApiEndpoint.put("updateBillingControls", "/billing-controls", {
@@ -813,7 +820,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 	)
 	.prefix("/internal/billing")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("billing:manage")) {}
 
 // The plan catalog is global, so `listPlans` stays public — a transient
 // onboarding token gap serves the catalog instead of a 401. The handler still

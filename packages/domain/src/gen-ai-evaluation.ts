@@ -29,6 +29,8 @@ export const MAPLE_EVALUATION_ATTRS = {
 	scope: "maple_ai.evaluation.scope",
 	/** An explicit `pass` / `fail`, read before the label (a judge whose label is categorical). */
 	verdict: "maple_ai.evaluation.verdict",
+	/** `boolean`: a value of 1 passes and 0 fails. */
+	scoreType: "maple_ai.evaluation.score.type",
 	/** The session a `session`-scope score grades. */
 	sessionId: "maple_ai.evaluation.session.id",
 	/** `code`, `llm`, `human` or `agent`. */
@@ -38,8 +40,8 @@ export const MAPLE_EVALUATION_ATTRS = {
 	evaluatorId: "maple_ai.evaluation.evaluator.id",
 	evaluatorVersion: "maple_ai.evaluation.evaluator.version",
 	experimentId: "maple_ai.evaluation.experiment.id",
-	/** The emitter's key for a score, for re-scores of the same target and name. Stored, not yet
-	 *  deduplicated on read. */
+	/** The emitter's key for a score: a later score with the same target, name and key replaces
+	 *  the earlier one on read. */
 	identifier: "maple_ai.evaluation.identifier",
 	judgeModel: "maple_ai.evaluation.judge.model",
 	/** For a score written outside the evaluated span's context. A target trace replaces the
@@ -47,6 +49,10 @@ export const MAPLE_EVALUATION_ATTRS = {
 	targetTraceId: "maple_ai.evaluation.target.trace_id",
 	targetSpanId: "maple_ai.evaluation.target.span_id",
 } as const
+
+/** How far past a session's last span its scores are read: judges, people and batch jobs score
+ *  after the run ends, often hours later. */
+export const EVALUATION_SESSION_SCORES_TAIL_MS = 24 * 3_600_000
 
 /** Longest evaluator name kept, in characters; the read APIs accept names up to this length. */
 export const EVALUATION_NAME_MAX = 200
@@ -59,8 +65,9 @@ export type EvaluationScope = (typeof EVALUATION_SCOPES)[number]
 
 /**
  * A score's verdict: the explicit `maple_ai.evaluation.verdict` when set, else read from its label
- * (`pass` / `fail` for the usual spellings, case and spaces ignored); `''` when neither says (a
- * numeric score, or a categorical one like `relevant`).
+ * (`pass` / `fail` for the usual spellings, case and spaces ignored), else from a boolean value
+ * (`true` / `false`, or 1 / 0 typed `boolean`); `''` when none says (a numeric score, or a
+ * categorical one like `relevant`).
  */
 export const EVALUATION_VERDICTS = ["pass", "fail"] as const
 export type EvaluationVerdict = (typeof EVALUATION_VERDICTS)[number] | ""

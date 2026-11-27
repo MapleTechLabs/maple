@@ -1,6 +1,6 @@
-import type { AiSessionDistribution } from "@maple/domain/http"
+import type { AiEvaluatorSummary, AiSessionDistribution } from "@maple/domain/http"
 import { getServiceColor } from "@maple/ui/lib/colors"
-import { Option, Array as Arr } from "effect"
+import { Option, Order, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "@maple/views/ui/checkbox"
@@ -27,7 +27,13 @@ import {
 	vendorIcon,
 	vendorLabel,
 } from "@maple/views/lib/ai-vendor"
-import { hasFilters, RANGE_PARAMS } from "./derive"
+import {
+	evaluationOf,
+	evaluationOptionKey,
+	hasFilters,
+	parseEvaluationOptionKey,
+	RANGE_PARAMS,
+} from "./derive"
 import { MountFilterRail } from "./command"
 import { type ListFacet, Message } from "./message"
 import type { Distributions, Facets, Model, RangeKey } from "./model"
@@ -196,6 +202,62 @@ const singleCheckbox = (
 	])
 }
 
+/** Maple's own session checks: listed after the org's evaluators, which they would crowd out. */
+const isSessionCheck = (evaluator: { readonly sources: ReadonlyArray<string> }) =>
+	Arr.contains(evaluator.sources, "maple_check")
+
+/** The evaluation score options: each evaluator once per verdict it gave, counted in scores. */
+const evaluationOptions = (model: Model) => {
+	const evaluators: ReadonlyArray<AiEvaluatorSummary> = Arr.sort(
+		Option.getOrElse(AsyncData.getData(model.evaluators.data), () => []),
+		Order.mapInput(Order.Boolean, isSessionCheck),
+	)
+	return Arr.flatMap(evaluators, (evaluator) => [
+		...(evaluator.filterableFailCount > 0
+			? [
+					{
+						name: evaluationOptionKey({ name: evaluator.name, verdict: "fail" }),
+						count: evaluator.filterableFailCount,
+					},
+				]
+			: []),
+		...(evaluator.filterablePassCount > 0
+			? [
+					{
+						name: evaluationOptionKey({ name: evaluator.name, verdict: "pass" }),
+						count: evaluator.filterablePassCount,
+					},
+				]
+			: []),
+	])
+}
+
+/** An option's label: the evaluator's name and the verdict, e.g. "Context window: fail". */
+const evaluationOptionLabel = (key: string): string => {
+	const option = parseEvaluationOptionKey(key)
+	return option === undefined ? key : `${option.name}: ${option.verdict}`
+}
+
+/** The evaluation score section, for `llmEvals` orgs with scores in the window or a filter set. */
+const evaluationSection = (h: H, model: Model): Html | null => {
+	if (!model.hasEvals) return null
+	const current = evaluationOf(model.search)
+	const options = evaluationOptions(model)
+	if (options.length === 0 && current === undefined) return null
+	return filterSection(h, {
+		title: "Evaluation score",
+		options,
+		selected: current === undefined ? [] : [evaluationOptionKey(current)],
+		isSearchable: options.length > 8,
+		description:
+			"Sessions whose latest score from this evaluator has this verdict, on any of their traces or on the session itself. Counts are scores, not sessions.",
+		sections: model.filterSections,
+		toSectionsMessage: toSections,
+		onToggle: (key) => Message.ToggledEvaluation({ key }),
+		getOptionLabel: evaluationOptionLabel,
+	})
+}
+
 const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 	const { search } = model
 	const isFiltered = hasFilters(search)
@@ -248,6 +310,7 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 				},
 				facets.tools,
 			),
+			evaluationSection(h, model),
 			facetSection(
 				h,
 				model,

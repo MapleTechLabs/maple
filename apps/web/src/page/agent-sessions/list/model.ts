@@ -1,4 +1,5 @@
 import {
+	AiEvaluatorSummary,
 	AiSessionDetailsItem,
 	AiSessionDistribution,
 	AiSessionFacetItem,
@@ -49,7 +50,14 @@ export type RangeKey = typeof RangeKey.Type
 const Draft = Schema.Struct({ min: Schema.String, max: Schema.String })
 
 export const Model = Schema.Struct({
+	/** The search the reads run under: the route's, less what the org's rollout leaves out. */
 	search: AgentSessionsSearch,
+	/** The route's own search, so a later rollout answer can restore what `search` left out. */
+	routeSearch: AgentSessionsSearch,
+	/** The org is in the `llmEvals` rollout: the rail offers the evaluation filter. */
+	hasEvals: Schema.Boolean,
+	/** The evaluators that scored in the window, for the evaluation filter (`llmEvals` orgs only). */
+	evaluators: KeyedSchema(Schema.Array(AiEvaluatorSummary), LoadFailure),
 	/** "The last week", resolved unsnapped on entry and on Reload; filters keep it. */
 	window: Schema.NullOr(TimeWindow),
 	/** The tab counts' window: the Tools tab's own (snapped) resolution of the same week. */

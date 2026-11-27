@@ -2,14 +2,12 @@ import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { cloudShellUrl } from "../connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "@maple/views/ui/heading"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
-import { eyebrow } from "@maple/views/ui/eyebrow"
+import { codeBlock } from "../../../kit/code-block"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { spinner } from "@maple/views/ui/spinner"
 import { Message } from "../../../integrations/message"
 import { GcpMessage } from "./gcp"
 import type { Model } from "../../../integrations/model"
@@ -159,85 +157,17 @@ export const scriptBlock = (
 	])
 }
 
+/** Read-only: the script's copy button sits beside Open Cloud Shell. */
 const scriptText = (h: H, label: string, text: string): Html =>
-	h.div(
-		[h.Class("mt-1 overflow-clip rounded-md border border-border bg-muted")],
-		[
-			hstack(h, { align: "center", justify: "between", className: "px-3 py-1.5" }, [
-				eyebrow(h, {}, ["Bash"]),
-				typography(h, { size: "2xs", tone: "muted" }, [
-					countLabel(Str.split("\n")(text).length, "line"),
-				]),
-			]),
-			h.pre(
-				[
-					h.Tabindex(0),
-					h.Role("region"),
-					h.AriaLabel(`The ${label}`),
-					h.Class(
-						"max-h-80 overflow-auto bg-surface-well p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring rr-block",
-					),
-				],
-				[text],
-			),
+	codeBlock(h, {
+		code: text,
+		language: "Bash",
+		lang: "bash",
+		secret: true,
+		scrollLabel: `The ${label}`,
+		className: "mt-1",
+		bodyClassName: "max-h-80 overflow-y-auto",
+		actions: [
+			typography(h, { size: "2xs", tone: "muted" }, [countLabel(Str.split("\n")(text).length, "line")]),
 		],
-	)
-
-export type StepState = "current" | "pending" | "waiting" | "done"
-
-/** A numbered marker on a line to the next step, the title, a line under it, the controls. */
-export const step = (
-	h: H,
-	options: Readonly<{
-		number: number
-		state: StepState
-		title: string
-		detail?: ReadonlyArray<Html | string>
-	}>,
-	children: ReadonlyArray<Html>,
-): Html =>
-	h.li(
-		[
-			h.Class(
-				cn(
-					"relative flex gap-3 before:absolute before:top-6 before:bottom-1 before:left-2.5 before:w-px before:-translate-x-1/2 before:bg-border last:pb-0 last:before:hidden",
-					options.state === "done" ? "pb-4" : "pb-6",
-				),
-			),
-		],
-		[
-			options.state === "done"
-				? icon(h, "CircleCheckIcon", { size: 20, className: "shrink-0 text-severity-info" })
-				: options.state === "waiting"
-					? spinner(h, "size-5 shrink-0 p-0.5 text-muted-foreground")
-					: h.span(
-							[
-								h.AriaHidden(true),
-								h.Class(
-									cn(
-										"flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs font-medium",
-										options.state === "current"
-											? "border-border-strong text-foreground"
-											: "border-border text-muted-foreground",
-									),
-								),
-							],
-							[String(options.number)],
-						),
-			vstack(h, { gap: "2.5", shrink: true, grow: true }, [
-				vstack(h, { gap: "0.5" }, [
-					heading(
-						h,
-						{
-							level: 4,
-							variant: "subsection",
-							className: options.state === "pending" ? "text-muted-foreground" : undefined,
-						},
-						[options.title],
-					),
-					...(options.detail === undefined ? [] : [h.p([h.Class(SMALL)], options.detail)]),
-				]),
-				...children,
-			]),
-		],
-	)
+	})

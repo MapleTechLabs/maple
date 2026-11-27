@@ -76,7 +76,8 @@ extension MapleClient {
 				attested: credential.attested,
 				expiresAt: expiresAt,
 				hardExpiresAt: hardExpiresAt,
-				registeredAt: Date()
+				registeredAt: Date(),
+				scopes: credential.scopes
 			)
 		}
 	}

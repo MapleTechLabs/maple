@@ -72,7 +72,7 @@ const plans = Schema.decodeSync(Schema.Array(CatalogPlan))([
 				included: 1_000_000,
 				price: { amount: 0.005, billingUnits: 1_000 },
 			},
-			{ featureId: "ai_credits", included: 10, price: { amount: 1 } },
+			{ featureId: "ai_credits", included: 1, price: { amount: 1 } },
 		],
 	},
 ])
@@ -99,7 +99,7 @@ const paidCustomer = Schema.decodeSync(BillingCustomer)({
 		storage_profiles: { granted: 10 },
 		browser_sessions: { granted: 5_000 },
 		product_events: { granted: 1_000_000 },
-		ai_credits: { granted: 10 },
+		ai_credits: { granted: 1 },
 	},
 })
 

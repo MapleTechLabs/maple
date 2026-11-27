@@ -22,13 +22,14 @@ import { typography } from "@maple/views/ui/typography"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { sectionHeading } from "../../kit/section-heading"
 import { chainDeleteConfirm } from "../shared/chain-delete-confirm"
-import { chainHref, chainSummary, newChainHref } from "../shared/escalation-chains"
+import { cannotRespondCountText, chainHref, chainSummary, newChainHref } from "../shared/escalation-chains"
 import { memberName } from "../shared/org-members"
 import { Message } from "./message"
 import { type Model } from "./model"
 import { chainMenuId, chainRuleNames } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
 import { canManageOnCall } from "../../kit/session-grants"
+import { rowWarning } from "../../kit/row-warning"
 import { gatedEntries, gatedLinkButton } from "../../kit/gated-controls"
 
 type H = HtmlBuilder<Message>
@@ -109,6 +110,11 @@ export const chainRow = (
 						},
 						[summary],
 					),
+					// Each person is counted once, however many steps page them.
+					...Option.match(cannotRespondCountText(chain, model.members), {
+						onNone: () => [],
+						onSome: (text) => [rowWarning(h, { icon: "AlertWarningIcon", text })],
+					}),
 				]),
 				hstack(h, { gap: "2", className: "shrink-0" }, [
 					typography(

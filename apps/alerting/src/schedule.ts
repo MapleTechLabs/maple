@@ -55,8 +55,9 @@ export const ALERTING_SCHEDULE = {
 	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
 	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours
 	// and walks its backfill one chunk per tick, so 15 minutes moves history without a minute cron.
+	// `session_checks` writes finished agent sessions' checks as evaluation scores (`llmEvals` orgs).
 	"*/15 * * * *": {
-		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console"],
+		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console", "session_checks"],
 		deadline: "10 minutes",
 	},
 	// `secret_reseal` moves stored credentials onto the current key (docs/secret-encryption.md).

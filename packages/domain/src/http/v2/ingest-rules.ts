@@ -25,7 +25,7 @@ import { V2ParameterInvalid } from "./errors"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 /** `irule_…` public ID ⇄ internal `IngestRuleId` (raw UUID). */
 export const IngestRulePublicId = PublicId(PublicIdPrefixes.ingestRule, IngestRuleId)
@@ -629,4 +629,4 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 				"Drop, parse or redact telemetry before Maple stores or bills it. Dropped data is not metered; parsing and redaction happen before anything is written to disk.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("ingest_rules:manage")) {}

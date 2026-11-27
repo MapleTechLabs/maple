@@ -438,6 +438,70 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 	font-size: 14.5px;
 }
 
+/* ── The iPhone app: a quiet head, then three screens that rise from the foot of their cells ── */
+.ledger-intro {
+	display: grid;
+	justify-items: start;
+	gap: 14px;
+	margin-bottom: clamp(28px, 3.5vw, 44px);
+}
+/* Not a chapter of its own: the head is set at section scale, under the sheet's display lines. */
+.monumental-home main > section.ledger .ledger-intro h2 {
+	color: var(--home-ink);
+	font-weight: 500;
+	letter-spacing: -0.02em;
+	line-height: 1.1;
+}
+.ledger-intro__lede {
+	max-width: 56ch;
+	color: var(--home-muted);
+	font-size: 16px;
+}
+.ledger-store {
+	display: block;
+	margin-top: 6px;
+	border-radius: 7px;
+}
+.ledger-store img {
+	display: block;
+}
+/* Below three columns' worth of room the cells are a strip to swipe, the next one showing. */
+.ledger-grid--phones {
+	display: flex;
+	overflow-x: auto;
+	scroll-snap-type: x mandatory;
+	scrollbar-width: none;
+}
+.ledger-grid--phones::-webkit-scrollbar {
+	display: none;
+}
+.ledger-grid--phones > .ledger-cell {
+	flex: 0 0 min(78%, 340px);
+	scroll-snap-align: start;
+}
+@media (min-width: 1024px) {
+	.ledger-grid--phones {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		overflow: visible;
+	}
+}
+/* The top of a screen with its own corners as a hairline: no bezel, no notch, no shadow. */
+.ledger-phone {
+	overflow: hidden;
+	width: min(100% - 56px, 300px);
+	aspect-ratio: 660 / 800;
+	margin: auto auto 0;
+	border: 1px solid var(--home-rule);
+	border-bottom: 0;
+	border-radius: 34px 34px 0 0;
+}
+.ledger-phone img {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
 /* ── The offer: PricingTable's card, the width of the sheet ── */
 /* Its own two columns start at 768px, where the price rail is squeezed to nothing. Here the
    rails stack until there is room, and the price is set like the page's display type. */
@@ -633,6 +697,11 @@ html:not([lang="en"]) .monumental-home .faq--split h2 {
 	}
 	.ledger-cell--pad {
 		padding: 20px;
+	}
+	.ledger-phone {
+		width: calc(100% - 40px);
+		aspect-ratio: 660 / 720;
+		border-radius: 26px 26px 0 0;
 	}
 	/* The wall becomes two strips: each cell most of the screen wide, the next one showing. */
 	.bento {

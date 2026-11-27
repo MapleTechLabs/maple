@@ -58,7 +58,7 @@ const otherMeters = otherAllotments(offer).map((a) => ({
         featureId: a.featureId,
         label: a.label,
         included: volume(a, a.included),
-        then: a.unlimited
+        past: a.unlimited
             ? { note: m.pricing_free_beta() }
             : isUsageCredit(a)
               ? { note: m.pricing_ai_billed() }
@@ -278,13 +278,13 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                         {m.pricing_rate_included({ amount: a.included })}
                                     </td>
                                     <td class="border-t border-border/60 py-3 pr-4 align-top font-mono tabular-nums">
-                                        {a.then !== undefined && "note" in a.then ? (
-                                            <span class="font-sans text-fg-muted">{a.then.note}</span>
-                                        ) : a.then !== undefined ? (
+                                        {a.past !== undefined && "note" in a.past ? (
+                                            <span class="font-sans text-fg-muted">{a.past.note}</span>
+                                        ) : a.past !== undefined ? (
                                             <>
                                                 <span class="text-fg-muted">{m.pricing_then()}</span>{" "}
-                                                <span class="text-fg">{a.then.amount}</span>{" "}
-                                                <span class="text-fg-muted">{a.then.unit}</span>
+                                                <span class="text-fg">{a.past.amount}</span>{" "}
+                                                <span class="text-fg-muted">{a.past.unit}</span>
                                             </>
                                         ) : null}
                                     </td>
@@ -302,10 +302,10 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     <span class="font-mono tabular-nums text-fg">{m.pricing_rate_included({ amount: a.included })}</span>
                                 </div>
                                 <div class="mt-1 font-mono tabular-nums text-fg-muted">
-                                    {a.then !== undefined && "note" in a.then ? (
-                                        <span class="font-sans">{a.then.note}</span>
-                                    ) : a.then !== undefined ? (
-                                        <>{m.pricing_then()} <span class="text-fg">{a.then.amount}</span> {a.then.unit}</>
+                                    {a.past !== undefined && "note" in a.past ? (
+                                        <span class="font-sans">{a.past.note}</span>
+                                    ) : a.past !== undefined ? (
+                                        <>{m.pricing_then()} <span class="text-fg">{a.past.amount}</span> {a.past.unit}</>
                                     ) : null}
                                 </div>
                             </div>

@@ -40,7 +40,7 @@ import {
 export { GcpCloudSqlSettings } from "../gcp"
 
 import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "../supabase"
-import { EndpointAccess, requires } from "./endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "./endpoint-access"
 export {
 	SupabaseAdvisorKind,
 	SupabaseAdvisorLevel,
@@ -1808,7 +1808,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}),
+		}).annotate(EndpointAccess, handlerChecks("alerts:manage", "integrations:manage")),
 	)
 	.add(
 		// Read by the next delivery; nothing is set up in Linear for them.
@@ -1850,7 +1850,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}),
+		}).annotate(EndpointAccess, handlerChecks("integrations:manage")),
 	)
 	.add(
 		HttpApiEndpoint.put("searchConsoleSaveSites", "/google-search-console/sites", {
@@ -2164,7 +2164,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			payload: OAuthCompleteRequest,
 			success: OAuthCompleteResponse,
 			error: IntegrationsForbiddenError,
-		}).annotate(EndpointAccess, "handler"),
+		}).annotate(EndpointAccess, handlerChecks("integrations:manage", "devices:connect")),
 	)
 	.add(
 		HttpApiEndpoint.post("githubStart", "/github/start", {
@@ -2251,7 +2251,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			payload: GithubSetPrReviewRequest,
 			success: GithubSetPrReviewResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
-		}),
+		}).annotate(EndpointAccess, handlerChecks("code_review:configure", "code_review:auto_approve")),
 	)
 	.add(
 		// A repository's review settings. Read by any member, written by admins.
@@ -2283,7 +2283,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 					IntegrationsPersistenceError,
 				],
 			},
-		),
+		).annotate(EndpointAccess, handlerChecks("code_review:configure", "code_review:auto_approve")),
 	)
 	.add(
 		// Organization-wide review settings: the model and the rules every repository inherits. Read by any member, written by admins.
@@ -2297,7 +2297,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			payload: GithubPrReviewSettingsRequest,
 			success: GithubPrReviewSettingsResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
-		}),
+		}).annotate(EndpointAccess, handlerChecks("code_review:configure", "code_review:auto_approve")),
 	)
 	.add(
 		// Vendor-neutral: resolves a commit by SHA across all connected providers.
@@ -2373,4 +2373,4 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	)
 	.prefix("/internal/integrations")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("integrations:manage")) {}

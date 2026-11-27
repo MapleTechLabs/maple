@@ -72,7 +72,7 @@ For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends 
 
 Without `OTEL_SEMCONV_STABILITY_OPT_IN` the transcript is empty. Strands reads it when the first `Agent` is created, so set it in the environment rather than in code.
 
-To redact message content, append `gen_ai_unredacted_attributes=` to `OTEL_SEMCONV_STABILITY_OPT_IN`, with a `;`-separated allowlist of attributes to keep. Everything else becomes `[REDACTED]`.
+To redact message content in Python, append `gen_ai_unredacted_attributes=` to `OTEL_SEMCONV_STABILITY_OPT_IN`, with a `;`-separated allowlist of attributes to keep. Everything else becomes `[REDACTED]`. The TypeScript SDK has no such allowlist.
 
 <LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
 <LanguageTab id="python">

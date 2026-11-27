@@ -185,7 +185,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/escalation-editor",
 		title: "Escalation chain editor",
 		description:
-			"The escalation chain editor page new, populated, with a step inserted, invalid, asking to delete or to leave, read-only and with a long chain (`?state=`).",
+			"The escalation chain editor page new, populated, with a step inserted, invalid, asking to delete or to leave, read-only, with a long chain and paging someone whose role cannot respond (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -290,6 +290,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Dashboard share",
 		description:
 			"The dashboard's Share dialog, open: not shared, shared with no expiry, a link that expires and one that already has (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/install-modal",
+		title: "Install a collector",
+		description:
+			"The collector install dialog on the infra pages, open on a fixture key: Kubernetes (Helm, Alchemy or Terraform), Docker and Host (`?tab=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/ios-app-prompt",
+		title: "iPhone app prompt",
+		description:
+			"The sidebar's card that points a signed-in user at the iPhone app: App Store badge, a QR code on desktop, and a dismiss that sticks per user.",
 		kind: "lab",
 		session: "none",
 	},

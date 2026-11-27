@@ -67,6 +67,7 @@ const alertIncidentExample = {
 		pass_count: 2,
 		steps_sent: 1,
 		next_step_at: null,
+		next_step_people: [],
 	},
 	silence_id: null,
 	silenced_at: null,
@@ -109,6 +110,12 @@ export const V2AlertIncidentEscalation = Schema.Struct({
 	next_step_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the next step pages, or `null` while paused or once the run has ended.",
 	}),
+	next_step_people: Schema.optionalKey(
+		Schema.Array(V2AlertIncidentActor).annotate({
+			description:
+				"Who the next step would page if it ran now: the people it names and whoever its on-call schedules have on call. Empty while `next_step_at` is `null`, when the step only notifies destinations, and when its schedules have nobody on call (the run then moves straight on to the step after).",
+		}),
+	),
 }).annotate({
 	identifier: "AlertIncidentEscalation",
 	title: "Alert incident escalation",
@@ -197,7 +204,7 @@ export const V2AlertIncident = Schema.Struct({
 	}),
 	acknowledged_via: Schema.NullOr(AlertIncidentAckSource).annotate({
 		description:
-			"Where the acknowledgement came from (`web`, `api`, `mcp`, `slack`, `discord`), or `null` when not acknowledged.",
+			"Where the acknowledgement came from (`web`, `api`, `mcp`, `slack`, `discord`, or `mobile` for the Maple app and its widgets), or `null` when not acknowledged.",
 		examples: ["slack"],
 	}),
 	first_acknowledged_at: Schema.NullOr(Timestamp).annotate({
@@ -344,6 +351,13 @@ const IncidentsQuery = Schema.Struct({
 			examples: ["false"],
 		}),
 	),
+	paged: Schema.optional(
+		Schema.Literal("me").annotate({
+			description:
+				"`me` for incidents an escalation step paged the calling user for, on any channel that delivered: with an API key, the user who created the key. Combine with `status=open` for what is paging you now.",
+			examples: ["me"],
+		}),
+	),
 }).annotate({
 	identifier: "AlertIncidentListQuery",
 	title: "Alert incident list query",
@@ -371,7 +385,7 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 				identifier: "listAlertIncidents",
 				summary: "List alert incidents",
 				description:
-					"Returns your organization's alert incidents, most recently triggered first, optionally filtered by `status` or `rule_id`. Cursor-paginated. Requires the `alerts:read` scope.",
+					"Returns your organization's alert incidents, most recently triggered first, optionally filtered by `status`, `rule_id`, `acknowledged` or `paged`. Cursor-paginated. Requires the `alerts:read` scope.",
 			}),
 		),
 	)
@@ -426,14 +440,16 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 			params: { id: AlertIncidentPublicId },
 			success: V2AlertIncident,
 			error: [alertIncidentNotFound, alertIncidentResolved, alertPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "resolveAlertIncident",
-				summary: "Resolve an alert incident",
-				description:
-					"Resolves an open incident by hand and sends the all-clear to every destination it notified. If the rule still breaches, it opens no new incident for this group until a check reads healthy or reads no data, and for a day at most, so a resolve is not undone a minute later. Fails with 409 on an incident that is already resolved. Requires the `alerts:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("incidents:respond"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "resolveAlertIncident",
+					summary: "Resolve an alert incident",
+					description:
+						"Resolves an open incident by hand and sends the all-clear to every destination it notified. If the rule still breaches, it opens no new incident for this group until a check reads healthy or reads no data, and for a day at most, so a resolve is not undone a minute later. Fails with 409 on an incident that is already resolved. Requires the `alerts:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("listEvents", "/:id/events", {

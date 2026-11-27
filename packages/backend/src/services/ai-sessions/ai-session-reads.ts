@@ -198,6 +198,7 @@ export const listAiSessions = Effect.fn("AiSessionReads.list")(function* (
 		llmCallsMax: payload.llmCallsMax,
 		toolCallsMin: payload.toolCallsMin,
 		toolCallsMax: payload.toolCallsMax,
+		evaluation: payload.evaluation,
 		sortBy: payload.sortBy,
 		sortDir: payload.sortDir,
 	}

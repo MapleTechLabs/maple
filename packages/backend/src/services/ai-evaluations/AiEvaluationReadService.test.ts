@@ -36,6 +36,7 @@ const scoreRow = (traceId: string, verdict: string, extra: Record<string, unknow
 	name: "Task completion",
 	traceId,
 	spanId: "b7ad6b7169203331",
+	responseId: "",
 	scope: "span",
 	sessionId: "",
 	scoreValue: 0,
@@ -77,7 +78,10 @@ const layerWith = (
 	return { layer, statements }
 }
 
+const isResponseSpansRead = Str.includes("GROUP BY responseId")
+
 const answer = (sql: string): Rows => {
+	if (isResponseSpansRead(sql)) return []
 	if (Str.includes("FROM ai_trace_index")(sql)) return [{ traceId: TRACE_A, sessionId: "session-1" }]
 	if (Str.includes("toStartOfInterval")(sql)) return [{ bucket: "2026-11-22 10:00:00", ...measures }]
 	if (Str.includes("GROUP BY serviceName")(sql))
@@ -88,6 +92,8 @@ const answer = (sql: string): Rows => {
 				name: "Task completion",
 				...measures,
 				traceCount: 2,
+				filterablePassCount: 1,
+				filterableFailCount: 2,
 				sources: ["otel"],
 				annotatorKinds: ["llm"],
 				lastSeen: "2026-11-22 10:00:00.000000000",
@@ -100,9 +106,12 @@ const answer = (sql: string): Rows => {
 		scoreRow("2cf7651916cd43dd8448eb211c80319e", "pass", { scope: "session", sessionId: "session-9" }),
 	]
 	// The failures read and the read of everything else, as the warehouse would answer them.
-	if (Str.includes("Verdict = 'fail'")(sql)) return Arr.filter(scores, (row) => row.verdict === "fail")
-	if (Str.includes("Verdict != 'fail'")(sql)) return Arr.filter(scores, (row) => row.verdict !== "fail")
-	if (Str.includes("Verdict = 'pass'")(sql)) return Arr.filter(scores, (row) => row.verdict === "pass")
+	if (Str.includes("scores.verdict = 'fail'")(sql))
+		return Arr.filter(scores, (row) => row.verdict === "fail")
+	if (Str.includes("scores.verdict != 'fail'")(sql))
+		return Arr.filter(scores, (row) => row.verdict !== "fail")
+	if (Str.includes("scores.verdict = 'pass'")(sql))
+		return Arr.filter(scores, (row) => row.verdict === "pass")
 	return scores
 }
 
@@ -190,18 +199,20 @@ describe("AiEvaluationReadService", () => {
 	it.effect("reads a session's scores by its traces and its session id", () => {
 		const { layer, statements } = layerWith({ llmEvals: true }, (sql) =>
 			Effect.succeed(
-				Str.includes("SessionId = 'session-1'")(sql)
-					? [
-							scoreRow(TRACE_A, "pass", {
-								name: "Handoff",
-								scope: "session",
-								sessionId: "session-1",
-							}),
-						]
-					: [
-							scoreRow(TRACE_A, "fail"),
-							scoreRow(TRACE_B, "pass", { scoreValue: 0.75, hasScore: 1 }),
-						],
+				isResponseSpansRead(sql)
+					? []
+					: Str.includes("SessionId = 'session-1'")(sql)
+						? [
+								scoreRow(TRACE_A, "pass", {
+									name: "Handoff",
+									scope: "session",
+									sessionId: "session-1",
+								}),
+							]
+						: [
+								scoreRow(TRACE_A, "fail"),
+								scoreRow(TRACE_B, "pass", { scoreValue: 0.75, hasScore: 1 }),
+							],
 			),
 		)
 		return Effect.gen(function* () {
@@ -219,12 +230,84 @@ describe("AiEvaluationReadService", () => {
 				"session-1",
 				"session-1",
 			])
-			// By trace id, and session-scope scores by session id: never one OR of both.
-			expect(statements).toHaveLength(2)
+			// By trace id, session-scope scores by session id, the session's responses: never one OR.
+			// With no response in the session, no read by response.
+			expect(statements).toHaveLength(3)
 			expect(
-				Arr.filter(statements, (sql) => Str.includes(`IN ('${TRACE_A}', '${TRACE_B}')`)(sql)),
+				Arr.filter(
+					statements,
+					(sql) =>
+						!isResponseSpansRead(sql) && Str.includes(`IN ('${TRACE_A}', '${TRACE_B}')`)(sql),
+				),
 			).toHaveLength(1)
-			expect(Arr.filter(statements, (sql) => Str.includes("Scope = 'session'")(sql))).toHaveLength(1)
+			expect(
+				Arr.filter(statements, (sql) => Str.includes("SessionId = 'session-1'")(sql)),
+			).toHaveLength(1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("files a score that names only a response under the span that returned it", () => {
+		const { layer, statements } = layerWith({ llmEvals: true }, (sql) => {
+			if (isResponseSpansRead(sql))
+				return Effect.succeed([
+					{ responseId: "resp_42", traceId: TRACE_B, spanId: "c3c3c3c3c3c3c3c3" },
+				])
+			// The session's read by response, and the evaluator page's read of its non-failing scores.
+			if (Str.includes("IN ('resp_42')")(sql) || Str.includes("scores.verdict != 'fail'")(sql))
+				return Effect.succeed([scoreRow("", "pass", { spanId: "", responseId: "resp_42" })])
+			return Effect.succeed([])
+		})
+		return Effect.gen(function* () {
+			const reads = yield* AiEvaluationReadService
+			const session = yield* reads.session(
+				tenant,
+				new GetAiSessionEvaluationsRequest({
+					...WINDOW,
+					sessionId: "session-1",
+					traceIds: [TRACE_A, TRACE_B],
+				}),
+			)
+			expect(session.scores).toHaveLength(1)
+			expect(session.scores[0]).toMatchObject({
+				traceId: TRACE_B,
+				spanId: "c3c3c3c3c3c3c3c3",
+				sessionId: "session-1",
+			})
+			const evaluator = yield* reads.evaluator(
+				tenant,
+				new GetAiEvaluatorRequest({ ...WINDOW, name: "Task completion", bucketSeconds: 3600 }),
+			)
+			expect(Arr.map(evaluator.scores, (score) => score.traceId)).toEqual([TRACE_B])
+			// The evaluator page resolves the response by its id, not by the session's traces.
+			expect(
+				Arr.some(
+					statements,
+					(sql) => isResponseSpansRead(sql) && Str.includes("ResponseId IN ('resp_42')")(sql),
+				),
+			).toBe(true)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("still reads a session's scores when its responses cannot be resolved", () => {
+		const failure = new WarehouseConfigError({
+			message: "budget exceeded",
+			pipeName: "aiEvaluationResponseSpans",
+			clickhouseType: "TIMEOUT_EXCEEDED",
+		})
+		const { layer } = layerWith({ llmEvals: true }, (sql) =>
+			isResponseSpansRead(sql) ? Effect.fail(failure) : Effect.succeed([scoreRow(TRACE_A, "fail")]),
+		)
+		return Effect.gen(function* () {
+			const reads = yield* AiEvaluationReadService
+			const result = yield* reads.session(
+				tenant,
+				new GetAiSessionEvaluationsRequest({
+					...WINDOW,
+					sessionId: "session-1",
+					traceIds: [TRACE_A],
+				}),
+			)
+			expect(result.scores.length).toBeGreaterThan(0)
 		}).pipe(Effect.provide(layer))
 	})
 

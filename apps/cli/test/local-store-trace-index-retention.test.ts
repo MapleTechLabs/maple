@@ -37,7 +37,7 @@ const tableDefinition = (db: Chdb, table: string) => ({
 	)[0],
 })
 const traceIndexDefinition = (db: Chdb) => tableDefinition(db, "trace_index")
-/** The other aggregating table whose sorting key gains RetentionDays in v68. */
+/** The other aggregating table whose sorting key gains RetentionDays in v69. */
 const traceFacetsDefinition = (db: Chdb) => tableDefinition(db, "trace_facets_hourly")
 
 const storedRows = (db: Chdb) =>
@@ -47,8 +47,8 @@ const storedRows = (db: Chdb) =>
 		),
 	)
 
-describeWithChdb("v67 -> v68 trace_index sorts by RetentionDays", () => {
-	const STEP_ID = "local-0067-to-0068-retention-storage"
+describeWithChdb("v68 -> v69 trace_index sorts by RetentionDays", () => {
+	const STEP_ID = "local-0068-to-0069-retention-storage"
 	let migration: ReturnType<typeof migrationStep>["migration"]
 	let root = ""
 	let sourceDataDir = ""
@@ -63,7 +63,7 @@ describeWithChdb("v67 -> v68 trace_index sorts by RetentionDays", () => {
 		sourceDataDir = join(root, "source", "data")
 		targetDataDir = join(root, "target", "data")
 		freshDataDir = join(root, "fresh", "data")
-		const db = Chdb.open({ dataDir: sourceDataDir, schemaSql: localSchemaSnapshot(67).sql })
+		const db = Chdb.open({ dataDir: sourceDataDir, schemaSql: localSchemaSnapshot(68).sql })
 		db.exec(
 			`INSERT INTO trace_index (OrgId, TraceId, ServiceName, Bucket, MinTimestamp, MaxTimestamp) VALUES ('local', 'trace-a', 'api', '${bucket}', '${bucket}', '${bucket}'), ('local', 'trace-b', 'api', '${bucket}', '${bucket}', '${bucket}'), ('local', 'trace-c', 'worker', '${bucket}', '${bucket}', '${bucket}')`,
 		)
@@ -93,13 +93,13 @@ describeWithChdb("v67 -> v68 trace_index sorts by RetentionDays", () => {
 				db.exec("OPTIMIZE TABLE trace_index FINAL")
 				return { definition, facets, before, after: storedRows(db) }
 			},
-			{ schemaSql: localSchemaSnapshot(68).sql, bootstrapSchema: false },
+			{ schemaSql: localSchemaSnapshot(69).sql, bootstrapSchema: false },
 		)
 		const fresh = await openStore(
 			freshDataDir,
 			(db) => ({ definition: traceIndexDefinition(db), facets: traceFacetsDefinition(db) }),
 			{
-				schemaSql: localSchemaSnapshot(68).sql,
+				schemaSql: localSchemaSnapshot(69).sql,
 				bootstrapSchema: true,
 			},
 		)

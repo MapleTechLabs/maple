@@ -1,0 +1,86 @@
+---
+/**
+ * The iPhone app: a quiet head with Apple's own badge (black, localized) under the sentence, then
+ * three App Store screenshots, each under the question it answers. Plain markup, no island.
+ */
+import { IOS_APP_STORE_URL } from "@maple/domain/mobile-app";
+import * as m from "../../paraglide/messages.js";
+
+const locale = Astro.currentLocale ?? "en";
+
+// Apple draws each locale's badge at its own width; all are 40 units tall.
+const BADGES = {
+	en: { src: "/badges/app-store-en.svg", ratio: 119.66407 / 40 },
+	ja: { src: "/badges/app-store-ja.svg", ratio: 108.85157 / 40 },
+	ko: { src: "/badges/app-store-ko.svg", ratio: 129.70071 / 40 },
+};
+const badge = locale === "ja" ? BADGES.ja : locale === "ko" ? BADGES.ko : BADGES.en;
+const BADGE_HEIGHT = 40;
+
+// One question the app answers per screen, in the order its tabs put them.
+const screens = [
+	{
+		src: "/screenshots/ios/overview.webp",
+		alt: m.ios_shot_overview_alt(),
+		title: m.ios_point_1_title(),
+		body: m.ios_point_1_body(),
+	},
+	{
+		src: "/screenshots/ios/incident.webp",
+		alt: m.ios_shot_incident_alt(),
+		title: m.ios_point_2_title(),
+		body: m.ios_point_2_body(),
+	},
+	{
+		src: "/screenshots/ios/trace.webp",
+		alt: m.ios_shot_trace_alt(),
+		title: m.ios_point_3_title(),
+		body: m.ios_point_3_body(),
+	},
+];
+---
+
+<section id="mobile" class="ledger">
+	<div class="shell">
+		<header class="ledger-intro">
+			<p class="text-[10px] uppercase tracking-[0.18em] text-fg-muted">{m.ios_eyebrow()}</p>
+			<h2 class="font-display font-medium tracking-[-0.02em] text-3xl md:text-4xl">{m.ios_title()}</h2>
+			<p class="ledger-intro__lede">{m.ios_lede()}</p>
+			<a href={IOS_APP_STORE_URL} target="_blank" rel="noopener noreferrer" class="ledger-store">
+				<img
+					src={badge.src}
+					alt={m.ios_badge_alt()}
+					width={Math.round(BADGE_HEIGHT * badge.ratio)}
+					height={BADGE_HEIGHT}
+					loading="lazy"
+					decoding="async"
+				/>
+			</a>
+		</header>
+
+		{/* Caption first, then the phone rising from the cell's foot and running off it. */}
+		<div class="ledger-grid ledger-grid--phones" data-lightbox-group>
+			{
+				screens.map((screen) => (
+					<div class="ledger-cell">
+						<div class="ledger-cap">
+							<h3>{screen.title}</h3>
+							<p>{screen.body}</p>
+						</div>
+						<div class="ledger-phone">
+							<img
+								src={screen.src}
+								alt={screen.alt}
+								width="660"
+								height="1434"
+								loading="lazy"
+								decoding="async"
+								data-zoomable
+							/>
+						</div>
+					</div>
+				))
+			}
+		</div>
+	</div>
+</section>

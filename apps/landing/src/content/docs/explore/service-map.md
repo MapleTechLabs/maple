@@ -94,7 +94,7 @@ The [MCP server](/docs/reference/mcp) tool `service_map` returns the edges with 
 - **Two services are not connected.** The callee is not instrumented, or the caller drops the `traceparent` header (common across proxies, queues and custom HTTP clients). Open a trace for the call and check that the callee's `Server` span has the client span as its parent.
 - **Every database collapses into one node.** Set `db.namespace` on database spans, or at least `server.address`.
 - **The same database appears twice.** Services spell `db.system.name` differently (for example `postgresql` and `PostgreSQL`). Use the OpenTelemetry well-known values.
-- **The Infrastructure tab says "Not linked to any infrastructure".** The service's spans lack Kubernetes workload attributes. See [Kubernetes](/docs/infrastructure/kubernetes).
+- **The Infrastructure tab says "Not linked to any infrastructure".** The service matches no connected platform resource and no Kubernetes workload. Set `OTEL_SERVICE_NAME` to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform. On Kubernetes, see [Kubernetes](/docs/infrastructure/kubernetes).
 
 ## Next steps
 

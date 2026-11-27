@@ -45,7 +45,7 @@ For any given query the API resolves the upstream in this order:
 Settings → "Bring your own ClickHouse" exposes:
 
 - **ClickHouse URL:** the HTTP interface (e.g. `https://your-clickhouse.example.com:8123`).
-- **User:** defaults to `default`. Applying the schema from the UI needs DDL privileges (CREATE TABLE / CREATE MATERIALIZED VIEW), and `SYSTEM MERGES` on the Maple database (migration 76 stops merges on `trace_index` and `trace_facets_hourly` while it changes their sorting keys; see [Migration 76 and stopped merges](#migration-76-and-stopped-merges)).
+- **User:** defaults to `default`. Applying the schema from the UI needs DDL privileges (CREATE TABLE / CREATE MATERIALIZED VIEW), and `SYSTEM MERGES` on the Maple database (migration 77 stops merges on `trace_index` and `trace_facets_hourly` while it changes their sorting keys; see [Migration 77 and stopped merges](#migration-77-and-stopped-merges)).
 - **Database:** defaults to `default`.
 - **Password:** optional; encrypted at rest. Leave it blank to keep the stored password when re-saving. Changing the URL, user or database requires re-entering it.
 
@@ -93,9 +93,9 @@ To inspect applied migrations directly on your ClickHouse server:
 SELECT version, applied_at, description FROM _maple_schema_migrations ORDER BY version;
 ```
 
-### Migration 76 and stopped merges
+### Migration 77 and stopped merges
 
-Migration 76 adds `RetentionDays` to the sorting keys of `trace_index` and `trace_facets_hourly`. For each table it runs `SYSTEM STOP MERGES`, drops the table's materialized view, changes the key, sets the column's DEFAULT, runs `SYSTEM START MERGES`, repairs any rows that were written with `RetentionDays = 0` (through a `<table>_retention_repair` staging table), and recreates the view.
+Migration 77 adds `RetentionDays` to the sorting keys of `trace_index` and `trace_facets_hourly`. For each table it runs `SYSTEM STOP MERGES`, drops the table's materialized view, changes the key, sets the column's DEFAULT, runs `SYSTEM START MERGES`, repairs any rows that were written with `RetentionDays = 0` (through a `<table>_retention_repair` staging table), and recreates the view.
 
 - **One server.** `SYSTEM STOP MERGES` only stops merges on the server that receives it. The migration assumes every merge of these tables happens on that server, which holds for a single-node ClickHouse.
 - **Several replicas.** Other replicas keep merging, and a merge there in the window can write `RetentionDays = 0`. The repair step moves those rows to 30, but only for parts on the server it runs against. Either run the migration's `SYSTEM STOP MERGES` / `SYSTEM START MERGES` on every replica yourself (`SYSTEM STOP MERGES ON CLUSTER <cluster> trace_index`, and the same for `trace_facets_hourly`), or pause your ingest writers and apply against one replica at a time. The apply does not add `ON CLUSTER` itself.

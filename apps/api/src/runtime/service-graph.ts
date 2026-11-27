@@ -14,6 +14,7 @@ import {
 	GithubAppClientSecret,
 	GithubAppPrivateKey,
 	GithubAppWebhookSecret,
+	GoogleAdsConversionsPassword,
 	LinearOAuthClientSecret,
 	PlanetScaleOAuthClientSecret,
 	PreviewSigninKey,
@@ -138,6 +139,7 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { SavedViewsService } from "@maple/backend/services/saved-views/SavedViewsService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
@@ -146,6 +148,7 @@ import { SessionReplayReadService } from "@maple/backend/services/session-replay
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { McpReadService } from "@maple/backend/services/mcp/McpReadService"
 import { AiEvaluationReadService } from "@maple/backend/services/ai-evaluations/AiEvaluationReadService"
+import { SessionCheckScoresService } from "@maple/backend/services/ai-evaluations/SessionCheckScoresService"
 import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
@@ -176,6 +179,7 @@ const ApiSecretsLive = Layer.mergeAll(
 	GithubAppClientSecret.layer,
 	GithubAppPrivateKey.layer,
 	GithubAppWebhookSecret.layer,
+	GoogleAdsConversionsPassword.layer,
 	LinearOAuthClientSecret.layer,
 	PlanetScaleOAuthClientSecret.layer,
 	PreviewSigninKey.layer,
@@ -225,6 +229,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AgentFeedbackService.layer,
 	SavedViewsService.layer,
 	LiveActivitiesService.layer,
+	MobilePushService.layer,
 	PlanetScaleWebhookQueue.layer,
 	CancellationReviewQueue.layer,
 	ScrapeTargetsService.layer,
@@ -329,8 +334,9 @@ export const HttpServicesLive = Layer.mergeAll(
 	SessionReplayReadService.layer,
 	UsersReadService.layer,
 	McpReadService.layer,
-	AiSessionReadService.layer,
+	AiSessionReadService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	AiEvaluationReadService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
+	SessionCheckScoresService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,

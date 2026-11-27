@@ -5,6 +5,7 @@ import { MapleApiV2, isoTimestamp } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService, type MobileDevice } from "@maple/backend/services/push/MobileDevicesService"
+import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
 
 const toV2 = (device: MobileDevice): V2MobileDevice => ({
 	id: device.id,
@@ -32,6 +33,7 @@ export const HttpV2MobileDevicesLive = HttpApiBuilder.group(MapleApiV2, "mobileD
 	Effect.gen(function* () {
 		const devices = yield* MobileDevicesService
 		const activities = yield* LiveActivitiesService
+		const push = yield* MobilePushService
 
 		/** The device the credential belongs to, or a 404 rather than a key. */
 		const requireDevice = Effect.fn("HttpV2MobileDevices.requireDevice")(function* (
@@ -85,6 +87,19 @@ export const HttpV2MobileDevicesLive = HttpApiBuilder.group(MapleApiV2, "mobileD
 					})
 					return toV2(device)
 				}),
+			)
+			.handle("testPage", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const summary = yield* push.testPage(tenant.orgId, tenant.userId)
+					return {
+						object: "mobile_test_page" as const,
+						configured: summary.configured,
+						sent: summary.sent,
+						failed: summary.failed,
+						unregistered: summary.unregistered,
+					}
+				}).pipe(Effect.withSpan("HttpV2MobileDevices.testPage")),
 			)
 			.handle("registerLiveActivity", ({ params, payload }) =>
 				Effect.gen(function* () {

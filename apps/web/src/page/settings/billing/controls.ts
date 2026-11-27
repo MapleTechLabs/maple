@@ -5,6 +5,7 @@ import {
 	UpdateBillingSpendLimit as UpdateBillingSpendLimitClass,
 } from "@maple/domain/http"
 
+import type { SpendFeatureId as CapFeatureId } from "./model"
 import type { FeatureSpend, SpendFeatureId, SpendModel } from "./spend"
 import { Array as Arr, Option, String as Str } from "effect"
 
@@ -28,7 +29,7 @@ export const updateFeatureControls = ({
 	featureId,
 	overageLimit,
 }: {
-	readonly featureId: SpendFeatureId
+	readonly featureId: CapFeatureId
 	readonly overageLimit: number | null
 }): UpdateBillingControlsRequest =>
 	new UpdateBillingControlsRequest({

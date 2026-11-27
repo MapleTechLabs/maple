@@ -10,7 +10,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions } from "./errors"
 import { publicError, publicErrors } from "./public-error"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, handlerChecks } from "../endpoint-access"
 
 export const V2OnboardingChecklistStepId = Schema.Literals(ONBOARDING_CHECKLIST_STEP_IDS)
 export type V2OnboardingChecklistStepId = Schema.Schema.Type<typeof V2OnboardingChecklistStepId>
@@ -201,4 +201,4 @@ export class V2OnboardingChecklistApiGroup extends HttpApiGroup.make("onboarding
 				"Activation steps a new org completes to earn a credit, and the claim that applies it.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("billing:manage")) {}

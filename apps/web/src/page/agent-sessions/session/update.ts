@@ -1,5 +1,9 @@
 import { buildSessionSummary, buildSessionTurns, resolveWindow } from "@maple/agent-sessions"
-import { AI_EVALUATION_SESSION_MAX_TRACES, type AiSessionSpan } from "@maple/domain/http"
+import {
+	AI_EVALUATION_SESSION_MAX_TRACES,
+	AI_EVALUATION_SESSION_SCORES_TAIL_MS,
+	type AiSessionSpan,
+} from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -125,8 +129,6 @@ const nextPage = (model: Model): Commands => {
 }
 
 const TRACE_ID = /^[0-9a-f]{32}$/
-/** Judges often score after the run ends, so the scores read looks an hour past the last span. */
-const SCORES_TAIL_MS = 60 * 60 * 1000
 
 /** The scores read over the session's loaded traces (at most the read's cap), keyed by them. */
 const scoresStep = (
@@ -143,7 +145,7 @@ const scoresStep = (
 	if (traceIds.length === 0 || !Number.isFinite(startMs) || !Number.isFinite(endMs)) return Option.none()
 	const window = {
 		startTime: formatWarehouseDateTime(startMs),
-		endTime: formatWarehouseDateTime(endMs + SCORES_TAIL_MS),
+		endTime: formatWarehouseDateTime(endMs + AI_EVALUATION_SESSION_SCORES_TAIL_MS),
 	}
 	const key = requestKey(context.orgId, "getAiSessionEvaluations", {
 		sessionId: model.sessionId,

@@ -96,7 +96,6 @@ const update = (
 		ClickedGcpConfigureScriptRetry: () => Configure.retriedScripts(model, env),
 		ClickedGcpScriptExpand: () => Configure.clickedScriptExpand(model),
 		ClickedGcpMethod: ({ method }) => Configure.clickedMethod(model, method),
-		GotGcpFlavourMessage: ({ message: child }) => Configure.gotFlavour(model, child),
 		ClickedGcpMethodContinue: () => Configure.clickedMethodContinue(model, env),
 		ClickedGcpManualStep: ({ title, firstTitle }) =>
 			Configure.clickedManualStep(model, title, firstTitle),

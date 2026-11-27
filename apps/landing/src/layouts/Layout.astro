@@ -181,7 +181,7 @@ const absoluteImage = image.startsWith("http")
                     var lang = langs[i].split('-')[0].toLowerCase();
                     if (supported.indexOf(lang) !== -1) {
                         sessionStorage.setItem('locale-redirected', '1');
-                        window.location.replace('/' + lang + window.location.pathname);
+                        window.location.replace('/' + lang + window.location.pathname + window.location.search + window.location.hash);
                         return;
                     }
                 }

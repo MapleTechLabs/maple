@@ -15,7 +15,7 @@ import { fieldErrorText, type FieldIds, fieldLabel, input } from "@maple/views/u
 import { icon } from "@maple/views/ui/icon"
 import type { FieldState } from "@maple/views/ui/input"
 import * as Menu from "@maple/views/ui/menu"
-import type { MenuEntry } from "@maple/views/ui/menu-view"
+import type { MenuEntry, MenuItemEntry } from "@maple/views/ui/menu-view"
 import { panel } from "@maple/views/ui/panel"
 import { personAvatar } from "@maple/views/ui/person-avatar"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
@@ -31,7 +31,15 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { managersOnlyPage } from "../../kit/form-section"
 import { type PickedChip, pickChips } from "../../kit/pick-chips"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { CHAIN_NOT_FOUND_CODE, chainSummary, routingTabHref } from "../shared/escalation-chains"
+import { rowWarning } from "../../kit/row-warning"
+import {
+	CANNOT_RESPOND_REASON,
+	cannotRespondSentence,
+	CHAIN_NOT_FOUND_CODE,
+	chainSummary,
+	routingTabHref,
+	unableToRespond,
+} from "../shared/escalation-chains"
 import { ruleHref } from "../../kit/alert-links"
 import { memberName, memberOf } from "../shared/org-members"
 import { providerLogo } from "../shared/providers"
@@ -180,6 +188,10 @@ const targetChip = (
 			return {
 				key: targetKey(target),
 				label: name,
+				// Paging them stays allowed: the mark says they cannot act on the page.
+				...(unableToRespond([target], model.members).length === 0
+					? undefined
+					: { warning: CANNOT_RESPOND_REASON }),
 				media: personAvatar(h, {
 					name,
 					size: "xs",
@@ -226,12 +238,19 @@ const nothingToAdd = (h: H, model: Model): Html =>
 
 const loadingEntry = (label: string): MenuEntry => ({ _tag: "Label", label })
 
+/** What the picker adds to a person whose role cannot respond, so the choice is informed. */
+const CANNOT_RESPOND_ITEM: Pick<MenuItemEntry, "meta" | "metaTone" | "tooltip"> = {
+	meta: "Can't respond",
+	metaTone: "warning",
+	tooltip: { content: [CANNOT_RESPOND_REASON] },
+}
+
 /** The target picker: destinations, people and schedules not yet on the step, by kind. */
 const addEntries = (h: H, model: Model, step: StepDraft): ReadonlyArray<MenuEntry> => {
 	const picked = new Set(Arr.map(step.targets, targetKey))
 	const group = (
 		groupLabel: string,
-		items: ReadonlyArray<Readonly<{ value: string; label: string }>>,
+		items: ReadonlyArray<Omit<MenuItemEntry, "_tag">>,
 	): ReadonlyArray<MenuEntry> => {
 		const open = Arr.filter(items, (item) => !picked.has(item.value))
 		return open.length === 0
@@ -261,6 +280,7 @@ const addEntries = (h: H, model: Model, step: StepDraft): ReadonlyArray<MenuEntr
 					Arr.map(model.members, (member) => ({
 						value: `user:${member.userId}`,
 						label: member.name,
+						...(member.canRespondToIncidents ? undefined : CANNOT_RESPOND_ITEM),
 					})),
 				)),
 		...(model.schedules === null
@@ -348,6 +368,10 @@ const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 				toParentMessage: (message) => Message.GotMenuMessage({ kind: "actions", key, message }),
 			}),
 		]),
+		...Option.match(cannotRespondSentence(unableToRespond(step.targets, model.members)), {
+			onNone: () => [],
+			onSome: (sentence) => [rowWarning(h, { icon: "AlertWarningIcon", text: sentence })],
+		}),
 		...errorText(h, shown(model, targetsError(step.targets))),
 		hstack(h, { gap: "2", wrap: true }, [
 			fieldLabel(h, { ids: idsOf(waitId), state: waitState, className: "font-normal" }, "then wait"),

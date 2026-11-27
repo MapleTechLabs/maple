@@ -650,7 +650,7 @@ export const update = (
 			const opened =
 				first === undefined
 					? { ...model, editingCap: null }
-					: openCap(model, Schema.decodeSync(SpendFeatureId)(first.featureId), customer)
+					: openCap(model, Schema.decodeUnknownSync(SpendFeatureId)(first.featureId), customer)
 			return same({
 				model: opened,
 				commands: [ScrollToUsage(), ...(opened.editingCap === null ? [] : [FocusCap()])],

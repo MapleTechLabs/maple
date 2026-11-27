@@ -88,7 +88,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					model: tab.model,
 					view: IngestionView.view,
 					toParentMessage: (message) => Message.GotIngestionMessage({ message }),
-					viewInputs: {},
+					viewInputs: { isHosted: visibilityOf(model).isClerk },
 				}),
 			]
 		case "SetupHealth":
