@@ -92,8 +92,13 @@ const objectState = () => {
 				turnJobs.delete(key)
 			}),
 		read: (key) => Effect.sync(() => stored.get(key)),
-		revisit: (key) => Effect.sync(() => void (stored.has(key) && schedule(key))),
-		keepAlive: Effect.sync(() => void (keepAlive.scheduled += 1)),
+		revisit: (key) =>
+			Effect.sync(() => {
+				if (stored.has(key)) schedule(key)
+			}),
+		keepAlive: Effect.sync(() => {
+			keepAlive.scheduled += 1
+		}),
 	}
 	return {
 		stored,

@@ -13,11 +13,12 @@ describe("answeringWithin", () => {
 		const reads = { count: 0 }
 		const inTime = answeringWithin<string, number>(60_000)
 		// A provider that takes five seconds to answer.
-		const slow = Effect.sync(() => void reads.count++).pipe(
-			Effect.andThen(Effect.sleep(Duration.seconds(5))),
-			Effect.as(Option.some(1)),
-		)
-		const fast = Effect.sync(() => void reads.count++).pipe(Effect.as(Option.some(2)))
+		const slow = Effect.sync(() => {
+			reads.count++
+		}).pipe(Effect.andThen(Effect.sleep(Duration.seconds(5))), Effect.as(Option.some(1)))
+		const fast = Effect.sync(() => {
+			reads.count++
+		}).pipe(Effect.as(Option.some(2)))
 		return { reads, ask: (read: typeof slow) => inTime("org", Duration.seconds(2), read), slow, fast }
 	}
 

@@ -23,8 +23,7 @@ export const CancellationReviewJob = Schema.Struct({
 
 // A field added to `CancellationToReview` and not here fails to compile, instead of being dropped.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
-const jobIsTheReview: Same<typeof CancellationReviewJob.Type, CancellationToReview> = true
-void jobIsTheReview
+const _jobIsTheReview: Same<typeof CancellationReviewJob.Type, CancellationToReview> = true
 
 const encodeJob = Schema.encodeEffect(CancellationReviewJob)
 
