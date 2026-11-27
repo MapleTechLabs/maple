@@ -83,6 +83,7 @@ const RETENTION_DAYS = 30;
 					price: money(offer.price),
 					included: String(includedGB),
 					rate: rateLabel(gbRate),
+					storage: rateLabel(gbSignal?.retention?.rate ?? gbRate),
 				})
 			}
 		</p>
@@ -177,13 +178,15 @@ const RETENTION_DAYS = 30;
 							<div class="mt-2 text-[11.5px] text-fg-muted">
 								{a.unlimited || isUsageCredit(a)
 									? rateSentence(a)
-									: a.retention === undefined
-										? m.pricing_rate_included({ amount: volume(a, a.included) })
-										: `${m.pricing_rate_included({ amount: volume(a, a.included) })}, ${retainedFor(a.retention)}`}
+									: m.pricing_rate_included({ amount: volume(a, a.included) })}
 							</div>
+							{/* Short lines of their own: one joined sentence wrapped mid-phrase in a six-column cell. */}
+							{a.retention !== undefined && (
+								<div class="text-[11.5px] text-fg-muted">{retainedFor(a.retention)}</div>
+							)}
 							{a.retention?.rate !== undefined && (
-								<div class="text-[11.5px] text-fg-muted">
-									{m.pricing_rate_retention({ rate: rateLabel(a.retention.rate) })}
+								<div class="mt-1.5 whitespace-nowrap text-[11.5px] text-fg-muted">
+									{m.pricing_rate_storage({ rate: rateLabel(a.retention.rate) })}
 								</div>
 							)}
 						</div>

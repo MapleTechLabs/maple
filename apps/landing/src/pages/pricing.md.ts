@@ -31,7 +31,7 @@ export const GET: APIRoute = async ({ site }) => {
 	const offer = await getOffer()
 
 	const meter = table(
-		["Signal", "Included every month", "Then", "Retention"],
+		["Signal", "Included every month", "Then", "Storage past that"],
 		Arr.map(offer.allotments, (a) => [
 			a.label,
 			a.retention === undefined
@@ -44,7 +44,7 @@ export const GET: APIRoute = async ({ site }) => {
 					: a.rate === undefined
 						? "n/a"
 						: `${rateLabel(a.rate)} / ${unitLabel(a)}`,
-			a.retention?.rate === undefined ? "n/a" : `${rateLabel(a.retention.rate)} / GB per month`,
+			a.retention?.rate === undefined ? "n/a" : `${rateLabel(a.retention.rate)} / GB-month`,
 		]),
 	)
 
@@ -60,6 +60,7 @@ export const GET: APIRoute = async ({ site }) => {
 		price: money(offer.price),
 		included: String(gb?.included ?? 0),
 		rate: rateLabel(gb?.rate ?? 0),
+		storage: rateLabel(gb?.retention?.rate ?? gb?.rate ?? 0),
 	})
 	const claims = [m.pricing_no_seat(), m.pricing_no_host(), m.pricing_no_series()]
 	const RETENTION_DAYS = 30

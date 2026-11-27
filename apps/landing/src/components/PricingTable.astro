@@ -66,7 +66,7 @@ const rowRate = (a: Allotment) => {
     return { before, amount: rateLabel(a.rate), after }
 }
 
-// Retention is its own price, as ingestion is: "retention $0.15 / GB per month" under the
+// Storage is its own price, as ingestion is: "and $0.15 / GB-month stored" under the
 // ingest rate, for storage past what the included volume needs for its period.
 const rowRetention = (a: Allotment) => {
     const rate = a.retention?.rate
@@ -236,7 +236,7 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                 <div class="whitespace-nowrap pb-1 pt-3 text-right font-mono text-[12.5px] tabular-nums text-fg sm:border-b sm:border-border/60 sm:py-3">
                                     {a.included}
                                     {a.retainedFor && (
-                                        <div class="text-[11px] text-fg-muted">{a.retainedFor}</div>
+                                        <div class="mt-0.5 text-[11px] text-fg-muted">{a.retainedFor}</div>
                                     )}
                                 </div>
                                 {/* Below sm the rate drops to its own full-width line:
@@ -245,7 +245,9 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     From sm it's a real column, left-aligned so every
                                     "then" starts on the same axis: right-aligning left
                                     it ragged. */}
-                                <div class="col-span-2 whitespace-nowrap border-b border-border/60 pb-3 text-right font-mono text-[11px] tabular-nums text-fg-muted sm:col-span-1 sm:py-3 sm:pl-6 sm:text-left sm:text-[11.5px]">
+                                <div class="col-span-2 flex justify-end whitespace-nowrap border-b border-border/60 pb-3 font-mono text-[11px] tabular-nums text-fg-muted sm:col-span-1 sm:block sm:py-3 sm:pl-6 sm:text-[11.5px]">
+                                    {/* One left-aligned block, pushed right below sm: both amounts share an axis there too. */}
+                                    <div class="space-y-0.5">
                                     {a.rate && (
                                         <div>
                                             <span class="inline-block" style={`min-width:${rateLeadCh}ch`}>{a.rate.before}</span>
@@ -264,6 +266,7 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                             {a.retention.after}
                                         </div>
                                     )}
+                                    </div>
                                 </div>
                             </>
                         ))}
