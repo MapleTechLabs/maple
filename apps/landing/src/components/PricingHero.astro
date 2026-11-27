@@ -51,7 +51,6 @@ const rateSentence = (a: Allotment): string => {
 };
 
 const claims = [m.pricing_no_seat(), m.pricing_no_host(), m.pricing_no_series()];
-const RETENTION_DAYS = 30;
 ---
 
 <section class="pricing-hero relative overflow-hidden">
@@ -189,7 +188,7 @@ const RETENTION_DAYS = 30;
 									)}
 									{a.retention?.rate !== undefined && (
 										<>
-											<dt class="text-fg-muted">{m.pricing_col_storage()}</dt>
+											<dt class="text-fg-muted">{m.pricing_row_retention()}</dt>
 											<dd class="whitespace-nowrap font-mono tabular-nums text-fg">
 												{rateLabel(a.retention.rate)}
 												<span class="text-fg-muted"> / GB-month</span>
@@ -203,7 +202,7 @@ const RETENTION_DAYS = 30;
 				}
 			</div>
 			<p class="mt-4 max-w-[80ch] text-[12px] leading-relaxed text-fg-muted">
-				{m.pricing_rates_retention({ days: String(RETENTION_DAYS) })}
+				{m.pricing_rates_retention()}
 			</p>
 		</div>
 	</div>
