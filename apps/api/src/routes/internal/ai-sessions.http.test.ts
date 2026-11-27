@@ -958,7 +958,6 @@ describe("POST /internal/ai-sessions/list evaluation filter", () => {
 			expect(sql).toContain("FROM ai_evaluations")
 			expect(sql).toContain("'context_window'")
 			expect(sql).toContain("sessionId IN (SELECT")
-			expect(sql).toContain("countIf(traceId IN (SELECT")
 		} finally {
 			await harness.dispose()
 		}

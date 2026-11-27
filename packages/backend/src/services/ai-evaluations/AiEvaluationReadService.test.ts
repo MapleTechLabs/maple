@@ -92,6 +92,8 @@ const answer = (sql: string): Rows => {
 				name: "Task completion",
 				...measures,
 				traceCount: 2,
+				filterablePassCount: 1,
+				filterableFailCount: 2,
 				sources: ["otel"],
 				annotatorKinds: ["llm"],
 				lastSeen: "2026-11-22 10:00:00.000000000",

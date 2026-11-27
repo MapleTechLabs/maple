@@ -153,6 +153,8 @@ const make = Effect.gen(function* () {
 						...measures(row),
 						name: row.name,
 						traceCount: Number(row.traceCount),
+						filterablePassCount: Number(row.filterablePassCount),
+						filterableFailCount: Number(row.filterableFailCount),
 						sources: row.sources,
 						annotatorKinds: row.annotatorKinds,
 						lastSeen: row.lastSeen,

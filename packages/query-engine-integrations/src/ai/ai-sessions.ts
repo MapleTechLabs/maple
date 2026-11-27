@@ -773,6 +773,22 @@ const indexSessions = <Bounds extends IndexBounds>(
  */
 /** What `aiSessionPageQuery` and `aiSessionRankQuery` agree on: which level
  *  orders the page, by what, and which sessions are on it at all. */
+/** The session each scored trace is filed under, over the window's whole index. */
+const sessionsOfScoredTraces = (traceIds: ReturnType<typeof aiEvaluationMatchSubqueries>["traceIds"]) =>
+	fromQuery(
+		from(Datasources.aiTraceIndex)
+			.select(($) => ({ traceId: $.TraceId, sessionId: sessionKey(CH.max_($.SessionId), $.TraceId) }))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				inSubquery($.TraceId, traceIds),
+			])
+			.groupBy("traceId")
+			.having(($) => [isSessionTraceCond($)]),
+		"scored_traces",
+	).select(($) => ({ sessionId: $.sessionId }))
+
 const pagePlan = (opts: AiSessionPageOpts) => {
 	const limit = opts.limit ?? 50
 	const offset = opts.offset ?? 0
@@ -833,11 +849,12 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 		CH.when(opts.durationMaxMs, (v) => column.agentDurationMs.lte(v)),
 		CH.when(opts.toolCallsMin, (v) => column.toolCalls.gte(v)),
 		CH.when(opts.toolCallsMax, (v) => column.toolCalls.lte(v)),
-		// Over the session's traces, so a score on any trace of it matches the whole session.
+		// A score on any trace of the session matches the whole session: the scored traces resolve to
+		// sessions over the whole index, not over the traces the other filters kept.
 		CH.when(opts.evaluation, (match) => {
 			const scored = aiEvaluationMatchSubqueries(match)
 			return inSubquery(column.sessionId, scored.sessionIds).or(
-				CH.countIf(inSubquery(column.traceId, scored.traceIds)).gt(0),
+				inSubquery(column.sessionId, sessionsOfScoredTraces(scored.traceIds)),
 			)
 		}),
 	]

@@ -207,19 +207,19 @@ const evaluationOptions = (model: Model) =>
 	Arr.flatMap(
 		Option.getOrElse(AsyncData.getData(model.evaluators.data), () => []),
 		(evaluator) => [
-			...(evaluator.failCount > 0
+			...(evaluator.filterableFailCount > 0
 				? [
 						{
 							name: evaluationOptionKey({ name: evaluator.name, verdict: "fail" }),
-							count: evaluator.failCount,
+							count: evaluator.filterableFailCount,
 						},
 					]
 				: []),
-			...(evaluator.passCount > 0
+			...(evaluator.filterablePassCount > 0
 				? [
 						{
 							name: evaluationOptionKey({ name: evaluator.name, verdict: "pass" }),
-							count: evaluator.passCount,
+							count: evaluator.filterablePassCount,
 						},
 					]
 				: []),

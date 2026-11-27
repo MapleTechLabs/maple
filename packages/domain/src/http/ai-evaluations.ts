@@ -53,6 +53,9 @@ export const AiEvaluatorSummary = Schema.Struct({
 	...AiEvaluationMeasures.fields,
 	name: Schema.String,
 	traceCount: Schema.Number,
+	/** Pass / fail scores the Agent Sessions filter can match: on a trace, or naming a session. */
+	filterablePassCount: Schema.Number,
+	filterableFailCount: Schema.Number,
 	sources: Schema.Array(Schema.String),
 	annotatorKinds: Schema.Array(Schema.String),
 	/** Warehouse datetime literal. */

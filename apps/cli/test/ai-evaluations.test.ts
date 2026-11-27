@@ -596,12 +596,17 @@ describeWithChdb("the Agent Sessions evaluation filter", () => {
 	}
 	const trace = (digit: string) => Str.repeat(32)(digit)
 	const Ranked = Schema.Struct({ sessionId: Schema.String })
-	const matching = (verdict: "pass" | "fail", name = "Context window") => {
+	const matching = (
+		verdict: "pass" | "fail",
+		name = "Context window",
+		extra: { readonly toolNames?: ReadonlyArray<string> } = {},
+	) => {
 		const evaluation = { name, verdict }
 		const ranked = decodeJsonEachRow(Ranked)(
 			db.query(
 				normalizeSqlForClickHouseClient(
-					Compile.compileUnsafe(Integrations.aiSessionRankQuery({ evaluation }), params).sql,
+					Compile.compileUnsafe(Integrations.aiSessionRankQuery({ evaluation, ...extra }), params)
+						.sql,
 				),
 			),
 		)
@@ -610,7 +615,7 @@ describeWithChdb("the Agent Sessions evaluation filter", () => {
 			db.query(
 				normalizeSqlForClickHouseClient(
 					Compile.compileUnsafe(
-						Integrations.aiSessionPageQuery({ evaluation, sortBy: "cost" }),
+						Integrations.aiSessionPageQuery({ evaluation, sortBy: "cost", ...extra }),
 						params,
 					).sql,
 				),
@@ -685,6 +690,11 @@ describeWithChdb("the Agent Sessions evaluation filter", () => {
 		score("Context window", fail, trace("4"))
 		// sess-f: another evaluator's failure.
 		score("Relevance", fail, trace("6"))
+		// sess-g: its first trace called `search_logs`, its second was graded and failed.
+		db.exec(
+			`INSERT INTO ai_trace_index (OrgId, Timestamp, TraceId, SpanId, SessionId, IsLlmCall, IsToolCall, ToolName) VALUES ('${ORG}', '${ts(AT_MS)}', '${trace("7")}', 'a1a1a1a1a1a1a1a1', 'sess-g', 0, 1, 'search_logs'), ('${ORG}', '${ts(AT_MS)}', '${trace("8")}', 'a1a1a1a1a1a1a1a1', 'sess-g', 1, 0, '')`,
+		)
+		score("Grounded answer", fail, trace("8"))
 		// Judges score late: one written hours after the window ends counts, one past a day does not.
 		score("Late judge", fail, trace("6"), AT_MS + 3 * 3_600_000)
 		score("Late judge", fail, trace("1"), AT_MS + 30 * 3_600_000)
@@ -703,6 +713,10 @@ describeWithChdb("the Agent Sessions evaluation filter", () => {
 
 	test("matches a re-scored session by its new verdict", () => {
 		expect(matching("pass")).toEqual(["sess-c"])
+	})
+
+	test("matches a session whose tool and failing score are on different traces", () => {
+		expect(matching("fail", "Grounded answer", { toolNames: ["search_logs"] })).toEqual(["sess-g"])
 	})
 
 	test("matches scores written up to a day after the window ends", () => {

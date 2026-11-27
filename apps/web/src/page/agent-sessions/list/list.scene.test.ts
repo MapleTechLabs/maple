@@ -318,6 +318,8 @@ describe("agent sessions list evaluation filter", () => {
 		scoreCount: 5,
 		passCount: 2,
 		failCount: 3,
+		filterablePassCount: 2,
+		filterableFailCount: 3,
 		valueCount: 0,
 		avgValue: 0,
 		errorCount: 0,

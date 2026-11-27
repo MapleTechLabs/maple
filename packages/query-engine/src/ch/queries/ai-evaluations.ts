@@ -94,6 +94,13 @@ const measures = ($: ScoreColumns) => ({
 	errorCount: CH.countIf($.errorType.neq("")),
 })
 
+/** Whether the Agent Sessions filter can reach a score: it grades a trace or names a session. */
+const filterable = ($: {
+	readonly traceId: CH.Expr<string>
+	readonly scope: CH.Expr<string>
+	readonly sessionId: CH.Expr<string>
+}) => $.traceId.neq("").or($.scope.eq("session").and($.sessionId.neq("")))
+
 export interface AiEvaluationsSummaryOpts {
 	/** Only this evaluator (`gen_ai.evaluation.name`). */
 	readonly name?: string
@@ -109,6 +116,8 @@ export function aiEvaluationsSummaryQuery(opts: AiEvaluationsSummaryOpts = {}) {
 				name: $.name,
 				...measures($),
 				traceCount: CH.uniqIf($.traceId, $.traceId.neq("")),
+				filterablePassCount: CH.countIf($.verdict.eq("pass").and(filterable($))),
+				filterableFailCount: CH.countIf($.verdict.eq("fail").and(filterable($))),
 				sources: CH.groupUniqArrayIf(8)($.source, $.source.neq("")),
 				annotatorKinds: CH.groupUniqArrayIf(8)($.annotatorKind, $.annotatorKind.neq("")),
 				lastSeen: CH.toString_(CH.max_($.at)),

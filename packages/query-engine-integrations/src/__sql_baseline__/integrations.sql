@@ -934,9 +934,10 @@ SELECT
         HAVING (sessionId IN (SELECT
           scores.sessionId AS sessionId
         FROM (SELECT
-          ai_evaluations.TraceId AS traceId,
-          ai_evaluations.SpanId AS spanId,
-          ai_evaluations.ResponseId AS responseId,
+          if(((ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != '') AND ai_evaluations.Identifier != ''), '', concat(ai_evaluations.TraceId, ':', ai_evaluations.SpanId, ':', ai_evaluations.ResponseId)) AS target,
+          argMax(ai_evaluations.TraceId, ai_evaluations.Timestamp) AS traceId,
+          argMax(ai_evaluations.SpanId, ai_evaluations.Timestamp) AS spanId,
+          argMax(ai_evaluations.ResponseId, ai_evaluations.Timestamp) AS responseId,
           ai_evaluations.Name AS name,
           ai_evaluations.Scope AS scope,
           ai_evaluations.SessionId AS sessionId,
@@ -960,13 +961,23 @@ SELECT
           AND ai_evaluations.Timestamp <= '2026-01-03 14:15:00' + INTERVAL 86400 SECOND
           AND ai_evaluations.Name = 'context_window'
           AND (ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != '')
-        GROUP BY traceId, spanId, responseId, name, scope, sessionId, scoreKey) AS scores
-        WHERE scores.verdict = 'fail') OR countIf(traceId IN (SELECT
+        GROUP BY target, name, scope, sessionId, scoreKey) AS scores
+        WHERE scores.verdict = 'fail') OR sessionId IN (SELECT
+          scored_traces.sessionId AS sessionId
+        FROM (SELECT
+          ai_trace_index.TraceId AS traceId,
+          if(max(ai_trace_index.SessionId) = '', concat('trace:', ai_trace_index.TraceId), max(ai_trace_index.SessionId)) AS sessionId
+        FROM ai_trace_index
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.TraceId IN (SELECT
           scores.traceId AS traceId
         FROM (SELECT
-          ai_evaluations.TraceId AS traceId,
-          ai_evaluations.SpanId AS spanId,
-          ai_evaluations.ResponseId AS responseId,
+          if(((ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != '') AND ai_evaluations.Identifier != ''), '', concat(ai_evaluations.TraceId, ':', ai_evaluations.SpanId, ':', ai_evaluations.ResponseId)) AS target,
+          argMax(ai_evaluations.TraceId, ai_evaluations.Timestamp) AS traceId,
+          argMax(ai_evaluations.SpanId, ai_evaluations.Timestamp) AS spanId,
+          argMax(ai_evaluations.ResponseId, ai_evaluations.Timestamp) AS responseId,
           ai_evaluations.Name AS name,
           ai_evaluations.Scope AS scope,
           ai_evaluations.SessionId AS sessionId,
@@ -991,8 +1002,10 @@ SELECT
           AND ai_evaluations.Name = 'context_window'
           AND ai_evaluations.TraceId != ''
           AND NOT ((ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != ''))
-        GROUP BY traceId, spanId, responseId, name, scope, sessionId, scoreKey) AS scores
-        WHERE scores.verdict = 'fail')) > 0)
+        GROUP BY target, name, scope, sessionId, scoreKey) AS scores
+        WHERE scores.verdict = 'fail')
+        GROUP BY traceId
+        HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0) AS scored_traces))
         ORDER BY agentStart DESC, sessionId ASC
         LIMIT 50) AS ranked_sessions
         FORMAT JSON
