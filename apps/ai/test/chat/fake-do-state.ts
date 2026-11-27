@@ -78,13 +78,15 @@ class FakeCursor<T extends Row> implements SqlStorageCursor<T> {
 		this.index = this.rows.length
 		return rest
 	}
-	// Reads only the rows not yet taken, so a closed or consumed cursor has none.
+	// Reads only the rows not yet taken and consumes the one it returns, so a closed
+	// or consumed cursor has none.
 	one(): T {
 		const rest = this.rows.slice(this.index)
 		const [row] = rest
 		if (row === undefined || rest.length !== 1) {
 			throw new Error(`Expected exactly one row, got ${rest.length}`)
 		}
+		this.index = this.rows.length
 		return row
 	}
 	// Closing drops the rows not yet read, as the real cursor does.
