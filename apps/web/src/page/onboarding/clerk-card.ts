@@ -1,5 +1,5 @@
 import { clerkAuthCardAppearance } from "../../platform/clerk-appearance"
-import { readAdClick } from "../../platform/ad-click"
+import { clearAdClickCookies, readAdClick } from "../../platform/ad-click"
 import { Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -29,6 +29,9 @@ export const MountClerkCard = Mount.define("MountClerkCard", {
 					// The landing site's ad click rides along, so the API can report the sign-up.
 					// Global Privacy Control turned on after the click still keeps it out of sign-up.
 					const gpc = "globalPrivacyControl" in navigator && navigator.globalPrivacyControl === true
+					if (gpc) {
+						for (const cookie of clearAdClickCookies(location.hostname)) document.cookie = cookie
+					}
 					const adClick = gpc ? Option.none() : readAdClick(document.cookie)
 					clerk.mountSignUp(
 						element,

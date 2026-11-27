@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { readAdClick } from "./ad-click"
+import { clearAdClickCookies, readAdClick } from "./ad-click"
 
 describe("readAdClick", () => {
 	it("reads the click among other cookies", () => {
@@ -15,5 +15,15 @@ describe("readAdClick", () => {
 		expect(readAdClick("maple_ad_click=gclid.a,b.1")).toEqual(Option.none())
 		expect(readAdClick("maple_ad_click=gclid.abc.soon")).toEqual(Option.none())
 		expect(readAdClick("x_maple_ad_click=gclid.abc.1")).toEqual(Option.none())
+	})
+})
+
+describe("clearAdClickCookies", () => {
+	it("expires the shared maple.dev cookie as well as the host's own", () => {
+		expect(clearAdClickCookies("app.maple.dev")).toEqual([
+			"maple_ad_click=; Max-Age=0; Path=/",
+			"maple_ad_click=; Max-Age=0; Path=/; Domain=maple.dev",
+		])
+		expect(clearAdClickCookies("web.localhost")).toEqual(["maple_ad_click=; Max-Age=0; Path=/"])
 	})
 })

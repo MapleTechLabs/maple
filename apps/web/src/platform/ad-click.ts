@@ -28,3 +28,11 @@ export const readAdClick = (cookieHeader: string): Option.Option<AdClickMetadata
 		const prefix = `${AD_CLICK_COOKIE}=`
 		return Str.startsWith(prefix)(trimmed) ? parseValue(Str.slice(prefix.length)(trimmed)) : Option.none()
 	})
+
+/** Expire the cookie on both the shared domain and this host (Global Privacy Control). */
+export const clearAdClickCookies = (hostname: string): ReadonlyArray<string> => [
+	`${AD_CLICK_COOKIE}=; Max-Age=0; Path=/`,
+	...(hostname === "maple.dev" || Str.endsWith(".maple.dev")(hostname)
+		? [`${AD_CLICK_COOKIE}=; Max-Age=0; Path=/; Domain=maple.dev`]
+		: []),
+]

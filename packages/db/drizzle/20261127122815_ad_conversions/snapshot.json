@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "4cdcd6b42b94ad5d2665db630536bc3a8c216a80dda622f697617ef5bfe4b70a",
+	"id": "98bd80e7805845eda2f20e2d34116ba19a5abf616f92e1531447f35d53eabda7",
 	"prevIds": [
 		"6b084299916e391045fb03d79fa90976569ff00a48a41d0762141ae94492cc53"
 	],
@@ -13,6 +13,16 @@
 				"name": "actors_pkey",
 				"columns": [
 					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "ad_click_erasures",
+			"primaryKey": {
+				"name": "ad_click_erasures_pkey",
+				"columns": [
+					"user_id"
 				]
 			}
 		},
@@ -1659,6 +1669,26 @@
 			"position": 9,
 			"type": "timestamp with time zone",
 			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_click_erasures",
+			"name": "user_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "ad_click_erasures",
+			"name": "erased_at",
+			"position": 1,
+			"type": "timestamp with time zone",
+			"notNull": true,
 			"default": null,
 			"identity": null
 		},

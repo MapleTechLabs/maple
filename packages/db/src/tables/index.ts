@@ -80,7 +80,7 @@ import {
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
 import { CostConnections } from "./cost-connections"
-import { AdConversions } from "./ad-conversions"
+import { AdClickErasures, AdConversions } from "./ad-conversions"
 import { CookielessSalts, CookielessVisits } from "./cookieless-visitors"
 import { FeatureRequests } from "./feature-requests"
 import { DevicePolicyFindings, DeviceVulnerabilityFindings } from "./device-findings"
@@ -293,6 +293,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OpenRouterCostConnections,
 	CostConnections,
 	AdConversions,
+	AdClickErasures,
 	CookielessSalts,
 	CookielessVisits,
 	FeatureRequests,

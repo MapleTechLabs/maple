@@ -1,4 +1,11 @@
 -- metadata
+CREATE TABLE IF NOT EXISTS "ad_click_erasures" (
+	"user_id" text NOT NULL,
+	"erased_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "ad_click_erasures_pkey" PRIMARY KEY ("user_id")
+);
+--> statement-breakpoint
+-- metadata
 CREATE TABLE IF NOT EXISTS "ad_conversions" (
 	"user_id" text NOT NULL,
 	"conversion" text NOT NULL,

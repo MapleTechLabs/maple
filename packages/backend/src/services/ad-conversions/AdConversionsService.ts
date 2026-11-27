@@ -1,7 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AdConversions } from "@maple/db/tables"
+import { AdClickErasures, AdConversions } from "@maple/db/tables"
 import type { UserId } from "@maple/domain/http"
-import { Array as Arr, Context, Duration, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { AD_CLICK_WINDOW, type AdClick } from "./ad-click"
@@ -27,27 +27,40 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 				makePersistenceErrorMapper(AdConversionPersistenceError, "Ad conversion persistence error"),
 			)
 
-			/** The sign-up of a user whose sign-up carried an ad click. */
+			/** The sign-up of a user whose sign-up carried an ad click, unless the user is already deleted. */
 			const recordSignup = Effect.fn("AdConversionsService.recordSignup")(function* (
 				userId: UserId,
 				click: AdClick,
 				convertedAt: number,
 			) {
 				yield* Effect.annotateCurrentSpan({ "maple.ad_click.type": click.type })
-				yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(AdConversions)
-							.values({
-								userId,
-								conversion: "signup",
-								clickType: click.type,
-								clickId: click.id,
-								clickAt: click.clickTime,
-								convertedAt,
-							})
-							.onConflictDoNothing(),
+				const recorded = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const erased = yield* db.run(
+								PG.from(AdClickErasures)
+									.select(($) => ({ userId: $.userId }))
+									.where(($) => [$.userId.eq(userId)])
+									.limit(1),
+							)
+							if (erased.length > 0) return false
+							yield* db.run(
+								PG.insertInto(AdConversions)
+									.values({
+										userId,
+										conversion: "signup",
+										clickType: click.type,
+										clickId: click.id,
+										clickAt: click.clickTime,
+										convertedAt,
+									})
+									.onConflictDoNothing(),
+							)
+							return true
+						}),
 					),
 				)
+				yield* Effect.annotateCurrentSpan({ "maple.ad_conversion.recorded": recorded })
 			})
 
 			/** Activation, for a user with a recorded ad sign-up; returns whether one was recorded. */
@@ -104,10 +117,20 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 				}))
 			})
 
-			/** A deleted user's clicks go with them. */
+			/** A deleted user's clicks go with them, and none is stored for them again. */
 			const forgetUser = Effect.fn("AdConversionsService.forgetUser")(function* (userId: UserId) {
+				const now = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
-					db.run(PG.deleteFrom(AdConversions).where(($) => [$.userId.eq(userId)])),
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.run(
+								PG.insertInto(AdClickErasures)
+									.values({ userId, erasedAt: now })
+									.onConflictDoNothing(),
+							)
+							yield* db.run(PG.deleteFrom(AdConversions).where(($) => [$.userId.eq(userId)]))
+						}),
+					),
 				)
 			})
 

@@ -86,13 +86,20 @@ describe("AdConversionsService", () => {
 		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 
-	it.effect("forgets a deleted user's clicks", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const ads = yield* AdConversionsService
-			yield* ads.recordSignup(ADA, { type: "gclid", id: "Cj0K_ada", clickTime: NOW }, NOW)
-			yield* ads.forgetUser(ADA)
-			assert.notInclude(yield* csvAt(NOW), "Cj0K_ada")
-		}).pipe(Effect.provide(layerFor(testDb)))
-	})
+	it.effect(
+		"forgets a deleted user's clicks, even when the sign-up is delivered after the deletion",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const ads = yield* AdConversionsService
+				yield* ads.recordSignup(ADA, { type: "gclid", id: "Cj0K_ada", clickTime: NOW }, NOW)
+				yield* ads.forgetUser(ADA)
+				assert.notInclude(yield* csvAt(NOW), "Cj0K_ada")
+				yield* ads.forgetUser(BOB)
+				yield* ads.recordSignup(BOB, { type: "gclid", id: "Cj0K_bob", clickTime: NOW }, NOW)
+				assert.isFalse(yield* ads.recordActivation(BOB, NOW + DAY))
+				assert.notInclude(yield* csvAt(NOW + DAY), "Cj0K_bob")
+			}).pipe(Effect.provide(layerFor(testDb)))
+		},
+	)
 })

@@ -28,3 +28,15 @@ export const AdConversions = PG.table("ad_conversions", {
 	indexes: [PG.index("ad_conversions_click_at_idx", ["clickAt"])],
 })
 export type AdConversionRow = PG.SelectRowOf<typeof AdConversions>
+
+/**
+ * Users whose account was deleted, so a `user.created` delivered after `user.deleted` cannot
+ * store their click again. Holds only the Clerk user id.
+ */
+export const AdClickErasures = PG.table("ad_click_erasures", {
+	columns: {
+		userId: PG.column(PG.brand(PG.text, UserId), { name: "user_id" }),
+		erasedAt: PG.column(PG.timestamptzMillis, { name: "erased_at" }),
+	},
+	primaryKey: ["userId"],
+})
