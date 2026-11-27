@@ -6,6 +6,9 @@
 import { DPA_REQUEST_URL } from "./compliance"
 import { SUPPORT_EMAIL } from "./agent-resources"
 
+/** PrivateLink is set up per org by hand, so the request is an email with what we need to start. */
+export const PRIVATE_LINK_REQUEST_URL = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("AWS PrivateLink request")}&body=${encodeURIComponent("AWS region:\nAWS account ID that will connect:\nMaple organization:\n")}`
+
 export interface SecurityFact {
 	title: string
 	body: string
@@ -83,6 +86,12 @@ export const securitySections: SecuritySection[] = [
 				link: "EU hosting",
 			},
 			{
+				title: "AWS PrivateLink",
+				body: "Send telemetry from your VPC to Maple over AWS PrivateLink, so it never crosses the public internet. It is set up per organization, on request.",
+				href: PRIVATE_LINK_REQUEST_URL,
+				link: "Request PrivateLink",
+			},
+			{
 				title: "Or your own infrastructure",
 				body: "The source is on GitHub under FSL-1.1, which becomes Apache 2.0 after two years. Self-hosting keeps the data inside your own network. The self-hosted version runs for one team; alerting and team accounts are on Cloud.",
 				href: "https://github.com/MapleTechLabs/maple",
@@ -104,6 +113,10 @@ export const securityFaqs = [
 	{
 		question: "Where is my telemetry stored?",
 		answer: "In the region your organization chose when it was created: the United States, or the European Union in Frankfurt, Germany. Self-hosted Maple stores it wherever you run it.",
+	},
+	{
+		question: "Do you support AWS PrivateLink?",
+		answer: `Yes, on request. Email ${SUPPORT_EMAIL} with your AWS region and the AWS account ID that will connect, and we set up an endpoint service for your organization.`,
 	},
 	{
 		question: "How do I report a vulnerability?",
