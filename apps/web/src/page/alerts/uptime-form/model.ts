@@ -8,6 +8,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { AlertsUptimeNewSearch } from "../../../route/search"
 import * as Menu from "@maple/views/ui/menu"
 import { Form } from "../../kit/uptime/form"
+import { MonitorAllowance } from "../../kit/billing/uptime-allowance"
 
 export const Model = Schema.Struct({
 	search: AlertsUptimeNewSearch,
@@ -30,6 +31,8 @@ export const Model = Schema.Struct({
 	destinations: Schema.NullOr(Schema.Array(AlertDestinationRowSchema)),
 	destinationMenu: Menu.Model,
 	grants: Schema.Array(Policy.PermissionName),
+	/** The org's monitor balance, read when creating, so the form says what one more costs. */
+	allowance: Schema.NullOr(MonitorAllowance),
 	/** The session answered; until then a member is not yet told the form is admin-only. */
 	isSessionLoaded: Schema.Boolean,
 })

@@ -12,7 +12,9 @@ import {
 	TRIAL_DURATION_DAYS,
 	TRIAL_PLAN_ID,
 	TRIAL_SIGNAL_GB,
+	UPTIME_MONITOR_OVERAGE_USD,
 	UPTIME_MONITORS_FEATURE_ID,
+	UPTIME_MONITORS_INCLUDED,
 } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
@@ -204,9 +206,17 @@ export const startup = plan({
 			},
 		},
 		{
-			// A hard allowance: no price, so the 11th monitor is refused rather than billed.
+			// Each monitor past the included ones is billed monthly, prorated from the day it is
+			// created or deleted. The trial has no price, so there the 11th is refused instead.
 			featureId: UPTIME_MONITORS_FEATURE_ID,
-			included: 10,
+			included: UPTIME_MONITORS_INCLUDED,
+			proration: { onIncrease: "prorate", onDecrease: "prorate" },
+			price: {
+				amount: UPTIME_MONITOR_OVERAGE_USD,
+				billingUnits: 1,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
 		},
 		{
 			// One credit is one dollar of model spend after markup.
@@ -235,7 +245,7 @@ export const trial = plan({
 		{ featureId: "profiles", included: 10, reset: { interval: "month" } },
 		{ featureId: "browser_sessions", included: 5000, reset: { interval: "month" } },
 		{ featureId: "product_events", included: 1_000_000, reset: { interval: "month" } },
-		{ featureId: UPTIME_MONITORS_FEATURE_ID, included: 10 },
+		{ featureId: UPTIME_MONITORS_FEATURE_ID, included: UPTIME_MONITORS_INCLUDED },
 		// Maple AI waits for a card (`aiCardGateOf`). Zero, not absent: a plan without the
 		// balance reads as unmetered, so an empty one is the backstop.
 		{ featureId: "ai_credits", included: 0 },
