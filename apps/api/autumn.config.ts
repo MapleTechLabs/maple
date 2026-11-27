@@ -15,7 +15,12 @@ import {
 	UPTIME_MONITORS_FEATURE_ID,
 } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
-import { DATA_RATES, INGEST_RATES_PER_GB, STORAGE_FEATURE_ID } from "@maple/domain/storage-pricing"
+import {
+	DATA_RATES,
+	INCLUDED_STORAGE_GB_MONTHS,
+	INGEST_RATES_PER_GB,
+	STORAGE_FEATURE_IDS,
+} from "@maple/domain/storage-pricing"
 
 export const logs = feature({
 	id: "logs",
@@ -48,13 +53,15 @@ export const profiles = feature({
 })
 
 // GB kept inside its retention period, in GB-months: each day's stored GB over the days in that
-// month. Tracked daily by the storage metering cron (`STORAGE_FEATURE_ID` in @maple/domain).
-export const storage = feature({
-	id: STORAGE_FEATURE_ID,
-	name: "Storage",
-	type: "metered",
-	consumable: true,
-})
+// month. One feature per signal, so each has its own allowance. Tracked daily by the storage
+// metering cron (`STORAGE_FEATURE_IDS` in @maple/domain).
+const storageFeature = (signal: keyof typeof STORAGE_FEATURE_IDS, name: string) =>
+	feature({ id: STORAGE_FEATURE_IDS[signal], name, type: "metered", consumable: true })
+
+export const storageTraces = storageFeature("traces", "Trace Storage")
+export const storageLogs = storageFeature("logs", "Log Storage")
+export const storageMetrics = storageFeature("metrics", "Metric Storage")
+export const storageProfiles = storageFeature("profiles", "Profile Storage")
 
 export const browserSessions = feature({
 	id: "browser_sessions",
@@ -191,18 +198,18 @@ export const startup = plan({
 				interval: "month",
 			},
 		},
-		{
-			// Every GB stored, nothing included. Billed per 0.01 GB-month because Autumn rounds
-			// usage up to whole blocks; a 1 GB-month block would charge $0.15 for a day's few MB.
-			featureId: STORAGE_FEATURE_ID,
-			included: 0,
+		// Each signal's stored GB-months past its allowance. Billed per 0.01 GB-month because Autumn
+		// rounds usage up to whole blocks; a 1 GB-month block would charge $0.15 for a day's few MB.
+		...(["traces", "logs", "metrics", "profiles"] as const).map((signal) => ({
+			featureId: STORAGE_FEATURE_IDS[signal],
+			included: INCLUDED_STORAGE_GB_MONTHS[signal],
 			price: {
 				amount: DATA_RATES.storagePerGbMonth / 100,
 				billingUnits: 0.01,
-				billingMethod: "usage_based",
-				interval: "month",
+				billingMethod: "usage_based" as const,
+				interval: "month" as const,
 			},
-		},
+		})),
 		{
 			featureId: "browser_sessions",
 			included: 5000,
@@ -256,7 +263,7 @@ export const trial = plan({
 		{ featureId: "traces", included: TRIAL_SIGNAL_GB, reset: { interval: "month" } },
 		{ featureId: "profiles", included: 10, reset: { interval: "month" } },
 		// Stored GB is free on the trial: unlimited, so the daily storage track never hits a cap.
-		{ featureId: STORAGE_FEATURE_ID, unlimited: true },
+		...Object.values(STORAGE_FEATURE_IDS).map((featureId) => ({ featureId, unlimited: true as const })),
 		{ featureId: "browser_sessions", included: 5000, reset: { interval: "month" } },
 		{ featureId: "product_events", included: 1_000_000, reset: { interval: "month" } },
 		{ featureId: UPTIME_MONITORS_FEATURE_ID, included: 10 },

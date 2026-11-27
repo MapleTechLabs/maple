@@ -2,7 +2,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { IngestStorageLedger, OrgBillingLinks, StorageBillingRuns } from "@maple/db/tables"
 import { BillingCustomerId } from "@maple/domain/http"
 import { MAX_RETENTION_DAYS } from "@maple/domain/retention"
-import { dailyGbMonths, STORAGE_FEATURE_ID } from "@maple/domain/storage-pricing"
+import { dailyGbMonths, storageFeatureOf } from "@maple/domain/storage-pricing"
 import type { OrgId } from "@maple/primitives"
 import { Array as Arr, Clock, DateTime, Effect, Record as Rec, Result, Schema, Tuple } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -11,8 +11,9 @@ import { bytesToGb, DAY_MS, keptOn, utcDayStart } from "@maple/backend/services/
 
 /**
  * Daily storage billing from `ingest_storage_ledger`: for each completed UTC day, each org's GB
- * still inside its retention period that day, tracked to Autumn's `storage` feature as the day's
- * share of a GB-month.
+ * still inside its retention period that day, per signal, tracked to that signal's Autumn storage
+ * feature (`STORAGE_FEATURE_IDS`) as the day's share of a GB-month. Autumn applies each signal's
+ * included GB-months, so the plan's allowance is not worked out here.
  *
  * A ledger row is the bytes Maple received on its day, stored under the period stamped then. It
  * bills from that day for exactly that many days, even though the warehouse expires rows by event
@@ -46,7 +47,8 @@ export class StorageMeteringIncompleteError extends Schema.TaggedError<StorageMe
 
 const isoDay = (epochMs: number) => DateTime.formatIsoDateUtc(DateTime.makeUnsafe(epochMs))
 
-const usageKey = (orgId: string, dayMs: number) => `storage:${orgId}:${isoDay(dayMs)}`
+const usageKey = (orgId: string, signal: string, dayMs: number) =>
+	`storage:${orgId}:${signal}:${isoDay(dayMs)}`
 
 const runKey = (orgId: string, dayMs: number) => `${orgId}:${dayMs}`
 
@@ -54,6 +56,8 @@ const daySumKey = (dayMs: number) => `bytes_${dayMs}`
 
 interface Charge {
 	readonly orgId: OrgId
+	readonly signal: string
+	readonly featureId: string
 	readonly dayMs: number
 	readonly storedGb: number
 	readonly value: number
@@ -94,7 +98,7 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 				PG.from(IngestStorageLedger)
 					.select(($) =>
 						Object.assign(
-							{ orgId: $.orgId },
+							{ orgId: $.orgId, signal: $.signal },
 							Rec.fromEntries(
 								Arr.map(days, (dayMs) =>
 									Tuple.make(
@@ -107,14 +111,21 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 						),
 					)
 					.where(($) => [$.day.lte(lastDayMs), keptOn($, firstDayMs)])
-					.groupBy("orgId"),
+					.groupBy("orgId", "signal"),
 			)
 			// Oldest day first, skipping each (org, day) already billed.
 			const stored = Arr.flatMap(days, (dayMs) =>
 				Arr.flatMap(sums, (row) =>
 					alreadyBilled.has(runKey(row.orgId, dayMs))
 						? []
-						: [{ orgId: row.orgId, dayMs, bytes: row[daySumKey(dayMs)] ?? null }],
+						: [
+								{
+									orgId: row.orgId,
+									signal: row.signal,
+									dayMs,
+									bytes: row[daySumKey(dayMs)] ?? null,
+								},
+							],
 				),
 			)
 			const orgIds = Arr.dedupe(Arr.map(stored, (row) => row.orgId))
@@ -132,8 +143,18 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 	const billingOrgOf = new Map(Arr.map(links, (link): [string, string] => [link.orgId, link.billingOrgId]))
 	const charges = Arr.flatMap(stored, (row): ReadonlyArray<Charge> => {
 		const storedGb = bytesToGb(row.bytes)
-		return storedGb > 0
-			? [{ orgId: row.orgId, dayMs: row.dayMs, storedGb, value: dailyGbMonths(storedGb, row.dayMs) }]
+		const featureId = storageFeatureOf(row.signal)
+		return storedGb > 0 && featureId !== undefined
+			? [
+					{
+						orgId: row.orgId,
+						signal: row.signal,
+						featureId,
+						dayMs: row.dayMs,
+						storedGb,
+						value: dailyGbMonths(storedGb, row.dayMs),
+					},
+				]
 			: []
 	})
 
@@ -144,15 +165,16 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 			trackFeatureUsageOrFail({
 				// A member org bills to its billing org's customer, as its ingest does.
 				customerId: BillingCustomerId.make(billingOrgOf.get(charge.orgId) ?? charge.orgId),
-				featureId: STORAGE_FEATURE_ID,
+				featureId: charge.featureId,
 				value: charge.value,
-				idempotencyKey: usageKey(charge.orgId, charge.dayMs),
+				idempotencyKey: usageKey(charge.orgId, charge.signal, charge.dayMs),
 			}).pipe(
 				Effect.map((outcome) => ({ charge, outcome })),
 				Effect.tapError((error) =>
 					Effect.logError("[billing] storage day not billed").pipe(
 						Effect.annotateLogs({
 							orgId: charge.orgId,
+							signal: charge.signal,
 							day: isoDay(charge.dayMs),
 							error: error.message,
 						}),
@@ -164,6 +186,20 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 	)
 	const sent = Arr.flatMap(results, (result) => (Result.isSuccess(result) ? [result.success] : []))
 	const accepted = Arr.flatMap(sent, ({ charge, outcome }) => (outcome === "accepted" ? [charge] : []))
+	// A day is recorded once every signal it stored was accepted; the rest go again next tick,
+	// and Autumn answers the signals it already counted with 409 under their keys.
+	const acceptedCharges = new Set(accepted)
+	const notAccepted = new Set(
+		Arr.flatMap(charges, (charge) =>
+			acceptedCharges.has(charge) ? [] : [runKey(charge.orgId, charge.dayMs)],
+		),
+	)
+	const completedDays = Rec.values(
+		Arr.groupBy(
+			Arr.filter(accepted, (charge) => !notAccepted.has(runKey(charge.orgId, charge.dayMs))),
+			(charge) => runKey(charge.orgId, charge.dayMs),
+		),
+	)
 	const failed = results.length - sent.length
 	// No Autumn key, or the default org: nothing was billed, so no run is recorded for it.
 	const unmetered = sent.length - accepted.length
@@ -174,15 +210,15 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 	}
 
 	// A run lost here is billed again next tick under the same key, which Autumn answers with 409.
-	if (Arr.isArrayNonEmpty(accepted)) {
+	if (Arr.isArrayNonEmpty(completedDays)) {
 		yield* database.execute((db) =>
 			db.run(
 				PG.insertInto(StorageBillingRuns)
 					.values(
-						Arr.map(accepted, (charge) => ({
-							orgId: charge.orgId,
-							day: charge.dayMs,
-							gbMonths: charge.value,
+						Arr.map(completedDays, ([first, ...rest]) => ({
+							orgId: first.orgId,
+							day: first.dayMs,
+							gbMonths: Arr.reduce(rest, first.value, (sum, charge) => sum + charge.value),
 						})),
 					)
 					.onConflictDoNothing(),

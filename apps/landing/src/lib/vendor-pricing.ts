@@ -1,6 +1,6 @@
 import { Array as Arr, String as Str } from "effect"
 import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
-import { DATA_RATES, DAYS_PER_MONTH } from "@maple/domain/storage-pricing"
+import { DATA_RATES, DAYS_PER_MONTH, INCLUDED_STORAGE_GB_MONTHS } from "@maple/domain/storage-pricing"
 /**
  * Vendor price models: the arithmetic behind the pricing calculator and the
  * server-rendered receipts on `/compare/*`.
@@ -665,8 +665,8 @@ export const estimateVendor = (vendor: Vendor, values: Record<string, number>): 
 export const estimateMaple = (vendor: Vendor, values: Record<string, number>): Estimate => {
 	// Maple Startup (autumn.config.ts): $39/mo with 100 GB included per signal
 	// (logs, traces, metrics) and $0.15/GB overage billed per signal; the
-	// allowances are not a fungible 300 GB pool. Every GB is also stored at
-	// $0.15 per GB-month, priced at the default retention. Maple meters decoded OTLP
+	// allowances are not a fungible 300 GB pool. Stored GB past what the included
+	// GB needs at the default retention is $0.15 per GB-month, priced at the default retention. Maple meters decoded OTLP
 	// payload bytes; where a competitor bills in counts instead of volume, the
 	// branch converts using a per-item byte estimate documented at that branch.
 	const baseCost = 39
@@ -718,16 +718,24 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 
 	const overageGB = Math.max(0, logsGB - 100) + Math.max(0, tracesGB - 100) + Math.max(0, metricsGB - 100)
 	const overage = overageGB * DATA_RATES.ingestPerGb
-	// A month's ingest, kept its default period, is that many months of it stored.
+	// A month's ingest, kept its default period, is that many months of it stored. Each signal
+	// includes its own GB-months; only what is stored past them is billed.
+	const storedPastIncluded = (gb: number, days: number, signal: "logs" | "traces" | "metrics") =>
+		Math.max(0, (gb * days) / DAYS_PER_MONTH - INCLUDED_STORAGE_GB_MONTHS[signal])
 	const storedGB =
-		((logsGB + tracesGB) * DEFAULT_RETENTION_DAYS.logs + metricsGB * DEFAULT_RETENTION_DAYS.metrics) /
-		DAYS_PER_MONTH
+		storedPastIncluded(logsGB, DEFAULT_RETENTION_DAYS.logs, "logs") +
+		storedPastIncluded(tracesGB, DEFAULT_RETENTION_DAYS.traces, "traces") +
+		storedPastIncluded(metricsGB, DEFAULT_RETENTION_DAYS.metrics, "metrics")
 	const storage = storedGB * DATA_RATES.storagePerGbMonth
 
 	return {
 		total: baseCost + overage + storage,
 		breakdown: [
-			{ label: "Startup plan", value: baseCost, detail: "100 GB per signal included" },
+			{
+				label: "Startup plan",
+				value: baseCost,
+				detail: "100 GB per signal, kept for its default retention",
+			},
 			...(overage > 0
 				? [{ label: "Overage", value: overage, detail: `${Math.round(overageGB)} GB over × $0.15` }]
 				: []),
@@ -736,7 +744,7 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 						{
 							label: "Storage",
 							value: storage,
-							detail: `${Math.round(storedGB)} GB stored × $0.15 / GB-month`,
+							detail: `${Math.round(storedGB)} GB-month past what's included × $0.15`,
 						},
 					]
 				: []),

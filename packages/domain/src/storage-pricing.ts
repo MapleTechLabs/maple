@@ -1,21 +1,45 @@
 // What storing telemetry costs: every GB the gateway billed at ingest, for as long as it is
-// kept. Pure, so the web app can price a retention period before it is saved.
+// kept, past a monthly allowance per signal. Pure, so the web app can price a retention period
+// before it is saved.
 
 import { Schema } from "effect"
-
-/** The Autumn feature storage is tracked to, in GB-months. */
-export const STORAGE_FEATURE_ID = "storage"
 
 /** The signals billed per GB at ingest, so stored per GB. Named as their Autumn ingest features. */
 export const STORAGE_SIGNALS = ["traces", "logs", "metrics", "profiles"] as const
 export const StorageSignal = Schema.Literals(STORAGE_SIGNALS)
 export type StorageSignal = typeof StorageSignal.Type
 
+/** The Autumn feature a signal's storage is tracked to, in GB-months, so each has its own allowance. */
+export const STORAGE_FEATURE_IDS = {
+	traces: "storage_traces",
+	logs: "storage_logs",
+	metrics: "storage_metrics",
+	profiles: "storage_profiles",
+} as const satisfies Record<StorageSignal, string>
+
+/**
+ * GB-months of storage the Startup plan includes per signal each month: what its included ingest
+ * needs at the default retention (metrics are kept 90 days, so three times their 100 GB), so a
+ * signal sent at its allowance and kept its default period costs nothing more.
+ */
+export const INCLUDED_STORAGE_GB_MONTHS = {
+	traces: 100,
+	logs: 100,
+	metrics: 300,
+	profiles: 10,
+} as const satisfies Record<StorageSignal, number>
+
+const isStorageSignal = Schema.is(StorageSignal)
+
+/** The storage feature for a ledger row's signal, or undefined for a signal storage does not bill. */
+export const storageFeatureOf = (signal: string): string | undefined =>
+	isStorageSignal(signal) ? STORAGE_FEATURE_IDS[signal] : undefined
+
 /** Dollar rates, until they are read from the billing catalog. */
 export const DATA_RATES = {
 	/** Per GB ingested past the plan's included GB. */
 	ingestPerGb: 0.15,
-	/** Per GB stored for a month, with nothing included. */
+	/** Per GB stored for a month, past the plan's included GB-months for that signal. */
 	storagePerGbMonth: 0.15,
 } as const
 

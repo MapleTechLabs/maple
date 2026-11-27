@@ -155,25 +155,31 @@ describe("storage metering", () => {
 			assert.isFalse(Arr.some(tracked, (call) => Str.endsWith("2026-11-24")(call.idempotencyKey ?? "")))
 
 			yield* meter(SETTLED)
-			const forDay = (day: string) =>
-				new Map(
-					Arr.flatMap(tracked, (call): ReadonlyArray<[string, Tracked]> =>
-						Str.endsWith(day)(call.idempotencyKey ?? "") ? [[call.body.customer_id, call]] : [],
-					),
-				)
-			const yesterday = forDay("2026-11-24")
-			// 300 GB stored on 2026-11-24, a day of a 30-day month: 10 GB-months.
-			assert.strictEqual(yesterday.get("org_storage")?.body.value, 10)
-			// At $0.15 per GB-month, that day costs $1.50.
+			const yesterday = new Map(
+				Arr.flatMap(tracked, (call): ReadonlyArray<[string, Tracked]> =>
+					Str.endsWith("2026-11-24")(call.idempotencyKey ?? "")
+						? [[call.idempotencyKey ?? "", call]]
+						: [],
+				),
+			)
+			// Each signal goes to its own storage feature, where Autumn applies its allowance.
+			// 200 GB of logs and 100 GB of metrics stored on 2026-11-24, a day of a 30-day month.
+			const logs = yesterday.get("storage:org_storage:logs:2026-11-24")
+			const metrics = yesterday.get("storage:org_storage:metrics:2026-11-24")
+			assert.strictEqual(logs?.body.feature_id, "storage_logs")
+			assert.closeTo(logs?.body.value ?? 0, 200 / 30, 1e-9)
+			assert.strictEqual(metrics?.body.feature_id, "storage_metrics")
+			assert.closeTo(metrics?.body.value ?? 0, 100 / 30, 1e-9)
+			// Before any allowance, at $0.15 per GB-month, that day's 10 GB-months cost $1.50.
 			assert.closeTo(
-				(yesterday.get("org_storage")?.body.value ?? 0) * DATA_RATES.storagePerGbMonth,
+				((logs?.body.value ?? 0) + (metrics?.body.value ?? 0)) * DATA_RATES.storagePerGbMonth,
 				1.5,
 				1e-9,
 			)
-			assert.strictEqual(yesterday.get("org_storage")?.idempotencyKey, "storage:org_storage:2026-11-24")
-			assert.strictEqual(yesterday.get("org_payer")?.body.value, 1)
-			assert.strictEqual(yesterday.get("org_payer")?.idempotencyKey, "storage:org_member:2026-11-24")
-			assert.strictEqual(yesterday.get("org_payer")?.body.feature_id, "storage")
+			const member = yesterday.get("storage:org_member:traces:2026-11-24")
+			assert.strictEqual(member?.body.customer_id, "org_payer")
+			assert.strictEqual(member?.body.feature_id, "storage_traces")
+			assert.strictEqual(member?.body.value, 1)
 			assert.isFalse(Arr.some(tracked, (call) => Str.endsWith("2026-11-25")(call.idempotencyKey ?? "")))
 
 			// A later tick finds every day billed and sends nothing.
@@ -202,9 +208,9 @@ describe("storage metering", () => {
 			assert.deepStrictEqual(keysOf(tracked.slice(refused.length)), refused)
 			// Oldest first, from the ingest day through yesterday.
 			assert.deepStrictEqual(refused, [
-				"storage:org_storage:2026-11-22",
-				"storage:org_storage:2026-11-23",
-				"storage:org_storage:2026-11-24",
+				"storage:org_storage:logs:2026-11-22",
+				"storage:org_storage:logs:2026-11-23",
+				"storage:org_storage:logs:2026-11-24",
 			])
 		}),
 	)
@@ -220,9 +226,9 @@ describe("storage metering", () => {
 				),
 			)
 			assert.deepStrictEqual(keysOf(tracked), [
-				"storage:org_storage:2026-11-25",
-				"storage:org_storage:2026-11-26",
-				"storage:org_storage:2026-11-27",
+				"storage:org_storage:logs:2026-11-25",
+				"storage:org_storage:logs:2026-11-26",
+				"storage:org_storage:logs:2026-11-27",
 			])
 		}),
 	)
@@ -252,8 +258,37 @@ describe("storage metering", () => {
 
 			refuse = false
 			const second = yield* meter(SETTLED + 3_600_000)
-			assert.deepStrictEqual(keysOf(tracked.slice(3)), ["storage:org_refused:2026-11-24"])
+			assert.deepStrictEqual(keysOf(tracked.slice(3)), ["storage:org_refused:logs:2026-11-24"])
 			assert.strictEqual(second.charges, 1)
+		}),
+	)
+
+	it.effect("bills a day again until every signal it stored is accepted", () =>
+		Effect.gen(function* () {
+			const db = createTestDb(trackedDbs)
+			yield* ledger(db, ORG, "logs", 1, 30, 30)
+			yield* ledger(db, ORG, "traces", 1, 30, 30)
+			const tracked: Array<Tracked> = []
+			let refuseTraces = true
+			const autumn = recordingAutumn(tracked, (call) =>
+				call.body.feature_id === "storage_traces" && refuseTraces ? 503 : 200,
+			)
+			const meter = (nowMs: number) => meterStorage(nowMs).pipe(Effect.provide([db.layer, autumn]))
+
+			const first = yield* meter(SETTLED)
+			assert.strictEqual(first.failed, 1)
+
+			// Both go again under their keys; Autumn counts the logs key once.
+			refuseTraces = false
+			yield* meter(SETTLED + 3_600_000)
+			assert.deepStrictEqual(keysOf(tracked.slice(2)), [
+				"storage:org_storage:logs:2026-11-24",
+				"storage:org_storage:traces:2026-11-24",
+			])
+
+			// Now the day is recorded, and a later tick sends nothing.
+			yield* meter(SETTLED + 2 * 3_600_000)
+			assert.strictEqual(tracked.length, 4)
 		}),
 	)
 
@@ -274,7 +309,7 @@ describe("storage metering", () => {
 				Effect.provide([db.layer, recordingAutumn(tracked)]),
 			)
 			assert.strictEqual(keyed.charges, 1)
-			assert.deepStrictEqual(keysOf(tracked), ["storage:org_storage:2026-11-24"])
+			assert.deepStrictEqual(keysOf(tracked), ["storage:org_storage:logs:2026-11-24"])
 		}),
 	)
 
