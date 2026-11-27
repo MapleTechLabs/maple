@@ -298,6 +298,8 @@ export type CyclePanelInputs = Readonly<{
 	isLegacy: boolean
 	maximumInvoiceCents: number | null
 	uncappedCount: number
+	/** Storage past its allowance bills with no cap, so no ceiling exists even with every cap set. */
+	billsStorage: boolean
 	timeZone: string
 }>
 
@@ -377,7 +379,11 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 						maximum !== null
 							? ["Base plan plus every overage cap"]
 							: inputs.uncappedCount === 0
-								? ["Some items can't be priced"]
+								? [
+										inputs.billsStorage
+											? "Storage past what is included has no cap"
+											: "Some items can't be priced",
+									]
 								: [
 										hstack(
 											h,

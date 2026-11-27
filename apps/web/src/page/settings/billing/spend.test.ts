@@ -26,7 +26,7 @@ import {
 	rateCaption,
 	usageMeter,
 } from "./spend"
-import { maximumInvoiceCents, uncappedFeatures } from "./controls"
+import { billsStorage, maximumInvoiceCents, uncappedFeatures } from "./controls"
 import { Array as Arr, Option, Record as Rec } from "effect"
 
 // Mock builders construct only the consumed subset of each domain schema.
@@ -831,6 +831,13 @@ describe("AI credits", () => {
 			overageCaps: caps,
 		})
 		expect(maximumInvoiceCents(withAi(0, caps), customer)).toBeNull()
+		// So the figure names storage as the reason, not an item it cannot price.
+		expect(uncappedFeatures(withAi(0, caps), customer)).toEqual([])
+		expect(billsStorage(withAi(0, caps))).toBe(true)
+		const withoutStorage = startupPlanWith(
+			Arr.filter(startupPlan.items, (planItem) => !isStorageFeatureId(planItem.featureId)),
+		)
+		expect(billsStorage(withAi(0, caps, withoutStorage))).toBe(false)
 	})
 
 	it("draws the AI band from the daily AI spend, accruing only past the included credits", () => {

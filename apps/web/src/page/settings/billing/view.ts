@@ -1,5 +1,5 @@
 import type { BillingCustomer } from "@maple/domain/http"
-import { maximumInvoiceCents, uncappedFeatures } from "./controls"
+import { billsStorage, maximumInvoiceCents, uncappedFeatures } from "./controls"
 import {
 	getLegacyPlanInfo,
 	getNoCardTrial,
@@ -122,6 +122,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							isLegacy,
 							maximumInvoiceCents: maximumInvoiceCents(spend, customer ?? undefined),
 							uncappedCount: uncapped.length,
+							billsStorage: billsStorage(spend),
 							timeZone: inputs.timeZone,
 						}),
 			],

@@ -62,11 +62,14 @@ export const uncappedFeatures = (
 	)
 
 /** Paid storage past what is included: billed daily and never capped, so it has no ceiling. */
-const billsStorage = (feature: FeatureSpend): boolean =>
+const isBilledStorage = (feature: FeatureSpend): boolean =>
 	isStorageFeature(feature.featureId) &&
 	!feature.unlimited &&
 	feature.ratePerUnit !== null &&
 	feature.overageAllowed !== false
+
+/** Does the plan bill storage past its allowance? Then no cap bounds the invoice. */
+export const billsStorage = (model: SpendModel): boolean => Arr.some(model.features, isBilledStorage)
 
 /** Maximum invoice when every paid feature has a cap; null means unbounded. */
 export const maximumInvoiceCents = (
@@ -75,7 +78,7 @@ export const maximumInvoiceCents = (
 ): number | null => {
 	if (model === null || model.partial) return null
 	if (uncappedFeatures(model, customer).length > 0) return null
-	if (Arr.some(model.features, billsStorage)) return null
+	if (billsStorage(model)) return null
 	return Arr.reduce(model.features, model.baseCents, (maximum, feature) => {
 		const limit = spendLimitFor(customer, feature.featureId)?.overageLimit
 		if (!capApplies(feature) || limit === undefined || feature.ratePerUnit === null) return maximum
