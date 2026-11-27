@@ -2325,6 +2325,40 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// Boolean scores get a verdict: both evaluation views are recreated. No column change;
+		// stored scores keep their verdict.
+		slug: "ai-evaluation-boolean-verdicts",
+		description: "Read pass / fail from boolean evaluation scores",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropViews("ai_evaluations_mv", "ai_evaluations_span_events_mv")],
+		plan: [
+			[
+				"rebuild-ai-evaluations-views",
+				"Drop and recreate both ai_evaluations views so true / false and boolean-typed 0 / 1 scores read as pass / fail",
+			],
+		],
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "logs",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"The source of the replaced view is neither read nor rewritten; only the view definition changes.",
+			},
+			{
+				name: "ai_evaluations",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Stored scores keep their verdict; only scores ingested after the migration read boolean values.",
+				preservationInterval: "evaluation retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

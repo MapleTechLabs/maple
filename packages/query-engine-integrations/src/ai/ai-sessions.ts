@@ -1787,6 +1787,31 @@ export function aiTraceTotalsQuery() {
 		.format("JSON")
 }
 
+/** Responses one read resolves: a session's model calls, or an evaluator page's scores. */
+export const AI_RESPONSE_SPANS_LIMIT = 2_000
+
+/**
+ * The span each provider response (`gen_ai.response.id`) came from, for evaluation scores that name
+ * only a response. By the traces' model calls, or by the responses themselves. A response two
+ * traces observed (the app's span and a gateway's mirror) resolves to either.
+ */
+export function aiResponseSpansQuery(
+	by: { readonly traceIds: readonly string[] } | { readonly responseIds: readonly string[] },
+) {
+	return from(Datasources.aiTraceIndex)
+		.select(($) => ({ responseId: $.ResponseId, traceId: CH.any_($.TraceId), spanId: CH.any_($.SpanId) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.ResponseId.neq(""),
+			"traceIds" in by ? CH.inList($.TraceId, by.traceIds) : CH.inList($.ResponseId, by.responseIds),
+		])
+		.groupBy("responseId")
+		.limit(AI_RESPONSE_SPANS_LIMIT)
+		.format("JSON")
+}
+
 /**
  * The Agent Session each of the listed traces is filed under, for the MCP session page's link back
  * to the agents that called it. Keyed and filtered like the Agent Sessions list, so a trace that

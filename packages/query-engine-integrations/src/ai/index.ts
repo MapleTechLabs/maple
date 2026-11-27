@@ -28,6 +28,8 @@ export {
 	aiTraceTotalsQuery,
 	aiTraceWindowQuery,
 	aiSessionsOfTracesQuery,
+	aiResponseSpansQuery,
+	AI_RESPONSE_SPANS_LIMIT,
 	idSearchPattern,
 	type AiSessionDistributionMeasure,
 	type AiSessionDistributionsOutput,
