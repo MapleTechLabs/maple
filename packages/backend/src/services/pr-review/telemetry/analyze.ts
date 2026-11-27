@@ -199,6 +199,24 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		}
 	}
 
+	// A log line removed somewhere in the pull request and added back word for word is moved code
+	// (a file split, an extract), not a new log: it already ran at whatever rate it runs.
+	const movedLogLines = new Map<string, number>()
+	for (const file of files) {
+		for (const line of file.lines) {
+			if (line.kind !== "del" || !isLogCall(line.text)) continue
+			const key = Str.trim(line.text)
+			movedLogLines.set(key, (movedLogLines.get(key) ?? 0) + 1)
+		}
+	}
+	const takeMovedLog = (text: string): boolean => {
+		const key = Str.trim(text)
+		const left = movedLogLines.get(key) ?? 0
+		if (left === 0) return false
+		movedLogLines.set(key, left - 1)
+		return true
+	}
+
 	const removed: Array<PrReviewTelemetryChange> = []
 	const breaks: Array<PrReviewContractBreak> = []
 	const seenRemoved = new Set<string>()
@@ -304,7 +322,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 					}),
 				)
 			}
-			if (filePerDay > 0 && isLogCall(line.text)) {
+			if (filePerDay > 0 && isLogCall(line.text) && !takeMovedLog(line.text)) {
 				const gbPerMonth = (filePerDay * 30 * catalog.bytesPerLogRecord) / 1e9
 				if (gbPerMonth >= COST_NOTE_MIN_GB) {
 					costNotes.push(

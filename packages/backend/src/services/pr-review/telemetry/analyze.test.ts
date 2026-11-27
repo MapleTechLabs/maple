@@ -370,6 +370,29 @@ describe("analyzeTelemetry", () => {
 		)
 	})
 
+	it("does not cost a log line the pull request moves from another file", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"src/routes/old.ts",
+					`@@ -1,3 +1,1 @@\n app.post("/checkout", handler)\n-	console.log("connected", host)\n-	console.log("ready")`,
+				),
+				file(
+					"src/routes/checkout.ts",
+					`@@ -1,1 +1,4 @@\n app.post("/checkout", handler)\n+console.log("connected", host)\n+console.log("ready")\n+console.log("ready")`,
+				),
+			],
+			catalog: { ...catalog, bytesPerLogRecord: 1_000 },
+			sources: [],
+			issues: [],
+		})
+		// The second "ready" was not there before, so it is still new.
+		assert.deepStrictEqual(
+			Arr.map(telemetry.costNotes, (note) => [note.path, note.line]),
+			[["src/routes/checkout.ts", 4]],
+		)
+	})
+
 	it("flags a span name built from a value", () => {
 		const telemetry = analyzeTelemetry({
 			files: [file("src/a.ts", "@@ -1,0 +1,1 @@\n+Effect.withSpan(`charge ${userId}`)")],
