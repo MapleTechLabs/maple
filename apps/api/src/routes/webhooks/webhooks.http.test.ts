@@ -37,6 +37,7 @@ import {
 import type { MapleRegion } from "@maple/domain/organization-regions"
 import { AutumnWebhookRouter } from "./autumn.http"
 import { RolesService } from "@maple/backend/services/roles/RolesService"
+import { AdConversionsService } from "@maple/backend/services/ad-conversions/AdConversionsService"
 import { ClerkWebhookRoute } from "./clerk.http"
 import { SVIX_WEBHOOK_MAX_BYTES } from "./svix-receiver"
 
@@ -172,6 +173,19 @@ const matchingRoles = Layer.mock(RolesService)({
 		Effect.succeed(Policy.decodeCustomPermissions(held.permissions)),
 })
 
+/** Records the ad conversion writes the route asks for. */
+const recordingAdConversions = () => {
+	const calls: Array<string> = []
+	const layer = Layer.mock(AdConversionsService)({
+		recordSignup: (userId, click, at) =>
+			Effect.sync(
+				() => void calls.push(`signup:${userId}:${click.type}:${click.id}:${click.clickTime}:${at}`),
+			),
+		forgetUser: (userId) => Effect.sync(() => void calls.push(`forget:${userId}`)),
+	})
+	return { calls, layer }
+}
+
 const makeRouterLayer = (
 	router: typeof ClerkWebhookRoute | typeof AutumnWebhookRouter,
 	config: Record<string, string>,
@@ -182,8 +196,10 @@ const makeRouterLayer = (
 	billingCustomers: Layer.Layer<BillingCustomerResolver> = BillingCustomerResolver.standalone,
 	regions: Layer.Layer<OrganizationRegionService> = OrganizationRegionService.servesAll,
 	sso: Layer.Layer<EnterpriseSsoService> = recordingSso().layer,
+	adConversions: Layer.Layer<AdConversionsService> = recordingAdConversions().layer,
 ) =>
 	router.pipe(
+		Layer.provide(adConversions),
 		Layer.provide(matchingRoles),
 		Layer.provide(sso),
 		Layer.provide(productEvents),
@@ -471,6 +487,54 @@ describe("ClerkWebhookRouter", () => {
 		}),
 	)
 
+	it.live("keeps a sign-up's ad click, drops an unreadable one, and forgets it with the user", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const ads = recordingAdConversions()
+			const configured = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					events.layer,
+					recordingRevocation().layer,
+					recordingAudit().layer,
+					recordingCancellationQueue().layer,
+					BillingCustomerResolver.standalone,
+					OrganizationRegionService.servesAll,
+					recordingSso().layer,
+					ads.layer,
+				),
+				{ disableLogger: true },
+			)
+			const created = (id: string, adClick: unknown) =>
+				JSON.stringify({
+					type: "user.created",
+					timestamp: 1_700_000_000_000,
+					data: { id, created_at: 1_700_000_000_000, unsafe_metadata: { adClick } },
+				})
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const send = (body: string, id: string) =>
+					Effect.flatMap(signedHeaders(CLERK_SECRET, body, now, id), (headers) =>
+						post(configured.handler, "/webhooks/clerk", body, headers),
+					)
+				const click = { type: "gclid", id: "Cj0KCQ_abc-1", clickTime: 1_699_000_000_000 }
+				assert.strictEqual((yield* send(created("user_ad", click), "msg_ad")).status, 200)
+				const forged = { ...click, id: "x,=HYPERLINK(1)" }
+				assert.strictEqual((yield* send(created("user_bad", forged), "msg_bad")).status, 200)
+				const stale = { ...click, clickTime: 1_600_000_000_000 }
+				assert.strictEqual((yield* send(created("user_old", stale), "msg_old")).status, 200)
+				const deleted = JSON.stringify({ type: "user.deleted", data: { id: "user_ad" } })
+				assert.strictEqual((yield* send(deleted, "msg_del")).status, 200)
+				assert.deepStrictEqual(ads.calls, [
+					"signup:user_ad:gclid:Cj0KCQ_abc-1:1699000000000:1700000000000",
+					"forget:user_ad",
+				])
+				assert.strictEqual(events.tracked.length, 3)
+			}).pipe(Effect.ensuring(Effect.promise(() => configured.dispose())))
+		}),
+	)
+
 	it.live("counts a signup in the default region only, and sweeps a deleted user in every region", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
@@ -726,6 +790,36 @@ describe("ClerkWebhookRouter", () => {
 				// Clerk retries a 500, so the failed delivery must not emit member_removed.
 				assert.strictEqual(events.tracked.length, before)
 			}).pipe(Effect.ensuring(Effect.promise(broken.dispose)))
+
+			// A failed user sweep is a 500 too, and the user's ad clicks are still forgotten.
+			const ads = recordingAdConversions()
+			const brokenUser = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					events.layer,
+					recordingRevocation(true).layer,
+					recordingAudit().layer,
+					recordingCancellationQueue().layer,
+					BillingCustomerResolver.standalone,
+					OrganizationRegionService.servesAll,
+					recordingSso().layer,
+					ads.layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const body = JSON.stringify({ type: "user.deleted", data: { id: "user_9" } })
+				const headers = yield* signedHeaders(
+					CLERK_SECRET,
+					body,
+					yield* Clock.currentTimeMillis,
+					"msg_user_fail",
+				)
+				const response = yield* post(brokenUser.handler, "/webhooks/clerk", body, headers)
+				assert.strictEqual(response.status, 500)
+				assert.deepStrictEqual(ads.calls, ["forget:user_9"])
+			}).pipe(Effect.ensuring(Effect.promise(brokenUser.dispose)))
 		}),
 	)
 

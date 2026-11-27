@@ -85,6 +85,13 @@ export class ClerkWebhookSecret extends Secret<ClerkWebhookSecret>()("CLERK_WEBH
 	environments: ["dev", "prod", "prod-eu"],
 }) {}
 
+// Google Ads fetches the conversion CSV with this as the Basic auth password. Only the default
+// region exports conversions; dev may hold its own value for local testing.
+export class GoogleAdsConversionsPassword extends Secret<GoogleAdsConversionsPassword>()(
+	"GOOGLE_ADS_CONVERSIONS_PASSWORD",
+	{ issuer: "maple", consumers: ["api"], environments: ["dev", "prod"] },
+) {}
+
 export class PreviewSigninKey extends Secret<PreviewSigninKey>()("PREVIEW_SIGNIN_KEY", {
 	issuer: "maple",
 	consumers: ["api"],
