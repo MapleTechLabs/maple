@@ -189,9 +189,10 @@ const claims = [m.pricing_no_seat(), m.pricing_no_host(), m.pricing_no_series()]
 									{a.retention?.rate !== undefined && (
 										<>
 											<dt class="text-fg-muted">{m.pricing_row_retention()}</dt>
-											<dd class="whitespace-nowrap font-mono tabular-nums text-fg">
-												{rateLabel(a.retention.rate)}
-												<span class="text-fg-muted"> / GB-month</span>
+											<dd class="font-mono tabular-nums text-fg">
+												{rateLabel(a.retention.rate)}{" "}
+												{/* The unit wraps whole rather than running into the cell's padding. */}
+												<span class="inline-block whitespace-nowrap text-fg-muted">/ GB-month</span>
 											</dd>
 										</>
 									)}
