@@ -5,6 +5,7 @@ import type { RetentionDays } from "@maple/domain/retention"
 import { Array as Arr, Result, Schema } from "effect"
 import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { AsyncData } from "foldkit"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute } from "../../../route"
@@ -141,6 +142,30 @@ describe("source retention", () => {
 		expect(names(pageUpdate(failed, Message.ClickedRetryRetention()).commands)).toEqual([
 			"FetchSourceRetention",
 		])
+	})
+
+	test("a retry after a failed refresh keeps the periods picked but not saved", () => {
+		const edited = pick(loaded(7), "logs", "90")
+		const retention = edited.retention
+		if (retention === null) throw new Error("expected the retention section")
+		// The refresh that failed kept what was loaded: the policy is stale, not gone.
+		const stale = {
+			...edited,
+			retention: {
+				...retention,
+				policy: AsyncData.settle(
+					AsyncData.Refreshing({ data: policy(7) }),
+					Result.fail(toLoadFailure(new Error("down"))),
+				),
+			},
+		}
+		const retried = pageUpdate(stale, Message.ClickedRetryRetention()).model
+		const settled = pageUpdate(
+			retried,
+			Message.CompletedFetchRetention({ result: Result.succeed(policy(7)) }),
+		).model
+		expect(settled.retention?.draft?.logs).toBe(90)
+		expect(changedRetentionSignals(settled.retention, settled.sourceId)).toEqual(["logs"])
 	})
 
 	test("rows follow the source's signals: an own period, or the organization's", () => {
