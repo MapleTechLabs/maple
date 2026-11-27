@@ -1,5 +1,5 @@
 import { AdClickId, AdClickType } from "@maple/domain/ad-click"
-import { Duration, Option, Schema, String as Str } from "effect"
+import { Duration, Option, Schema } from "effect"
 
 /**
  * The ad click a sign-up carried in Clerk's `unsafe_metadata.adClick`, set by the dashboard from
@@ -19,20 +19,11 @@ const UnsafeMetadata = Schema.Struct({ adClick: Schema.optionalKey(Schema.Unknow
 export const AD_CLICK_WINDOW = Duration.days(90)
 /** Slack for a browser clock ahead of ours. */
 const CLOCK_SKEW = Duration.minutes(5)
-const RAW_MAX = 300
 
 export type AdClickDecode =
 	| { readonly _tag: "Absent" }
 	| { readonly _tag: "Valid"; readonly click: AdClick }
-	| { readonly _tag: "Invalid"; readonly rawAdClick: string }
-
-const encodeJson = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
-
-const rawOf = (value: unknown): string =>
-	Str.slice(
-		0,
-		RAW_MAX,
-	)(typeof value === "string" ? value : Option.getOrElse(encodeJson(value), () => String(value)))
+	| { readonly _tag: "Invalid"; readonly reason: "invalid_shape" | "outside_window" }
 
 /**
  * Read the click from a user's `unsafe_metadata`. A click from outside the window (or the
@@ -43,10 +34,10 @@ export const decodeAdClick = (unsafeMetadata: unknown, nowMs: number): AdClickDe
 	if (Option.isNone(metadata) || metadata.value.adClick === undefined) return { _tag: "Absent" }
 	const raw = metadata.value.adClick
 	const click = Schema.decodeUnknownOption(AdClick)(raw)
-	if (Option.isNone(click)) return { _tag: "Invalid", rawAdClick: rawOf(raw) }
+	if (Option.isNone(click)) return { _tag: "Invalid", reason: "invalid_shape" }
 	const { clickTime } = click.value
 	const tooOld = clickTime < nowMs - Duration.toMillis(AD_CLICK_WINDOW)
 	const future = clickTime > nowMs + Duration.toMillis(CLOCK_SKEW)
-	if (tooOld || future) return { _tag: "Invalid", rawAdClick: rawOf(raw) }
+	if (tooOld || future) return { _tag: "Invalid", reason: "outside_window" }
 	return { _tag: "Valid", click: { ...click.value, clickTime: Math.min(clickTime, nowMs) } }
 }

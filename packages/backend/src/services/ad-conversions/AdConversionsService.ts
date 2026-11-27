@@ -29,7 +29,7 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 				makePersistenceErrorMapper(AdConversionPersistenceError, "Ad conversion persistence error"),
 			)
 
-			// Sign-up and erasure take the same per-user lock, so a sign-up can never land after an erasure.
+			// Sign-up, activation and erasure take the same per-user lock, so no click lands after an erasure.
 			const lockUser = (db: MapleDb, userId: UserId) =>
 				db.execute(
 					Orm.sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext('ad_conversions'))`,
@@ -78,29 +78,32 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 				userId: UserId,
 				convertedAt: number,
 			) {
-				const signups = yield* dbExecute((db) =>
-					db.run(
-						PG.from(AdConversions)
-							.select()
-							.where(($) => [$.userId.eq(userId), $.conversion.eq("signup")])
-							.limit(1),
-					),
-				)
-				const signup = signups[0]
-				if (signup === undefined) return false
 				const inserted = yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(AdConversions)
-							.values({
-								userId,
-								conversion: "activated",
-								clickType: signup.clickType,
-								clickId: signup.clickId,
-								clickAt: signup.clickAt,
-								convertedAt: Math.max(convertedAt, signup.convertedAt),
-							})
-							.onConflictDoNothing()
-							.returning(($) => ({ userId: $.userId })),
+					db.transaction(
+						Effect.gen(function* () {
+							yield* lockUser(db, userId)
+							const signups = yield* db.run(
+								PG.from(AdConversions)
+									.select()
+									.where(($) => [$.userId.eq(userId), $.conversion.eq("signup")])
+									.limit(1),
+							)
+							const signup = signups[0]
+							if (signup === undefined) return []
+							return yield* db.run(
+								PG.insertInto(AdConversions)
+									.values({
+										userId,
+										conversion: "activated",
+										clickType: signup.clickType,
+										clickId: signup.clickId,
+										clickAt: signup.clickAt,
+										convertedAt: Math.max(convertedAt, signup.convertedAt),
+									})
+									.onConflictDoNothing()
+									.returning(($) => ({ userId: $.userId })),
+							)
+						}),
 					),
 				)
 				yield* Effect.annotateCurrentSpan({ "maple.ad_conversion.recorded": inserted.length > 0 })

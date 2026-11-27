@@ -17,13 +17,15 @@ describe("decodeAdClick", () => {
 		expect(decodeAdClick("not an object", NOW)).toEqual({ _tag: "Absent" })
 	})
 
-	it("keeps forged or stale input only as a capped raw string", () => {
-		const forged = decodeAdClick({ adClick: { ...click, id: `=cmd|${Str.repeat(1000)("x")}` } }, NOW)
-		expect(forged._tag).toBe("Invalid")
-		expect(forged._tag === "Invalid" && forged.rawAdClick.length).toBe(300)
-		expect(decodeAdClick({ adClick: { ...click, type: "fbclid" } }, NOW)._tag).toBe("Invalid")
-		expect(decodeAdClick({ adClick: { ...click, clickTime: NOW - 91 * DAY } }, NOW)._tag).toBe("Invalid")
-		expect(decodeAdClick({ adClick: { ...click, clickTime: NOW + DAY } }, NOW)._tag).toBe("Invalid")
+	it("rejects forged or stale input with a reason and keeps none of it", () => {
+		const unreadable = { _tag: "Invalid", reason: "invalid_shape" }
+		const expired = { _tag: "Invalid", reason: "outside_window" }
+		expect(decodeAdClick({ adClick: { ...click, id: `=cmd|${Str.repeat(1000)("x")}` } }, NOW)).toEqual(
+			shape,
+		)
+		expect(decodeAdClick({ adClick: { ...click, type: "fbclid" } }, NOW)).toEqual(unreadable)
+		expect(decodeAdClick({ adClick: { ...click, clickTime: NOW - 91 * DAY } }, NOW)).toEqual(expired)
+		expect(decodeAdClick({ adClick: { ...click, clickTime: NOW + DAY } }, NOW)).toEqual(expired)
 	})
 
 	it("pulls a click a little ahead of our clock back to it", () => {

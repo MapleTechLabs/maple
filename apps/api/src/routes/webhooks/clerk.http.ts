@@ -85,7 +85,7 @@ const handler = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({ "maple.ad_click.outcome": decoded._tag })
 		if (decoded._tag === "Invalid") {
 			yield* Effect.logInfo("Clerk user.created carried an unreadable ad click").pipe(
-				Effect.annotateLogs({ rawAdClick: decoded.rawAdClick }),
+				Effect.annotateLogs({ reason: decoded.reason }),
 			)
 			return
 		}
