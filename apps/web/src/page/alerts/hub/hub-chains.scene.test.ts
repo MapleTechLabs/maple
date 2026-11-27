@@ -10,7 +10,8 @@ import { describe, expect, test } from "vitest"
 import type { V2EscalationChain } from "@maple/domain/http/v2"
 import type { PageContext } from "../../contract"
 import { CHAIN_IN_USE_CODE } from "../shared/escalation-chains"
-import { chainDestinations, chainUuid, populatedChains } from "../shared/escalation-test-fixtures"
+import { chainDestinations, chainOf, chainUuid, populatedChains } from "../shared/escalation-test-fixtures"
+import { memberId, membersWithAnalysts, oncallMembers } from "../shared/oncall-test-fixtures"
 import { hubAt, NOW, ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -80,6 +81,42 @@ describe("alerts hub, escalation chains", () => {
 				"/alerts/escalation-chains/new",
 			),
 			expectView(role("link", { name: "Checkout on-call" })).toExist(),
+		)
+	})
+
+	test("a chain that pages people who cannot respond says how many, and no other chain does", () => {
+		const warning = /who can't acknowledge and resolve incidents/u
+		const people = chainOf({
+			n: 4,
+			name: "Data platform",
+			steps: [
+				{ destinations: [1], users: [memberId(5), memberId(6)], wait: 10 },
+				{ destinations: [], users: [memberId(5), memberId(0)], wait: 20 },
+			],
+		})
+		const withMembers = (members: typeof oncallMembers) =>
+			pageUpdate(
+				onRouting(ENGINEER, [...CHAINS, people]),
+				Message.CompletedFetchMembers({ result: Result.succeed(members) }),
+			).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withMembers(membersWithAnalysts)),
+			expectView(text("Data platform")).toExist(),
+			// Mei Chen is on both steps and counted once.
+			expectView(text(/^Pages 2 people who can't/u)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withMembers(oncallMembers)),
+			expectView(text("Data platform")).toExist(),
+			expectView(text(warning)).not.toExist(),
+		)
+		// Until the members load, nobody is guessed at.
+		scene(
+			{ update: pageUpdate, view },
+			given(onRouting(ENGINEER, [...CHAINS, people])),
+			expectView(text(warning)).not.toExist(),
 		)
 	})
 
