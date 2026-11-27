@@ -28,6 +28,7 @@ import { CloudflareZoneSettings } from "./cloudflare-zone-settings"
 import { DashboardShares } from "./dashboard-shares"
 import { Dashboards, DashboardVersions } from "./dashboards"
 import { DeviceCredentials, DeviceProofReplays } from "./device-credentials"
+import { AiEvaluationRuns } from "./ai-evaluation-runs"
 import { DigestSubscriptions } from "./digest"
 import {
 	Actors,
@@ -155,6 +156,7 @@ export * from "./dashboard-shares"
 export * from "./dashboards"
 export * from "./device-credentials"
 export * from "./digest"
+export * from "./ai-evaluation-runs"
 export * from "./errors"
 export * from "./external-data-sources"
 export * from "./escalations"
@@ -242,6 +244,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	DeviceCredentials,
 	DeviceProofReplays,
 	DigestSubscriptions,
+	AiEvaluationRuns,
 	Actors,
 	ErrorIssues,
 	ErrorFingerprintCandidates,

@@ -12,6 +12,8 @@ import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/Anoma
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
 import { FirstDataSweepService } from "@maple/backend/services/org/FirstDataSweepService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { SessionCheckScoresService } from "@maple/backend/services/ai-evaluations/SessionCheckScoresService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -176,6 +178,7 @@ export const layerTick = (
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
 		FirstDataSweepService.layer,
+		SessionCheckScoresService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 		ErrorsService.layer.pipe(Layer.provide(stackSymbolicatorIfBound(symbolicator))),
 		FixVerificationTickService.layer,
 		EscalationService.layer,
@@ -581,6 +584,15 @@ const firstDataTick = makeTick(
 			: undefined,
 )
 
+const sessionChecksTick = makeTick(
+	SessionCheckScoresService.use((scores) => scores.runTick()),
+	"session_checks",
+	(result) =>
+		result.orgs > 0
+			? { orgs: result.orgs, sessionsScored: result.sessionsScored, orgsFailed: result.orgsFailed }
+			: undefined,
+)
+
 const searchConsoleTick = makeTick(
 	SearchConsoleImportService.use((searchConsole) => searchConsole.pollAllSites),
 	"search_console",
@@ -736,6 +748,7 @@ const scheduledTicks = {
 	searchConsole: searchConsoleTick,
 	secretReseal: secretResealTick,
 	serviceMapRollup: serviceMapRollupTick,
+	sessionChecks: sessionChecksTick,
 	statusPages: statusPagesTick,
 	supabaseDiscovery: supabaseDiscoveryTick,
 	supabaseLogs: supabaseLogsTick,
@@ -786,6 +799,7 @@ const LANE_TICKS = {
 	supabase_insights: ["supabaseInsights"],
 	maintenance_windows: ["maintenanceWindows"],
 	search_console: ["searchConsole"],
+	session_checks: ["sessionChecks"],
 	first_data: ["firstData"],
 	cost_sync: ["costSync"],
 	aws_security: ["awsSecurity"],

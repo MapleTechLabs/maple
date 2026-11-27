@@ -691,6 +691,7 @@
         "@jridgewell/trace-mapping": "0.3.31",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
         "@maple-dev/effect-orm": "0.10.0",
+        "@maple/agent-sessions": "workspace:*",
         "@maple/alerting-core": "workspace:*",
         "@maple/auth": "workspace:*",
         "@maple/cache": "workspace:*",

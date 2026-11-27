@@ -147,6 +147,7 @@ import { SessionReplayReadService } from "@maple/backend/services/session-replay
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { McpReadService } from "@maple/backend/services/mcp/McpReadService"
 import { AiEvaluationReadService } from "@maple/backend/services/ai-evaluations/AiEvaluationReadService"
+import { SessionCheckScoresService } from "@maple/backend/services/ai-evaluations/SessionCheckScoresService"
 import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
@@ -333,6 +334,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	McpReadService.layer,
 	AiSessionReadService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	AiEvaluationReadService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
+	SessionCheckScoresService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,
