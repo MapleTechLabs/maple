@@ -85,6 +85,13 @@ class FakeCursor<T extends Row> implements SqlStorageCursor<T> {
 		}
 		return row
 	}
+	// Closing drops the rows not yet read, as the real cursor does.
+	close(): void {
+		this.index = this.rows.length
+	}
+	[Symbol.dispose](): void {
+		this.close()
+	}
 	raw<U extends SqlStorageValue[]>(): IterableIterator<U> {
 		throw new Error("raw() is not used by ChatSession")
 	}

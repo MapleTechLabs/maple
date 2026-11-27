@@ -229,8 +229,7 @@ const attachPanZoom = (
 			zoomActivationKeyPressed: false,
 			lib: "react",
 			connectionInProgress: false,
-			paneClickDistance: 1,
-			selectionOnDrag: false,
+			paneDragThreshold: 1,
 			onTransformChange: ([x, y, zoom]) => emit(Message.ChangedViewport({ viewport: { x, y, zoom } })),
 		})
 	updateGestures(limits.gestures)

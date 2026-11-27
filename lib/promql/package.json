@@ -11,8 +11,8 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@lezer/common": "1.5.6",
-		"@lezer/lr": "1.4.12",
+		"@lezer/common": "1.5.7",
+		"@lezer/lr": "1.4.13",
 		"@prometheus-io/lezer-promql": "0.316.0",
 		"effect": "catalog:effect",
 		"re2js": "2.10.0"
