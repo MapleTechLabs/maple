@@ -15,7 +15,8 @@
  */
 import { PRICING_CARD_FEATURE_IDS, TRIAL_PLAN_ID, isAdvertisedPricingFeature } from "@maple/domain/billing"
 import * as m from "../paraglide/messages.js"
-import { isStorageFeatureId } from "@maple/domain/storage-pricing"
+import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
+import { DATA_RATES, STORAGE_FEATURE_IDS, StorageSignal } from "@maple/domain/storage-pricing"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
@@ -62,10 +63,10 @@ export const PlansListResponse = Schema.Struct({ list: Schema.Array(Plan) })
 export type PlansListResponse = typeof PlansListResponse.Type
 
 /**
- * browser_sessions is metered per session, product_events per event, ai_credits
- * in dollars of model usage and storage per GB-month; every other signal is per GB.
+ * browser_sessions is metered per session, product_events per event, and
+ * ai_credits in dollars of model usage; every other signal is per GB.
  */
-export type Unit = "gb" | "gb_month" | "sessions" | "events" | "usd"
+export type Unit = "gb" | "sessions" | "events" | "usd"
 
 export interface Allotment {
 	featureId: string
@@ -85,6 +86,17 @@ export interface Allotment {
 	 * million. The rate is the price of one such block.
 	 */
 	rateUnits: number
+	/**
+	 * A GB signal's retention, priced apart from ingestion: its included volume is kept `days`
+	 * days at no charge, and storage past that is `rate` per GB per month.
+	 */
+	retention?: Retention | undefined
+}
+
+export interface Retention {
+	days: number
+	/** Per GB per month, past what the included volume needs for `days`; undefined when the plan has no price for it. */
+	rate: number | undefined
 }
 
 export interface Offer {
@@ -98,13 +110,7 @@ export interface Offer {
 }
 
 /** Canonical row order: Autumn can return items in any order. */
-/** The card's one storage row: Autumn bills it per signal, each at the same rate. */
-const STORAGE_ROW_ID = "storage"
-
-const DATA_FEATURE_ORDER: ReadonlyArray<string> = Arr.flatMap(PRICING_CARD_FEATURE_IDS, (id) =>
-	// Storage reads right after the GB signals whose volume it keeps.
-	id === "metrics" ? [id, STORAGE_ROW_ID] : [id],
-)
+const DATA_FEATURE_ORDER: ReadonlyArray<string> = PRICING_CARD_FEATURE_IDS
 
 const dataFeatureRank = (id: string) => DATA_FEATURE_ORDER.indexOf(id)
 
@@ -234,6 +240,7 @@ export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => 
 				const billingUnits = Math.max(1, item.price?.billing_units ?? 1)
 				const rateUnits = unit === "events" ? EVENTS_QUOTE_UNITS : billingUnits
 				const amount = item.price?.amount
+				const retention = retentionOf(featureId, product.items)
 				return {
 					featureId,
 					label: labels[featureId] ?? item.feature?.name ?? featureId,
@@ -242,11 +249,10 @@ export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => 
 					unlimited: item.unlimited === true,
 					rate: amount == null ? undefined : (amount / billingUnits) * rateUnits,
 					rateUnits,
+					retention,
 				}
 			},
-		)
-			.concat(storageAllotment(product.items))
-			.sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
+		).sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
 		ctaLabel:
 			freeTrial === undefined
 				? m.cta_get_started()
@@ -254,32 +260,32 @@ export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => 
 	}
 }
 
+const isStorageSignal = Schema.is(StorageSignal)
+
 /**
- * One storage row for the per-signal storage features, or none when the plan has none. The
- * rate is per GB-month: Autumn bills it per 0.01 GB-month, so it is not floored to one unit.
+ * A GB signal's retention: its default period, and the rate of the signal's own storage
+ * feature. Autumn bills storage per 0.01 GB-month, so the rate is not floored to one unit.
+ * Undefined for a signal with no retention period (sessions, events, AI usage).
  */
-const storageAllotment = (items: ReadonlyArray<typeof PlanItem.Type>): ReadonlyArray<Allotment> =>
-	Option.match(
-		Arr.findFirst(items, (item) => isStorageFeatureId(item.feature_id)),
-		{
-			onNone: () => [],
-			onSome: (item) => {
-				const amount = item.price?.amount
-				const billingUnits = item.price?.billing_units ?? 1
-				return [
-					{
-						featureId: STORAGE_ROW_ID,
-						label: m.pricing_storage(),
-						unit: "gb_month",
-						included: 0,
-						unlimited: item.unlimited === true,
-						rate: amount == null || billingUnits <= 0 ? undefined : amount / billingUnits,
-						rateUnits: 1,
-					},
-				]
-			},
-		},
-	)
+const retentionOf = (
+	featureId: string,
+	items: ReadonlyArray<typeof PlanItem.Type>,
+): Retention | undefined => {
+	if (!isStorageSignal(featureId)) return undefined
+	const storage = Arr.findFirst(items, (item) => item.feature_id === STORAGE_FEATURE_IDS[featureId])
+	const rate = Option.flatMap(storage, (item) => {
+		const amount = item.price?.amount
+		const billingUnits = item.price?.billing_units ?? 1
+		return amount == null || billingUnits <= 0 ? Option.none() : Option.some(amount / billingUnits)
+	})
+	return { days: DEFAULT_RETENTION_DAYS[featureId], rate: Option.getOrUndefined(rate) }
+}
+
+/** The mirror's retention for a GB signal: its default period at the storage rate. */
+const mirrorRetention = (featureId: "logs" | "traces" | "metrics"): Retention => ({
+	days: DEFAULT_RETENTION_DAYS[featureId],
+	rate: DATA_RATES.storagePerGbMonth,
+})
 
 const fallbackOffer = (labels: Record<string, string>): Offer => ({
 	name: "Startup",
@@ -288,7 +294,15 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 	hasTrial: true,
 	trialDuration: 14,
 	allotments: [
-		{ featureId: "logs", label: labels.logs, unit: "gb", included: 100, rate: 0.15, rateUnits: 1 },
+		{
+			featureId: "logs",
+			label: labels.logs,
+			unit: "gb",
+			included: 100,
+			rate: 0.15,
+			rateUnits: 1,
+			retention: mirrorRetention("logs"),
+		},
 		{
 			featureId: "traces",
 			label: labels.traces,
@@ -296,6 +310,7 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 			included: 100,
 			rate: 0.15,
 			rateUnits: 1,
+			retention: mirrorRetention("traces"),
 		},
 		{
 			featureId: "metrics",
@@ -304,14 +319,7 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 			included: 100,
 			rate: 0.15,
 			rateUnits: 1,
-		},
-		{
-			featureId: STORAGE_ROW_ID,
-			label: m.pricing_storage(),
-			unit: "gb_month",
-			included: 0,
-			rate: 0.15,
-			rateUnits: 1,
+			retention: mirrorRetention("metrics"),
 		},
 		{
 			featureId: "browser_sessions",
@@ -364,16 +372,10 @@ const count = (n: number) =>
 export const rateBlock = (a: Allotment) => count(a.rateUnits)
 
 export const volume = (a: Allotment, n: number) =>
-	a.unlimited
-		? m.pricing_unlimited()
-		: a.unit === "gb"
-			? `${n} GB`
-			: a.unit === "gb_month"
-				? // Each signal's storage is included up to what its own volume needs at the default retention.
-					m.pricing_storage_included()
-				: a.unit === "usd"
-					? money(n)
-					: count(n)
+	a.unlimited ? m.pricing_unlimited() : a.unit === "gb" ? `${n} GB` : a.unit === "usd" ? money(n) : count(n)
+
+/** "kept 30 days": how long a GB signal's included volume is retained at no charge. */
+export const retainedFor = (retention: Retention) => m.pricing_retained_days({ days: String(retention.days) })
 
 /**
  * AI usage has no flat rate: a credit is a dollar of model spend, priced per

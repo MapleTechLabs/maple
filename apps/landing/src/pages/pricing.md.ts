@@ -13,6 +13,7 @@ import {
 	platformFeatures,
 	rateBlock,
 	rateLabel,
+	retainedFor,
 	volume,
 	type Allotment,
 } from "../lib/pricing-offer"
@@ -24,22 +25,18 @@ import { Array as Arr } from "effect"
 
 /** "GB", "GB-month", "session", or "1,000 events": the block the rate is quoted per. */
 const unitLabel = (a: Allotment) =>
-	a.unit === "gb"
-		? "GB"
-		: a.unit === "gb_month"
-			? "GB-month"
-			: a.unit === "sessions"
-				? "session"
-				: `${rateBlock(a)} events`
+	a.unit === "gb" ? "GB" : a.unit === "sessions" ? "session" : `${rateBlock(a)} events`
 
 export const GET: APIRoute = async ({ site }) => {
 	const offer = await getOffer()
 
 	const meter = table(
-		["Signal", "Included every month", "Then"],
+		["Signal", "Included every month", "Then", "Retention"],
 		Arr.map(offer.allotments, (a) => [
 			a.label,
-			volume(a, a.included),
+			a.retention === undefined
+				? volume(a, a.included)
+				: `${volume(a, a.included)}, ${retainedFor(a.retention)}`,
 			a.unlimited
 				? m.pricing_free_beta()
 				: isUsageCredit(a)
@@ -47,6 +44,7 @@ export const GET: APIRoute = async ({ site }) => {
 					: a.rate === undefined
 						? "n/a"
 						: `${rateLabel(a.rate)} / ${unitLabel(a)}`,
+			a.retention?.rate === undefined ? "n/a" : `${rateLabel(a.retention.rate)} / GB per month`,
 		]),
 	)
 

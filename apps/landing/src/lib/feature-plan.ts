@@ -14,6 +14,7 @@ import {
 	money,
 	rateBlock,
 	rateLabel,
+	retainedFor,
 	volume,
 	type Allotment,
 	type Offer,
@@ -43,13 +44,22 @@ const rateText = (a: Allotment): string => {
 	const rate = rateLabel(a.rate)
 	if (a.unit === "sessions") return m.pricing_rate_session({ rate })
 	if (a.unit === "events") return m.pricing_rate_events({ rate, block: rateBlock(a) })
-	if (a.unit === "gb_month") return m.pricing_rate_gb_month({ rate })
 	return m.pricing_rate_gb({ rate })
 }
 
 /** "Traces: 100 GB included, then $0.15 / GB". */
 export const meterLine = (a: Allotment): string =>
-	`${a.label}: ${m.pricing_rate_included({ amount: volume(a, a.included) })}, ${rateText(a)}`
+	Arr.join(
+		[
+			`${a.label}: ${m.pricing_rate_included({ amount: volume(a, a.included) })}`,
+			...(a.retention === undefined ? [] : [retainedFor(a.retention)]),
+			rateText(a),
+			...(a.retention?.rate === undefined
+				? []
+				: [m.pricing_rate_retention({ rate: rateLabel(a.retention.rate) })]),
+		],
+		", ",
+	)
 
 export const planRows = (plan: FeaturePlan, offer: Offer): PlanRow[] => {
 	const price = `${money(offer.price)}${offer.interval ?? ""}`

@@ -170,14 +170,13 @@ describe("pricing offer", () => {
 			"logs",
 			"traces",
 			"metrics",
-			"storage",
 			"browser_sessions",
 			"product_events",
 			"ai_credits",
 		])
 	})
 
-	it("shows the per-signal storage features as one row per GB-month, after the GB signals", () => {
+	it("prices each GB signal's retention apart from its ingestion, from that signal's storage feature", () => {
 		const storageItem = (featureId: string, included: number) => ({
 			feature_id: featureId,
 			included,
@@ -207,10 +206,12 @@ describe("pricing offer", () => {
 			],
 		}
 		const offer = resolveOffer(Option.some(Schema.decodeSync(PlansListResponse)(withStorage)))
-		const storage = offer.allotments.filter((a) => a.unit === "gb_month")
-		expect(storage.map((a) => [a.featureId, a.rate])).toEqual([["storage", 0.15]])
-		const ids = offer.allotments.map((a) => a.featureId)
-		expect(ids.indexOf("storage")).toBe(ids.indexOf("traces") + 1)
+		expect(offer.allotments.map((a) => [a.featureId, a.retention])).toEqual([
+			// Logs have a storage feature on this plan; traces do not, so their retention has no rate.
+			["logs", { days: 30, rate: 0.15 }],
+			["traces", { days: 30, rate: undefined }],
+			["product_events", undefined],
+		])
 	})
 
 	it("falls back without a request when the secret key is missing", async () => {

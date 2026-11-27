@@ -16,7 +16,16 @@ import HeroCta from "./HeroCta.astro";
 import PixelIcon from "./icons/PixelIcon.astro";
 import RegionChip from "./RegionChip.astro";
 import ProductFrame from "./marketing/ProductFrame.astro";
-import { getOffer, isUsageCredit, money, rateBlock, rateLabel, volume, type Allotment } from "../lib/pricing-offer";
+import {
+	getOffer,
+	isUsageCredit,
+	money,
+	rateBlock,
+	rateLabel,
+	retainedFor,
+	volume,
+	type Allotment,
+} from "../lib/pricing-offer";
 
 const offer = await getOffer();
 
@@ -36,9 +45,7 @@ const rateSentence = (a: Allotment): string => {
 	const rendered =
 		a.unit === "gb"
 			? m.pricing_rate_gb({ rate: RATE_SLOT })
-			: a.unit === "gb_month"
-				? m.pricing_rate_gb_month({ rate: RATE_SLOT })
-				: a.unit === "sessions"
+			: a.unit === "sessions"
 				? m.pricing_rate_session({ rate: RATE_SLOT })
 				: m.pricing_rate_events({ rate: RATE_SLOT, block: rateBlock(a) });
 	return rendered.replace(RATE_SLOT, rateLabel(a.rate));
@@ -160,9 +167,7 @@ const RETENTION_DAYS = 30;
 										<span class="font-mono text-[11px] text-fg-muted">
 											{a.unit === "gb"
 												? "/ GB"
-												: a.unit === "gb_month"
-													? "/ GB-month"
-													: a.unit === "sessions"
+												: a.unit === "sessions"
 													? "/ session"
 													: `/ ${rateBlock(a)} events`}
 										</span>
@@ -172,8 +177,15 @@ const RETENTION_DAYS = 30;
 							<div class="mt-2 text-[11.5px] text-fg-muted">
 								{a.unlimited || isUsageCredit(a)
 									? rateSentence(a)
-									: m.pricing_rate_included({ amount: volume(a, a.included) })}
+									: a.retention === undefined
+										? m.pricing_rate_included({ amount: volume(a, a.included) })
+										: `${m.pricing_rate_included({ amount: volume(a, a.included) })}, ${retainedFor(a.retention)}`}
 							</div>
+							{a.retention?.rate !== undefined && (
+								<div class="text-[11.5px] text-fg-muted">
+									{m.pricing_rate_retention({ rate: rateLabel(a.retention.rate) })}
+								</div>
+							)}
 						</div>
 					))
 				}

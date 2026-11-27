@@ -27,6 +27,7 @@ import {
     platformFeatures,
     rateBlock,
     rateLabel,
+    retainedFor,
     volume,
     type Allotment,
 } from "../lib/pricing-offer";
@@ -58,13 +59,20 @@ const rowRate = (a: Allotment) => {
     const rendered =
         a.unit === "gb"
             ? m.pricing_rate_gb({ rate: RATE_SLOT })
-            : a.unit === "gb_month"
-              ? m.pricing_rate_gb_month({ rate: RATE_SLOT })
-              : a.unit === "sessions"
+            : a.unit === "sessions"
               ? m.pricing_rate_session({ rate: RATE_SLOT })
               : m.pricing_rate_events({ rate: RATE_SLOT, block: rateBlock(a) })
     const [before, after = ""] = rendered.split(RATE_SLOT)
     return { before, amount: rateLabel(a.rate), after }
+}
+
+// Retention is its own price, as ingestion is: "retention $0.15 / GB per month" under the
+// ingest rate, for storage past what the included volume needs for its period.
+const rowRetention = (a: Allotment) => {
+    const rate = a.retention?.rate
+    if (rate === undefined) return undefined
+    const [before, after = ""] = m.pricing_rate_retention({ rate: RATE_SLOT }).split(RATE_SLOT)
+    return { before, amount: rateLabel(rate), after }
 }
 
 // Widest amount in the list, so every row's unit starts on the same axis.
@@ -78,8 +86,20 @@ const meterRows = offer.allotments.map((a) => ({
     featureId: a.featureId,
     label: a.label,
     included: volume(a, a.included),
+    retainedFor: a.retention === undefined ? undefined : retainedFor(a.retention),
     rate: rowRate(a),
+    retention: rowRetention(a),
 }))
+
+// Both lines of a rate cell start their amount on the same axis.
+// Only rows with an amount: AI usage's lead is a whole sentence and would push every amount out.
+const rateLeadCh = Math.max(
+    ...meterRows.flatMap((a) => [
+        a.rate === undefined || a.rate.amount === "" ? 0 : a.rate.before.length,
+        a.retention?.before.length ?? 0,
+    ]),
+    1,
+)
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 // `variant` is explicit rather than inferred from whether copy props are set:
@@ -202,9 +222,6 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     {a.featureId === "metrics" && (
                                         <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M2 15.01V15"/><path d="M4 13.01V13"/><path d="M6 11.01V11"/><path d="M8 9.01V9"/><path d="M10 11.01V11"/><path d="M12 13.01V13"/><path d="M14 15.01V15"/><path d="M16 13.01V13"/><path d="M18 11.01V11"/><path d="M20 9.01V9"/><path d="M22 7.01V7"/></svg>
                                     )}
-                                    {a.featureId === "storage" && (
-                                        <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M14 12L10 12"/><path d="M21 12L21 19"/><path d="M22 5L22 6"/><path d="M2 5L2 6"/><path d="M3 12L3 19"/><path d="M19 21L5 21"/><path d="M20 3L4 3"/><path d="M20 8L4 8"/></svg>
-                                    )}
                                     {a.featureId === "browser_sessions" && (
                                         <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M4 6L4 6.01"/><path d="M6 4L6 4.01"/><path d="M20.01 6L20 6"/><path d="M18.01 4L18 4"/><path d="M20.01 18L20 18"/><path d="M18.01 20L18 20"/><path d="M6.01001 20L6.00001 20"/><path d="M4.01001 18L4.00001 18"/><path d="M2 8L2 16"/><path d="M22 14L22 16"/><path d="M8 2L16 2"/><path d="M8 22L16 22"/><path d="M22 8V4"/><path d="M17 12.01V12"/><path d="M14 10H15"/><path d="M14 14H15"/><path d="M12 8H9L9 16L12 16"/></svg>
                                     )}
@@ -218,6 +235,9 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                 </div>
                                 <div class="whitespace-nowrap pb-1 pt-3 text-right font-mono text-[12.5px] tabular-nums text-fg sm:border-b sm:border-border/60 sm:py-3">
                                     {a.included}
+                                    {a.retainedFor && (
+                                        <div class="text-[11px] text-fg-muted">{a.retainedFor}</div>
+                                    )}
                                 </div>
                                 {/* Below sm the rate drops to its own full-width line:
                                     three columns squeezed the label column hard enough
@@ -227,13 +247,22 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     it ragged. */}
                                 <div class="col-span-2 whitespace-nowrap border-b border-border/60 pb-3 text-right font-mono text-[11px] tabular-nums text-fg-muted sm:col-span-1 sm:py-3 sm:pl-6 sm:text-left sm:text-[11.5px]">
                                     {a.rate && (
-                                        <>
-                                            {a.rate.before}
+                                        <div>
+                                            <span class="inline-block" style={`min-width:${rateLeadCh}ch`}>{a.rate.before}</span>
                                             <span class="inline-block text-right" style={`min-width:${rateSlotCh}ch`}>
                                                 {a.rate.amount}
                                             </span>
                                             {a.rate.after}
-                                        </>
+                                        </div>
+                                    )}
+                                    {a.retention && (
+                                        <div>
+                                            <span class="inline-block" style={`min-width:${rateLeadCh}ch`}>{a.retention.before}</span>
+                                            <span class="inline-block text-right" style={`min-width:${rateSlotCh}ch`}>
+                                                {a.retention.amount}
+                                            </span>
+                                            {a.retention.after}
+                                        </div>
                                     )}
                                 </div>
                             </>
