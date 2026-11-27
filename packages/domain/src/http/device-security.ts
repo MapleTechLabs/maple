@@ -1,4 +1,4 @@
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { DeviceRef, DeviceSourceKind, VulnerableSoftware } from "../device-security"
@@ -88,7 +88,7 @@ export class DeviceSecurityApiGroup extends HttpApiGroup.make("deviceSecurity")
 		HttpApiEndpoint.get("devices", "/devices", {
 			success: DevicesResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
-		}).annotate(EndpointAccess, "personal"),
+		}).annotate(EndpointAccess, ["personal", handlerChecks("security:manage")]),
 	)
 	.prefix("/internal/device-security")
 	.middleware(SessionAuthorization)

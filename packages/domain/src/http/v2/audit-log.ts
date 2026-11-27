@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { AuditLogEntryId } from "@maple/primitives"
 import { AuditActorType, AuditLogPersistenceError, AuditLogSource, AuditOutcome } from "../audit-log"
+import { EndpointAccess, handlerChecks } from "../endpoint-access"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
@@ -239,14 +240,16 @@ export class V2AuditLogApiGroup extends HttpApiGroup.make("auditLog")
 			query: V2AuditLogQuery,
 			success: AuditLogEntryList,
 			error: [V2ParameterInvalid.schema, V2InsufficientPermissions.schema, auditLogPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listAuditLogEntries",
-				summary: "List audit log entries",
-				description:
-					"Returns your organization's audit log, newest first, optionally filtered by actor, action, outcome, resource, changed field, request, and time window. Cursor-paginated. Session callers must be organization administrators; API keys require the `audit_log:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handlerChecks("audit_log:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listAuditLogEntries",
+					summary: "List audit log entries",
+					description:
+						"Returns your organization's audit log, newest first, optionally filtered by actor, action, outcome, resource, changed field, request, and time window. Cursor-paginated. Session callers must be organization administrators; API keys require the `audit_log:read` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/audit_log")
 	.middleware(AuthorizationV2)

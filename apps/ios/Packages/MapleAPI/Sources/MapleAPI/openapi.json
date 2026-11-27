@@ -8357,7 +8357,7 @@
   "paths": {
     "/v2/alerts/deliveries": {
       "get": {
-        "description": "Returns the organization's most recent alert notification attempts, newest first, optionally filtered by `incident_id` or `rule_id`. Requires the `alerts:read` scope.",
+        "description": "Returns the organization's most recent alert notification attempts, newest first, optionally filtered by `incident_id` or `rule_id`. Requires the `alerts:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listAlertDeliveries",
         "parameters": [
           {
@@ -8505,12 +8505,15 @@
         "summary": "List alert deliveries",
         "tags": [
           "Alert Deliveries"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/incidents": {
       "get": {
-        "description": "Returns your organization's alert incidents, most recently triggered first, optionally filtered by `status`, `rule_id`, `acknowledged` or `paged`. Cursor-paginated. Requires the `alerts:read` scope.",
+        "description": "Returns your organization's alert incidents, most recently triggered first, optionally filtered by `status`, `rule_id`, `acknowledged` or `paged`. Cursor-paginated. Requires the `alerts:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listAlertIncidents",
         "parameters": [
           {
@@ -8689,12 +8692,15 @@
         "summary": "List alert incidents",
         "tags": [
           "Alert Incidents"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/incidents/{id}": {
       "get": {
-        "description": "Returns a single alert incident by its `inc_…` ID. Requires the `alerts:read` scope.",
+        "description": "Returns a single alert incident by its `inc_…` ID. Requires the `alerts:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getAlertIncident",
         "parameters": [
           {
@@ -8823,12 +8829,15 @@
         "summary": "Retrieve an alert incident",
         "tags": [
           "Alert Incidents"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/incidents/{id}/acknowledge": {
       "post": {
-        "description": "Marks an open incident as acknowledged by the calling user, which pauses reminders until it is unacknowledged, escalates to a higher severity, or resolves. Acknowledging an already acknowledged incident changes nothing and returns it. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+        "description": "Marks an open incident as acknowledged by the calling user, which pauses reminders until it is unacknowledged, escalates to a higher severity, or resolves. Acknowledging an already acknowledged incident changes nothing and returns it. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.\n\nThe caller's role needs Respond to incidents (`incidents:respond`) and Read telemetry (`telemetry:read`).",
         "operationId": "acknowledgeAlertIncident",
         "parameters": [
           {
@@ -8967,12 +8976,16 @@
         "summary": "Acknowledge an alert incident",
         "tags": [
           "Alert Incidents"
+        ],
+        "x-required-permissions": [
+          "incidents:respond",
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/incidents/{id}/events": {
       "get": {
-        "description": "Returns the incident's acknowledgement history, oldest first, up to its 500 most recent entries. Requires the `alerts:read` scope.",
+        "description": "Returns the incident's acknowledgement history, oldest first, up to its 500 most recent entries. Requires the `alerts:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listAlertIncidentEvents",
         "parameters": [
           {
@@ -9101,12 +9114,15 @@
         "summary": "List an alert incident's events",
         "tags": [
           "Alert Incidents"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/incidents/{id}/resolve": {
       "post": {
-        "description": "Resolves an open incident by hand and sends the all-clear to every destination it notified. If the rule still breaches, it opens no new incident for this group until a check reads healthy or reads no data, and for a day at most, so a resolve is not undone a minute later. Fails with 409 on an incident that is already resolved. Requires the `alerts:write` scope.",
+        "description": "Resolves an open incident by hand and sends the all-clear to every destination it notified. If the rule still breaches, it opens no new incident for this group until a check reads healthy or reads no data, and for a day at most, so a resolve is not undone a minute later. Fails with 409 on an incident that is already resolved. Requires the `alerts:write` scope.\n\nThe caller's role needs Respond to incidents (`incidents:respond`) and Read telemetry (`telemetry:read`).",
         "operationId": "resolveAlertIncident",
         "parameters": [
           {
@@ -9245,12 +9261,16 @@
         "summary": "Resolve an alert incident",
         "tags": [
           "Alert Incidents"
+        ],
+        "x-required-permissions": [
+          "incidents:respond",
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/incidents/{id}/unacknowledge": {
       "post": {
-        "description": "Clears an open incident's acknowledgement, so reminders resume: one that came due while it was acknowledged is sent on the next check. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+        "description": "Clears an open incident's acknowledgement, so reminders resume: one that came due while it was acknowledged is sent on the next check. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.\n\nThe caller's role needs Respond to incidents (`incidents:respond`) and Read telemetry (`telemetry:read`).",
         "operationId": "unacknowledgeAlertIncident",
         "parameters": [
           {
@@ -9389,12 +9409,16 @@
         "summary": "Unacknowledge an alert incident",
         "tags": [
           "Alert Incidents"
+        ],
+        "x-required-permissions": [
+          "incidents:respond",
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/oncall_overview": {
       "get": {
-        "description": "Returns who is on call on every schedule, each schedule's next 14 days with its coverage gaps, and the calling user's own shifts over the next 60 days. Requires the `alerts:read` scope.",
+        "description": "Returns who is on call on every schedule, each schedule's next 14 days with its coverage gaps, and the calling user's own shifts over the next 60 days. Requires the `alerts:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getOnCallOverview",
         "parameters": [],
         "responses": {
@@ -9504,12 +9528,15 @@
         "summary": "Who is on call, and when you are",
         "tags": [
           "On-Call Overview"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/rules": {
       "get": {
-        "description": "Returns your organization's alert rules, most recently created first. Cursor-paginated. Requires the `alerts:read` scope.",
+        "description": "Returns your organization's alert rules, most recently created first. Cursor-paginated. Requires the `alerts:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listAlertRules",
         "parameters": [
           {
@@ -9641,12 +9668,15 @@
         "summary": "List alert rules",
         "tags": [
           "Alert Rules"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/rules/preview": {
       "post": {
-        "description": "Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
+        "description": "Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).\n\nThe caller's role needs Read telemetry (`telemetry:read`). Depending on the request, it may also need Manage alerts (`alerts:manage`) and Run raw SQL (`query:sql`).",
         "operationId": "previewAlertRule",
         "parameters": [],
         "requestBody": {
@@ -9776,12 +9806,19 @@
         "summary": "Preview an alert rule",
         "tags": [
           "Alert Rules"
+        ],
+        "x-conditional-permissions": [
+          "alerts:manage",
+          "query:sql"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/rules/{id}": {
       "get": {
-        "description": "Returns a single alert rule by its `alrt_…` ID. Requires the `alerts:read` scope.",
+        "description": "Returns a single alert rule by its `alrt_…` ID. Requires the `alerts:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getAlertRule",
         "parameters": [
           {
@@ -9910,12 +9947,15 @@
         "summary": "Retrieve an alert rule",
         "tags": [
           "Alert Rules"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/alerts/rules/{id}/checks": {
       "get": {
-        "description": "Returns the rule's recorded evaluations (its audit trail), newest first, optionally filtered by group key and time range. Requires the `alerts:read` scope.",
+        "description": "Returns the rule's recorded evaluations (its audit trail), newest first, optionally filtered by group key and time range. Requires the `alerts:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listAlertRuleChecks",
         "parameters": [
           {
@@ -10111,12 +10151,15 @@
         "summary": "List a rule's checks",
         "tags": [
           "Alert Rules"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/anomalies/incidents": {
       "get": {
-        "description": "Returns your organization's anomaly incidents, newest first, with optional filters. Cursor-paginated. Requires the `anomalies:read` scope.",
+        "description": "Returns your organization's anomaly incidents, newest first, with optional filters. Cursor-paginated. Requires the `anomalies:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listAnomalyIncidents",
         "parameters": [
           {
@@ -10306,12 +10349,15 @@
         "summary": "List anomaly incidents",
         "tags": [
           "Anomalies"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/anomalies/incidents/{id}": {
       "get": {
-        "description": "Returns a single anomaly incident by its `anom_…` ID. Requires the `anomalies:read` scope.",
+        "description": "Returns a single anomaly incident by its `anom_…` ID. Requires the `anomalies:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getAnomalyIncident",
         "parameters": [
           {
@@ -10440,12 +10486,15 @@
         "summary": "Retrieve an anomaly incident",
         "tags": [
           "Anomalies"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/anomalies/incidents/{id}/timeseries": {
       "get": {
-        "description": "Returns the monitored signal's timeseries around the incident, with baseline and threshold overlays. Requires the `anomalies:read` scope.",
+        "description": "Returns the monitored signal's timeseries around the incident, with baseline and threshold overlays. Requires the `anomalies:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getAnomalyIncidentTimeseries",
         "parameters": [
           {
@@ -10600,12 +10649,15 @@
         "summary": "Retrieve incident timeseries",
         "tags": [
           "Anomalies"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/dashboards": {
       "get": {
-        "description": "Returns a cursor-paginated list of dashboards, most recently updated first.",
+        "description": "Returns a cursor-paginated list of dashboards, most recently updated first.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listDashboards",
         "parameters": [
           {
@@ -10737,12 +10789,15 @@
         "summary": "List dashboards",
         "tags": [
           "Dashboards"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/dashboards/{id}": {
       "get": {
-        "description": "Returns a complete dashboard definition by its opaque `dash_` public ID.",
+        "description": "Returns a complete dashboard definition by its opaque `dash_` public ID.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getDashboard",
         "parameters": [
           {
@@ -10871,12 +10926,15 @@
         "summary": "Retrieve a dashboard",
         "tags": [
           "Dashboards"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/dashboards/{id}/widget_data": {
       "post": {
-        "description": "Evaluates up to 4 widgets of a saved dashboard over a time range, from the stored widget definitions, exactly as the dashboard renders them. Read-only; requires `dashboards:read`.",
+        "description": "Evaluates up to 4 widgets of a saved dashboard over a time range, from the stored widget definitions, exactly as the dashboard renders them. Read-only; requires `dashboards:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "queryDashboardWidgetData",
         "parameters": [
           {
@@ -11015,6 +11073,9 @@
         "summary": "Query dashboard widget data",
         "tags": [
           "Dashboards"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
@@ -11150,7 +11211,7 @@
         ]
       },
       "put": {
-        "description": "Registers the public half of a device-held P-256 key for this installation and organization, revoking the caller's previous key for it in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Signed-in sessions only (API keys and device tokens get `session_required`). The request must also carry a `DPoP` proof signed by the submitted key (`htm` `PUT`, `htu` this URL, no `ath`), proving the caller holds it. An installation another member holds a live credential for answers `device_installation_in_use`.",
+        "description": "Registers the public half of a device-held P-256 key for this installation and organization, revoking the caller's previous key for it in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Signed-in sessions only (API keys and device tokens get `session_required`). The request must also carry a `DPoP` proof signed by the submitted key (`htm` `PUT`, `htu` this URL, no `ath`), proving the caller holds it. An installation another member holds a live credential for answers `device_installation_in_use`.\n\nThe caller's role needs Connect devices and clients (`devices:connect`).",
         "operationId": "registerDeviceCredential",
         "parameters": [
           {
@@ -11306,6 +11367,9 @@
         "summary": "Register this installation's device key",
         "tags": [
           "Device Credentials"
+        ],
+        "x-required-permissions": [
+          "devices:connect"
         ]
       }
     },
@@ -11554,7 +11618,7 @@
     },
     "/v2/environments": {
       "get": {
-        "description": "Lists the deployment environments observed in an explicit time window, in name order. The list is unpaginated — `has_more` is always false — because an organization has tens of environments, not thousands. Requires `environments:read`.",
+        "description": "Lists the deployment environments observed in an explicit time window, in name order. The list is unpaginated — `has_more` is always false — because an organization has tens of environments, not thousands. Requires `environments:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listEnvironments",
         "parameters": [
           {
@@ -11691,12 +11755,15 @@
         "summary": "List deployment environments",
         "tags": [
           "Environments"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/error_issues": {
       "get": {
-        "description": "Returns a bounded, cursor-paginated page of your organization's issues. Requires `error_issues:read`.",
+        "description": "Returns a bounded, cursor-paginated page of your organization's issues. Requires `error_issues:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listErrorIssues",
         "parameters": [
           {
@@ -11972,12 +12039,15 @@
         "summary": "List error issues",
         "tags": [
           "Error Issues"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/error_issues/service_counts": {
       "get": {
-        "description": "Returns the number of open (actionable-state) error issues per service, in one call. Alert-kind issues are excluded. Requires `error_issues:read`.",
+        "description": "Returns the number of open (actionable-state) error issues per service, in one call. Alert-kind issues are excluded. Requires `error_issues:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listErrorIssueServiceCounts",
         "parameters": [],
         "responses": {
@@ -12087,12 +12157,15 @@
         "summary": "List open issue counts by service",
         "tags": [
           "Error Issues"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/error_issues/{id}": {
       "get": {
-        "description": "Returns an issue with its timeseries, representative traces, and incident history. Requires `error_issues:read`.",
+        "description": "Returns an issue with its timeseries, representative traces, and incident history. Requires `error_issues:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getErrorIssue",
         "parameters": [
           {
@@ -12263,12 +12336,15 @@
         "summary": "Retrieve an error issue",
         "tags": [
           "Error Issues"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/error_issues/{id}/claim": {
       "post": {
-        "description": "Takes the issue's lease as the calling user, so others see it is being worked on. Requires `error_issues:write`.",
+        "description": "Takes the issue's lease as the calling user, so others see it is being worked on. Requires `error_issues:write`.\n\nThe caller's role needs Triage error issues (`error_issues:triage`) and Read telemetry (`telemetry:read`).",
         "operationId": "claimErrorIssue",
         "parameters": [
           {
@@ -12417,12 +12493,16 @@
         "summary": "Claim an error issue",
         "tags": [
           "Error Issues"
+        ],
+        "x-required-permissions": [
+          "error_issues:triage",
+          "telemetry:read"
         ]
       }
     },
     "/v2/error_issues/{id}/release": {
       "post": {
-        "description": "Gives up the calling user's lease, optionally moving the issue to another state. Requires `error_issues:write`.",
+        "description": "Gives up the calling user's lease, optionally moving the issue to another state. Requires `error_issues:write`.\n\nThe caller's role needs Triage error issues (`error_issues:triage`) and Read telemetry (`telemetry:read`).",
         "operationId": "releaseErrorIssue",
         "parameters": [
           {
@@ -12571,12 +12651,16 @@
         "summary": "Release an error issue",
         "tags": [
           "Error Issues"
+        ],
+        "x-required-permissions": [
+          "error_issues:triage",
+          "telemetry:read"
         ]
       }
     },
     "/v2/error_issues/{id}/severity": {
       "put": {
-        "description": "Sets or clears the issue's manual severity as the calling user. Requires `error_issues:write`.",
+        "description": "Sets or clears the issue's manual severity as the calling user. Requires `error_issues:write`.\n\nThe caller's role needs Triage error issues (`error_issues:triage`) and Read telemetry (`telemetry:read`).",
         "operationId": "setErrorIssueSeverity",
         "parameters": [
           {
@@ -12715,12 +12799,16 @@
         "summary": "Set an error issue's severity",
         "tags": [
           "Error Issues"
+        ],
+        "x-required-permissions": [
+          "error_issues:triage",
+          "telemetry:read"
         ]
       }
     },
     "/v2/error_issues/{id}/transitions": {
       "post": {
-        "description": "Moves the issue to another workflow state as the calling user, and returns the updated issue. Requires `error_issues:write`.",
+        "description": "Moves the issue to another workflow state as the calling user, and returns the updated issue. Requires `error_issues:write`.\n\nThe caller's role needs Triage error issues (`error_issues:triage`) and Read telemetry (`telemetry:read`).",
         "operationId": "transitionErrorIssue",
         "parameters": [
           {
@@ -12869,12 +12957,16 @@
         "summary": "Transition an error issue",
         "tags": [
           "Error Issues"
+        ],
+        "x-required-permissions": [
+          "error_issues:triage",
+          "telemetry:read"
         ]
       }
     },
     "/v2/logs/search": {
       "post": {
-        "description": "Searches logs in an explicit time window. Requires `logs:read`.",
+        "description": "Searches logs in an explicit time window. Requires `logs:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "searchLogs",
         "parameters": [],
         "requestBody": {
@@ -13004,12 +13096,15 @@
         "summary": "Search logs",
         "tags": [
           "Logs"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/logs/timeseries": {
       "post": {
-        "description": "Counts logs in chronological buckets. Requires `logs:read`.",
+        "description": "Counts logs in chronological buckets. Requires `logs:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "queryLogTimeseries",
         "parameters": [],
         "requestBody": {
@@ -13139,6 +13234,9 @@
         "summary": "Query log timeseries",
         "tags": [
           "Logs"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
@@ -13513,7 +13611,7 @@
         ]
       },
       "put": {
-        "description": "Upserts the device identified by its push token for the current user and organization, re-enabling it if the platform had marked it dead. Requires the `mobile_devices:write` scope.",
+        "description": "Upserts the device identified by its push token for the current user and organization, re-enabling it if the platform had marked it dead. Requires the `mobile_devices:write` scope.\n\nThe caller's role needs Connect devices and clients (`devices:connect`) and Read telemetry (`telemetry:read`).",
         "operationId": "registerMobileDevice",
         "parameters": [
           {
@@ -13649,6 +13747,10 @@
         "summary": "Register or refresh a device",
         "tags": [
           "Mobile Devices"
+        ],
+        "x-required-permissions": [
+          "devices:connect",
+          "telemetry:read"
         ]
       }
     },
@@ -13801,7 +13903,7 @@
         ]
       },
       "put": {
-        "description": "Records the APNs update token for a Live Activity the device started for this incident, so Maple can update and end it. Requires the `mobile_devices:write` scope.",
+        "description": "Records the APNs update token for a Live Activity the device started for this incident, so Maple can update and end it. Requires the `mobile_devices:write` scope.\n\nThe caller's role needs Connect devices and clients (`devices:connect`) and Read telemetry (`telemetry:read`).",
         "operationId": "registerLiveActivity",
         "parameters": [
           {
@@ -13955,12 +14057,16 @@
         "summary": "Register a Live Activity update token",
         "tags": [
           "Mobile Devices"
+        ],
+        "x-required-permissions": [
+          "devices:connect",
+          "telemetry:read"
         ]
       }
     },
     "/v2/services": {
       "get": {
-        "description": "Lists services aggregated by name in an explicit time window. Requires `services:read`.",
+        "description": "Lists services aggregated by name in an explicit time window. Requires `services:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "listServices",
         "parameters": [
           {
@@ -14134,12 +14240,15 @@
         "summary": "List services",
         "tags": [
           "Services"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/services/health": {
       "post": {
-        "description": "Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window widens to the whole hours it touches (end exclusive), the response carries those hours, and `throughput` is per second over them. Requires `services:read`.",
+        "description": "Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window widens to the whole hours it touches (end exclusive), the response carries those hours, and `throughput` is per second over them. Requires `services:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "queryServiceHealth",
         "parameters": [],
         "requestBody": {
@@ -14269,12 +14378,15 @@
         "summary": "Query service health",
         "tags": [
           "Services"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/services/{name}": {
       "get": {
-        "description": "Returns one service aggregated across environments and namespaces. Requires `services:read`.",
+        "description": "Returns one service aggregated across environments and namespaces. Requires `services:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getService",
         "parameters": [
           {
@@ -14429,12 +14541,15 @@
         "summary": "Retrieve a service",
         "tags": [
           "Services"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/services/{name}/overview": {
       "get": {
-        "description": "Returns the service summary, a per-bucket series of throughput, error rate and latency percentiles, and its busiest operations — the reads behind a service detail screen, composed server-side in one round-trip. Requires `services:read`.",
+        "description": "Returns the service summary, a per-bucket series of throughput, error rate and latency percentiles, and its busiest operations — the reads behind a service detail screen, composed server-side in one round-trip. Requires `services:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getServiceOverview",
         "parameters": [
           {
@@ -14606,12 +14721,15 @@
         "summary": "Retrieve a service overview",
         "tags": [
           "Services"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/traces/breakdown": {
       "post": {
-        "description": "Aggregates traces by one dimension. Requires `traces:read`.",
+        "description": "Aggregates traces by one dimension. Requires `traces:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "queryTraceBreakdown",
         "parameters": [],
         "requestBody": {
@@ -14741,12 +14859,15 @@
         "summary": "Query trace breakdown",
         "tags": [
           "Traces"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/traces/search": {
       "post": {
-        "description": "Searches root traces in an explicit time window. Requires `traces:read`.",
+        "description": "Searches root traces in an explicit time window. Requires `traces:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "searchTraces",
         "parameters": [],
         "requestBody": {
@@ -14876,12 +14997,15 @@
         "summary": "Search traces",
         "tags": [
           "Traces"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/traces/timeseries": {
       "post": {
-        "description": "Aggregates traces into chronological series. Requires `traces:read`.",
+        "description": "Aggregates traces into chronological series. Requires `traces:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "queryTraceTimeseries",
         "parameters": [],
         "requestBody": {
@@ -15011,12 +15135,15 @@
         "summary": "Query trace timeseries",
         "tags": [
           "Traces"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
     "/v2/traces/{trace_id}": {
       "get": {
-        "description": "Returns a trace and its flat parent-linked span collection. Requires `traces:read`.",
+        "description": "Returns a trace and its flat parent-linked span collection. Requires `traces:read`.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getTrace",
         "parameters": [
           {
@@ -15155,6 +15282,9 @@
         "summary": "Retrieve a trace",
         "tags": [
           "Traces"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     },
@@ -15290,7 +15420,7 @@
         ]
       },
       "put": {
-        "description": "Issues a read-only, expiring credential for this installation's Home Screen widgets, revoking whatever it had. Idempotent, so the app calls it again to roll. Requires the `widget_credentials:write` scope — which a widget credential does not have, so renewal always goes through a signed-in session.",
+        "description": "Issues a read-only, expiring credential for this installation's Home Screen widgets, revoking whatever it had. Idempotent, so the app calls it again to roll. Requires the `widget_credentials:write` scope — which a widget credential does not have, so renewal always goes through a signed-in session.\n\nThe caller's role needs Connect devices and clients (`devices:connect`).",
         "operationId": "mintWidgetCredential",
         "parameters": [
           {
@@ -15417,12 +15547,15 @@
         "summary": "Mint this installation's widget credential",
         "tags": [
           "Widget Credentials"
+        ],
+        "x-required-permissions": [
+          "devices:connect"
         ]
       }
     },
     "/v2/widget_summary": {
       "get": {
-        "description": "Returns ongoing error issues and per-service traffic in a single small payload sized for a Home Screen widget. The windows are fixed by the server; `deployment_environment` optionally narrows both halves to one environment and is echoed on the response. Requires the `widget_summary:read` scope.",
+        "description": "Returns ongoing error issues and per-service traffic in a single small payload sized for a Home Screen widget. The windows are fixed by the server; `deployment_environment` optionally narrows both halves to one environment and is echoed on the response. Requires the `widget_summary:read` scope.\n\nThe caller's role needs Read telemetry (`telemetry:read`).",
         "operationId": "getWidgetSummary",
         "parameters": [
           {
@@ -15551,6 +15684,9 @@
         "summary": "Retrieve the mobile widget summary",
         "tags": [
           "Widget Summary"
+        ],
+        "x-required-permissions": [
+          "telemetry:read"
         ]
       }
     }

@@ -15,7 +15,7 @@ import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 // AWS integration. No OAuth and no stored AWS secret: an org registers a connection for an account,
 // an administrator deploys the generated CloudFormation stack, and Maple assumes the role it creates
@@ -375,14 +375,16 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 				unavailable,
 				integrationPersistence,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getAwsConnectionSetup",
-				summary: "Render a connection's setup",
-				description:
-					"Returns the CloudShell script, the CloudFormation template and the Terraform file that set up one connection. With a metric stream set they contain its access key and, with the security module, the events key, so this requires an org-admin or engineer role and the `integrations:write` scope, although it is a GET. A read that returns a key is recorded in the audit log, without the key.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handlerChecks("integrations:manage"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getAwsConnectionSetup",
+					summary: "Render a connection's setup",
+					description:
+						"Returns the CloudShell script, the CloudFormation template and the Terraform file that set up one connection. With a metric stream set they contain its access key and, with the security module, the events key, so this requires an org-admin or engineer role and the `integrations:write` scope, although it is a GET. A read that returns a key is recorded in the audit log, without the key.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("rotateEventsKey", "/connections/:id/events_key/rotate", {
@@ -457,4 +459,4 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 				"Connect AWS accounts: register a connection, choose what Maple may read, fetch the CloudFormation stack that sets it up, and see whether Maple can assume its role.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("integrations:manage")) {}

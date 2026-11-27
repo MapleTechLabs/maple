@@ -25,7 +25,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions, V2TimeRangeInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { ScrapeTargetPublicId } from "./scrape-targets"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 // PlanetScale integration. An org connects PlanetScale over OAuth, binds the
 // grant to one PlanetScale organization, and Maple provisions a managed scrape
@@ -944,14 +944,16 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 		HttpApiEndpoint.get("organizations", "/organizations", {
 			success: V2PlanetScaleOrganizationList,
 			error: [V2InsufficientPermissions.schema, ...organizationErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listPlanetScaleOrganizations",
-				summary: "List reachable PlanetScale organizations",
-				description:
-					"Lists the PlanetScale organizations the stored OAuth grant can access: the candidates for `select_organization`. Requires an org-admin or engineer role and the `integrations:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handlerChecks("integrations:manage"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listPlanetScaleOrganizations",
+					summary: "List reachable PlanetScale organizations",
+					description:
+						"Lists the PlanetScale organizations the stored OAuth grant can access: the candidates for `select_organization`. Requires an org-admin or engineer role and the `integrations:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("selectOrganization", "/select_organization", {
@@ -1037,14 +1039,16 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 		HttpApiEndpoint.get("webhookConfig", "/webhook_config", {
 			success: V2PlanetScaleWebhookConfig,
 			error: [V2InsufficientPermissions.schema, integrationPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getPlanetScaleWebhookConfig",
-				summary: "Retrieve the PlanetScale webhook configuration (deprecated)",
-				description:
-					"Deprecated: Maple now registers a webhook on every database itself and verifies each delivery with the secret PlanetScale generated for it; see `webhooks` on the integration status. The URL and secret returned here no longer verify deliveries. The response contains the stored secret, so this requires an org-admin or engineer role and the `integrations:write` scope, although it is a GET. A read that returns the secret is recorded in the audit log.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handlerChecks("integrations:manage"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getPlanetScaleWebhookConfig",
+					summary: "Retrieve the PlanetScale webhook configuration (deprecated)",
+					description:
+						"Deprecated: Maple now registers a webhook on every database itself and verifies each delivery with the secret PlanetScale generated for it; see `webhooks` on the integration status. The URL and secret returned here no longer verify deliveries. The response contains the stored secret, so this requires an org-admin or engineer role and the `integrations:write` scope, although it is a GET. A read that returns the secret is recorded in the audit log.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("queryInsights", "/query_insights", {
@@ -1087,4 +1091,4 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 				"Connect PlanetScale to your organization and manage what Maple collects from it: connection status, organization binding, the metrics service token that enables branch-metrics scraping, the database inventory, webhook setup, query insights, and the lifecycle event timeline.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handlerChecks("integrations:manage")) {}

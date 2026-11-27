@@ -45,6 +45,7 @@ import { stringifyJson } from "../lib/json"
 import { renderToolDocWithinBudget } from "./tool-output"
 import { CurrentWindowNotes, WindowNotes } from "../lib/window-notes"
 import type { McpToolRequirements } from "./runtime-services"
+import { annotateAccessSpan } from "@maple/backend/services/auth/access-span"
 
 /** What a tool's handler produced: its typed output, rendered and encoded. */
 interface ToolRun {
@@ -876,16 +877,23 @@ const refuseCaller = (
 		readOnly: entry.hints.readOnly,
 	})
 	if (refusal === undefined) return Effect.void
+	if (refusal._tag === "permission") {
+		return annotateAccessSpan("denied", "tool", refusal.permission).pipe(
+			Effect.andThen(
+				Effect.fail(
+					new McpAuthInvalidError({
+						message: Policy.denialFor(refusal.permission).message,
+						reason: "insufficient_permission",
+					}),
+				),
+			),
+		)
+	}
 	return Effect.fail(
-		refusal._tag === "permission"
-			? new McpAuthInvalidError({
-					message: Policy.denialFor(refusal.permission).message,
-					reason: "insufficient_permission",
-				})
-			: new McpAuthInvalidError({
-					message: `\`${entry.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
-					reason: "insufficient_scope",
-				}),
+		new McpAuthInvalidError({
+			message: `\`${entry.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+			reason: "insufficient_scope",
+		}),
 	)
 }
 
