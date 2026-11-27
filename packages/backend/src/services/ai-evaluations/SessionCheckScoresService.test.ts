@@ -134,10 +134,22 @@ const warehouse = (
 	reads: Array<string>,
 	statements: Array<{ readonly context: string; readonly sql: string }>,
 	spansFail: boolean,
+	crowded: boolean,
 ) => {
+	// Full pages of sessions the cursor already passed: scored, but listed again by the lookback.
+	const old = Arr.makeBy(100, (index) => `wrun_old_${index}`)
+	const oldEnd = NOW - 2 * 3_600_000 + 5_000
 	const rowsFor = (context: string, sql: string): ReadonlyArray<Record<string, unknown>> => {
 		reads.push(context)
 		statements.push({ context, sql })
+		if (crowded && context === "aiSessionsRank")
+			return Arr.map(old, (sessionId) => ({
+				sessionId,
+				agentStart: at(oldEnd - 5_000),
+				agentEnd: at(oldEnd),
+			}))
+		if (crowded && context === "aiSessionsPage")
+			return Arr.map(old, (sessionId) => listRow(sessionId, oldEnd))
 		switch (context) {
 			case "aiSessionsRank":
 				return [
@@ -221,7 +233,12 @@ const IngestBody = Schema.Struct({
 const decodeIngestBody = Schema.decodeUnknownSync(Schema.fromJsonString(IngestBody))
 
 const makeWorld = (
-	opts: { readonly llmEvals?: boolean; readonly ingestStatus?: number; readonly spansFail?: boolean } = {},
+	opts: {
+		readonly llmEvals?: boolean
+		readonly ingestStatus?: number
+		readonly spansFail?: boolean
+		readonly crowded?: boolean
+	} = {},
 ) => {
 	const testDb = createTestDb(trackedDbs)
 	const bodies: Array<typeof IngestBody.Type> = []
@@ -246,7 +263,7 @@ const makeWorld = (
 				Layer.provide(
 					Layer.succeed(
 						WarehouseQueryService,
-						warehouse(reads, statements, opts.spansFail ?? false),
+						warehouse(reads, statements, opts.spansFail ?? false, opts.crowded ?? false),
 					),
 				),
 			),
@@ -386,6 +403,18 @@ describe("SessionCheckScoresService", () => {
 			assert.deepStrictEqual(result, { orgs: 1, sessionsScored: 0, orgsFailed: 0, orgsDeferred: 0 })
 			assert.strictEqual(world.bodies.length, 0)
 			assert.deepStrictEqual(yield* runRow, [{ cursorAt: NOW - SESSION_IDLE_MS, lastError: null }])
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("keeps the cursor when the list stops before the sessions it has not seen", () => {
+		const world = makeWorld({ crowded: true })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const scores = yield* SessionCheckScoresService
+			yield* scores.enroll(ORG)
+			yield* scores.runTick()
+			assert.strictEqual(world.bodies.length, 0)
+			assert.deepStrictEqual(yield* runRow, [{ cursorAt: NOW - ENROLL_LOOKBACK_MS, lastError: null }])
 		}).pipe(Effect.provide(world.layer))
 	})
 

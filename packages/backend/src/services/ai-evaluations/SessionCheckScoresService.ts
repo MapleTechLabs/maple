@@ -37,6 +37,8 @@ export const LIST_LOOKBACK_MS = 3_600_000
 /** A tick starts no new org past this, well inside the lane's 10-minute deadline. */
 export const TICK_BUDGET_MS = 8 * 60_000
 const LIST_PAGE = 100
+/** Sessions one tick lists, scored or not; past it the cursor stops where the list did. */
+const LIST_MAX_ROWS = 1_000
 const SESSION_CONCURRENCY = 4
 const ORG_CONCURRENCY = 2
 
@@ -137,12 +139,17 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 				const pages = (
 					offset: number,
 					acc: ReadonlyArray<AiSessionListItem>,
-				): Effect.Effect<ReadonlyArray<AiSessionListItem>, Effect.Error<ReturnType<typeof page>>> =>
+				): Effect.Effect<
+					{ readonly rows: ReadonlyArray<AiSessionListItem>; readonly complete: boolean },
+					Effect.Error<ReturnType<typeof page>>
+				> =>
 					page(offset).pipe(
 						Effect.flatMap((response) => {
 							const rows = [...acc, ...response.data]
-							return response.data.length < LIST_PAGE || rows.length >= SESSIONS_PER_TICK * 2
-								? Effect.succeed(rows)
+							if (response.data.length < LIST_PAGE)
+								return Effect.succeed({ rows, complete: true })
+							return rows.length >= LIST_MAX_ROWS
+								? Effect.succeed({ rows, complete: false })
 								: pages(offset + LIST_PAGE, rows)
 						}),
 					)
@@ -209,8 +216,31 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					return { ...empty, outcome: "not_due" } satisfies SessionCheckOrgResult
 
 				const listed = yield* listWindow(orgId, cursorMs, nowMs)
-				const finished = finishedSessions(listed, cursorMs, upperMs)
+				const finished = Arr.sort(
+					finishedSessions(listed.rows, cursorMs, upperMs),
+					Order.mapInput(Order.Number, (row: AiSessionListItem) =>
+						parseWarehouseDateTime(row.endTime),
+					),
+				)
 				const batch = Arr.take(finished, SESSIONS_PER_TICK)
+				// The next cursor leaves every session this tick did not get to eligible: those past the
+				// batch end after its last one, and those past a cut list started (so ended) after its last row.
+				const nextCursorMs = Math.max(
+					cursorMs,
+					Math.min(
+						upperMs,
+						Option.match(Arr.get(finished, SESSIONS_PER_TICK), {
+							onNone: () => upperMs,
+							onSome: (row) => parseWarehouseDateTime(row.endTime) - 1,
+						}),
+						listed.complete
+							? upperMs
+							: Option.match(Arr.last(listed.rows), {
+									onNone: () => upperMs,
+									onSome: (row) => parseWarehouseDateTime(row.startTime) - 1,
+								}),
+					),
+				)
 				const ingestKey = (yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID)).publicKey
 				const outcomes = yield* Effect.forEach(
 					batch,
@@ -230,6 +260,7 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					"maple.evals.sessions_failed": failed.length,
 					"maple.evals.sessions_skipped": skipped,
 					"maple.evals.sessions_capped": capped,
+					"maple.evals.list_complete": listed.complete,
 				})
 				const firstFailure = Option.flatMap(Arr.head(failed), (outcome) =>
 					outcome._tag === "Failure" ? Option.some(outcome.failure) : Option.none(),
@@ -239,7 +270,7 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					db.run(
 						PG.update(AiEvaluationRuns)
 							.set({
-								...(failed.length === 0 ? { cursorAt: upperMs } : undefined),
+								...(failed.length === 0 ? { cursorAt: nextCursorMs } : undefined),
 								lastRunAt: nowMs,
 								lastError: Option.match(firstFailure, {
 									onNone: () => null,

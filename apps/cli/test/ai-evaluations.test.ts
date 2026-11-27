@@ -317,6 +317,39 @@ describeWithChdb("ai_evaluations re-scores and response-only scores", () => {
 		expect(failures).toEqual([{ verdict: "fail", traceId: TRACE, responseId: "" }])
 	})
 
+	test("a later span event re-scoring the same span wins, by the event's own time", () => {
+		const correctness = (verdict: string) => ({
+			"gen_ai.evaluation.name": "Span judge",
+			"gen_ai.evaluation.score.label": verdict,
+			"maple_ai.evaluation.identifier": "judge-2",
+		})
+		db.exec(
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ServiceName, SpanName, EventsTimestamp, EventsName, EventsAttributes) VALUES ('${ORG}', '${ts(AT_MS)}', '${TRACE}', 'a9a9a9a9a9a9a9a9', 'agent', 'chat', ['${ts(AT_MS + 60_000)}', '${ts(AT_MS + 120_000)}'], ['gen_ai.evaluation.result', 'gen_ai.evaluation.result'], [${map(correctness("fail"))}, ${map(correctness("pass"))}])`,
+		)
+		expect(
+			run(Compile.compileUnsafe(CH.aiEvaluationsSummaryQuery({ name: "Span judge" }), params), Summary),
+		).toEqual([{ name: "Span judge", scoreCount: 1, passCount: 1, failCount: 0 }])
+	})
+
+	test("a keyed session score re-graded from another trace replaces the first", () => {
+		const graded = (verdict: string, traceId: string, atMs: number) =>
+			score(
+				{
+					"gen_ai.evaluation.name": "Session judge",
+					"gen_ai.evaluation.score.label": verdict,
+					"maple_ai.evaluation.scope": "session",
+					"maple_ai.evaluation.session.id": "session-7",
+					"maple_ai.evaluation.identifier": "judge-3",
+				},
+				{ traceId, atMs },
+			)
+		graded("fail", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", AT_MS - 60_000)
+		graded("pass", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", AT_MS)
+		expect(
+			run(Compile.compileUnsafe(CH.aiEvaluationScoresQuery({ sessionId: "session-7" }), params), Score),
+		).toEqual([{ verdict: "pass", traceId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", responseId: "" }])
+	})
+
 	test("finds response-only scores by response, and the span each response came from", () => {
 		expect(
 			run(

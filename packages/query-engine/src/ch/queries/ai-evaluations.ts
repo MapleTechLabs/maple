@@ -25,7 +25,8 @@ const windowConds = ($: Columns, tailSeconds = 0) => [
 
 /**
  * The window's scores, one per re-scored target: a later score with the same target, evaluator
- * and `Identifier` replaces the earlier one. A score with no identifier is keyed by its timestamp
+ * and `Identifier` replaces the earlier one. A keyed session-scope score's target is its named
+ * session, so a judge re-scoring a session from another trace replaces its earlier score. A score with no identifier is keyed by its timestamp
  * and content, so only an exact resend (an OTLP retry) merges into it. `conds` narrow the raw rows, and may only
  * name columns of the key; a filter on what a re-score can change (the verdict) goes outside.
  */
@@ -36,9 +37,16 @@ const latestScores = (
 	fromQuery(
 		from(Datasources.aiEvaluations)
 			.select(($) => ({
-				traceId: $.TraceId,
-				spanId: $.SpanId,
-				responseId: $.ResponseId,
+				// What the score grades: a keyed session-scope score grades its named session wherever
+				// it was emitted; any other grades the span, trace or response it carries.
+				target: CH.if_(
+					$.Scope.eq("session").and($.SessionId.neq("")).and($.Identifier.neq("")),
+					CH.lit(""),
+					CH.concat($.TraceId, CH.lit(":"), $.SpanId, CH.lit(":"), $.ResponseId),
+				),
+				traceId: CH.argMax($.TraceId, $.Timestamp),
+				spanId: CH.argMax($.SpanId, $.Timestamp),
+				responseId: CH.argMax($.ResponseId, $.Timestamp),
 				name: $.Name,
 				scope: $.Scope,
 				sessionId: $.SessionId,
@@ -64,7 +72,7 @@ const latestScores = (
 				deploymentEnv: CH.argMax($.DeploymentEnv, $.Timestamp),
 			}))
 			.where(($) => [...windowConds($, tailSeconds), ...conds($)])
-			.groupBy("traceId", "spanId", "responseId", "name", "scope", "sessionId", "scoreKey"),
+			.groupBy("target", "name", "scope", "sessionId", "scoreKey"),
 		"scores",
 	)
 
