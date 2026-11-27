@@ -154,7 +154,7 @@ The example puts the endpoint and key in source. An ingest key can only write te
 
 ## Environment variables
 
-When you build an exporter without `with_endpoint` and `with_headers`, it reads the standard OpenTelemetry variables. `Resource::builder()` reads `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`:
+When you build an exporter without `with_endpoint` and `with_headers`, it reads the standard OpenTelemetry variables. `Resource::builder()` reads `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`. A value set in code wins over the variable, so remove `with_service_name` and the `with_attribute` calls from `init` for anything you set here:
 
 ```bash
 export OTEL_SERVICE_NAME="my-rust-app"
@@ -246,7 +246,7 @@ Most attributes are optional. These unlock specific features.
 
 ### Commits and GitHub
 
-Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the **Recent deploys** panel on each service page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. `vcs.ref.head.revision` drives deploy markers and the **Recent deploys** panel on each service page. With the [GitHub integration](/docs/integrations/github), the two attributes also drive commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
 
 ```bash
 export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"

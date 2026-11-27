@@ -30,7 +30,7 @@ A check is skipped when its window has no data, or fewer samples than **Minimum 
 
 Turn **Alert when there is no data** on for **SQL** rules, where a query that stops matching otherwise goes quiet instead of firing.
 
-The setting is not available on split rules: a group that stops reporting keeps its open incident until its telemetry returns. On an **SQL** rule that returns a `group` column, the setting counts a breach only when the query returns no rows at all.
+The setting is not available on split rules. When a group stops reporting, Maple checks whether its services still send telemetry. If they do, the group's incident resolves. If their telemetry has stopped, the incident stays open for up to 6 hours and then resolves. On an **SQL** rule that returns a `group` column, the setting counts a breach only when the query returns no rows at all.
 
 ## Minimum samples
 

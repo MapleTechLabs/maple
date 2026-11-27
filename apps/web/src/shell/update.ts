@@ -26,6 +26,7 @@ import {
 } from "./command"
 import { LoadInfraSurfaces, LoadNamespaces, LoadOnCall, LoadSources } from "./data"
 import { DismissQuotaBanner, OpenCustomerPortal } from "./billing-banners"
+import { SaveIosPromptDismissed } from "./ios-app-prompt"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
 import * as ConnectPanel from "./connect-panel"
@@ -629,6 +630,13 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 			commands: [DismissQuotaBanner()],
 		}),
 		CompletedDismissQuotaBanner: () => ({ model }),
+		ClickedDismissIosPrompt: ({ userId }) => ({
+			model: modifyFields(model, {
+				iosPromptDismissedUsers: (users) => Array.dedupe(Array.append(users, userId)),
+			}),
+			commands: [SaveIosPromptDismissed({ userId })],
+		}),
+		CompletedSaveIosPromptDismissed: () => ({ model }),
 		FailedLoadNamespaces: ({ orgId }) =>
 			forOrg(model, orgId, (current) =>
 				modifyFields(current, { namespaces: () => NamespacesData.Failure({ error: "Failed" }) }),

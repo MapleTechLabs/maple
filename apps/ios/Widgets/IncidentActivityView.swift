@@ -11,6 +11,8 @@ import WidgetKit
 struct IncidentActivityLockScreenView: View {
 	let attributes: IncidentActivityAttributes
 	let state: IncidentActivityAttributes.ContentState
+	/// Past its stale date: what it says about the next page can no longer be trusted.
+	var isStale = false
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
@@ -64,9 +66,82 @@ struct IncidentActivityLockScreenView: View {
 				)
 				.frame(height: 30)
 			}
+
+			if state.status == .firing {
+				Rectangle()
+					.fill(Token.border)
+					.frame(height: 1)
+				IncidentActivityResponseRow(attributes: attributes, state: state, isStale: isStale)
+			}
 		}
 		.padding(.horizontal, 16)
 		.padding(.vertical, 12)
+	}
+}
+
+/// Who has the incident: nobody yet, with who is paged next and the button that
+/// answers it, or the person who acknowledged.
+///
+/// The button is an intent, so it acts without opening the app; everything else
+/// on the card still opens the incident.
+struct IncidentActivityResponseRow: View {
+	let attributes: IncidentActivityAttributes
+	let state: IncidentActivityAttributes.ContentState
+	var isStale = false
+
+	var body: some View {
+		HStack(alignment: .center, spacing: 12) {
+			if let name = state.acknowledgedBy {
+				HStack(spacing: 6) {
+					Image(systemName: "checkmark.circle")
+						.font(.system(size: 13, weight: .medium))
+					Text("Acknowledged by \(name)")
+						.font(Typo.small)
+						.lineLimit(1)
+				}
+				.foregroundStyle(Token.foreground)
+				Spacer(minLength: 0)
+			} else {
+				VStack(alignment: .leading, spacing: 2) {
+					Text("Unacknowledged")
+						.font(Typo.micro)
+						.foregroundStyle(Token.mutedForeground)
+					nextPage
+				}
+				Spacer(minLength: 0)
+				Button(
+					intent: AcknowledgeIncidentIntent(
+						incidentId: attributes.incidentId,
+						organizationId: attributes.organizationId
+					)
+				) {
+					Text("Acknowledge")
+						.font(Typo.smallMedium)
+						.foregroundStyle(Token.primaryForeground)
+						.padding(.horizontal, 14)
+						.frame(height: 34)
+						.background(Token.primary, in: .rect(cornerRadius: Token.Radius.md))
+				}
+				.buttonStyle(.plain)
+			}
+		}
+	}
+
+	/// "Pages Priya Shah in 3:48", counting down on its own. Left out once the
+	/// time has passed or the card is stale: by then the step has run, and only
+	/// the app or a push can say what happened next.
+	@ViewBuilder private var nextPage: some View {
+		if !isStale, let at = state.nextPageAt, at > Date() {
+			// One Text, so the sentence takes its natural width: a timer on its own
+			// claims every point it is offered and squeezes the name out.
+			let timer = Text(timerInterval: Date()...at, countsDown: true)
+			(state.nextPagePeople.map { Text("Pages \($0) in \(timer)") } ?? Text("Escalates in \(timer)"))
+				.font(Typo.tiny)
+				.monospacedDigit()
+				.foregroundStyle(Token.foreground)
+				.lineLimit(1)
+				.minimumScaleFactor(0.85)
+		}
 	}
 }
 
@@ -121,5 +196,6 @@ struct ElapsedLabel: View {
 	IncidentActivityWidget()
 } contentStates: {
 	IncidentActivityAttributes.ContentState.sample
+	IncidentActivityAttributes.ContentState.acknowledgedSample
 	IncidentActivityAttributes.ContentState.resolvedSample
 }

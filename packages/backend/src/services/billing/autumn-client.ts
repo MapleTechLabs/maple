@@ -1,9 +1,10 @@
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Predicate, Schema, Array as Arr } from "effect"
 import { type EdgeCacheServiceApi, unpartitioned } from "@maple/cache"
 import {
+	hasPlanHistory,
 	isActivePlanSubscription,
-	isPlanSubscription,
 	type PlanGatingSubscription,
+	type TrialUse,
 } from "@maple/domain/billing"
 import {
 	BillingConflictError,
@@ -15,7 +16,7 @@ import {
 	BillingUpstreamError,
 } from "@maple/domain/http"
 import type { AutumnFailure, BillingCustomerId } from "@maple/domain/http"
-import type { AutumnResult, AutumnTransportFailure } from "./autumn-http"
+import type { AutumnClientApi, AutumnResult, AutumnTransportFailure, CustomerExpand } from "./autumn-http"
 
 /**
  * Caching and decoding plumbing shared by the billing routes.
@@ -63,7 +64,17 @@ export const responseHasActivePlan = (response: unknown): boolean =>
  * (durably planless, so worth caching).
  */
 export const responseHasPlanHistory = (response: unknown): boolean =>
-	Arr.some(subscriptionsOf(response), isPlanSubscription)
+	hasPlanHistory(subscriptionsOf(response), trialsUsedOf(response))
+
+// Autumn drops an ended no-card trial's subscription row; `trials_used` still records it.
+const trialsUsedOf = (response: unknown): ReadonlyArray<TrialUse> =>
+	Predicate.hasProperty(response, "trialsUsed") && Arr.isArray(response.trialsUsed)
+		? Arr.filter(
+				response.trialsUsed,
+				(trial): trial is TrialUse =>
+					Predicate.hasProperty(trial, "planId") && Predicate.isString(trial.planId),
+			)
+		: []
 
 // Every field of `PlanGatingSubscription` is optional, so "is an object" is the
 // whole shape check — the gating predicates answer for themselves what a missing
@@ -105,6 +116,10 @@ export const summariseSubscriptions = (response: unknown): Record<string, string
 			",",
 		),
 		"maple.billing.has_active_plan": responseHasActivePlan(response),
+		"maple.billing.trials_used": Arr.join(
+			Arr.map(trialsUsedOf(response), (trial) => trial.planId),
+			",",
+		),
 		"maple.billing.has_plan_history": responseHasPlanHistory(response),
 	}
 }
@@ -132,14 +147,27 @@ class UncacheableAutumnResult extends Schema.TaggedError<UncacheableAutumnResult
 ) {}
 
 /**
+ * What every cached customer read expands. One list, because every reader shares one cache entry:
+ * a reader asking for less would hand the others a customer missing what they decode.
+ */
+export const CACHED_CUSTOMER_EXPAND: ReadonlyArray<CustomerExpand> = ["subscriptions.plan", "trials_used"]
+
+/** The uncached read a cached one stands for, for callers that must confirm a cached answer. */
+export const readCustomerFresh = (
+	autumn: Pick<AutumnClientApi, "getOrCreateCustomer">,
+	customerId: BillingCustomerId,
+): Effect.Effect<AutumnResult, AutumnTransportFailure> =>
+	autumn.getOrCreateCustomer(customerId, { expand: CACHED_CUSTOMER_EXPAND })
+
+/**
  * Run `getOrCreateCustomer` through the per-org edge cache (200-only), on the
  * tiered TTL above. Returns the resolved result plus whether it came from the
  * cache (for span annotation).
  */
 export const readCustomerCached = (
 	edgeCache: Pick<EdgeCacheServiceApi, "getOrCompute">,
+	autumn: Pick<AutumnClientApi, "getOrCreateCustomer">,
 	customerId: BillingCustomerId,
-	runAutumn: Effect.Effect<AutumnResult, AutumnTransportFailure>,
 ): Effect.Effect<{ readonly result: AutumnResult; readonly hit: boolean }, AutumnTransportFailure> =>
 	edgeCache
 		.getOrCompute(
@@ -148,7 +176,7 @@ export const readCustomerCached = (
 				key: customerId,
 				ttlSeconds: (result: AutumnResult) => customerCacheTtl(result.response),
 			},
-			runAutumn.pipe(
+			readCustomerFresh(autumn, customerId).pipe(
 				Effect.filterOrFail(
 					(res) => res.statusCode === 200,
 					(res) =>

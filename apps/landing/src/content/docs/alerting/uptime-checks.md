@@ -85,7 +85,7 @@ The monitor page links each failed check to its trace, and charts response time 
 
 ## Create a check from an AI assistant, the API or code
 
-The examples below create the same check four ways: an HTTP monitor on a health endpoint with a JSON assertion.
+The examples below create an HTTP monitor on a health endpoint four ways. The API and Terraform examples assert on a JSON field. The MCP example matches body text instead, because the MCP tool has no JSON path assertion.
 
 On the [MCP server](/docs/reference/mcp), `manage_uptime_monitor action=update` changes or pauses a monitor, and `list_uptime_monitors` shows every monitor with its last check and trace id. `manage_uptime_monitor action=create` creates a monitor from these parameters:
 
@@ -129,7 +129,7 @@ curl https://api.maple.dev/v2/uptime_monitors \
   }'
 ```
 
-`POST /v2/uptime_monitors/test` runs a config once without saving it.
+`POST /v2/uptime_monitors/test` runs an HTTP config once without saving it. TCP, DNS and heartbeat monitors run only after they are created.
 
 In Terraform, use [`maple_uptime_monitor`](/docs/iac/terraform-resources#maple_uptime_monitor):
 
@@ -145,6 +145,7 @@ resource "maple_uptime_monitor" "checkout_api" {
     assertions = [
       { type = "status", op = "is", value = "2xx" },
       { type = "latency", under_ms = 800 },
+      { type = "json_path", path = "status", op = "equals", value = "up" },
     ]
   })
   destination_ids = [maple_alert_destination.oncall.id]

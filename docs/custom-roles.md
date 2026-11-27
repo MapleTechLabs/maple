@@ -15,6 +15,22 @@
 - Enforcement: `EndpointAccess` on HTTP endpoints (`packages/domain/src/http/endpoint-access.ts`),
   `permission` on MCP tools, and `MembershipRevocationService.demoteMembership` retiring
   credentials, links, digests and phones a narrower role no longer covers.
+- The endpoint gate marks the request's span with its decision: `maple.access.outcome` (`allowed`,
+  `denied`, `unmarked`), `maple.access.site` (`edge`) and, when a permission was missing,
+  `maple.access.permission`. A `Policy.check` that refuses inside the handler overwrites them with
+  `site: handler`; it reports through `Policy.AccessSink`, which the auth layers set per request
+  (`auth/access-span.ts`). A refused MCP tool marks its own span with `site: tool`. Not marked: a
+  refusal before the gate (a key's scope or kind, an organization selection) and one built by hand
+  after `Policy.can`.
+- A refusal is an `api.request` audit entry with `outcome: "denied"` (`auth/audit-denial.ts`). Each
+  isolate writes one per caller, route and message per minute. A person's entry names the route, a
+  key's the path it asked for. A person refused Read telemetry is the exception and stays on the
+  span: a role without it asks for telemetry on every page it opens.
+- What each permission opens is derived, not written down: `http/access-catalog.ts` reads the same
+  marks the gate reads (`accessCatalogOf`, `endpointsBehind`). A handler that checks permissions
+  itself names them in its mark, `handlerChecks("alerts:manage", "query:sql")`; a check for one
+  the endpoint does not declare is listed in `maple.access.undeclared` on the request's span, so a
+  missing declaration is found by querying Maple's own traces for that attribute.
 
 ## Roles limited to namespaces
 
@@ -100,7 +116,10 @@ characters each, made of letters, digits, spaces and `. _ : / @ + -`.
 - Membership answers are cached up to 5 minutes (shared) and 60 s (per isolate). A narrowing
   evicts the shared entry and the handling isolate's memo; other isolates keep the old permissions
   up to 60 s, and everything up to 5 minutes if the eviction never ran.
-- Escalation steps page whoever they name, regardless of that person's permissions.
+- Escalation steps page whoever they name, regardless of that person's permissions. The chain
+  editor and the Routing tab's chain list warn about a named person whose role lacks Respond to
+  incidents; the chain still saves and the page is still sent. Whoever a schedule puts on call is
+  not checked.
 - Every permission implies Read telemetry unless it is marked `readsNoTelemetry` (billing, own
   devices, MCP and restricted keys, the support channel, status page updates, the public ingest
   key). A role without Read telemetry is for those jobs only.

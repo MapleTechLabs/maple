@@ -27,6 +27,8 @@ export const ClerkUserCreatedData = Schema.Struct({
 	external_accounts: Schema.optionalKey(Schema.Array(ClerkExternalAccount)),
 	/** Epoch ms. */
 	created_at: Schema.optionalKey(Schema.Number),
+	/** Browser-written at sign-up; read only through `decodeAdClick`. */
+	unsafe_metadata: Schema.optionalKey(Schema.Unknown),
 })
 
 /**

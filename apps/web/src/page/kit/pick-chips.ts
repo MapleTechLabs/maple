@@ -2,6 +2,7 @@ import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
+import { infoHint } from "@maple/views/ui/info-hint"
 import type * as Menu from "@maple/views/ui/menu"
 import * as MenuView from "@maple/views/ui/menu-view"
 import { hstack } from "@maple/views/ui/stack"
@@ -16,6 +17,8 @@ export type PickedChip<M> = Readonly<{
 	media: Html
 	/** A muted note after the name ("Ben Brook on call"). */
 	detail?: string
+	/** Something to check about a pick that still stands: a warning mark after the name, this as its tooltip. */
+	warning?: string
 	removeLabel: string
 	/** The remove button's id, for a form that moves focus to it when the chip before it goes. */
 	removeId?: string
@@ -35,6 +38,7 @@ const chip = <M>(h: HtmlBuilder<M>, entry: PickedChip<M>, canEdit: boolean, isDi
 		[
 			entry.media,
 			typography(h, { size: "sm", truncate: true }, [entry.label]),
+			...(entry.warning === undefined ? [] : [infoHint(h, entry.warning, { variant: "warning" })]),
 			...(entry.detail === undefined
 				? []
 				: [

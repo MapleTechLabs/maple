@@ -66,6 +66,7 @@ import { ChatCallbackRouter } from "@/routes/chat-integration.http"
 import { VcsWebhookRouter } from "@/routes/webhooks/vcs.http"
 import { AutumnWebhookRouter } from "@/routes/webhooks/autumn.http"
 import { ClerkWebhookRouter } from "@/routes/webhooks/clerk.http"
+import { GoogleAdsConversionsRouter } from "@/routes/google-ads-conversions.http"
 import { HttpV2AlertDeliveriesLive } from "@/routes/v2/alert-deliveries.http"
 import { HttpV2AlertDestinationsLive } from "@/routes/v2/alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "@/routes/v2/alert-incidents.http"
@@ -117,6 +118,8 @@ import {
 	HttpV2ServicesLive,
 	HttpV2TracesLive,
 } from "@/routes/v2/telemetry.http"
+import { HttpV2WidgetPagesLive } from "@/routes/v2/widget-pages.http"
+import { HttpV2OnCallOverviewLive, HttpV2WidgetOnCallLive } from "@/routes/v2/oncall-overview.http"
 import { HttpV2WidgetSummaryLive } from "@/routes/v2/widget-summary.http"
 import { HttpV2PrometheusLive } from "@/routes/v2/prometheus.http"
 import { HttpV2WidgetCredentialsLive } from "@/routes/v2/widget-credentials.http"
@@ -286,6 +289,9 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2ServiceMapLive,
 			HttpV2EnvironmentsLive,
 			HttpV2WidgetSummaryLive,
+			HttpV2WidgetPagesLive,
+			HttpV2OnCallOverviewLive,
+			HttpV2WidgetOnCallLive,
 			HttpV2WidgetCredentialsLive,
 			HttpV2DeviceCredentialsLive,
 			HttpV2DeviceTokensLive,
@@ -306,6 +312,7 @@ const RawRoutes = rawRoutes<Layer.Success<ApiPortsLayer>>()(
 		UptimeHeartbeatRouter,
 		VcsWebhookRouter,
 		ClerkWebhookRouter,
+		GoogleAdsConversionsRouter,
 		AutumnWebhookRouter,
 		HealthRouter,
 		DocsRoute,

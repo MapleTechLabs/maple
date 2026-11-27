@@ -445,7 +445,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				const customer = yield* autumn
-					.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: [] })
+					.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: ["trials_used"] })
 					.pipe(Effect.mapError((error) => toProviderError(error)))
 				if (customer.statusCode !== 200) {
 					return yield* new OrganizationProviderError({

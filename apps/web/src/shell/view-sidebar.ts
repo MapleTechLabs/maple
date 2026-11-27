@@ -17,6 +17,7 @@ import {
 	sidebarMenuButton,
 	sidebarMenuItem,
 } from "@maple/views/ui/sidebar"
+import { iosAppPrompt } from "./ios-app-prompt"
 import { isSameMenu, triggerIdOf } from "./menus"
 import { Menu, Message } from "./message"
 import { type Model, type ShellClerk, shellAudience } from "./model"
@@ -402,6 +403,7 @@ export const shellSidebarFooter = (
 			],
 			[],
 		),
+		...iosAppPrompt(h, model, clerk),
 		sidebarMenu(h, undefined, [
 			// A row of the footer's list, so it keeps the list's 4px rhythm.
 			...onCallPill(h, shellOnCallStatus(model), tip, !model.isSidebarOpen && !model.isMobile),

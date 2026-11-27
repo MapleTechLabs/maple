@@ -7,7 +7,7 @@ import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
 import { EndpointAccess, requires } from "./endpoint-access"
 import { AuditedRead } from "./audit-log"
-import { EVALUATION_NAME_MAX } from "../gen-ai-evaluation"
+import { EVALUATION_NAME_MAX, EVALUATION_SESSION_SCORES_TAIL_MS } from "../gen-ai-evaluation"
 
 // LLM evaluation reads over `ai_evaluations`: the Evals tab under Agent
 // sessions, a session's scores, and the evaluation MCP tools. Internal tier, gated by the
@@ -33,6 +33,9 @@ export const AI_EVALUATION_SERIES_MAX_BUCKETS = 1_000
 /** Traces one session-scores read accepts: a session page's loaded traces. */
 export const AI_EVALUATION_SESSION_MAX_TRACES = 500
 
+/** How far past a session's last span its scores read looks. */
+export const AI_EVALUATION_SESSION_SCORES_TAIL_MS = EVALUATION_SESSION_SCORES_TAIL_MS
+
 /** Volume, verdicts and mean score of a set of scores. A pass rate is `pass / (pass + fail)`. */
 export const AiEvaluationMeasures = Schema.Struct({
 	scoreCount: Schema.Number,
@@ -50,6 +53,9 @@ export const AiEvaluatorSummary = Schema.Struct({
 	...AiEvaluationMeasures.fields,
 	name: Schema.String,
 	traceCount: Schema.Number,
+	/** Pass / fail scores the Agent Sessions filter can match: on a trace, or naming a session. */
+	filterablePassCount: Schema.Number,
+	filterableFailCount: Schema.Number,
 	sources: Schema.Array(Schema.String),
 	annotatorKinds: Schema.Array(Schema.String),
 	/** Warehouse datetime literal. */
@@ -91,10 +97,17 @@ const EvaluationWindow = {
  */
 export const AI_EVALUATOR_NAME_MAX_UNITS = EVALUATION_NAME_MAX * 2
 
-const EvaluatorName = Schema.String.check(
+export const AiEvaluatorName = Schema.String.check(
 	Schema.isMinLength(1),
 	Schema.isMaxLength(AI_EVALUATOR_NAME_MAX_UNITS),
 )
+
+/** A sessions filter: sessions whose latest score of this evaluator has this verdict. */
+export const AiEvaluationFilter = Schema.Struct({
+	name: AiEvaluatorName,
+	verdict: Schema.Literals(["pass", "fail"]),
+})
+export type AiEvaluationFilter = Schema.Schema.Type<typeof AiEvaluationFilter>
 
 export class ListAiEvaluatorsRequest extends Schema.Class<ListAiEvaluatorsRequest>("ListAiEvaluatorsRequest")(
 	{
@@ -110,7 +123,7 @@ export class ListAiEvaluatorsResponse extends Schema.Class<ListAiEvaluatorsRespo
 
 export class GetAiEvaluatorRequest extends Schema.Class<GetAiEvaluatorRequest>("GetAiEvaluatorRequest")({
 	...EvaluationWindow,
-	name: EvaluatorName,
+	name: AiEvaluatorName,
 	bucketSeconds: BucketSeconds,
 	/** Only scores with this verdict in `scores`. */
 	verdict: Schema.optionalKey(Schema.Literals(["pass", "fail"])),

@@ -39,6 +39,8 @@ The baseline is the median of those windows. The spread around the median is mea
 
 Requiring all three keeps quiet services from paging on noise.
 
+Traffic loss is the exception. It breaches when the request rate falls below 5% of the median.
+
 Maple also checks the same window on its own. When a service is slow or failing at this time on most previous days, for example during a nightly job, that behavior is normal for the service and does not open an anomaly.
 
 A series is skipped until it has enough data:

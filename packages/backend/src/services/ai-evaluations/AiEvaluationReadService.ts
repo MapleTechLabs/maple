@@ -11,7 +11,7 @@ import {
 	LlmEvalsDisabledError,
 	type TenantContext,
 } from "@maple/domain/http"
-import { Array as Arr, Context, Effect, Layer, Option, Order, Record as Rec } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option, Order, Record as Rec, Result } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -31,6 +31,7 @@ type ScoreRow = Readonly<{
 	name: string
 	traceId: string
 	spanId: string
+	responseId: string
 	scope: string
 	sessionId: string
 	scoreValue: number
@@ -49,6 +50,14 @@ type ScoreRow = Readonly<{
 /** A session-scope score names its session; any other is filed under its graded trace's. */
 const sessionOf = (row: ScoreRow, byTrace: Readonly<Record<string, string>>): string | undefined =>
 	row.scope === "session" && row.sessionId !== "" ? row.sessionId : byTrace[row.traceId]
+
+type ResponseSpans = Readonly<Record<string, { readonly traceId: string; readonly spanId: string }>>
+
+/** A score that names only a provider response takes the span that response came from. */
+const onResponseSpan = (row: ScoreRow, spans: ResponseSpans): ScoreRow => {
+	const span = row.traceId === "" ? spans[row.responseId] : undefined
+	return span === undefined ? row : { ...row, traceId: span.traceId, spanId: span.spanId }
+}
 
 const newestFirst = Order.mapInput(Order.flip(Order.String), (row: ScoreRow) => row.timestamp)
 
@@ -144,6 +153,8 @@ const make = Effect.gen(function* () {
 						...measures(row),
 						name: row.name,
 						traceCount: Number(row.traceCount),
+						filterablePassCount: Number(row.filterablePassCount),
+						filterableFailCount: Number(row.filterableFailCount),
 						sources: row.sources,
 						annotatorKinds: row.annotatorKinds,
 						lastSeen: row.lastSeen,
@@ -166,24 +177,85 @@ const make = Effect.gen(function* () {
 			},
 		)
 
+	/** Where the graded spans can start: an offline score lands after its trace. */
+	const spanWindow = (
+		tenant: TenantContext,
+		payload: { readonly startTime: string; readonly endTime: string },
+	) => ({
+		orgId: tenant.orgId,
+		startTime: formatWarehouseDateTime(parseWarehouseDateTime(payload.startTime) - SESSION_LOOKBACK_MS),
+		endTime: payload.endTime,
+	})
+
+	const responseSpans = (
+		tenant: TenantContext,
+		by: { readonly traceIds: ReadonlyArray<string> } | { readonly responseIds: ReadonlyArray<string> },
+		payload: { readonly startTime: string; readonly endTime: string },
+	) =>
+		warehouse
+			.compiledQuery(
+				tenant,
+				CH.compile(Integrations.aiResponseSpansQuery(by), spanWindow(tenant, payload)),
+				{
+					profile: "list",
+					context: "aiEvaluationResponseSpans",
+				},
+			)
+			.pipe(
+				Effect.map((found): ResponseSpans =>
+					Rec.fromEntries(
+						Arr.map(found, (row) => [
+							row.responseId,
+							{ traceId: row.traceId, spanId: row.spanId },
+						]),
+					),
+				),
+				// Resolving responses is extra: when it fails, the scores still read, unresolved.
+				Effect.catch((error) =>
+					Effect.annotateCurrentSpan("maple.ai.response_spans_error", error.message).pipe(
+						Effect.as<ResponseSpans>({}),
+					),
+				),
+			)
+
+	/** The spans of the rows' scores that name only a response. */
+	const spansOfResponses = (
+		tenant: TenantContext,
+		rows: ReadonlyArray<ScoreRow>,
+		payload: { readonly startTime: string; readonly endTime: string },
+	) => {
+		const responseIds = Arr.take(
+			Arr.dedupe(
+				Arr.filterMap(rows, (row) =>
+					row.traceId === "" && row.responseId !== ""
+						? Result.succeed(row.responseId)
+						: Result.failVoid,
+				),
+			),
+			Integrations.AI_RESPONSE_SPANS_LIMIT,
+		)
+		return responseIds.length === 0
+			? Effect.succeed<ResponseSpans>({})
+			: responseSpans(tenant, { responseIds }, payload)
+	}
+
 	/** The Agent Session each graded trace is filed under, keyed by trace id. */
 	const sessionsOf = (
 		tenant: TenantContext,
 		rows: ReadonlyArray<ScoreRow>,
 		payload: ListAiEvaluatorsRequest,
 	) => {
-		const traceIds = Arr.dedupe(Arr.map(rows, (row) => row.traceId))
+		const traceIds = Arr.dedupe(
+			Arr.filter(
+				Arr.map(rows, (row) => row.traceId),
+				(id) => id !== "",
+			),
+		)
 		if (traceIds.length === 0) return Effect.succeed<Record<string, string>>({})
 		return warehouse
 			.compiledQuery(
 				tenant,
-				CH.compile(Integrations.aiSessionsOfTracesQuery(traceIds), {
-					orgId: tenant.orgId,
-					startTime: formatWarehouseDateTime(
-						parseWarehouseDateTime(payload.startTime) - SESSION_LOOKBACK_MS,
-					),
-					endTime: payload.endTime,
-				}),
+				CH.compile(Integrations.aiSessionsOfTracesQuery(traceIds), spanWindow(tenant, payload)),
 				{ profile: "list", context: "aiEvaluationsSessions" },
 			)
 			.pipe(
@@ -271,7 +343,9 @@ const make = Effect.gen(function* () {
 				Effect.succeed({ summary: [], series: [], breakdown: [], failures: [], recent: [] }),
 			),
 		)
-		const scoreRows = [...found.failures, ...found.recent]
+		const scored = [...found.failures, ...found.recent]
+		const spans = yield* spansOfResponses(tenant, scored, payload)
+		const scoreRows = Arr.map(scored, (row) => onResponseSpan(row, spans))
 		const sessions = yield* sessionsOf(tenant, scoreRows, payload)
 		return new GetAiEvaluatorResponse({
 			...Option.match(Arr.head(found.summary), {
@@ -293,26 +367,48 @@ const make = Effect.gen(function* () {
 		payload: GetAiSessionEvaluationsRequest,
 	) {
 		yield* requireEnabled(tenant)
-		// Two disjoint reads: by trace id (the bloom index finds them), and session-scope scores that
-		// name a session by session id. A score naming another session is not this session's.
-		const halves = yield* Effect.all(
-			[
-				scores(
-					tenant,
-					payload,
-					{ traceIds: payload.traceIds, excludeNamedSessions: true, limit: SESSION_SCORES_LIMIT },
-					"aiSessionEvaluations",
-				),
-				scores(
-					tenant,
-					payload,
-					{ sessionId: payload.sessionId, limit: SESSION_SCORES_LIMIT },
-					"aiSessionScopeEvaluations",
-				),
-			],
-			{ concurrency: "unbounded" },
-		).pipe(Effect.catchIf(isMissingAiEvaluations, () => Effect.succeed([[], []] as const)))
-		const rows = Arr.sort([...halves[0], ...halves[1]], newestFirst)
+		// Disjoint reads: by trace id (the bloom index finds them), session-scope scores that name a
+		// session by session id, and scores with no trace context by the responses of the session's
+		// model calls. A score naming another session is not this session's.
+		const read = Effect.gen(function* () {
+			const [byTrace, bySession, spans] = yield* Effect.all(
+				[
+					scores(
+						tenant,
+						payload,
+						{
+							traceIds: payload.traceIds,
+							excludeNamedSessions: true,
+							limit: SESSION_SCORES_LIMIT,
+						},
+						"aiSessionEvaluations",
+					),
+					scores(
+						tenant,
+						payload,
+						{ sessionId: payload.sessionId, limit: SESSION_SCORES_LIMIT },
+						"aiSessionScopeEvaluations",
+					),
+					responseSpans(tenant, { traceIds: payload.traceIds }, payload),
+				],
+				{ concurrency: "unbounded" },
+			)
+			const responseIds = Rec.keys(spans)
+			const byResponse =
+				responseIds.length === 0
+					? []
+					: yield* scores(
+							tenant,
+							payload,
+							{ responseIds, excludeNamedSessions: true, limit: SESSION_SCORES_LIMIT },
+							"aiSessionResponseEvaluations",
+						)
+			return Arr.map([...byTrace, ...bySession, ...byResponse], (row) => onResponseSpan(row, spans))
+		})
+		const found = yield* read.pipe(
+			Effect.catchIf(isMissingAiEvaluations, () => Effect.succeed<ReadonlyArray<ScoreRow>>([])),
+		)
+		const rows = Arr.sort(found, newestFirst)
 		yield* Effect.annotateCurrentSpan({ "maple.ai.session_scores": rows.length })
 		return new GetAiSessionEvaluationsResponse({
 			scores: Arr.map(rows, (row) => toScore(row, payload.sessionId)),

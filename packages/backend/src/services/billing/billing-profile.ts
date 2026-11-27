@@ -9,7 +9,13 @@ import {
 	type BillingNotConfiguredError,
 	type BillingUpstreamError,
 } from "@maple/domain/http"
-import { CUSTOMER_CACHE_BUCKET, decodeUpstream, ensureOk, readCustomerCached } from "./autumn-client"
+import {
+	CACHED_CUSTOMER_EXPAND,
+	CUSTOMER_CACHE_BUCKET,
+	decodeUpstream,
+	ensureOk,
+	readCustomerCached,
+} from "./autumn-client"
 import type { AutumnClientApi, AutumnResult } from "./autumn-http"
 import type { StripeClientApi } from "./stripe-http"
 
@@ -39,13 +45,6 @@ export const stripeCustomerIdOf = (response: unknown): Option.Option<string> =>
 	)
 
 /**
- * Expand list for the customer reads here. Matches the hot-path `getCustomer`
- * read so a cache entry written by either is usable by both (the cache is keyed
- * by org only).
- */
-const CUSTOMER_EXPAND = ["subscriptions.plan"] as const
-
-/**
  * The linked Stripe customer id for an org, reading through the per-org
  * customer cache. `None` when Autumn has not created one — a READ never forces
  * it into existence, so the billing page does not mint Stripe customers for
@@ -57,11 +56,7 @@ export const readStripeCustomerId = (
 	customerId: BillingCustomerId,
 ): Effect.Effect<Option.Option<string>, BillingUpstreamError | BillingNotConfiguredError> =>
 	Effect.gen(function* () {
-		const { result } = yield* readCustomerCached(
-			edgeCache,
-			customerId,
-			autumn.getOrCreateCustomer(customerId, { expand: CUSTOMER_EXPAND }),
-		)
+		const { result } = yield* readCustomerCached(edgeCache, autumn, customerId)
 		const response = yield* ensureOk(result)
 		return stripeCustomerIdOf(response)
 	})
@@ -82,7 +77,7 @@ export const ensureStripeCustomerId = (
 		if (Option.isSome(cached)) return cached.value
 
 		const created: AutumnResult = yield* autumn.getOrCreateCustomer(customerId, {
-			expand: CUSTOMER_EXPAND,
+			expand: CACHED_CUSTOMER_EXPAND,
 			createInStripe: true,
 		})
 		const response = yield* ensureOk(created)

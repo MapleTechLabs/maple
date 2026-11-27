@@ -1,3 +1,33 @@
+-- builder:ai-sessions:aiResponseSpansQuery:byResponses
+SELECT
+          ai_trace_index.ResponseId AS responseId,
+          any(ai_trace_index.TraceId) AS traceId,
+          any(ai_trace_index.SpanId) AS spanId
+        FROM ai_trace_index
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.ResponseId != ''
+          AND ai_trace_index.ResponseId IN ('resp_1')
+        GROUP BY responseId
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:ai-sessions:aiResponseSpansQuery:byTraces
+SELECT
+          ai_trace_index.ResponseId AS responseId,
+          any(ai_trace_index.TraceId) AS traceId,
+          any(ai_trace_index.SpanId) AS spanId
+        FROM ai_trace_index
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.ResponseId != ''
+          AND ai_trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef')
+        GROUP BY responseId
+        LIMIT 2000
+        FORMAT JSON
+
 -- builder:ai-sessions:aiSessionDetailsQuery:default
 SELECT
           if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
@@ -873,6 +903,111 @@ SELECT
           AND countIf(ai_trace_index.VendorId IN ('eve')) > 0) AS index_traces
         GROUP BY sessionId) AS ranked_sessions) AS netted_sessions
         ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionRankQuery:evaluation
+SELECT
+          ranked_sessions.sessionId AS sessionId,
+          ranked_sessions.agentStart AS agentStart,
+          ranked_sessions.agentEnd AS agentEnd
+        FROM (SELECT
+          if(index_traces.rawSessionId = '', concat('trace:', index_traces.traceId), index_traces.rawSessionId) AS sessionId,
+          toString(min(index_traces.traceAgentStart)) AS agentStart,
+          toString(fromUnixTimestamp64Nano(max(index_traces.traceAgentEndNanos))) AS agentEnd,
+          sum(index_traces.toolCalls) AS toolCalls,
+          sum(index_traces.errorAgentSpans) AS errorAgentSpans,
+          intDiv(max(index_traces.traceAgentEndNanos) - toUnixTimestamp64Nano(min(index_traces.traceAgentStart)), 1000000) AS agentDurationMs
+        FROM (SELECT
+          ai_trace_index.TraceId AS traceId,
+          max(ai_trace_index.SessionId) AS rawSessionId,
+          min(ai_trace_index.Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(ai_trace_index.Timestamp) + toInt64(ai_trace_index.Duration)) AS traceAgentEndNanos,
+          sum(ai_trace_index.IsToolCall) AS toolCalls,
+          sum(ai_trace_index.IsError) AS errorAgentSpans
+        FROM ai_trace_index
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY traceId
+        HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0) AS index_traces
+        GROUP BY sessionId
+        HAVING (sessionId IN (SELECT
+          scores.sessionId AS sessionId
+        FROM (SELECT
+          if(((ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != '') AND ai_evaluations.Identifier != ''), '', concat(ai_evaluations.TraceId, ':', ai_evaluations.SpanId, ':', ai_evaluations.ResponseId)) AS target,
+          argMax(ai_evaluations.TraceId, ai_evaluations.Timestamp) AS traceId,
+          argMax(ai_evaluations.SpanId, ai_evaluations.Timestamp) AS spanId,
+          argMax(ai_evaluations.ResponseId, ai_evaluations.Timestamp) AS responseId,
+          ai_evaluations.Name AS name,
+          ai_evaluations.Scope AS scope,
+          ai_evaluations.SessionId AS sessionId,
+          if(ai_evaluations.Identifier = '', toString(cityHash64(ai_evaluations.Timestamp, ai_evaluations.ScoreValue, ai_evaluations.HasScore, ai_evaluations.ScoreLabel, ai_evaluations.ErrorType, ai_evaluations.Explanation)), ai_evaluations.Identifier) AS scoreKey,
+          max(ai_evaluations.Timestamp) AS at,
+          argMax(ai_evaluations.ScoreValue, ai_evaluations.Timestamp) AS scoreValue,
+          argMax(ai_evaluations.HasScore, ai_evaluations.Timestamp) AS hasScore,
+          argMax(ai_evaluations.ScoreLabel, ai_evaluations.Timestamp) AS scoreLabel,
+          argMax(ai_evaluations.Verdict, ai_evaluations.Timestamp) AS verdict,
+          argMax(ai_evaluations.Explanation, ai_evaluations.Timestamp) AS explanation,
+          argMax(ai_evaluations.ErrorType, ai_evaluations.Timestamp) AS errorType,
+          argMax(ai_evaluations.AnnotatorKind, ai_evaluations.Timestamp) AS annotatorKind,
+          argMax(ai_evaluations.Source, ai_evaluations.Timestamp) AS source,
+          argMax(ai_evaluations.EvaluatorVersion, ai_evaluations.Timestamp) AS evaluatorVersion,
+          argMax(ai_evaluations.JudgeModel, ai_evaluations.Timestamp) AS judgeModel,
+          argMax(ai_evaluations.ServiceName, ai_evaluations.Timestamp) AS serviceName,
+          argMax(ai_evaluations.DeploymentEnv, ai_evaluations.Timestamp) AS deploymentEnv
+        FROM ai_evaluations
+        WHERE ai_evaluations.OrgId = 'org_sql_catalog'
+          AND ai_evaluations.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_evaluations.Timestamp <= '2026-01-03 14:15:00' + INTERVAL 86400 SECOND
+          AND ai_evaluations.Name = 'context_window'
+          AND (ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != '')
+        GROUP BY target, name, scope, sessionId, scoreKey) AS scores
+        WHERE scores.verdict = 'fail') OR sessionId IN (SELECT
+          scored_traces.sessionId AS sessionId
+        FROM (SELECT
+          ai_trace_index.TraceId AS traceId,
+          if(max(ai_trace_index.SessionId) = '', concat('trace:', ai_trace_index.TraceId), max(ai_trace_index.SessionId)) AS sessionId
+        FROM ai_trace_index
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.TraceId IN (SELECT
+          scores.traceId AS traceId
+        FROM (SELECT
+          if(((ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != '') AND ai_evaluations.Identifier != ''), '', concat(ai_evaluations.TraceId, ':', ai_evaluations.SpanId, ':', ai_evaluations.ResponseId)) AS target,
+          argMax(ai_evaluations.TraceId, ai_evaluations.Timestamp) AS traceId,
+          argMax(ai_evaluations.SpanId, ai_evaluations.Timestamp) AS spanId,
+          argMax(ai_evaluations.ResponseId, ai_evaluations.Timestamp) AS responseId,
+          ai_evaluations.Name AS name,
+          ai_evaluations.Scope AS scope,
+          ai_evaluations.SessionId AS sessionId,
+          if(ai_evaluations.Identifier = '', toString(cityHash64(ai_evaluations.Timestamp, ai_evaluations.ScoreValue, ai_evaluations.HasScore, ai_evaluations.ScoreLabel, ai_evaluations.ErrorType, ai_evaluations.Explanation)), ai_evaluations.Identifier) AS scoreKey,
+          max(ai_evaluations.Timestamp) AS at,
+          argMax(ai_evaluations.ScoreValue, ai_evaluations.Timestamp) AS scoreValue,
+          argMax(ai_evaluations.HasScore, ai_evaluations.Timestamp) AS hasScore,
+          argMax(ai_evaluations.ScoreLabel, ai_evaluations.Timestamp) AS scoreLabel,
+          argMax(ai_evaluations.Verdict, ai_evaluations.Timestamp) AS verdict,
+          argMax(ai_evaluations.Explanation, ai_evaluations.Timestamp) AS explanation,
+          argMax(ai_evaluations.ErrorType, ai_evaluations.Timestamp) AS errorType,
+          argMax(ai_evaluations.AnnotatorKind, ai_evaluations.Timestamp) AS annotatorKind,
+          argMax(ai_evaluations.Source, ai_evaluations.Timestamp) AS source,
+          argMax(ai_evaluations.EvaluatorVersion, ai_evaluations.Timestamp) AS evaluatorVersion,
+          argMax(ai_evaluations.JudgeModel, ai_evaluations.Timestamp) AS judgeModel,
+          argMax(ai_evaluations.ServiceName, ai_evaluations.Timestamp) AS serviceName,
+          argMax(ai_evaluations.DeploymentEnv, ai_evaluations.Timestamp) AS deploymentEnv
+        FROM ai_evaluations
+        WHERE ai_evaluations.OrgId = 'org_sql_catalog'
+          AND ai_evaluations.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_evaluations.Timestamp <= '2026-01-03 14:15:00' + INTERVAL 86400 SECOND
+          AND ai_evaluations.Name = 'context_window'
+          AND ai_evaluations.TraceId != ''
+          AND NOT ((ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != ''))
+        GROUP BY target, name, scope, sessionId, scoreKey) AS scores
+        WHERE scores.verdict = 'fail')
+        GROUP BY traceId
+        HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0) AS scored_traces))
+        ORDER BY agentStart DESC, sessionId ASC
+        LIMIT 50) AS ranked_sessions
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionRankQuery:filtered

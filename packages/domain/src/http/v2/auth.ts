@@ -3,6 +3,13 @@ import { Schema, Array as Arr, String as Str } from "effect"
 import { ApiKeyLookupPersistenceError, type ApiKeyKind } from "../api-keys"
 import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../current-tenant"
 import {
+	type CalledEndpoint,
+	decideEndpointAccess,
+	type EndpointAccessDecision,
+	isUnmarked,
+} from "../endpoint-access"
+import type { Permission } from "../../policy"
+import {
 	V2InsufficientPermissions,
 	V2InsufficientScope,
 	V2InvalidCredentials,
@@ -161,6 +168,25 @@ export const requiredScopeForRoute = (method: string, routePath: string): Requir
 			? !WRITE_SCOPED_GET_PATHS.has(routePath)
 			: method === "POST" && isReadOnlyPost(routePath)
 	return { family, access: isRead ? "read" : "write" }
+}
+
+/**
+ * Whether an unmarked `/v2` write is a read by the scope registry (a POST search). `routePath` is
+ * the matched route template.
+ */
+export const isRegisteredRead = (called: CalledEndpoint, routePath: string): boolean =>
+	isUnmarked(called) && requiredScopeForRoute(called.endpoint.method, routePath)?.access === "read"
+
+/** {@link decideEndpointAccess} for `/v2`: a registered read needs `telemetry:read` rather than being refused. */
+export const decideEndpointAccessV2 = (
+	permissions: ReadonlyArray<Permission>,
+	called: CalledEndpoint,
+	routePath: string,
+): EndpointAccessDecision => {
+	if (!isRegisteredRead(called, routePath)) return decideEndpointAccess(permissions, called)
+	return Arr.contains(permissions, "telemetry:read")
+		? { _tag: "Allowed" }
+		: { _tag: "Denied", permission: "telemetry:read" }
 }
 
 /**

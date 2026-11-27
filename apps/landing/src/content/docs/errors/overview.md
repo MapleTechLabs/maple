@@ -171,7 +171,7 @@ No destinations are selected by default, so nothing is sent until you add one.
 
 The minimum occurrence count (`min_occurrence_count`, default 1) is compared with the number of occurrences an incident opens with. It does not change when an issue opens.
 
-- With the default of 1, a new error notifies on its first occurrence.
+- With the default of 1, a new error notifies on its first occurrence, unless the next rule applies.
 - Once your organization has opened 10 error issues in the last 24 hours, new errors need 3 occurrences to become an issue whatever the policy says. A first-seen notification then needs at least 3, or the minimum count when that is higher.
 - For a regression the minimum count applies as set.
 

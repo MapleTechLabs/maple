@@ -1,9 +1,14 @@
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { AI_SESSION_SEARCH_MAX_CHARS, AI_SESSION_SORT_KEYS, ListAiSessionsRequest } from "@maple/domain/http"
+import {
+	AI_EVALUATOR_NAME_MAX_UNITS,
+	AI_SESSION_SEARCH_MAX_CHARS,
+	AI_SESSION_SORT_KEYS,
+	ListAiSessionsRequest,
+} from "@maple/domain/http"
 import { ListAgentSessionsOutput } from "@maple/domain/mcp-outputs"
 import { formatCost } from "@maple/agent-sessions"
 import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
-import type { McpToolRegistrar } from "./types"
+import { type McpToolRegistrar, McpUnavailableError } from "./types"
 import { CurrentMcpTenant } from "../tenant"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { formatDurationFromMs, formatNumber, truncate } from "../lib/format"
@@ -35,6 +40,8 @@ const filterArgs = (filters: Filters) => ({
 	tools: filters.tools,
 	search: filters.search,
 	has_errors: filters.hasErrors,
+	evaluation: filters.evaluation?.name,
+	evaluation_verdict: filters.evaluation?.verdict,
 	sort_by: filters.sortBy,
 	sort_dir: filters.sortDir,
 })
@@ -63,6 +70,14 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				AI_SESSION_SEARCH_MAX_CHARS,
 			),
 			has_errors: P.optionalFlag("Only sessions with at least one failed agent span"),
+			evaluation: boundedText(
+				"Only sessions an evaluator scored (`gen_ai.evaluation.name`, as `list_evaluations` lists them), with `evaluation_verdict`. Needs LLM evals",
+				AI_EVALUATOR_NAME_MAX_UNITS,
+			),
+			evaluation_verdict: P.optionalOneOf(
+				["pass", "fail"],
+				"The verdict the `evaluation` evaluator's latest score must have (default fail)",
+			),
 			sort_by: P.optionalOneOf(AI_SESSION_SORT_KEYS, "Sort key (default startTime)"),
 			sort_dir: P.optionalOneOf(["asc", "desc"], "Sort direction (default desc)"),
 			limit: P.limit({ default: 25, max: 100, noun: "sessions" }),
@@ -85,6 +100,11 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				agents: listFilter(params.agents),
 				tools: listFilter(params.tools),
 			}
+			const evaluatorName = params.evaluation === undefined ? "" : Str.trim(params.evaluation)
+			const evaluation =
+				evaluatorName === ""
+					? undefined
+					: { name: evaluatorName, verdict: params.evaluation_verdict ?? "fail" }
 
 			const tenant = yield* CurrentMcpTenant
 			const reads = yield* AiSessionReadService
@@ -110,11 +130,24 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 						toolNames: lists.tools,
 						search: params.search,
 						hasErrors: params.has_errors,
+						evaluation,
 						sortBy,
 						sortDir,
 					}),
 				)
-				.pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_sessions")))
+				.pipe(
+					Effect.catchTags({
+						...warehouseReadToMcpHandlers("list_agent_sessions"),
+						"@maple/http/ai-evaluations/LlmEvalsDisabledError": () =>
+							Effect.fail(
+								new McpUnavailableError({
+									message:
+										"The `evaluation` filter needs LLM evals, which are not enabled for this organization.",
+									capability: "llm_evals",
+								}),
+							),
+					}),
+				)
 
 			const sessions = page.data
 			yield* Effect.annotateCurrentSpan("result.rowCount", sessions.length)
@@ -137,6 +170,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 					...(lists.tools === undefined ? undefined : { tools: lists.tools }),
 					...(params.search === undefined ? undefined : { search: params.search }),
 					...(params.has_errors === undefined ? undefined : { hasErrors: params.has_errors }),
+					...(evaluation === undefined ? undefined : { evaluation }),
 					sortBy,
 					sortDir,
 				},

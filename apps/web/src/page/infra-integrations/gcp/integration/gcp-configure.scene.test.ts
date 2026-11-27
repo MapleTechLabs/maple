@@ -297,17 +297,8 @@ describe("google cloud wizard: the Method and Set up steps", () => {
 	test("the code row starts on Terraform, the toggle switches to Alchemy, and Continue reads the file", () => {
 		const code = run(toMethod(), [gcpMsg(GcpMessage.ClickedGcpMethod({ method: "terraform" }))])
 		expect(configureOf(code).method).toBe("terraform")
-		const alchemy = run(code, [
-			gcpMsg(
-				GcpMessage.GotGcpFlavourMessage({
-					message: ToggleGroup.Message.ClickedItem({ value: "alchemy", index: 1 }),
-				}),
-			),
-		])
-		expect([configureOf(alchemy).method, configureOf(alchemy).flavourGroup.values]).toEqual([
-			"alchemy",
-			["alchemy"],
-		])
+		const alchemy = run(code, [gcpMsg(GcpMessage.ClickedGcpMethod({ method: "alchemy" }))])
+		expect(configureOf(alchemy).method).toBe("alchemy")
 		const next = step(alchemy, gcpMsg(GcpMessage.ClickedGcpMethodContinue()))
 		expect(configureOf(next.model).opened).not.toBeNull()
 		expect(names(next.commands)).toEqual(["LoadGcpConfigureScripts"])

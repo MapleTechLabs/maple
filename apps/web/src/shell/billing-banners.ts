@@ -7,6 +7,7 @@ import {
 	getQuotaStatus,
 	getTrialNotice,
 	hasEndedNoCardTrial,
+	hasLapsedPlan,
 	type TrialNotice,
 } from "../page/kit/billing/plan-gating"
 import { TRIAL_SIGNAL_GB } from "@maple/domain/billing"
@@ -80,10 +81,10 @@ const BILLING_HREF = hrefOf(AppRoute.Settings({ search: { tab: "billing" } }))
 
 /** The org held a plan (or the no-card trial) and it lapsed. */
 const subscriptionEnded = (h: H, customer: BillingCustomer): ReadonlyArray<Html> => {
+	if (!hasLapsedPlan(customer)) return []
 	const lapsed = getLapsedPlan(customer)
-	if (lapsed === null) return []
 	const isTrial = hasEndedNoCardTrial(customer)
-	const planName = lapsed.plan?.name ?? lapsed.planId
+	const planName = lapsed?.plan?.name ?? lapsed?.planId
 	return [
 		banner(h, "crit", [
 			alertTitle(h, [isTrial ? "Your free trial has ended" : "Subscription ended"]),

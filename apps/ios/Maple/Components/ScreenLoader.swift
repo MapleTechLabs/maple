@@ -18,6 +18,10 @@ enum LoadReason {
 	/// question, so keep them dimmed while the replacement loads and supersede
 	/// anything in flight. A failure here is a real failure.
 	case replace
+	/// The app just changed what the screen shows (an incident was answered):
+	/// keep the content like a refresh, but supersede anything in flight, since
+	/// that load read the world before the write and would put it back.
+	case afterWrite
 }
 
 /// One load pipeline for every screen.
@@ -85,7 +89,7 @@ final class ScreenLoader<Value: Sendable> {
 				await running.value
 				return
 			}
-		case .initial, .replace:
+		case .initial, .replace, .afterWrite:
 			// Supersede whatever is loading this screen — including a load a
 			// previous model instance started. `current?.cancel()` alone could
 			// not reach that one: `.task(id: dataGeneration)` rebuilds the model
@@ -106,7 +110,7 @@ final class ScreenLoader<Value: Sendable> {
 			isReplacing = state.hasContent
 			if !state.hasContent { state = .loading }
 			refreshError = nil
-		case .refresh:
+		case .refresh, .afterWrite:
 			break
 		}
 		isLoading = true
@@ -202,7 +206,7 @@ final class ScreenLoader<Value: Sendable> {
 			state = isEmpty(value) ? .empty : .loaded(value)
 			refreshError = nil
 		case .failed(let error):
-			if reason == .refresh, state.hasContent {
+			if reason == .refresh || reason == .afterWrite, state.hasContent {
 				refreshError = error
 			} else {
 				state = .failed(error)

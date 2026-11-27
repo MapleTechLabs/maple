@@ -6,6 +6,7 @@ import SwiftUI
 struct HomeView: View {
 	@Environment(SessionController.self) private var session
 	@Environment(EnvironmentController.self) private var environments
+	@Environment(AppNavigation.self) private var navigation
 	@Environment(\.scenePhase) private var scenePhase
 	@State private var model: HomeModel?
 	@State private var showsNotificationSettings = false
@@ -15,7 +16,8 @@ struct HomeView: View {
 	}
 
 	var body: some View {
-		NavigationStack {
+		@Bindable var navigation = navigation
+		NavigationStack(path: $navigation.homePath) {
 			ZStack {
 				Token.background.ignoresSafeArea()
 				LoadableView(
@@ -28,9 +30,19 @@ struct HomeView: View {
 					},
 					skeleton: { HomeSkeleton() }
 				) { snapshot in
-					HomeContent(snapshot: snapshot)
+					if let model {
+						HomeContent(
+							snapshot: snapshot,
+							onCall: model.onCall,
+							viewerUserId: session.currentUserId,
+							responder: model.responder
+						) { incidentId in
+							Task { await model.acknowledge(incidentId) }
+						}
+					}
 				}
 			}
+			.incidentActionAlert(model?.responder)
 			// Hidden on the root; it names the back button on pushed screens.
 			.navigationTitle("Overview")
 			.tabRootChrome()
@@ -64,6 +76,11 @@ struct HomeView: View {
 				guard !Task.isCancelled, scenePhase == .active else { continue }
 				await model.loader.load(.refresh)
 			}
+		}
+		// An incident answered elsewhere in the app, or from a banner.
+		.task(id: IncidentChanges.shared.revision) {
+			guard let model else { return }
+			await model.responder.reloadIfAnswered(model.loader)
 		}
 		.onChange(of: scenePhase) { _, phase in
 			// Coming back from the background: the board is as old as the
@@ -112,10 +129,23 @@ extension HomeView {
 
 private struct HomeContent: View {
 	let snapshot: HomeSnapshot
+	/// Nil until its own read answers, and when that read failed.
+	let onCall: OnCallOverview?
+	let viewerUserId: String?
+	let responder: IncidentResponder
+	let acknowledge: (String) -> Void
 	@Environment(AppNavigation.self) private var navigation
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 28) {
+			if let onCall {
+				VStack(spacing: 8) {
+					OnCallShiftCard(overview: onCall)
+					PageReachabilityCard(overview: onCall)
+				}
+				.transition(.opacity)
+			}
+
 			OverviewStats(snapshot: snapshot)
 
 			if !snapshot.incidents.isEmpty {
@@ -126,10 +156,12 @@ private struct HomeContent: View {
 				) {
 					VStack(spacing: 8) {
 						ForEach(snapshot.incidents) { card in
-							NavigationLink(value: Route.incident(id: card.id)) {
-								IncidentCardView(card: card)
-							}
-							.buttonStyle(.plain)
+							IncidentCardView(
+								card: card,
+								viewerUserId: viewerUserId,
+								isAcknowledging: responder.isPending(.acknowledge, on: card.id),
+								isBusy: responder.pending != nil
+							) { acknowledge(card.id) }
 						}
 					}
 				}
@@ -168,18 +200,77 @@ private struct HomeContent: View {
 		.padding(.horizontal, 16)
 		.padding(.top, 20)
 		.padding(.bottom, 24)
+		// The card arrives after the board; it eases in instead of shoving it.
+		.animation(.easeOut(duration: 0.2), value: onCall != nil)
 	}
 }
 
 /// An open incident: severity rail, rule name and age, the services it covers
 /// with a severity badge, then the breach beside what the rule saw against its
-/// threshold.
+/// threshold. Under that, who has it: a page waiting on this person carries its
+/// own Acknowledge, outside the link so the two taps cannot blur.
 struct IncidentCardView: View {
 	let card: IncidentCard
+	let viewerUserId: String?
+	let isAcknowledging: Bool
+	/// Another card's action is still running.
+	let isBusy: Bool
+	let acknowledge: () -> Void
 
 	private var incident: AlertIncident { card.incident }
 
 	var body: some View {
+		VStack(alignment: .leading, spacing: 0) {
+			NavigationLink(value: Route.incident(id: card.id)) {
+				summary
+					.padding(.leading, 16)
+					.padding(.trailing, 14)
+					.padding(.vertical, 14)
+					.contentShape(.rect)
+			}
+			.buttonStyle(.plain)
+			response
+		}
+		.severityRail(incident.severity.tint)
+		.hairlineCard()
+	}
+
+	/// A page waiting on this person: who is next, and the button that answers it.
+	@ViewBuilder private var response: some View {
+		if card.needsViewer {
+			Hairline()
+				.padding(.leading, 16)
+				.padding(.trailing, 14)
+			HStack(alignment: .center, spacing: 12) {
+				VStack(alignment: .leading, spacing: 3) {
+					Text("Paged to you")
+						.font(Typo.tiny)
+						.foregroundStyle(Token.mutedForeground)
+					if case .unacknowledged(let next?) = incident.responseState {
+						HStack(spacing: 4) {
+							Text("\(next.headline(viewerUserId: viewerUserId)) in")
+								.lineLimit(1)
+							PageCountdown(next: next)
+						}
+						.font(Typo.tiny)
+						.foregroundStyle(Token.foreground)
+					}
+				}
+				Spacer(minLength: 0)
+				AcknowledgeButton(
+					ruleName: incident.ruleName,
+					isPending: isAcknowledging,
+					isBusy: isBusy,
+					action: acknowledge
+				)
+			}
+			.padding(.leading, 16)
+			.padding(.trailing, 14)
+			.padding(.vertical, 12)
+		}
+	}
+
+	private var summary: some View {
 		VStack(alignment: .leading, spacing: 10) {
 			HStack(alignment: .firstTextBaseline, spacing: 8) {
 				Text(incident.ruleName)
@@ -225,13 +316,19 @@ struct IncidentCardView: View {
 				)
 				.frame(width: 96, height: 28)
 			}
+
+			// Inside the link: who has it is part of what the card says, and a tap
+			// on it opens the incident like the rest.
+			if !card.needsViewer,
+				let line = incident.responseLine(pagedViewer: card.pagesViewer, viewerUserId: viewerUserId)
+			{
+				Text(line)
+					.font(Typo.tiny)
+					.tabularNumbers()
+					.foregroundStyle(Token.mutedForeground)
+					.lineLimit(1)
+			}
 		}
-		.padding(.leading, 16)
-		.padding(.trailing, 14)
-		.padding(.vertical, 14)
-		.severityRail(incident.severity.tint)
-		.hairlineCard()
-		.contentShape(.rect)
 	}
 
 	/// The covered services, then the group the incident fired for.

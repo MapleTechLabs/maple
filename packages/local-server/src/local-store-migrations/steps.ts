@@ -47,7 +47,7 @@ const ERROR_RETENTION = {
 	targetRetentionDays: 90,
 } as const
 
-/** v67 -> v68: the span projections that copy their span's RetentionDays (trace_index apart, it sorts by it), and the views that fill them and product_events. */
+/** v68 -> v69: the span projections that copy their span's RetentionDays (trace_index apart, it sorts by it), and the views that fill them and product_events. */
 const RETENTION_STORAGE_SPAN_PROJECTIONS = [
 	"service_map_spans",
 	"service_map_children",
@@ -2364,6 +2364,40 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 		],
 	},
 	{
+		// Boolean scores get a verdict: both evaluation views are recreated. No column change;
+		// stored scores keep their verdict.
+		slug: "ai-evaluation-boolean-verdicts",
+		description: "Read pass / fail from boolean evaluation scores",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropViews("ai_evaluations_mv", "ai_evaluations_span_events_mv")],
+		plan: [
+			[
+				"rebuild-ai-evaluations-views",
+				"Drop and recreate both ai_evaluations views so true / false and boolean-typed 0 / 1 scores read as pass / fail",
+			],
+		],
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "logs",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"The source of the replaced view is neither read nor rewritten; only the view definition changes.",
+			},
+			{
+				name: "ai_evaluations",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Stored scores keep their verdict; only scores ingested after the migration read boolean values.",
+				preservationInterval: "evaluation retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
+	{
 		// Metadata-only: a local store never stamps these columns, so every row reads its default
 		// and each table keeps one period under its unchanged TTL. The views are recreated by the
 		// bootstrap; nothing is backfilled.
@@ -2403,7 +2437,7 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				"Recreate the eleven views that fill them so new rows carry the columns",
 			],
 		],
-		verifies: "Verify the v68 physical schema and retained raw telemetry counts",
+		verifies: "Verify the v69 physical schema and retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "traces and session_events",

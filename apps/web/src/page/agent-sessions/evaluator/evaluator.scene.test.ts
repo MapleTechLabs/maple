@@ -40,6 +40,8 @@ const summary: AiEvaluatorSummary = {
 	avgValue: 0.4,
 	errorCount: 0,
 	traceCount: 3,
+	filterablePassCount: 1,
+	filterableFailCount: 2,
 	sources: ["log"],
 	annotatorKinds: ["llm"],
 	lastSeen: "2026-10-01 11:00:00",

@@ -308,3 +308,105 @@ describe("agent sessions list", () => {
 		)
 	})
 })
+
+describe("agent sessions list evaluation filter", () => {
+	const evalsContext: PageContext = { ...context, hasLlmEvals: true }
+	const evalsUpdate = (model: Model, message: Message) => update(model, message, evalsContext)
+	const evalsView = withViewInputs(pageView, { context: evalsContext })()
+	const evaluator = {
+		name: "Context window",
+		scoreCount: 5,
+		passCount: 2,
+		failCount: 3,
+		filterablePassCount: 2,
+		filterableFailCount: 3,
+		valueCount: 0,
+		avgValue: 0,
+		errorCount: 0,
+		traceCount: 5,
+		sources: [],
+		annotatorKinds: [],
+		lastSeen: "2026-10-01 07:00:00.000000000",
+	}
+	const enter = (ctx: PageContext, search: Model["search"]) => {
+		const step = (model: Model, message: Message) => update(model, message, ctx)
+		const mounted = step(init({ search }, ctx).model, Message.MountedFilterRail()).model
+		return step(
+			mounted,
+			Message.CompletedResolveWindow({ window, tabWindow: window, nowMs: NOW, mode: "Load" }),
+		)
+	}
+	const loadedWithEvaluators = (search: Model["search"] = {}): Model => {
+		const base = enter(evalsContext, search).model
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchFirstPage({
+				key: base.firstPage.key ?? "",
+				result: Result.succeed({ data: [session("conv_a")], ranked: 1 }),
+			}),
+			Message.CompletedFetchFacets({ key: base.facets.key ?? "", result: Result.succeed(facets) }),
+			Message.CompletedFetchEvaluators({
+				key: base.evaluators.key ?? "",
+				result: Result.succeed([evaluator]),
+			}),
+		]
+		return Arr.reduce(steps, base, (model, message) => evalsUpdate(model, message).model)
+	}
+
+	test("an llmEvals org reads the window's evaluators; any other org does not", () => {
+		expect(names(enter(evalsContext, {}).commands)).toContain("FetchAgentSessionsEvaluators")
+		expect(names(enter(context, {}).commands)).not.toContain("FetchAgentSessionsEvaluators")
+	})
+
+	test("the filter in the URL reaches the list read only inside the rollout", () => {
+		const search = { evaluator: "Context window", evaluatorVerdict: "pass" } as const
+		expect(enter(evalsContext, search).model.firstPage.key).toContain(
+			'"evaluation":{"name":"Context window","verdict":"pass"}',
+		)
+		expect(enter(context, search).model.firstPage.key).not.toContain("evaluation")
+	})
+
+	test("an evaluator's verdict ticked in the rail writes the filter, and ticking it again clears it", () => {
+		const chosen = evalsUpdate(
+			loadedWithEvaluators(),
+			Message.ToggledEvaluation({ key: "fail:Context window" }),
+		)
+		expect(chosen.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/agent-sessions?evaluator=Context+window&evaluatorVerdict=fail",
+				isReplace: false,
+			}),
+		)
+		const selected = loadedWithEvaluators({ evaluator: "Context window", evaluatorVerdict: "fail" })
+		expect(
+			evalsUpdate(selected, Message.ToggledEvaluation({ key: "fail:Context window" })).outMessage,
+		).toEqual(PageOutMessage.RequestedNavigation({ url: "/agent-sessions", isReplace: false }))
+		scene(
+			{ update: evalsUpdate, view: evalsView },
+			given(evalsUpdate(loadedWithEvaluators(), Message.PaintedTable()).model),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
+			Mount.resolve(MountRowClicks, Message.ClickedSessionRow({ url: "/agent-sessions/conv_a" })),
+			expectView(role("checkbox", { name: "Context window: pass" })).toExist(),
+			click(role("checkbox", { name: "Context window: fail" })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({
+					url: "/agent-sessions?evaluator=Context+window&evaluatorVerdict=fail",
+					isReplace: false,
+				}),
+			),
+		)
+	})
+
+	test("outside the rollout the rail has no evaluation section", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(painted([session("conv_a")])),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
+			Mount.resolve(MountRowClicks, Message.ClickedSessionRow({ url: "/agent-sessions/conv_a" })),
+			expectView(text("Evaluation score")).toBeAbsent(),
+		)
+	})
+})

@@ -368,7 +368,7 @@ describe("snapshotDiffStatements", () => {
 		return { desired, actual }
 	}
 
-	it("leaves the columns 0076 adds to a sorting key to 0076, and still adds other missing columns", () => {
+	it("leaves the columns 0077 adds to a sorting key to 0077, and still adds other missing columns", () => {
 		const tables = [
 			tableAt("trace_index", ["RetentionDays"]),
 			tableAt("trace_facets_hourly", ["RetentionDays"]),
@@ -388,7 +388,7 @@ describe("snapshotDiffStatements", () => {
 describe("runPlannedStep", () => {
 	const retentionStorageSteps = Effect.promise(() =>
 		expandMigrationToSteps(
-			Option.getOrThrow(Arr.findFirst(migrations, (candidate) => candidate.version === 76)),
+			Option.getOrThrow(Arr.findFirst(migrations, (candidate) => candidate.version === 77)),
 			"maple",
 			async () => "",
 		),
@@ -424,7 +424,7 @@ describe("runPlannedStep", () => {
 		)
 
 	it.effect(
-		"restores the DEFAULT, then restarts merges, when 0076's key ALTER fails; the ALTER's failure stands",
+		"restores the DEFAULT, then restarts merges, when 0077's key ALTER fails; the ALTER's failure stands",
 		() =>
 			Effect.gen(function* () {
 				const steps = yield* retentionStorageSteps

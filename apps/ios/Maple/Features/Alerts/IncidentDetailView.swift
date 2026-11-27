@@ -18,6 +18,8 @@ struct IncidentDetail {
 	var topIssue: ErrorIssue?
 	var failingOperations: [BreakdownItem]
 	var deliveries: [AlertDelivery]
+	/// Acknowledgements, pages and on-call gaps, oldest first.
+	var events: [AlertIncidentEvent]
 }
 
 /// The rule's evaluated signal: one value per evaluation bucket, each marked
@@ -42,16 +44,26 @@ final class IncidentDetailModel {
 
 	let incidentID: String
 	let generation: Int
+	let responder: IncidentResponder
 	private let api: any MapleAPI
 
 	init(incidentID: String, api: any MapleAPI, session: SessionController) {
 		self.incidentID = incidentID
 		self.api = api
 		self.generation = session.dataGeneration
+		self.responder = IncidentResponder(api: api, surface: .incident)
 		self.loader = ScreenLoader(session: session, screen: Screen.incidentDetail) { [unowned self] in try await self.fetch() }
 	}
 
 	var state: LoadState<IncidentDetail> { loader.state }
+
+	/// The answer goes on screen as soon as the server gives it; the reload that
+	/// follows brings the timeline entry it wrote.
+	func perform(_ action: IncidentAction) async {
+		await responder.perform(action, on: incidentID, in: loader) { detail, incident in
+			detail.incident = incident
+		}
+	}
 
 	private func fetch() async throws -> IncidentDetail {
 		let incident = try await api.alertIncident(id: incidentID)
@@ -69,6 +81,7 @@ final class IncidentDetailModel {
 
 		async let signalTask = ruleSignal(incident: incident, rule: rule, window: window)
 		async let deliveriesTask = api.alertDeliveries(incidentId: incident.id, limit: 50)
+		async let eventsTask = api.alertIncidentEvents(incidentId: incident.id)
 		async let linkedIssueTask: ErrorIssueDetail? = {
 			guard let id = incident.errorIssueId else { return nil }
 			return try? await api.issue(id: id)
@@ -107,7 +120,8 @@ final class IncidentDetailModel {
 			linkedIssue: await linkedIssueTask,
 			topIssue: topIssue,
 			failingOperations: failing,
-			deliveries: (try? await deliveriesTask) ?? []
+			deliveries: (try? await deliveriesTask) ?? [],
+			events: (try? await eventsTask) ?? []
 		)
 	}
 
@@ -168,8 +182,26 @@ struct IncidentDetailView: View {
 				emptyMessage: "This incident no longer exists.",
 				skeleton: { DetailSkeleton(leadsWithHeadline: true) }
 			) { detail in
-				IncidentDetailContent(detail: detail)
+				IncidentDetailContent(detail: detail, viewerUserId: session.currentUserId) {
+					await model?.loader.load(.refresh)
+				}
 			}
+		}
+		// An open incident has one thing to do next, and it sits where the tab
+		// bar would be: under the thumb, with nothing beside it to mis-tap.
+		.safeAreaInset(edge: .bottom, spacing: 0) {
+			if let model, let incident = model.state.value?.incident, incident.status == .open {
+				IncidentActionBar(incident: incident, responder: model.responder) { action in
+					Task { await model.perform(action) }
+				}
+			}
+		}
+		.toolbar(.hidden, for: .tabBar)
+		.incidentActionAlert(model?.responder)
+		// Answered from a banner, or on another tab while this screen stayed open.
+		.task(id: IncidentChanges.shared.revision) {
+			guard let model else { return }
+			await model.responder.reloadIfAnswered(model.loader)
 		}
 		.navigationTitle("")
 		.navigationBarTitleDisplayMode(.inline)
@@ -190,16 +222,29 @@ struct IncidentDetailView: View {
 
 private struct IncidentDetailContent: View {
 	let detail: IncidentDetail
+	let viewerUserId: String?
+	/// The next escalation step came due: read what it did.
+	let onPageDue: () async -> Void
+
+	private var pagedViewer: Bool { detail.events.paged(userId: viewerUserId) }
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 24) {
-			IncidentHeader(detail: detail)
+			VStack(alignment: .leading, spacing: 16) {
+				IncidentHeader(detail: detail)
+				IncidentPageStrip(
+					incident: detail.incident,
+					pagedViewer: pagedViewer,
+					viewerUserId: viewerUserId,
+					onDue: onPageDue
+				)
+			}
 			RuleSignalSection(detail: detail)
 			if detail.serviceName != nil {
 				WhatChangedSection(detail: detail)
 			}
 			LikelyCauseSection(detail: detail)
-			IncidentTimeline(detail: detail)
+			IncidentTimeline(detail: detail, viewerUserId: viewerUserId)
 			IncidentActions(detail: detail)
 		}
 		.padding(.top, 4)

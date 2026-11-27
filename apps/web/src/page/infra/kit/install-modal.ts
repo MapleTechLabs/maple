@@ -4,20 +4,16 @@ import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
-import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tabs from "@maple/views/ui/tabs"
+import * as Recipe from "../../kit/install-recipe"
 
-// Kubernetes, Docker and Host install snippets carrying the org's private ingest key, masked until
+// Kubernetes (Helm, Alchemy or Terraform), Docker and Host install snippets carrying the org's private ingest key, masked until
 // revealed. Mounted closed on every collector-fed infra page, so the key is fetched on entry.
 
 export const InstallTab = Schema.Literals(["kubernetes", "docker", "hosts"])
 export type InstallTab = typeof InstallTab.Type
 export const INSTALL_TABS: ReadonlyArray<InstallTab> = ["kubernetes", "docker", "hosts"]
-
-/** Which snippet a copy button copies. */
-export const Snippet = Schema.Literals(["helm", "docker", "hostConfig", "host"])
-export type Snippet = typeof Snippet.Type
 
 export const IngestKeyData = AsyncData.Schema(Schema.String, LoadFailure)
 
@@ -26,14 +22,9 @@ export const Model = Schema.Struct({
 	defaultTab: InstallTab,
 	dialog: Dialog.Model,
 	tabs: Tabs.Model,
-	isRevealed: Schema.Boolean,
+	/** The picked tool, the reveal, open files and copies, shared by the three tabs' recipes. */
+	recipe: Recipe.Model,
 	ingestKey: IngestKeyData.schema,
-	copies: Schema.Struct({
-		helm: CopyButton.Model,
-		docker: CopyButton.Model,
-		hostConfig: CopyButton.Model,
-		host: CopyButton.Model,
-	}),
 })
 export type Model = typeof Model.Type
 
@@ -43,24 +34,17 @@ export const init = (id: string, defaultTab: InstallTab): Model => ({
 	defaultTab,
 	dialog: Dialog.init(id, "dialog"),
 	tabs: Tabs.init({ idBase: 0, values: INSTALL_TABS, selected: defaultTab }),
-	isRevealed: false,
+	recipe: Recipe.init(),
 	ingestKey: IngestKeyData.Idle(),
-	copies: {
-		helm: CopyButton.init(),
-		docker: CopyButton.init(),
-		hostConfig: CopyButton.init(),
-		host: CopyButton.init(),
-	},
 })
 
 export const Message = defineMessageUnion({
 	CompletedFetchIngestKey: { result: Schema.Result(Schema.String, LoadFailure) },
 	ClickedOpen: {},
-	ClickedToggleReveal: {},
 	MountedInstallModal: {},
 	GotDialogMessage: { message: Dialog.Message },
 	GotTabsMessage: { message: Tabs.Message },
-	GotCopyMessage: { snippet: Snippet, message: CopyButton.Message },
+	GotRecipeMessage: { message: Recipe.Message },
 })
 export type Message = typeof Message.Type
 
@@ -86,11 +70,11 @@ export const MountInstallModal = Mount.define("MountInstallModal", {
 	execute: () => Effect.succeed(Message.MountedInstallModal()),
 })
 
-/** Closing re-masks the key and restores the caller's tab, so each open starts the same way. */
+/** Closing re-masks the key, folds the files and restores the caller's tab, so each open starts the same way. */
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = result.outMessage !== undefined && result.outMessage._tag === "Closed"
 	const reset = {
-		isRevealed: false,
+		recipe: Recipe.init(),
 		tabs: Tabs.init({ idBase: model.tabs.idBase, values: INSTALL_TABS, selected: model.defaultTab }),
 	}
 	return {
@@ -108,7 +92,6 @@ export const update = (model: Model, message: Message): Return =>
 			model: { ...model, ingestKey: AsyncData.settle(model.ingestKey, result) },
 		}),
 		ClickedOpen: () => liftDialog(model, Dialog.open(model.dialog)),
-		ClickedToggleReveal: () => ({ model: { ...model, isRevealed: !model.isRevealed } }),
 		GotDialogMessage: ({ message: inner }) => liftDialog(model, Dialog.update(model.dialog, inner)),
 		GotTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.tabs, inner)
@@ -119,12 +102,12 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		GotCopyMessage: ({ snippet, message: inner }) => {
-			const next = CopyButton.update(model.copies[snippet], inner)
+		GotRecipeMessage: ({ message: inner }) => {
+			const next = Recipe.update(model.recipe, inner)
 			return {
-				model: { ...model, copies: { ...model.copies, [snippet]: next.model } },
+				model: { ...model, recipe: next.model },
 				commands: Command.mapMessages(next.commands ?? [], (message) =>
-					Message.GotCopyMessage({ snippet, message }),
+					Message.GotRecipeMessage({ message }),
 				),
 			}
 		},

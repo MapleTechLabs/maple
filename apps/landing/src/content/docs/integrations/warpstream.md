@@ -41,7 +41,7 @@ Each WarpStream Agent serves the full agent-level metric set (request latency hi
 http://$AGENT_IP:8080/metrics
 ```
 
-Agents run inside your VPC under WarpStream's BYOC model, so Maple's scraper can only reach them if you expose the endpoint. For example, expose it through an internal load balancer with auth, which you can pair with Maple's **Bearer token** or **Basic auth** options.
+Agents run inside your VPC under WarpStream's BYOC model, so Maple's scraper can only reach them if you expose the endpoint. For example, expose it through a public load balancer with auth, which you can pair with Maple's **Bearer token** or **Basic auth** options. Maple rejects an endpoint that resolves to a private address.
 
 If the Agents are fully private, run an OpenTelemetry Collector next to them instead, with a `prometheus` receiver scraping `:8080/metrics` and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest).
 

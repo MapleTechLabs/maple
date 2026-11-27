@@ -332,6 +332,9 @@ export const ListAgentSessionsFilters = Schema.Struct({
 	tools: Schema.optionalKey(StringList),
 	search: Schema.optionalKey(Schema.String),
 	hasErrors: Schema.optionalKey(Schema.Boolean),
+	evaluation: Schema.optionalKey(
+		Schema.Struct({ name: Schema.String, verdict: Schema.Literals(["pass", "fail"]) }),
+	),
 	sortBy: Schema.Literals(AI_SESSION_SORT_KEYS),
 	sortDir: Schema.Literals(["asc", "desc"]),
 })
@@ -453,6 +456,27 @@ export const GetAgentSessionOutput = Schema.Struct({
 	/** The span behind the verdict (or the first finding), to open with inspect_span. */
 	evidence: Schema.optionalKey(
 		Schema.Struct({ traceId: Schema.String, spanId: Schema.String, timestamp: Schema.String }),
+	),
+	/**
+	 * Evaluation scores on the session, failing first (`llmEvals` orgs only; absent otherwise).
+	 * Maple's own session-check scores are left out: `checks` already says them.
+	 */
+	scores: Schema.optionalKey(
+		Schema.Struct({
+			total: Schema.Number,
+			items: Schema.Array(
+				Schema.Struct({
+					name: Schema.String,
+					verdict: Schema.String,
+					label: Schema.String,
+					value: Schema.optionalKey(Schema.Number),
+					explanation: Schema.String,
+					source: Schema.String,
+					traceId: Schema.String,
+					spanId: Schema.String,
+				}),
+			),
+		}),
 	),
 })
 

@@ -1,5 +1,15 @@
-import { Effect, Schema, Array as Arr } from "effect"
-import { warehouseDateTimeToIso } from "@maple/query-engine"
+import { Effect, Order, Schema, Array as Arr } from "effect"
+import { formatWarehouseDateTime, parseWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query-engine"
+import {
+	AI_EVALUATION_SESSION_MAX_TRACES,
+	AI_EVALUATION_SESSION_SCORES_TAIL_MS,
+	GetAiSessionEvaluationsRequest,
+	type AiEvaluationScore,
+	type AiSessionSpan,
+	type TenantContext,
+} from "@maple/domain/http"
+import { AiEvaluationReadService } from "@maple/backend/services/ai-evaluations/AiEvaluationReadService"
+import { SESSION_CHECK_SOURCE } from "@maple/backend/services/ai-evaluations/session-check-scores"
 import {
 	buildSessionChecks,
 	buildSessionFindings,
@@ -27,15 +37,81 @@ import { doc, type DocBlock } from "../lib/tool-doc"
  *  table of every row. */
 const MAX_FINDINGS = 10
 const MAX_TOOLS = 15
+const MAX_SCORES = 20
 
 /** Characters kept of captured text the output carries (the opening message, a turn's label). */
 const CAPTURED_TEXT_CHARS = 500
 
 /** What to do about a session whose first page of spans no read can carry. */
+const TRACE_ID = /^[0-9a-f]{32}$/
+
 const WHOLE_SESSION_TOO_LARGE =
 	"Read part of it instead: pass a start_time/end_time narrower than the session's own bounds."
 
 type Output = typeof GetAgentSessionOutput.Type
+
+/** Failing scores first, then the rest; each group newest first, as the read returns them. */
+const failingFirst = Order.mapInput(Order.Number, (score: AiEvaluationScore) =>
+	score.verdict === "fail" ? 0 : 1,
+)
+
+/**
+ * The session's evaluation scores other than Maple's own checks, or none: an org outside the
+ * `llmEvals` rollout has no scores to show, and a failed score read never fails the session read.
+ */
+const readScores = (
+	tenant: TenantContext,
+	sessionId: string,
+	spans: ReadonlyArray<AiSessionSpan>,
+): Effect.Effect<Output["scores"], never, AiEvaluationReadService> =>
+	Effect.gen(function* () {
+		const traceIds = Arr.take(
+			Arr.dedupe(
+				Arr.filter(
+					Arr.map(spans, (span) => span.traceId),
+					(id) => TRACE_ID.test(id),
+				),
+			),
+			AI_EVALUATION_SESSION_MAX_TRACES,
+		)
+		const times = Arr.map(spans, (span) => parseWarehouseDateTime(span.timestamp))
+		const startMs = Arr.reduce(times, Infinity, (min, ms) => Math.min(min, ms))
+		const endMs = Arr.reduce(times, -Infinity, (max, ms) => Math.max(max, ms))
+		if (traceIds.length === 0 || !Number.isFinite(startMs) || !Number.isFinite(endMs)) return undefined
+		const reads = yield* AiEvaluationReadService
+		const result = yield* reads.session(
+			tenant,
+			new GetAiSessionEvaluationsRequest({
+				sessionId,
+				traceIds,
+				startTime: formatWarehouseDateTime(startMs),
+				endTime: formatWarehouseDateTime(endMs + AI_EVALUATION_SESSION_SCORES_TAIL_MS),
+			}),
+		)
+		const external = Arr.filter(result.scores, (score) => score.source !== SESSION_CHECK_SOURCE)
+		return {
+			total: external.length,
+			items: Arr.map(Arr.take(Arr.sort(external, failingFirst), MAX_SCORES), (score) => ({
+				name: score.name,
+				verdict: score.verdict,
+				label: score.label,
+				...(score.value === undefined ? undefined : { value: score.value }),
+				explanation: truncate(score.explanation, CAPTURED_TEXT_CHARS),
+				source: score.source,
+				traceId: score.traceId,
+				spanId: score.spanId,
+			})),
+		}
+	}).pipe(
+		Effect.catch((error) =>
+			error._tag === "@maple/http/ai-evaluations/LlmEvalsDisabledError"
+				? Effect.undefined
+				: Effect.logWarning("get_agent_session could not read the session's scores").pipe(
+						Effect.annotateLogs({ error: error.message }),
+						Effect.as(undefined),
+					),
+		),
+	)
 
 /** A `###` table section, absent when it has no rows. */
 const tableSection = (
@@ -107,6 +183,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				// own timestamp is what prunes `inspect_span`'s scan to the day the session ran on.
 				const evidenceSpanId = report.verdict.spanId ?? report.findings[0]?.spanId
 				const evidence = loaded.spans.find((span) => span.spanId === evidenceSpanId)
+				const scores = yield* readScores(tenant, sessionId, loaded.spans)
 
 				const output: Output = {
 					sessionId,
@@ -206,6 +283,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 									timestamp: warehouseDateTimeToIso(evidence.timestamp),
 								},
 							}),
+					...(scores === undefined ? undefined : { scores }),
 				}
 				return output
 			},
@@ -290,6 +368,21 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							finding.spanId,
 						]),
 					),
+					...(output.scores === undefined || output.scores.total === 0
+						? []
+						: tableSection(
+								`Evaluation scores (${output.scores.total}${output.scores.total > output.scores.items.length ? `, ${output.scores.items.length} shown` : ""})`,
+								["Evaluator", "Verdict", "Score", "Why", "Span"],
+								Arr.map(output.scores.items, (score) => [
+									tableCell(score.name, 80),
+									score.verdict || "—",
+									score.value === undefined
+										? tableCell(score.label, 40) || "—"
+										: String(score.value),
+									score.explanation === "" ? "—" : tableCell(score.explanation, 160),
+									score.spanId || "—",
+								]),
+							)),
 					doc.heading("Vitals"),
 					doc.list([
 						`Wall clock ${formatDurationFromMs(output.vitals.wallClockMs)} · active ${formatDurationFromMs(
