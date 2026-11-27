@@ -40,12 +40,16 @@ const TABS = {
 	},
 } as const
 
-const keyOf = (model: Model): Recipe.RecipeKey => {
+/** The key the recipe steps carry; a failed read keeps every command that needs it out of view. */
+export const keyOf = (model: Model): Recipe.RecipeKey => {
 	const key = AsyncData.getOrElse(model.ingestKey, () => "")
 	return {
 		isLoading: AsyncData.isLoading(model.ingestKey) || AsyncData.isIdle(model.ingestKey),
 		value: key,
 		masked: key === "" ? undefined : Recipe.maskSecret(key),
+		unavailable: AsyncData.isFailure(model.ingestKey)
+			? "Maple couldn't load your org's ingest key, so this command can't be shown. A member who can view ingest keys can copy it from Settings → Ingestion."
+			: undefined,
 	}
 }
 

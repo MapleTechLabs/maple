@@ -3,6 +3,7 @@ import { Array as Arr, Option, Schema, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
+import { alert, alertDescription } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { icon } from "@maple/views/ui/icon"
@@ -119,7 +120,13 @@ export const selectedRecipe = (
  * The key the commands carry. `masked` is what shows until revealed; without it the key shows as is
  * (a token shown once, or one already masked for good).
  */
-export type RecipeKey = Readonly<{ isLoading: boolean; value: string; masked?: string }>
+export type RecipeKey = Readonly<{
+	isLoading: boolean
+	value: string
+	masked?: string
+	/** Why there is no key (the read failed): commands that need it show this instead. */
+	unavailable?: string
+}>
 
 export type RecipeViewConfig<P> = Readonly<{
 	model: Model
@@ -166,6 +173,7 @@ const stepView = <P>(h: HtmlBuilder<P>, config: RecipeViewConfig<P>, step: Recip
 			codeBlock(h, {
 				code: step.text,
 				fileName: step.name,
+				scrollLabel: step.name,
 				lang: step.lang,
 				...copyOf(config, step.id),
 				fold: {
@@ -178,6 +186,10 @@ const stepView = <P>(h: HtmlBuilder<P>, config: RecipeViewConfig<P>, step: Recip
 	const { key } = config
 	const canReveal = key.masked !== undefined
 	const isShown = !canReveal || config.model.isRevealed
+	if (key.unavailable !== undefined)
+		return setupStep(h, { title: [step.title], hint }, [
+			alert(h, { size: "sm", role: "status" }, [alertDescription(h, [key.unavailable])]),
+		])
 	return setupStep(h, { title: [step.title], hint }, [
 		key.isLoading
 			? skeleton(h, "h-16 w-full")
@@ -187,6 +199,7 @@ const stepView = <P>(h: HtmlBuilder<P>, config: RecipeViewConfig<P>, step: Recip
 					language: "shell",
 					lang: "shell",
 					secret: isShown,
+					scrollLabel: step.title,
 					...copyOf(config, step.id),
 					actions: canReveal ? [revealButton(h, config)] : undefined,
 				}),

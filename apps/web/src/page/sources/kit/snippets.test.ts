@@ -52,7 +52,9 @@ describe("sourceSnippets", () => {
 		expect(textOf("terraform-apply")).toContain('context="$(kubectl config current-context)" &&')
 		// Read inside the program, which a destroy skips: a fresh shell can still destroy.
 		expect(textOf("alchemy")).toContain('yield* Config.NonEmptyString("KUBE_CONTEXT")')
-		expect(textOf("alchemy")).toContain('Config.schema(Schema.Redacted(Schema.NonEmptyString), "MAPLE_INGEST_KEY")')
+		expect(textOf("alchemy")).toContain(
+			'Config.schema(Schema.Redacted(Schema.NonEmptyString), "MAPLE_INGEST_KEY")',
+		)
 		// Tracking the namespace would make a destroy delete everything else in it.
 		expect(textOf("alchemy")).not.toContain("createNamespace")
 		expect(textOf("alchemy-deploy")).toContain("create namespace maple")
