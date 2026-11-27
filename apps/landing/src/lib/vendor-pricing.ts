@@ -776,4 +776,4 @@ export const vendorCaveat = {
 } satisfies Record<Vendor, string>
 
 export const MAPLE_PRICING_NOTE =
-	"Maple pricing based on the Startup plan ($39/mo with 100 GB included per signal (logs, traces, metrics), then $0.15/GB, billed per signal), plus $0.15 per GB-month stored at the default retention (30 days for logs and traces, 90 for metrics), metered on uncompressed (decoded OTLP) bytes."
+	"Maple pricing based on the Startup plan ($39/mo with 100 GB included per signal (logs, traces, metrics), then $0.15/GB, billed per signal), with storage at the default retention (30 days for logs and traces, 90 for metrics) included and $0.15 per GB-month stored past it, metered on uncompressed (decoded OTLP) bytes."

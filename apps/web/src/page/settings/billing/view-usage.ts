@@ -149,7 +149,9 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 			? "Unlimited"
 			: feature.overageAllowed === false
 				? "Hard cap at included"
-				: "Not billed"
+				: isStorageFeature(feature.featureId)
+					? "Not capped"
+					: "Not billed"
 		return typography(h, { tone: "muted" }, [reason])
 	}
 	if (cap === undefined) return typography(h, { tone: "muted" }, ["Uncapped"])
