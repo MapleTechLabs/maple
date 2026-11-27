@@ -30,9 +30,7 @@ describe("watchHandlerAccess", () => {
 				site: "handler",
 				permission: "alerts:manage",
 			})
-			expect(yield* Ref.get(denials)).toEqual([
-				{ permission: "alerts:manage", reason: Policy.denialFor("alerts:manage").message },
-			])
+			expect(yield* Ref.get(denials)).toEqual([Policy.denialFor("alerts:manage")])
 		}).pipe(Effect.withSpan("http.server")),
 	)
 

@@ -13,19 +13,22 @@ const unmarked = (method: string): CalledEndpoint => ({
 	endpoint: { method, annotations: Context.empty() },
 })
 
+/** These cases are about the decision, not about what is recorded. */
+const unrecorded = () => Effect.void
+
 const allowed = <E>(gate: Effect.Effect<void, E>) => Effect.map(Effect.exit(gate), Exit.isSuccess)
 
 describe("checkEndpointAccess", () => {
 	it.effect("refuses a missing permission and names it", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
-				checkEndpointAccess(Policy.grantsOf(["org:analyst"]), transition),
+				checkEndpointAccess(Policy.grantsOf(["org:analyst"]), transition, unrecorded),
 			)
 			assert.instanceOf(error, CurrentTenant.LimitedRoleError)
 			expect(error.message).toBe(Policy.denialFor("error_issues:triage").message)
-			expect(yield* allowed(checkEndpointAccess(Policy.grantsOf(["org:member"]), transition))).toBe(
-				true,
-			)
+			expect(
+				yield* allowed(checkEndpointAccess(Policy.grantsOf(["org:member"]), transition, unrecorded)),
+			).toBe(true)
 		}),
 	)
 
@@ -33,10 +36,16 @@ describe("checkEndpointAccess", () => {
 		"refuses an unmarked write to everyone, admins included, and lets an unmarked GET through with telemetry:read",
 		() =>
 			Effect.gen(function* () {
-				const error = yield* Effect.flip(checkEndpointAccess(Policy.allPermissions, unmarked("POST")))
+				const error = yield* Effect.flip(
+					checkEndpointAccess(Policy.allPermissions, unmarked("POST"), unrecorded),
+				)
 				expect(error.message).toBe(Policy.limitedAccessMessage)
-				expect(yield* allowed(checkEndpointAccess(["telemetry:read"], unmarked("GET")))).toBe(true)
-				expect(yield* allowed(checkEndpointAccess(["billing:manage"], unmarked("GET")))).toBe(false)
+				expect(
+					yield* allowed(checkEndpointAccess(["telemetry:read"], unmarked("GET"), unrecorded)),
+				).toBe(true)
+				expect(
+					yield* allowed(checkEndpointAccess(["billing:manage"], unmarked("GET"), unrecorded)),
+				).toBe(false)
 			}),
 	)
 })
@@ -47,10 +56,10 @@ describe("a role limited to namespaces at the gate", () => {
 	// "You need Read telemetry" would send it to ask for the one thing its role replaces.
 	it.effect("is told its role is limited, not to get Read telemetry", () =>
 		Effect.gen(function* () {
-			const internal = yield* Effect.flip(checkEndpointAccess(limited, unmarked("GET")))
+			const internal = yield* Effect.flip(checkEndpointAccess(limited, unmarked("GET"), unrecorded))
 			expect(internal.message).toBe(Policy.scopedAccessMessage)
 			const v2 = yield* Effect.flip(
-				checkEndpointAccessV2(limited, unmarked("POST"), "/v2/traces/search"),
+				checkEndpointAccessV2(limited, unmarked("POST"), "/v2/traces/search", unrecorded),
 			)
 			expect(v2.message).toBe(Policy.scopedAccessMessage)
 		}),
@@ -58,7 +67,9 @@ describe("a role limited to namespaces at the gate", () => {
 
 	it.effect("is still told which other permission it lacks", () =>
 		Effect.gen(function* () {
-			const error = yield* Effect.flip(checkEndpointAccess([...limited, "telemetry:read"], transition))
+			const error = yield* Effect.flip(
+				checkEndpointAccess([...limited, "telemetry:read"], transition, unrecorded),
+			)
 			expect(error.message).toBe(Policy.denialFor("error_issues:triage").message)
 		}),
 	)
@@ -69,9 +80,13 @@ describe("checkEndpointAccessV2", () => {
 		Effect.gen(function* () {
 			const search = unmarked("POST")
 			expect(
-				yield* allowed(checkEndpointAccessV2(["telemetry:read"], search, "/v2/traces/search")),
+				yield* allowed(
+					checkEndpointAccessV2(["telemetry:read"], search, "/v2/traces/search", unrecorded),
+				),
 			).toBe(true)
-			const error = yield* Effect.flip(checkEndpointAccessV2([], search, "/v2/traces/search"))
+			const error = yield* Effect.flip(
+				checkEndpointAccessV2([], search, "/v2/traces/search", unrecorded),
+			)
 			expect(error.message).toBe(Policy.denialFor("telemetry:read").message)
 		}),
 	)
@@ -79,7 +94,7 @@ describe("checkEndpointAccessV2", () => {
 	it.effect("refuses any other unmarked write", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
-				checkEndpointAccessV2(Policy.allPermissions, unmarked("POST"), "/v2/slos"),
+				checkEndpointAccessV2(Policy.allPermissions, unmarked("POST"), "/v2/slos", unrecorded),
 			)
 			expect(error.message).toBe(Policy.limitedAccessMessage)
 		}),
@@ -95,7 +110,7 @@ describe("what the gate leaves on the request's span", () => {
 
 	it.effect("an allowed call", () =>
 		Effect.gen(function* () {
-			yield* checkEndpointAccess(Policy.grantsOf(["org:member"]), transition)
+			yield* checkEndpointAccess(Policy.grantsOf(["org:member"]), transition, unrecorded)
 			expect(yield* accessOf).toEqual({ outcome: "allowed", site: "edge", permission: undefined })
 		}).pipe(Effect.withSpan("http.server")),
 	)
@@ -116,7 +131,7 @@ describe("what the gate leaves on the request's span", () => {
 			expect(yield* Ref.get(handed)).toEqual([
 				{
 					permission: "error_issues:triage",
-					reason: Policy.denialFor("error_issues:triage").message,
+					message: Policy.denialFor("error_issues:triage").message,
 				},
 			])
 		}).pipe(Effect.withSpan("http.server")),
@@ -124,7 +139,9 @@ describe("what the gate leaves on the request's span", () => {
 
 	it.effect("a write nobody marked is told apart from a missing permission", () =>
 		Effect.gen(function* () {
-			yield* Effect.flip(checkEndpointAccessV2(Policy.allPermissions, unmarked("POST"), "/v2/slos"))
+			yield* Effect.flip(
+				checkEndpointAccessV2(Policy.allPermissions, unmarked("POST"), "/v2/slos", unrecorded),
+			)
 			expect(yield* accessOf).toEqual({ outcome: "unmarked", site: "edge", permission: undefined })
 		}).pipe(Effect.withSpan("http.server")),
 	)

@@ -1,15 +1,16 @@
 import * as Policy from "@maple/domain/policy"
-import { Effect, Option } from "effect"
+import { Array as Arr, Effect, Option, Record as Rec } from "effect"
+import type { Span } from "effect/Tracer"
 
-/** Where a request was decided: by the endpoint gate, or by a check inside the handler. */
-export type AccessSite = "edge" | "handler"
+/** Where a request was decided: the endpoint gate, a check inside the handler, or an MCP tool's permission. */
+export type AccessSite = "edge" | "handler" | "tool"
 
 /** `unmarked`: a write nobody has decided the permission for, refused to everyone. */
 export type AccessOutcome = "allowed" | "denied" | "unmarked"
 
 /** A refusal: what the caller is told, and the permission they lacked when it was about one. */
 export interface AccessDenial {
-	readonly reason: string
+	readonly message: string
 	readonly permission?: Policy.Permission
 }
 
@@ -20,14 +21,17 @@ const accessAttributes = (outcome: AccessOutcome, site: AccessSite, permission?:
 })
 
 /**
- * Marks the current (HTTP server) span with how the request's permissions were decided, so "who is
- * refused what, on which endpoint" is a query over `http.route`.
+ * Marks the current span with how the request's permissions were decided. At the gate that is the
+ * HTTP server span, so "who is refused what, on which endpoint" is a query over `http.route`.
  */
 export const annotateAccessSpan = (
 	outcome: AccessOutcome,
 	site: AccessSite,
 	permission?: Policy.Permission,
 ): Effect.Effect<void> => Effect.annotateCurrentSpan(accessAttributes(outcome, site, permission))
+
+const markSpan = (span: Span, attributes: Rec.ReadonlyRecord<string, string>): Effect.Effect<void> =>
+	Effect.sync(() => Arr.forEach(Rec.toEntries(attributes), ([key, value]) => span.attribute(key, value)))
 
 /**
  * Runs a handler with its permission checks watched: one that refuses marks the request's span
@@ -37,13 +41,16 @@ export const watchHandlerAccess =
 	(onDenied: (denial: AccessDenial) => Effect.Effect<void>) =>
 	<A, E, R>(handler: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
 		Effect.flatMap(Effect.option(Effect.currentSpan), (requestSpan) =>
-			Effect.provideService(handler, Policy.AccessSink, ({ permission, allowed }) => {
-				if (allowed) return Effect.void
-				if (Option.isSome(requestSpan)) {
-					requestSpan.value.attribute("maple.access.outcome", "denied")
-					requestSpan.value.attribute("maple.access.site", "handler")
-					requestSpan.value.attribute("maple.access.permission", permission)
-				}
-				return onDenied({ permission, reason: Policy.denialFor(permission).message })
-			}),
+			Effect.provideService(handler, Policy.AccessSink, ({ permission, allowed }) =>
+				allowed
+					? Effect.void
+					: Effect.andThen(
+							Option.match(requestSpan, {
+								onNone: () => Effect.void,
+								onSome: (span) =>
+									markSpan(span, accessAttributes("denied", "handler", permission)),
+							}),
+							onDenied(Policy.denialFor(permission)),
+						),
+			),
 		)

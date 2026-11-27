@@ -15,14 +15,17 @@
 - Enforcement: `EndpointAccess` on HTTP endpoints (`packages/domain/src/http/endpoint-access.ts`),
   `permission` on MCP tools, and `MembershipRevocationService.demoteMembership` retiring
   credentials, links, digests and phones a narrower role no longer covers.
-- Every decision is on the request's span: `maple.access.outcome` (`allowed`, `denied`, `unmarked`),
-  `maple.access.site` (`edge` for the endpoint gate, `handler` for a `Policy.check` inside the
-  handler, `tool` for an MCP tool) and `maple.access.permission` on a refusal. `Policy.check`
-  reports to `Policy.AccessSink`, which the auth layers set per request (`auth/access-span.ts`). A
-  refusal built by hand after `Policy.can` is not reported.
-- A refusal is an `api.request` audit entry with `outcome: "denied"` (`auth/audit-denial.ts`),
-  written at most once a minute per caller, request and reason. A person refused Read telemetry is
-  the exception and stays on the span: a role without it asks for telemetry on every page it opens.
+- The endpoint gate marks the request's span with its decision: `maple.access.outcome` (`allowed`,
+  `denied`, `unmarked`), `maple.access.site` (`edge`) and, when a permission was missing,
+  `maple.access.permission`. A `Policy.check` that refuses inside the handler overwrites them with
+  `site: handler`; it reports through `Policy.AccessSink`, which the auth layers set per request
+  (`auth/access-span.ts`). A refused MCP tool marks its own span with `site: tool`. Not marked: a
+  refusal before the gate (a key's scope or kind, an organization selection) and one built by hand
+  after `Policy.can`.
+- A refusal is an `api.request` audit entry with `outcome: "denied"` (`auth/audit-denial.ts`). Each
+  isolate writes one per caller, route and message per minute. A person's entry names the route, a
+  key's the path it asked for. A person refused Read telemetry is the exception and stays on the
+  span: a role without it asks for telemetry on every page it opens.
 
 ## Roles limited to namespaces
 
