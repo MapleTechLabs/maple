@@ -132,7 +132,11 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 			const links = Arr.isArrayNonEmpty(orgIds)
 				? yield* db.run(
 						PG.from(OrgBillingLinks)
-							.select(($) => ({ orgId: $.orgId, billingOrgId: $.billingOrgId }))
+							.select(($) => ({
+								orgId: $.orgId,
+								billingOrgId: $.billingOrgId,
+								createdAt: $.createdAt,
+							}))
 							.where(($) => [PG.inList($.orgId, orgIds)]),
 					)
 				: []
@@ -140,7 +144,13 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 		}),
 	)
 
-	const billingOrgOf = new Map(Arr.map(links, (link): [string, string] => [link.orgId, link.billingOrgId]))
+	const linkOf = new Map(Arr.map(links, (link) => [link.orgId, link] as const))
+	// A member bills to its billing org's customer, as its ingest does, from the first whole day it
+	// is linked: usage from before the link stays with its own customer (docs/billing-orgs.md).
+	const payerOf = (charge: Charge): string => {
+		const link = linkOf.get(charge.orgId)
+		return link !== undefined && link.createdAt <= charge.dayMs ? link.billingOrgId : charge.orgId
+	}
 	const charges = Arr.flatMap(stored, (row): ReadonlyArray<Charge> => {
 		const storedGb = bytesToGb(row.bytes)
 		const featureId = storageFeatureOf(row.signal)
@@ -163,8 +173,7 @@ export const meterStorage = Effect.fn("StorageMetering.meter")(function* (nowMs:
 		charges,
 		(charge) =>
 			trackFeatureUsageOrFail({
-				// A member org bills to its billing org's customer, as its ingest does.
-				customerId: BillingCustomerId.make(billingOrgOf.get(charge.orgId) ?? charge.orgId),
+				customerId: BillingCustomerId.make(payerOf(charge)),
 				featureId: charge.featureId,
 				value: charge.value,
 				idempotencyKey: usageKey(charge.orgId, charge.signal, charge.dayMs),

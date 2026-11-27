@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { isStorageFeatureId } from "@maple/domain/storage-pricing"
 import {
 	AiCreditDay,
 	AiCreditUsageResponse,
@@ -760,7 +761,7 @@ describe("AI credits", () => {
 		browser_sessions: { granted: 5_000 },
 		product_events: { granted: 1_000_000 },
 	}
-	const withAi = (aiUsed: number, overageCaps: Record<string, number> = {}) => {
+	const withAi = (aiUsed: number, overageCaps: Record<string, number> = {}, plan = startupPlan) => {
 		const result = buildSpendModel({
 			customer: buildCustomer({
 				balances: {
@@ -769,7 +770,7 @@ describe("AI credits", () => {
 				},
 				overageCaps,
 			}),
-			plans: [startupPlan],
+			plans: [plan],
 			usage: usageOf({ ai_credits: aiUsed }),
 			nowMs: NOW,
 		})
@@ -802,13 +803,34 @@ describe("AI credits", () => {
 		expect(Arr.map(uncappedFeatures(uncapped, undefined), (feature) => feature.featureId)).toContain(
 			"ai_credits",
 		)
-		const capped = withAi(0, { ...dataCaps, ai_credits: 25 })
+		// Storage has no cap, so this plan leaves it out to read the caps' ceiling.
+		const withoutStorage = startupPlanWith(
+			Arr.filter(startupPlan.items, (planItem) => !isStorageFeatureId(planItem.featureId)),
+		)
+		const capped = withAi(0, { ...dataCaps, ai_credits: 25 }, withoutStorage)
 		const customer = buildCustomer({
 			balances: { ...dataBalances, ai_credits: { granted: 1, overageAllowed: true } },
 			overageCaps: { ...dataCaps, ai_credits: 25 },
 		})
 		// $39 base, 300 GB at $0.30, 10 GB of profiles at $0.60, 1,000 sessions at $0.002, and $25 of AI credits.
 		expect(maximumInvoiceCents(capped, customer)).toBe(3_900 + 9_000 + 600 + 200 + 2_500)
+	})
+
+	it("leaves the maximum invoice unbounded while storage past its allowance is billed", () => {
+		const caps = {
+			logs: 100,
+			traces: 100,
+			metrics: 100,
+			profiles: 10,
+			browser_sessions: 1_000,
+			product_events: 0,
+			ai_credits: 25,
+		}
+		const customer = buildCustomer({
+			balances: { ...dataBalances, ai_credits: { granted: 1, overageAllowed: true } },
+			overageCaps: caps,
+		})
+		expect(maximumInvoiceCents(withAi(0, caps), customer)).toBeNull()
 	})
 
 	it("draws the AI band from the daily AI spend, accruing only past the included credits", () => {

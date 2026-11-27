@@ -139,11 +139,14 @@ describe("storage metering", () => {
 			// Today is not complete: bytes received today never count toward yesterday.
 			yield* ledger(db, ORG, "logs", 0, 30, 5000)
 			yield* ledger(db, "org_member", "traces", 1, 30, 30)
+			yield* ledger(db, "org_linked_late", "traces", 1, 30, 30)
+			// org_member was linked before the billed day; org_linked_late only after it ended.
 			yield* Effect.promise(() =>
 				executeSql(
 					db,
 					`INSERT INTO org_billing_links (org_id, billing_org_id, linked_by, created_at)
-					 VALUES ('org_member', 'org_payer', 'user_a', now())`,
+					 VALUES ('org_member', 'org_payer', 'user_a', to_timestamp(${(TODAY - 2 * DAY_MS) / 1000})),
+					        ('org_linked_late', 'org_payer', 'user_a', to_timestamp(${(TODAY + 10 * 60_000) / 1000}))`,
 				),
 			)
 			const tracked: Array<Tracked> = []
@@ -180,6 +183,9 @@ describe("storage metering", () => {
 			assert.strictEqual(member?.body.customer_id, "org_payer")
 			assert.strictEqual(member?.body.feature_id, "storage_traces")
 			assert.strictEqual(member?.body.value, 1)
+			// Linked after the day it stored: that day stays with its own customer.
+			const late = yesterday.get("storage:org_linked_late:traces:2026-11-24")
+			assert.strictEqual(late?.body.customer_id, "org_linked_late")
 			assert.isFalse(Arr.some(tracked, (call) => Str.endsWith("2026-11-25")(call.idempotencyKey ?? "")))
 
 			// A later tick finds every day billed and sends nothing.

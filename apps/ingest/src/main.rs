@@ -123,7 +123,7 @@ use sources::{
     OverrideMode, PauseWindow, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef,
     SourceSignal, MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
 };
-use storage_ledger::{StorageLedgerRow, StorageLedgerSink};
+use storage_ledger::{LedgerWriteError, StorageLedgerRow, StorageLedgerSink};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::Instrument;
 use tracing::{debug, error, info, warn, Span};
@@ -1243,7 +1243,7 @@ trait KeyStore: Send + Sync {
     async fn record_ingest_rule_stats(&self, rows: &[IngestRuleStatRow]) -> Result<(), String>;
 
     /// Adds stored bytes into `ingest_storage_ledger`, one statement for all `rows`.
-    async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), String>;
+    async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), LedgerWriteError>;
 
     async fn fetch_clickhouse_target(
         &self,
@@ -6293,7 +6293,14 @@ async fn handle_profiles_inner(
             tracker.track(&org_id, PROFILES_FEATURE_ID, billable_gb(decoded_bytes as u64));
         }
         let shares = [(retention_days, 1_usize)];
-        record_stored_bytes(state, &resolved_key, PROFILES_FEATURE_ID, &shares, decoded_bytes as u64);
+        // Pinned to Maple's storage above, so recorded even for an org on its own ClickHouse.
+        record_managed_stored_bytes(
+            state,
+            &resolved_key,
+            PROFILES_FEATURE_ID,
+            &shares,
+            decoded_bytes as u64,
+        );
     }
     state.resolver.note_source_use(&resolved_key, false);
     Ok(accepted)
@@ -10479,10 +10486,21 @@ fn record_stored_bytes(
     shares: &[(u16, usize)],
     bytes: u64,
 ) {
-    if state.autumn_tracker.is_none()
-        || resolved_key.org_id == SENTINEL_ORG_ID
-        || native_destination_for(resolved_key) == ExportDestination::ClickHouse
-    {
+    if native_destination_for(resolved_key) == ExportDestination::ClickHouse {
+        return;
+    }
+    record_managed_stored_bytes(state, resolved_key, feature_id, shares, bytes);
+}
+
+/// `record_stored_bytes` for a signal Maple stores whatever the org's routing, as profiles are.
+fn record_managed_stored_bytes(
+    state: &AppState,
+    resolved_key: &ResolvedIngestKey,
+    feature_id: &'static str,
+    shares: &[(u16, usize)],
+    bytes: u64,
+) {
+    if state.autumn_tracker.is_none() || resolved_key.org_id == SENTINEL_ORG_ID {
         return;
     }
     state.storage_ledger.record_split(
@@ -12271,7 +12289,7 @@ impl KeyStore for PostgresKeyStore {
         Ok(())
     }
 
-    async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), String> {
+    async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), LedgerWriteError> {
         if rows.is_empty() {
             return Ok(());
         }
@@ -12294,7 +12312,7 @@ impl KeyStore for PostgresKeyStore {
             params.push(retention_days);
             params.push(bytes);
         }
-        let client = self.client().await?;
+        let client = self.client().await.map_err(LedgerWriteError::NotWritten)?;
         client
             .execute(
                 storage_ledger::storage_ledger_upsert_sql(rows.len()).as_str(),
@@ -12307,7 +12325,16 @@ impl KeyStore for PostgresKeyStore {
                 &self.target,
             ))
             .await
-            .map_err(|error| format!("postgres record_storage_ledger failed: {error}"))?;
+            .map_err(|error| {
+                let message = format!("postgres record_storage_ledger failed: {error}");
+                // Postgres answered with an error, so the statement rolled back; anything else
+                // (a dropped connection) may have come after it committed.
+                if error.as_db_error().is_some() {
+                    LedgerWriteError::NotWritten(message)
+                } else {
+                    LedgerWriteError::Unknown(message)
+                }
+            })?;
         Ok(())
     }
 
@@ -12866,7 +12893,7 @@ impl KeyStore for StaticKeyStore {
         Ok(())
     }
 
-    async fn record_storage_ledger(&self, _rows: &[StorageLedgerRow]) -> Result<(), String> {
+    async fn record_storage_ledger(&self, _rows: &[StorageLedgerRow]) -> Result<(), LedgerWriteError> {
         Ok(())
     }
 
@@ -14560,6 +14587,8 @@ mod tests {
         storage_ledger: std::sync::Mutex<Vec<StorageLedgerRow>>,
         /// Fails `record_storage_ledger`.
         storage_ledger_errors: AtomicBool,
+        /// Fails `record_storage_ledger` as if the connection dropped after it was sent.
+        storage_ledger_unconfirmed: AtomicBool,
     }
 
     impl FakeKeyStore {
@@ -14815,9 +14844,15 @@ mod tests {
             self.ingest_rule_stats.lock().unwrap().extend_from_slice(rows);
             Ok(())
         }
-        async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), String> {
+        async fn record_storage_ledger(
+            &self,
+            rows: &[StorageLedgerRow],
+        ) -> Result<(), LedgerWriteError> {
             if self.storage_ledger_errors.load(Ordering::Relaxed) {
-                return Err("storage ledger store down".to_owned());
+                return Err(LedgerWriteError::NotWritten("storage ledger store down".to_owned()));
+            }
+            if self.storage_ledger_unconfirmed.load(Ordering::Relaxed) {
+                return Err(LedgerWriteError::Unknown("connection lost after the write".to_owned()));
             }
             self.storage_ledger.lock().unwrap().extend_from_slice(rows);
             Ok(())
@@ -16384,6 +16419,9 @@ mod tests {
         let rows = state.storage_ledger.take();
         assert_eq!(rows.len(), 1);
         assert_eq!((rows[0].org_id.as_str(), rows[0].bytes), ("org_real", 10));
+        // Profiles stay in Maple's storage for an org on its own ClickHouse, so they are billed.
+        record_managed_stored_bytes(&state, &own_clickhouse, PROFILES_FEATURE_ID, &shares, 10);
+        assert_eq!(state.storage_ledger.take().len(), 1);
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
@@ -16404,6 +16442,20 @@ mod tests {
         let written = store.storage_ledger.lock().unwrap().clone();
         assert_eq!(written.len(), 1);
         assert_eq!(written[0].bytes, 10);
+    }
+
+    // A write that may have committed is not retried: the upsert adds, so it could bill twice.
+    #[tokio::test]
+    async fn a_write_that_may_have_committed_is_not_retried() {
+        let store = FakeKeyStore::default();
+        store.storage_ledger_unconfirmed.store(true, Ordering::Relaxed);
+        let sink = StorageLedgerSink::default();
+        sink.record("org_a", "logs", 30, 10, 1_764_072_000_000);
+        sink.flush(&store).await;
+
+        store.storage_ledger_unconfirmed.store(false, Ordering::Relaxed);
+        sink.flush(&store).await;
+        assert_eq!(*store.storage_ledger.lock().unwrap(), Vec::new());
     }
 
     // The spec's development path and the path it moves to both take an export.

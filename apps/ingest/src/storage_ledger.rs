@@ -35,6 +35,24 @@ pub(crate) struct StorageLedgerRow {
     pub(crate) bytes: u64,
 }
 
+/// How a ledger write failed. Only a write known not to have committed is retried: the upsert
+/// adds, so retrying one that did commit would bill its bytes twice.
+#[derive(Debug)]
+pub(crate) enum LedgerWriteError {
+    /// Never reached Postgres, or Postgres refused it: nothing was added.
+    NotWritten(String),
+    /// The connection failed once the statement was sent: it may have committed.
+    Unknown(String),
+}
+
+impl std::fmt::Display for LedgerWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotWritten(message) | Self::Unknown(message) => f.write_str(message),
+        }
+    }
+}
+
 /// (org, signal, UTC day in epoch ms, retention stamp).
 type LedgerKey = (Arc<str>, &'static str, i64, u16);
 
@@ -114,23 +132,33 @@ impl StorageLedgerSink {
         }
     }
 
-    /// Writes the pending bytes. A failure keeps them for the next flush, however many fail
-    /// in a row; only keys past the pending cap are dropped. Returns the rows dropped.
+    /// Writes the pending bytes. A write that did not commit keeps them for the next flush,
+    /// however many fail in a row; one that may have committed is logged row by row and not
+    /// retried. Only keys past the pending cap are dropped. Returns the rows dropped.
     pub(crate) async fn flush(&self, store: &dyn KeyStore) -> usize {
         let rows = self.take();
         if rows.is_empty() {
             return 0;
         }
         let mut failed: Vec<StorageLedgerRow> = Vec::new();
+        let mut store_down = false;
         for chunk in rows.chunks(LEDGER_ROWS_PER_STATEMENT) {
             // After one failure the rest is kept without trying: the store is likely down.
-            if !failed.is_empty() {
+            if store_down {
                 failed.extend_from_slice(chunk);
                 continue;
             }
-            if let Err(error) = store.record_storage_ledger(chunk).await {
-                warn!(error = %error, rows = chunk.len(), "Storage ledger flush failed; keeping the bytes");
-                failed.extend_from_slice(chunk);
+            match store.record_storage_ledger(chunk).await {
+                Ok(()) => {}
+                Err(LedgerWriteError::NotWritten(error)) => {
+                    warn!(error = %error, rows = chunk.len(), "Storage ledger flush failed; keeping the bytes");
+                    store_down = true;
+                    failed.extend_from_slice(chunk);
+                }
+                Err(LedgerWriteError::Unknown(error)) => {
+                    store_down = true;
+                    log_unconfirmed(chunk, &error);
+                }
             }
         }
         if failed.is_empty() {
@@ -190,6 +218,26 @@ impl StorageLedgerSink {
         }
         metrics::storage_ledger_dropped_rows(u64::try_from(dropped).unwrap_or(u64::MAX));
         dropped
+    }
+}
+
+/// Rows of a write that may have committed, one per line at error level so a missing one can be
+/// added by hand. Billing them twice would be worse than checking them.
+fn log_unconfirmed(rows: &[StorageLedgerRow], write_error: &str) {
+    error!(
+        error = %write_error,
+        rows = rows.len(),
+        "Storage ledger write may have committed; not retried"
+    );
+    for row in rows {
+        error!(
+            org_id = %row.org_id,
+            signal = row.signal,
+            day_ms = row.day_ms,
+            retention_days = row.retention_days,
+            bytes = row.bytes,
+            "Storage ledger bytes unconfirmed"
+        );
     }
 }
 
