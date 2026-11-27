@@ -106,26 +106,29 @@ export const makeOtlpLayer = (
 ): Layer.Layer<OtlpExporter.Flusher, never, HttpClient.HttpClient> => {
 	const base = HttpClientRequest.get(options.baseUrl)
 	const url = (path: string) => HttpClientRequest.appendUrl(base, path).url
-	const reportDrop = makeDropReporter(options)
-	return Layer.mergeAll(
-		OtlpLogger.layer({
-			url: url("/v1/logs"),
-			resource: options.resource,
-			headers: options.headers,
-			exportInterval: options.loggerExportInterval,
-			maxBatchSize: options.maxBatchSize,
-			maxQueueSize: options.maxQueueSize,
-			onDrop: reportDrop("logs"),
-			shutdownTimeout: options.shutdownTimeout,
-			excludeLogSpans: options.loggerExcludeLogSpans,
-		}),
-		OtlpMetrics.layer({
-			url: url("/v1/metrics"),
-			resource: options.resource,
-			headers: options.headers,
-			exportInterval: options.metricsExportInterval,
-			shutdownTimeout: options.shutdownTimeout,
-		}),
-		tracerLayer(url("/v1/traces"), options, reportDrop("traces")),
-	).pipe(Layer.provide(OtlpSerialization.layerJson))
+	// Suspended so every build of the layer counts its own drops.
+	return Layer.suspend(() => {
+		const reportDrop = makeDropReporter(options)
+		return Layer.mergeAll(
+			OtlpLogger.layer({
+				url: url("/v1/logs"),
+				resource: options.resource,
+				headers: options.headers,
+				exportInterval: options.loggerExportInterval,
+				maxBatchSize: options.maxBatchSize,
+				maxQueueSize: options.maxQueueSize,
+				onDrop: reportDrop("logs"),
+				shutdownTimeout: options.shutdownTimeout,
+				excludeLogSpans: options.loggerExcludeLogSpans,
+			}),
+			OtlpMetrics.layer({
+				url: url("/v1/metrics"),
+				resource: options.resource,
+				headers: options.headers,
+				exportInterval: options.metricsExportInterval,
+				shutdownTimeout: options.shutdownTimeout,
+			}),
+			tracerLayer(url("/v1/traces"), options, reportDrop("traces")),
+		).pipe(Layer.provide(OtlpSerialization.layerJson))
+	})
 }

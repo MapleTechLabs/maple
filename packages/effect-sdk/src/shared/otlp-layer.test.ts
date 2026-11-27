@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Array as Arr } from "effect"
+import { Array as Arr, Effect, Layer, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { afterEach, vi } from "vitest"
-import { type ExportDrop, makeDropReporter } from "./otlp-layer.js"
+import { type ExportDrop, makeDropReporter, makeOtlpLayer } from "./otlp-layer.js"
 
 describe("makeDropReporter", () => {
 	afterEach(() => {
@@ -40,5 +41,38 @@ describe("makeDropReporter", () => {
 			{ signal: "traces", count: 3, total: 5 },
 		])
 		expect(warn).not.toHaveBeenCalled()
+	})
+})
+
+describe("makeOtlpLayer", () => {
+	it("counts drops per build when one layer value is built twice", async () => {
+		const totals: Array<number> = []
+		const shared = makeOtlpLayer({
+			baseUrl: "https://collector.test",
+			resource: { serviceName: "unit-test" },
+			logPrefix: "[Test]",
+			maxQueueSize: 3,
+			onDrop: (drop) => totals.push(drop.total),
+			spans: {},
+		}).pipe(
+			Layer.provide(FetchHttpClient.layer),
+			Layer.provide(
+				Layer.succeed(FetchHttpClient.Fetch, async () => new Response(null, { status: 200 })),
+			),
+		)
+		const tenSpans = Effect.forEach(
+			Arr.range(1, 10),
+			(i) => Effect.void.pipe(Effect.withSpan(`job.${i}`)),
+			{
+				discard: true,
+			},
+		)
+
+		await Effect.runPromise(tenSpans.pipe(Effect.provide(shared)))
+		const firstRun = Arr.last(totals)
+		await Effect.runPromise(tenSpans.pipe(Effect.provide(shared)))
+
+		expect(firstRun).toEqual(Option.some(7))
+		expect(Arr.last(totals)).toEqual(Option.some(7))
 	})
 })
