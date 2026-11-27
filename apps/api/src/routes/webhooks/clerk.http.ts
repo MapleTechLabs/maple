@@ -1,5 +1,5 @@
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Clock, Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { DEFAULT_MAPLE_REGION } from "@maple/domain/organization-regions"
 import { ClerkWebhookSecret } from "@maple/infra/secrets"
@@ -22,6 +22,8 @@ import {
 } from "@maple/backend/services/product-events/clerk-events"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AdConversionsService } from "@maple/backend/services/ad-conversions/AdConversionsService"
+import { decodeAdClick } from "@maple/backend/services/ad-conversions/ad-click"
 import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 import { receiveSvixWebhook, webhookText } from "./svix-receiver"
 import * as Policy from "@maple/domain/policy"
@@ -71,6 +73,34 @@ const handler = Effect.gen(function* () {
 	const regions = yield* OrganizationRegionService
 	const sso = yield* EnterpriseSsoService
 	const roles = yield* RolesService
+	const adConversions = yield* AdConversionsService
+
+	/** The ad click a sign-up carried, kept for the Google Ads upload. Failures only log. */
+	const recordAdSignup = Effect.fn("ClerkWebhook.adSignup")(function* (
+		rawUserId: string,
+		unsafeMetadata: unknown,
+		createdAtMs: number,
+	) {
+		const decoded = decodeAdClick(unsafeMetadata, createdAtMs)
+		yield* Effect.annotateCurrentSpan({ "maple.ad_click.outcome": decoded._tag })
+		if (decoded._tag === "Invalid") {
+			yield* Effect.logInfo("Clerk user.created carried an unreadable ad click").pipe(
+				Effect.annotateLogs({ rawAdClick: decoded.rawAdClick }),
+			)
+			return
+		}
+		const userId = decodeUserId(rawUserId)
+		if (decoded._tag === "Absent" || Option.isNone(userId)) return
+		yield* adConversions
+			.recordSignup(userId.value, decoded.click, createdAtMs)
+			.pipe(
+				Effect.catchTag("@maple/backend/ad-conversions/AdConversionPersistenceError", (error) =>
+					Effect.logError("Ad sign-up conversion was not recorded").pipe(
+						Effect.annotateLogs({ error: error.message }),
+					),
+				),
+			)
+	})
 
 	/**
 	 * A revocation that only half-ran is the state this whole handler exists to
@@ -327,7 +357,10 @@ const handler = Effect.gen(function* () {
 				})
 				return webhookText("Unrecognized user payload", 400)
 			}
-			return yield* revoke(revocation.revokeUser(userId.value))
+			// The ad click goes with the user; a failure retries with the sweep.
+			return yield* revoke(
+				Effect.andThen(adConversions.forgetUser(userId.value), revocation.revokeUser(userId.value)),
+			)
 		}
 
 		// A signup has no home region, so one region counts it.
@@ -344,6 +377,9 @@ const handler = Effect.gen(function* () {
 			)
 			if (Option.isSome(user)) {
 				yield* productEvents.track(signupCompletedEvent(user.value, envelope.value.timestamp))
+				const createdAtMs =
+					user.value.created_at ?? envelope.value.timestamp ?? (yield* Clock.currentTimeMillis)
+				yield* recordAdSignup(user.value.id, user.value.unsafe_metadata, createdAtMs)
 				yield* Effect.annotateCurrentSpan({ "maple.webhook.outcome": "handled" })
 			} else {
 				yield* Effect.annotateCurrentSpan({ "maple.webhook.outcome": "parse_rejected" })
@@ -372,5 +408,7 @@ export const ClerkWebhookRouter = ClerkWebhookRoute.pipe(
 	// Provided here rather than in the HTTP graph: the sweep pulls in the edge
 	// cache and the destination encryption key, and nothing else in the router
 	// tree needs them.
-	Layer.provide(Layer.mergeAll(MembershipRevocationService.layer, RolesService.layer)),
+	Layer.provide(
+		Layer.mergeAll(MembershipRevocationService.layer, RolesService.layer, AdConversionsService.layer),
+	),
 )

@@ -1,0 +1,30 @@
+import { Array as Arr, Option, Schema, String as Str } from "effect"
+
+/**
+ * The ad click the landing site kept in the `maple_ad_click` cookie (`<type>.<id>.<clickTimeMs>`),
+ * handed to Clerk sign-up as `unsafeMetadata.adClick` so the API can report the conversion.
+ */
+export const AD_CLICK_COOKIE = "maple_ad_click"
+
+const AdClickMetadata = Schema.Struct({
+	type: Schema.Literals(["gclid", "gbraid", "wbraid"]),
+	id: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,256}$/)),
+	clickTime: Schema.NumberFromString.check(Schema.isInt()),
+})
+export type AdClickMetadata = typeof AdClickMetadata.Type
+
+const decodeClick = Schema.decodeUnknownOption(AdClickMetadata)
+
+const parseValue = (value: string): Option.Option<AdClickMetadata> => {
+	const parts = Str.split(".")(value)
+	if (parts.length !== 3) return Option.none()
+	return decodeClick({ type: parts[0], id: parts[1], clickTime: parts[2] })
+}
+
+/** The click in a `document.cookie` string, when there is a readable one. */
+export const readAdClick = (cookieHeader: string): Option.Option<AdClickMetadata> =>
+	Arr.findFirst(Str.split(";")(cookieHeader), (pair) => {
+		const trimmed = Str.trim(pair)
+		const prefix = `${AD_CLICK_COOKIE}=`
+		return Str.startsWith(prefix)(trimmed) ? parseValue(Str.slice(prefix.length)(trimmed)) : Option.none()
+	})

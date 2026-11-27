@@ -80,6 +80,7 @@ import {
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
 import { CostConnections } from "./cost-connections"
+import { AdConversions } from "./ad-conversions"
 import { CookielessSalts, CookielessVisits } from "./cookieless-visitors"
 import { FeatureRequests } from "./feature-requests"
 import { DevicePolicyFindings, DeviceVulnerabilityFindings } from "./device-findings"
@@ -161,6 +162,7 @@ export * from "./escalation-chains"
 export * from "./oncall-schedules"
 export * from "./aws-connections"
 export * from "./cost-sources"
+export * from "./ad-conversions"
 export * from "./cookieless-visitors"
 export * from "./gcp-connectors"
 export * from "./gcp-cost-exports"
@@ -290,6 +292,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OrgRetentionPolicies,
 	OpenRouterCostConnections,
 	CostConnections,
+	AdConversions,
 	CookielessSalts,
 	CookielessVisits,
 	FeatureRequests,
