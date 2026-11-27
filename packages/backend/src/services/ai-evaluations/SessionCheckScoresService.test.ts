@@ -430,6 +430,19 @@ describe("SessionCheckScoresService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("moves on when the gateway refuses the org, keeping the reason", () => {
+		const world = makeWorld({ ingestStatus: 402 })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const scores = yield* SessionCheckScoresService
+			yield* scores.enroll(ORG)
+			yield* scores.runTick()
+			const [row] = yield* runRow
+			assert.strictEqual(row?.cursorAt, NOW - SESSION_IDLE_MS)
+			assert.ok(Str.includes("402")(row?.lastError ?? ""))
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("keeps the cursor when a session's scores could not be sent, so the next tick retries", () => {
 		const world = makeWorld({ ingestStatus: 503 })
 		return Effect.gen(function* () {

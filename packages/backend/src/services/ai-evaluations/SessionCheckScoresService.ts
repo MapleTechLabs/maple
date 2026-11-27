@@ -17,7 +17,7 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { loadAiSessionSpans } from "@maple/backend/services/ai-sessions/load-session-spans"
-import { makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { sessionCheckScoresToOtlp } from "./session-check-scores"
@@ -248,6 +248,11 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					{ concurrency: SESSION_CONCURRENCY },
 				)
 				const failed = Arr.filter(outcomes, (outcome) => outcome._tag === "Failure")
+				// A refusal (billing, a revoked key) is the org's state: resending next tick cannot help.
+				const retryable = Arr.filter(
+					failed,
+					(outcome) => !(outcome._tag === "Failure" && isRefusal(outcome.failure)),
+				)
 				const scored = Arr.filter(
 					outcomes,
 					(outcome) => outcome._tag === "Success" && outcome.success,
@@ -270,7 +275,7 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					db.run(
 						PG.update(AiEvaluationRuns)
 							.set({
-								...(failed.length === 0 ? { cursorAt: nextCursorMs } : undefined),
+								...(retryable.length === 0 ? { cursorAt: nextCursorMs } : undefined),
 								lastRunAt: nowMs,
 								lastError: Option.match(firstFailure, {
 									onNone: () => null,
