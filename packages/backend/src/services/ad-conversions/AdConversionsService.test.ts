@@ -16,6 +16,7 @@ const DAY = 86_400_000
 const NOW = 1_764_000_000_000
 const ADA = Schema.decodeSync(UserId)("user_ada")
 const BOB = Schema.decodeSync(UserId)("user_bob")
+const CAL = Schema.decodeSync(UserId)("user_cal")
 const ORG = Schema.decodeSync(OrgId)("org_ada")
 
 const layerFor = (testDb: TestDb) =>
@@ -64,9 +65,12 @@ describe("AdConversionsService", () => {
 			const ads = yield* AdConversionsService
 			yield* ads.recordSignup(ADA, { type: "gclid", id: "old", clickTime: NOW - DAY }, NOW)
 			yield* ads.recordSignup(BOB, { type: "wbraid", id: "ios", clickTime: NOW }, NOW)
+			yield* ads.recordSignup(CAL, { type: "gclid", id: "edge", clickTime: NOW }, NOW)
 			const csv = yield* csvAt(NOW + 90 * DAY)
 			assert.notInclude(csv, "old")
 			assert.notInclude(csv, "ios")
+			// A click exactly 90 days old is still inside Google's window.
+			assert.include(csv, "edge,Sign-up (server),")
 		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 
