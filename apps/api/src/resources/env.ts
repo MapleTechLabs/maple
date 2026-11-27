@@ -40,6 +40,8 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		// Webhook signing secrets; each receiver answers 503 until its secret is set.
 		Secrets.ClerkWebhookSecret.optional,
 		Secrets.AutumnWebhookSecret.optional,
+		// Basic auth for the Google Ads conversion upload; the route answers 503 until it is set.
+		Secrets.GoogleAdsConversionsPassword.optional,
 		// Defaults to MAPLE_INGEST_KEY; set to land product events in another org.
 		Secrets.ProductEventsIngestKey.optional,
 		// Billing details go straight to Stripe; Autumn has no API for them.

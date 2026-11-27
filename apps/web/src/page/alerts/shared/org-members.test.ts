@@ -1,7 +1,8 @@
+import * as Policy from "@maple/domain/policy"
 import { Effect, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import type { ClerkMembershipResource } from "../../../platform/clerk"
-import { MAX_MEMBERS, memberName, membersOf } from "./org-members"
+import { MAX_MEMBERS, memberName, membersOf, respondsToIncidents } from "./org-members"
 
 const membership = (n: number): ClerkMembershipResource => ({
 	id: `mem_${n}`,
@@ -48,6 +49,35 @@ describe("org members", () => {
 		const members = await Effect.runPromise(membersOf(organizationOf(MAX_MEMBERS + 150)))
 		expect(members).toHaveLength(MAX_MEMBERS)
 		expect(memberName(members, `user_${MAX_MEMBERS + 10}`)).toBe("Member")
+	})
+
+	it("says who can respond to incidents from each membership's role", async () => {
+		const custom = (permissions: ReadonlyArray<Policy.Permission>) => ({
+			role: Policy.CUSTOM_ROLE_CLERK_KEY,
+			publicMetadata: {
+				[Policy.MEMBERSHIP_ROLE_METADATA_KEY]: {
+					id: "role_abcdefghijkl",
+					permissions: Policy.encodePermissions(permissions),
+				},
+			},
+		})
+		const memberships: ReadonlyArray<ClerkMembershipResource> = [
+			{ ...membership(0), role: "org:engineer" },
+			{ ...membership(1), role: "org:analyst" },
+			{ ...membership(2), ...custom(["telemetry:read", "incidents:respond"]) },
+			{ ...membership(3), ...custom(["telemetry:read"]) },
+		]
+		const members = await Effect.runPromise(
+			membersOf({
+				getMemberships: () => Promise.resolve({ data: memberships, total_count: memberships.length }),
+			}),
+		)
+		expect(Arr.map(members, (member) => member.canRespondToIncidents)).toEqual([true, false, true, false])
+	})
+
+	it("takes a member whose role Clerk has not reported as able to respond", () => {
+		expect(respondsToIncidents({})).toBe(true)
+		expect(respondsToIncidents({ role: "org:analyst" })).toBe(false)
 	})
 
 	it("reads unknown ids as former members only once the whole directory is known", () => {

@@ -21,10 +21,12 @@ import * as IncidentUpdate from "../page/alerts/incident/update"
 import { breadcrumbsOf as incidentBreadcrumbs, view as incidentView } from "../page/alerts/incident/view"
 import {
 	chainDestinations,
+	chainOf,
 	chainUuid,
 	populatedChains,
 	runOf,
 } from "../page/alerts/shared/escalation-test-fixtures"
+import { memberId, membersWithAnalysts } from "../page/alerts/shared/oncall-test-fixtures"
 import { hubAt, incidentRow, INCIDENT_ID, NOW, ORG, ruleId, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
@@ -79,6 +81,16 @@ const RULES = [
 	ruleRow(3, { name: "Payments webhook failures" }),
 ]
 
+/** A chain that pages people by name, two of them on a role that cannot respond to incidents. */
+const PEOPLE_CHAIN = chainOf({
+	n: 4,
+	name: "Data platform",
+	steps: [
+		{ destinations: [1], users: [memberId(5), memberId(6)], wait: 10 },
+		{ destinations: [], users: [memberId(0)], wait: 20 },
+	],
+})
+
 /** Runs messages through a page's update, keeping the local commands (a dialog's open animation). */
 const fold = <PM, PS>(
 	start: Step<PM, PS>,
@@ -94,12 +106,14 @@ const hubStep = (model: HubModel.Model, message: HubMessage.Message) =>
 	HubUpdate.update(model, message, CONTEXT)
 const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
 	const entered = HubUpdate.init(hubAt({ tab: "routing" }), CONTEXT).model
-	const chains = state === "chains-empty" ? [] : populatedChains([ruleId(1), ruleId(2), ruleId(3)])
+	const chains =
+		state === "chains-empty" ? [] : [...populatedChains([ruleId(1), ruleId(2), ruleId(3)]), PEOPLE_CHAIN]
 	const base = [
 		HubMessage.Message.ReadClock({ nowMs: NOW }),
 		HubMessage.Message.CompletedFetchSession({ orgId: ORG, grants: GRANTS }),
 		HubMessage.Message.UpdatedDestinations({ orgId: ORG, rows: chainDestinations }),
 		HubMessage.Message.UpdatedRules({ orgId: ORG, rows: RULES }),
+		HubMessage.Message.CompletedFetchMembers({ result: Result.succeed(membersWithAnalysts) }),
 		HubMessage.Message.CompletedFetchRoutingDeliveries({
 			key: entered.routingDeliveries.key ?? "",
 			result: Result.succeed([]),

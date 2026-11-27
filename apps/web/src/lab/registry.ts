@@ -177,7 +177,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/escalation-editor",
 		title: "Escalation chain editor",
 		description:
-			"The escalation chain editor page new, populated, with a step inserted, invalid, asking to delete or to leave, read-only and with a long chain (`?state=`).",
+			"The escalation chain editor page new, populated, with a step inserted, invalid, asking to delete or to leave, read-only, with a long chain and paging someone whose role cannot respond (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},

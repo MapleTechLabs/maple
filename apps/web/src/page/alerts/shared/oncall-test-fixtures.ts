@@ -46,6 +46,16 @@ export const oncallMembers: ReadonlyArray<OrgMember> = Arr.map(NAMES, (name, ind
 	name,
 	email: `${Str.toLowerCase(Str.replaceAll(" ", ".")(name))}@acme.test`,
 	imageUrl: "",
+	canRespondToIncidents: true,
+}))
+
+/** Mei Chen and Omar Haddad: on a role without `incidents:respond`, as an Analyst is. */
+export const cannotRespondIds: ReadonlyArray<string> = [memberId(5), memberId(6)]
+
+/** The same members, the two in `cannotRespondIds` unable to acknowledge or resolve. */
+export const membersWithAnalysts: ReadonlyArray<OrgMember> = Arr.map(oncallMembers, (member) => ({
+	...member,
+	canRespondToIncidents: !Arr.contains(cannotRespondIds, member.userId),
 }))
 
 /** Someone who left the org: no member list names them any more. */

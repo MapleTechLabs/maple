@@ -66,6 +66,7 @@ import { ChatCallbackRouter } from "@/routes/chat-integration.http"
 import { VcsWebhookRouter } from "@/routes/webhooks/vcs.http"
 import { AutumnWebhookRouter } from "@/routes/webhooks/autumn.http"
 import { ClerkWebhookRouter } from "@/routes/webhooks/clerk.http"
+import { GoogleAdsConversionsRouter } from "@/routes/google-ads-conversions.http"
 import { HttpV2AlertDeliveriesLive } from "@/routes/v2/alert-deliveries.http"
 import { HttpV2AlertDestinationsLive } from "@/routes/v2/alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "@/routes/v2/alert-incidents.http"
@@ -309,6 +310,7 @@ const RawRoutes = rawRoutes<Layer.Success<ApiPortsLayer>>()(
 		UptimeHeartbeatRouter,
 		VcsWebhookRouter,
 		ClerkWebhookRouter,
+		GoogleAdsConversionsRouter,
 		AutumnWebhookRouter,
 		HealthRouter,
 		DocsRoute,

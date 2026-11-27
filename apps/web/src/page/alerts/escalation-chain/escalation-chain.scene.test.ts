@@ -29,7 +29,14 @@ import {
 	chainUuid,
 	populatedChains,
 } from "../shared/escalation-test-fixtures"
-import { memberId, mixedTargetChain, oncallMembers, populatedSchedules } from "../shared/oncall-test-fixtures"
+import {
+	memberId,
+	membersWithAnalysts,
+	mixedTargetChain,
+	oncallMembers,
+	populatedSchedules,
+} from "../shared/oncall-test-fixtures"
+import { respondsToIncidents } from "../shared/org-members"
 import { ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
 import { FocusChainElement } from "./command"
 import { payloadOf } from "./form"
@@ -284,6 +291,90 @@ describe("escalation chain editor", () => {
 				members: Arr.filter(model.members ?? [], (member) => member.userId !== memberId(0)),
 			}),
 			expectView(text("Unavailable member")).toExist(),
+		)
+	})
+
+	test("a person whose role cannot respond is marked on their step, and the chain still saves", () => {
+		const reason = `Can't acknowledge or resolve: their role lacks ${Policy.permissions["incidents:respond"].label}.`
+		const withAnalysts = (model: Model) =>
+			run(model, [Message.CompletedFetchMembers({ result: Result.succeed(membersWithAnalysts) })])
+		const paging = (userId: string) =>
+			run(withAnalysts(newChain()), [
+				Message.ChangedName({ value: "Data platform" }),
+				pick("s0", `user:${userId}`),
+			])
+		// Someone who can respond: the chip alone.
+		scene(
+			{ update: pageUpdate, view },
+			given(paging(memberId(0))),
+			expectView(text("Ben Brook")).toExist(),
+			expectView(text(/can't acknowledge or resolve/u)).not.toExist(),
+			expectView(role("img", { name: reason })).not.toExist(),
+		)
+		// Someone who cannot: a mark on the chip and a line that names them and the permission.
+		const warned = paging(memberId(5))
+		scene(
+			{ update: pageUpdate, view },
+			given(warned),
+			expectView(role("img", { name: reason })).toExist(),
+			expectView(text(`Mei Chen ${Str.uncapitalize(reason)}`)).toExist(),
+			click(role("button", { name: "Stop paging Mei Chen on step 1" })),
+			Command.resolve(FocusChainElement, Message.CompletedFocus()),
+			expectView(text(/can't acknowledge or resolve/u)).not.toExist(),
+		)
+		// Paging them is allowed: the save goes out with the person on the step.
+		const saved = pageUpdate(warned, Message.ClickedSave())
+		expect(names(saved.commands)).toEqual(["SaveEscalationChainFromEditor"])
+		expect(
+			Option.map(payloadOf(warned.form), (payload) =>
+				Arr.flatMap(payload.steps, (step) => step.targets),
+			),
+		).toEqual(Option.some([{ type: "user", user_id: memberId(5) }]))
+	})
+
+	test("nobody is warned about while their role is not known", () => {
+		const unknown = Arr.map(oncallMembers, (member) => ({
+			...member,
+			canRespondToIncidents: respondsToIncidents({}),
+		}))
+		const model = run(newChain(), [
+			Message.CompletedFetchMembers({ result: Result.succeed(unknown) }),
+			pick("s0", `user:${memberId(5)}`),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Mei Chen")).toExist(),
+			expectView(text(/can't acknowledge or resolve/u)).not.toExist(),
+		)
+		// Before the members load, a saved step's person is not guessed at either.
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...model, members: null }),
+			expectView(text(/can't acknowledge or resolve/u)).not.toExist(),
+		)
+	})
+
+	test("the person picker says who cannot respond before they are added", () => {
+		const menuId = menuIdOf("targets", "s0")
+		const open = (members: Model["members"]): Model => ({
+			...newChain(),
+			members,
+			menus: { [menuId]: Menu.init(menuId, { isOpen: true }) },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(open(membersWithAnalysts)),
+			Mount.resolve(Menu.MountMenu, Menu.Message.CompletedMountMenu()),
+			expectView(within(role("menuitem", { name: /Omar Haddad/u }), text("Can't respond"))).toExist(),
+			expectView(within(role("menuitem", { name: /Ben Brook/u }), text("Can't respond"))).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(open(oncallMembers)),
+			Mount.resolve(Menu.MountMenu, Menu.Message.CompletedMountMenu()),
+			expectView(role("menuitem", { name: /Omar Haddad/u })).toExist(),
+			expectView(text("Can't respond")).not.toExist(),
 		)
 	})
 

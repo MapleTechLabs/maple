@@ -6,6 +6,7 @@
 	"sideEffects": false,
 	"exports": {
 		".": "./src/index.ts",
+		"./ad-click": "./src/ad-click.ts",
 		"./ai-traffic": "./src/ai-traffic.ts",
 		"./anticipated-errors": "./src/anticipated-errors.ts",
 		"./audit-actions": "./src/audit-actions.ts",

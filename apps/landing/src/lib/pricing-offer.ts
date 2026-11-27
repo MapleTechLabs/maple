@@ -290,7 +290,7 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 			featureId: "ai_credits",
 			label: labels.ai_credits,
 			unit: "usd",
-			included: 10,
+			included: 1,
 			rate: 1,
 			rateUnits: 1,
 		},
