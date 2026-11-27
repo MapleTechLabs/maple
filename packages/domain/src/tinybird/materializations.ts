@@ -1545,7 +1545,7 @@ export const aiEvaluationsMv = defineMaterializedView("ai_evaluations_mv", {
  */
 export const aiEvaluationsSpanEventsMv = defineMaterializedView("ai_evaluations_span_events_mv", {
 	description:
-		"Populates ai_evaluations with span events named gen_ai.evaluation.result, one row per score, keyed to the span carrying the event.",
+		"Populates ai_evaluations with span events named gen_ai.evaluation.result, one row per score at the event's own time, keyed to the span carrying the event.",
 	datasource: aiEvaluations,
 	nodes: [
 		node({
@@ -1553,13 +1553,14 @@ export const aiEvaluationsSpanEventsMv = defineMaterializedView("ai_evaluations_
 			sql: `
         SELECT
           OrgId,
-          Timestamp,${evaluationColumnsSql({ attrs: "EventAttributes", traceId: "TraceId", spanId: "SpanId", source: "otel" })},
+          EventTimestamp AS Timestamp,${evaluationColumnsSql({ attrs: "EventAttributes", traceId: "TraceId", spanId: "SpanId", source: "otel" })},
           ServiceName,
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv
         FROM traces
         ARRAY JOIN
           EventsName AS EventName,
-          EventsAttributes AS EventAttributes
+          EventsAttributes AS EventAttributes,
+          EventsTimestamp AS EventTimestamp
         WHERE has(EventsName, '${GEN_AI_EVALUATION_EVENT}')
           AND EventName = '${GEN_AI_EVALUATION_EVENT}'
       `,
