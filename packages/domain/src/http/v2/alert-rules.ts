@@ -963,14 +963,16 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				alertPersistence,
 				alertRuleDestinationNotFound,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "createAlertRule",
-				summary: "Create an alert rule",
-				description:
-					"Creates an alert rule. Referenced `destination_ids` must exist. Requires an org-admin role and the `alerts:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handlerChecks("alerts:manage", "query:sql"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "createAlertRule",
+					summary: "Create an alert rule",
+					description:
+						"Creates an alert rule. Referenced `destination_ids` must exist. Requires an org-admin role and the `alerts:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("retrieve", "/:id", {
@@ -1000,14 +1002,16 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				alertRuleDestinationNotFound,
 				alertRuleStoredConfigInvalid,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "updateAlertRule",
-				summary: "Update an alert rule",
-				description:
-					'Updates an alert rule. Omitted fields are left unchanged — `{"enabled": false}` pauses a rule without touching its condition. Requires an org-admin role and the `alerts:write` scope.',
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handlerChecks("alerts:manage", "query:sql"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "updateAlertRule",
+					summary: "Update an alert rule",
+					description:
+						'Updates an alert rule. Omitted fields are left unchanged — `{"enabled": false}` pauses a rule without touching its condition. Requires an org-admin role and the `alerts:write` scope.',
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("delete", "/:id", {
@@ -1040,7 +1044,10 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 			],
 		})
 			// It answers with the rule's live result, so it reads telemetry.
-			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotate(EndpointAccess, [
+				requires("telemetry:read"),
+				handlerChecks("alerts:manage", "query:sql"),
+			])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "testAlertRule",
@@ -1062,7 +1069,10 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				...V2QueryEngineRouteErrors,
 			],
 		})
-			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotate(EndpointAccess, [
+				requires("telemetry:read"),
+				handlerChecks("alerts:manage", "query:sql"),
+			])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "previewAlertRule",
@@ -1120,4 +1130,4 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				"Monitors over your telemetry: error rate, latency percentiles, Apdex, throughput, metrics, query-builder queries, and raw SQL. Rules evaluate on a rolling window, open incidents after consecutive breaches, and notify their alert destinations. Mutations are admin-only.",
 		}),
 	)
-	.annotate(EndpointAccess, handlerChecks("alerts:manage", "query:sql")) {}
+	.annotate(EndpointAccess, handlerChecks("alerts:manage")) {}

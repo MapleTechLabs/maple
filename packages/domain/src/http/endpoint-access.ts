@@ -6,8 +6,8 @@ import { type Permission, SCOPED_READ } from "../policy"
  * runs. Mark the endpoint, or its whole group with `.annotate(EndpointAccess, …)`; a mark is one
  * rule or a list of them (`[requires("dashboards:edit"), handlerChecks("query:sql")]`). Both apply: an
  * endpoint marked `requires("dashboards:edit")` in a group marked `requires("telemetry:read")` needs
- * both, and `"personal"` or `handlerChecks(…)` on an endpoint keeps its group's `requires`. An
- * endpoint's `handlerChecks(…)` replaces its group's.
+ * both, and `"personal"` or `handlerChecks(…)` on an endpoint keeps its group's `requires`. A
+ * group's `handlerChecks(…)` covers only its writes that carry no mark of their own.
  *
  * - `{ requires }`: the caller must hold every permission it lists.
  * - `"personal"`: open to every member: the caller's own state (sessions, revoking their own
@@ -89,13 +89,15 @@ export const requiredPermissions = (called: CalledEndpoint): ReadonlyArray<Permi
 }
 
 /**
- * The permissions the endpoint's handler may ask on top: its own `handlerChecks(…)` mark, else its
- * group's for a write. A group's mark says nothing about its reads, which the gate already covers.
+ * The permissions the endpoint's handler may ask on top: its own mark's, else its group's for a
+ * write with no mark of its own. A group's mark says nothing about its reads, which the gate
+ * covers, nor about an endpoint that carries a rule itself.
  */
 export const handlerPermissions = (called: CalledEndpoint): ReadonlyArray<Permission> => {
-	const own = Arr.flatMap(rulesOf(called.endpoint), handlerOf)
-	if (own.length > 0 || isRead(called.endpoint.method)) return own
-	return Arr.flatMap(rulesOf(called.group), handlerOf)
+	const own = rulesOf(called.endpoint)
+	return own.length > 0 || isRead(called.endpoint.method)
+		? Arr.flatMap(own, handlerOf)
+		: Arr.flatMap(rulesOf(called.group), handlerOf)
 }
 
 /** Whether no rule covers the endpoint and it is not a read: the gate refuses it to everyone. */
