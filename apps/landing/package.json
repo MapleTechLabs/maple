@@ -7,6 +7,7 @@
 		"screenshots": "bun scripts/screenshots/capture.ts",
 		"screenshots:thread": "bun scripts/screenshots/capture.ts --set thread",
 		"screenshots:status-pages": "bun scripts/screenshots/status-pages.ts",
+		"screenshots:product-analytics": "bun scripts/screenshots/product-analytics-guides.ts",
 		"check:lightbox": "bun scripts/lightbox-check.ts",
 		"dev": "bun run --silent sync:cli && exec env -u CLAUDECODE astro dev --port ${PORT:-3391} --host ${HOST:-127.0.0.1}",
 		"sync:i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url baseLocale && astro sync",
