@@ -95,10 +95,17 @@ const EvaluationWindow = {
  */
 export const AI_EVALUATOR_NAME_MAX_UNITS = EVALUATION_NAME_MAX * 2
 
-const EvaluatorName = Schema.String.check(
+export const AiEvaluatorName = Schema.String.check(
 	Schema.isMinLength(1),
 	Schema.isMaxLength(AI_EVALUATOR_NAME_MAX_UNITS),
 )
+
+/** A sessions filter: sessions whose latest score of this evaluator has this verdict. */
+export const AiEvaluationFilter = Schema.Struct({
+	name: AiEvaluatorName,
+	verdict: Schema.Literals(["pass", "fail"]),
+})
+export type AiEvaluationFilter = Schema.Schema.Type<typeof AiEvaluationFilter>
 
 export class ListAiEvaluatorsRequest extends Schema.Class<ListAiEvaluatorsRequest>("ListAiEvaluatorsRequest")(
 	{
@@ -114,7 +121,7 @@ export class ListAiEvaluatorsResponse extends Schema.Class<ListAiEvaluatorsRespo
 
 export class GetAiEvaluatorRequest extends Schema.Class<GetAiEvaluatorRequest>("GetAiEvaluatorRequest")({
 	...EvaluationWindow,
-	name: EvaluatorName,
+	name: AiEvaluatorName,
 	bucketSeconds: BucketSeconds,
 	/** Only scores with this verdict in `scores`. */
 	verdict: Schema.optionalKey(Schema.Literals(["pass", "fail"])),

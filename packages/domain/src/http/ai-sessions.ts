@@ -8,6 +8,7 @@ import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
 import { EndpointAccess, requires } from "./endpoint-access"
 import { AuditedRead } from "./audit-log"
+import { AiEvaluationFilter, LlmEvalsDisabledError } from "./ai-evaluations"
 
 // Backed by the `maple_ai.*` span attributes the ingest gateway stamps at
 // decode time; a session is resolved at trace granularity by
@@ -107,6 +108,8 @@ export class ListAiSessionsRequest extends Schema.Class<ListAiSessionsRequest>("
 	llmCallsMax: Schema.optional(CountBound),
 	toolCallsMin: Schema.optional(CountBound),
 	toolCallsMax: Schema.optional(CountBound),
+	/** Only sessions scored this verdict by this evaluator; refused outside the `llmEvals` rollout. */
+	evaluation: Schema.optional(AiEvaluationFilter),
 	sortBy: Schema.optional(AiSessionSortKey),
 	sortDir: Schema.optional(AiSessionSortDir),
 }) {}
@@ -1020,7 +1023,7 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 		HttpApiEndpoint.post("list", "/list", {
 			payload: ListAiSessionsRequest,
 			success: ListAiSessionsResponse,
-			error: warehouseReadHttpErrors,
+			error: [...warehouseReadHttpErrors, LlmEvalsDisabledError],
 		}),
 	)
 	.add(

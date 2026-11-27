@@ -134,6 +134,29 @@ export function aiEvaluationBreakdownQuery() {
 		.format("JSON")
 }
 
+/** One evaluator's latest verdict, the Agent Sessions list's evaluation filter. */
+export interface AiEvaluationMatch {
+	readonly name: string
+	readonly verdict: "pass" | "fail"
+}
+
+/**
+ * What an evaluation filter matches, over the window's latest scores: the sessions its
+ * session-scope scores name, and the traces its other scores grade (filed under each trace's
+ * session). A score naming only a response matches neither.
+ */
+export function aiEvaluationMatchSubqueries(match: AiEvaluationMatch) {
+	const named = ($: Columns) => $.Scope.eq("session").and($.SessionId.neq(""))
+	return {
+		sessionIds: latestScores(($) => [$.Name.eq(match.name), named($)])
+			.select(($) => ({ sessionId: $.sessionId }))
+			.where(($) => [$.verdict.eq(match.verdict)]),
+		traceIds: latestScores(($) => [$.Name.eq(match.name), $.TraceId.neq(""), CH.not(named($))])
+			.select(($) => ({ traceId: $.traceId }))
+			.where(($) => [$.verdict.eq(match.verdict)]),
+	}
+}
+
 export interface AiEvaluationScoresOpts {
 	/** Only this evaluator. */
 	readonly name?: string

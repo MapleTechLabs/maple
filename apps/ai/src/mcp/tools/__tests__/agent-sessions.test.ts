@@ -12,6 +12,8 @@ import { aiSpanRow } from "../../__evals__/fixtures"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import {
 	GetAgentSessionOutput,
 	GetAgentSessionTranscriptOutput,
@@ -294,6 +296,44 @@ describe("list_agent_sessions rendering", () => {
 	it("parses a comma-separated filter into the entries the SQL matches on", async () => {
 		const output = await rendered("list_agent_sessions", { ...WINDOW, tools: "run_sql, search_logs" })
 		expect(rowCells(output, CSV_SESSION_ID)?.[1]).toBe("maple")
+	})
+})
+
+describe("list_agent_sessions evaluation filter", () => {
+	const withFlags = (llmEvals: boolean) =>
+		makeEvalRuntime(
+			OrganizationFeatureFlagsService.fixed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, llmEvals }),
+		)
+	const EVALUATION = { evaluation: "Context window", evaluation_verdict: "fail" }
+
+	it("filters by an evaluator's verdict, and the next page repeats it", async () => {
+		const enabled = withFlags(true)
+		try {
+			const answer = (await runToolDirect(enabled, "list_agent_sessions", {
+				...WINDOW,
+				...EVALUATION,
+				limit: 1,
+			})) as McpToolResult
+			const structured = Schema.decodeUnknownSync(ListAgentSessionsOutput)(answer.structuredContent)
+			expect(structured.filters.evaluation).toEqual({ name: "Context window", verdict: "fail" })
+			expect(markdown(answer)).toContain('evaluation="Context window" evaluation_verdict="fail"')
+		} finally {
+			await enabled.dispose()
+		}
+	})
+
+	it("refuses the filter outside the llmEvals rollout", async () => {
+		const disabled = withFlags(false)
+		try {
+			const answer = (await runToolDirect(disabled, "list_agent_sessions", {
+				...WINDOW,
+				...EVALUATION,
+			})) as McpToolResult
+			expect(answer.isError).toBe(true)
+			expect(markdown(answer)).toContain("needs LLM evals")
+		} finally {
+			await disabled.dispose()
+		}
 	})
 })
 

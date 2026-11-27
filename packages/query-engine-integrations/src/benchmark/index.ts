@@ -153,6 +153,17 @@ export const integrationFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// The evaluation score filter: sessions by an evaluator's latest verdict, off `ai_evaluations`.
+		module: "ai-sessions",
+		name: "aiSessionRankQuery",
+		label: "evaluation",
+		compile: () =>
+			compileUnsafe(
+				CH.aiSessionRankQuery({ limit: 50, evaluation: { name: "context_window", verdict: "fail" } }),
+				window,
+			),
+	},
+	{
 		// And then: the ranked sessions' rows, over the page's bounds alone.
 		module: "ai-sessions",
 		name: "aiSessionPageQuery",

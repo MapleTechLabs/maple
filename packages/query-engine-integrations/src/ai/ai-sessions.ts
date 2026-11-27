@@ -136,6 +136,7 @@ import {
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { exactDateTime64, inTraces, orgIdParam, paramTraceWindow } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
+import { type AiEvaluationMatch, aiEvaluationMatchSubqueries } from "@maple/query-engine/ch"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
 	AI_SESSION_SUMMARY_MAX_TURNS,
@@ -352,6 +353,9 @@ export interface AiSessionPageOpts extends AiSessionFilterOpts {
 	readonly llmCallsMax?: number
 	readonly toolCallsMin?: number
 	readonly toolCallsMax?: number
+	/** Only sessions with a latest score of this evaluator and verdict in the window: a session-scope
+	 *  score naming the session, or a score of one of its traces. */
+	readonly evaluation?: AiEvaluationMatch
 	readonly sortBy?: AiSessionSortKey
 	readonly sortDir?: AiSessionSortDir
 	/**
@@ -776,6 +780,7 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 	// The `HAVING` and `WHERE` levels see the aliases by name only.
 	const column = {
 		sessionId: CH.dynamicColumn("sessionId", T.string),
+		traceId: CH.dynamicColumn("traceId", T.string),
 		errorAgentSpans: CH.dynamicColumn<number>("errorAgentSpans", T.float64),
 		agentDurationMs: CH.dynamicColumn<number>("agentDurationMs", T.float64),
 		cost: CH.dynamicColumn<number>("cost", T.float64),
@@ -828,6 +833,13 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 		CH.when(opts.durationMaxMs, (v) => column.agentDurationMs.lte(v)),
 		CH.when(opts.toolCallsMin, (v) => column.toolCalls.gte(v)),
 		CH.when(opts.toolCallsMax, (v) => column.toolCalls.lte(v)),
+		// Over the session's traces, so a score on any trace of it matches the whole session.
+		CH.when(opts.evaluation, (match) => {
+			const scored = aiEvaluationMatchSubqueries(match)
+			return inSubquery(column.sessionId, scored.sessionIds).or(
+				CH.countIf(inSubquery(column.traceId, scored.traceIds)).gt(0),
+			)
+		}),
 	]
 	return { column, order, ranksOnSession, paged, sessionFilters }
 }

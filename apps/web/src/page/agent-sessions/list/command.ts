@@ -8,6 +8,7 @@ import {
 	listAiSessions,
 } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
+import { listAiEvaluators } from "@maple/web-data/warehouse/ai-evaluations"
 import { Clock, Duration, Effect, Option, Order, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { settleTo, settled } from "@maple/views/data/load-failure"
@@ -110,6 +111,17 @@ export const FetchFacets = Command.define("FetchAgentSessionsFacets", {
 	execute: ({ key, window }) =>
 		getAiSessionsFacets({ data: window }).pipe(
 			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
+		),
+})
+
+/** The evaluators that scored in the window: the evaluation filter's options. */
+export const FetchEvaluators = Command.define("FetchAgentSessionsEvaluators", {
+	args: { key: Schema.String, window: TimeWindow },
+	messages: [Message.CompletedFetchEvaluators],
+	execute: ({ key, window }) =>
+		listAiEvaluators({ data: window }).pipe(
+			Effect.map((response) => response.evaluators),
+			settleTo((result) => Message.CompletedFetchEvaluators({ key, result })),
 		),
 })
 

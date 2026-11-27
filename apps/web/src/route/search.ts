@@ -563,6 +563,9 @@ export const AgentSessionsSearch = Schema.Struct({
 	llmCallsMax: NumberParam,
 	toolCallsMin: NumberParam,
 	toolCallsMax: NumberParam,
+	/** The evaluation score filter: an evaluator's name and the verdict its latest score has. */
+	evaluator: StringParam,
+	evaluatorVerdict: Schema.optional(Schema.Literals(["pass", "fail"])),
 	sortBy: Schema.optional(AiSessionSortKey),
 	sortDir: Schema.optional(AiSessionSortDir),
 })

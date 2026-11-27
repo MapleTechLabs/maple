@@ -1,5 +1,5 @@
 import { RequestMode } from "@maple/views/data/keyed"
-import { AiSessionDetailsItem, AiSessionSortKey } from "@maple/domain/http"
+import { AiEvaluatorSummary, AiSessionDetailsItem, AiSessionSortKey } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -37,6 +37,7 @@ export const Message = defineMessageUnion({
 	},
 	CompletedFetchFacets: result(Facets),
 	CompletedFetchDistributions: result(Distributions),
+	CompletedFetchEvaluators: result(Schema.Array(AiEvaluatorSummary)),
 	CompletedFetchTabSessions: result(Schema.Number),
 	CompletedFetchTabTools: result(Schema.Number),
 	CompletedDetectModels: { key: Schema.String, models: Schema.Array(DetectedModel) },
@@ -55,6 +56,8 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	ClickedClearAllFilters: {},
 	ToggledFacetOption: { facet: ListFacet, name: Schema.String },
+	/** An evaluation option (`evaluationOptionKey`): selects it, or clears it when it is the current one. */
+	ToggledEvaluation: { key: Schema.String },
 	ToggledGrouped: {},
 	ChangedRangeDraft: { range: RangeKey, min: Schema.String, max: Schema.String },
 	ElapsedRangeDebounce: { range: RangeKey, version: Schema.Number },
