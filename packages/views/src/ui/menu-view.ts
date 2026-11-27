@@ -53,6 +53,8 @@ export type MenuItemEntry = Readonly<{
 	content?: ReadonlyArray<Html | string>
 	/** A trailing muted note that says whose or what the item is (a shared view's owner). */
 	meta?: string
+	/** `warning` draws `meta` in the warning tone, for a pick that works but needs a second look. */
+	metaTone?: "muted" | "warning"
 	/**
 	 * The pick in effect, marked with a trailing check. Unlike a radio item it closes the menu when
 	 * picked, for a list whose items navigate.
@@ -183,9 +185,11 @@ const trailedLabel = (h: H, entry: MenuItemEntry): ReadonlyArray<Html | string> 
 				...(entry.meta === undefined
 					? []
 					: [
-							typography(h, { tone: "muted", truncate: true, className: "max-w-32" }, [
-								entry.meta,
-							]),
+							typography(
+								h,
+								{ tone: entry.metaTone ?? "muted", truncate: true, className: "max-w-32" },
+								[entry.meta],
+							),
 						]),
 				// Decorative: the item already says it is the pick in effect with `aria-current`.
 				...(entry.isCurrent === true

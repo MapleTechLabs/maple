@@ -138,7 +138,9 @@ export interface ClerkUserMembership {
  * The permissions a membership holds: its Clerk role's, or for `org:custom` the ones its public
  * metadata carries. None until Clerk has read the role.
  */
-export const membershipGrants = (membership: ClerkUserMembership): Option.Option<Policy.Grants> =>
+export const membershipGrants = (
+	membership: Pick<ClerkUserMembership, "role" | "publicMetadata">,
+): Option.Option<Policy.Grants> =>
 	Option.map(Option.fromNullishOr(membership.role), (role) =>
 		Policy.grantsOf(
 			[role],

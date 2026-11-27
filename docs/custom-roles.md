@@ -100,7 +100,10 @@ characters each, made of letters, digits, spaces and `. _ : / @ + -`.
 - Membership answers are cached up to 5 minutes (shared) and 60 s (per isolate). A narrowing
   evicts the shared entry and the handling isolate's memo; other isolates keep the old permissions
   up to 60 s, and everything up to 5 minutes if the eviction never ran.
-- Escalation steps page whoever they name, regardless of that person's permissions.
+- Escalation steps page whoever they name, regardless of that person's permissions. The chain
+  editor and the Routing tab's chain list warn about a named person whose role lacks Respond to
+  incidents; the chain still saves and the page is still sent. Whoever a schedule puts on call is
+  not checked.
 - Every permission implies Read telemetry unless it is marked `readsNoTelemetry` (billing, own
   devices, MCP and restricted keys, the support channel, status page updates, the public ingest
   key). A role without Read telemetry is for those jobs only.

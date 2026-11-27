@@ -1,8 +1,22 @@
 import { Array as Arr, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { chainSummary, formatWait, runView } from "./escalation-chains"
+import * as Policy from "@maple/domain/policy"
+import {
+	cannotRespondCountText,
+	cannotRespondSentence,
+	chainSummary,
+	formatWait,
+	runView,
+	unableToRespond,
+} from "./escalation-chains"
 import { chainDestinations, chainOf, runOf } from "./escalation-test-fixtures"
-import { memberId, mixedTargetChain } from "./oncall-test-fixtures"
+import {
+	formerMemberId,
+	memberId,
+	membersWithAnalysts,
+	mixedTargetChain,
+	oncallMembers,
+} from "./oncall-test-fixtures"
 import { NOW } from "../../kit/alert-test-rows"
 
 const nameOf = (id: string) =>
@@ -60,6 +74,53 @@ describe("chainSummary with people and schedules", () => {
 		expect(chainSummary(chain, nameOf)).toBe(
 			"Slack #alerts-api, then the on-call and a team member after 5m, then a team member after 15m; repeats once",
 		)
+	})
+})
+
+describe("people a chain pages who cannot respond", () => {
+	const { label, action } = Policy.permissions["incidents:respond"]
+	const chain = chainOf({
+		n: 4,
+		name: "Data platform",
+		steps: [
+			{ destinations: [1], users: [memberId(5), memberId(6), memberId(0)], wait: 10 },
+			// Paged again on a later step, and someone who has left the org.
+			{ destinations: [], users: [memberId(5), formerMemberId], wait: 20 },
+		],
+	})
+	const targets = Arr.flatMap(chain.steps, (step) => step.targets)
+
+	it("finds each of them once, and nobody who can respond, has left or is not known yet", () => {
+		expect(Arr.map(unableToRespond(targets, membersWithAnalysts), (member) => member.name)).toEqual([
+			"Mei Chen",
+			"Omar Haddad",
+		])
+		expect(unableToRespond(targets, oncallMembers)).toEqual([])
+		expect(unableToRespond(targets, null)).toEqual([])
+	})
+
+	it("names them in a step's line with the permission their role lacks", () => {
+		const people = unableToRespond(targets, membersWithAnalysts)
+		expect(cannotRespondSentence(Arr.take(people, 1))).toEqual(
+			Option.some(`Mei Chen can't acknowledge or resolve: their role lacks ${label}.`),
+		)
+		expect(cannotRespondSentence(people)).toEqual(
+			Option.some(`Mei Chen and Omar Haddad can't acknowledge or resolve: their roles lack ${label}.`),
+		)
+		expect(cannotRespondSentence([])).toEqual(Option.none())
+	})
+
+	it("counts them for the chain's row, and says nothing of a chain everyone can answer", () => {
+		expect(cannotRespondCountText(chain, membersWithAnalysts)).toEqual(
+			Option.some(`Pages 2 people who can't ${action}`),
+		)
+		expect(
+			cannotRespondCountText(
+				chainOf({ n: 5, name: "One", steps: [{ destinations: [], users: [memberId(6)], wait: 5 }] }),
+				membersWithAnalysts,
+			),
+		).toEqual(Option.some(`Pages 1 person who can't ${action}`))
+		expect(cannotRespondCountText(chain, oncallMembers)).toEqual(Option.none())
 	})
 })
 
