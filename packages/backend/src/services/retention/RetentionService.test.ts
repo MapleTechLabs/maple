@@ -222,7 +222,10 @@ describe("RetentionService", () => {
 				yield* retention.setOrganization(ORG, ANA, { logs: 730 })
 				const offTheList = yield* Effect.result(retention.setOrganization(ORG, ANA, { logs: 45 }))
 				const fraction = yield* Effect.result(retention.setSource(ORG, ANA, debug, { traces: 1.5 }))
-				for (const refused of [offTheList, fraction]) {
+				// Session replays and product events keep their default for now.
+				const replays = yield* Effect.result(retention.setOrganization(ORG, ANA, { sessions: 90 }))
+				const events = yield* Effect.result(retention.setSource(ORG, ANA, debug, { events: 730 }))
+				for (const refused of [offTheList, fraction, replays, events]) {
 					assert.isTrue(Result.isFailure(refused))
 					if (Result.isFailure(refused)) {
 						assert.strictEqual(

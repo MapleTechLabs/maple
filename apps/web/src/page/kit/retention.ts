@@ -34,6 +34,9 @@ export const SIGNAL_DESCRIPTIONS = {
 	profiles: "Continuous profiling samples.",
 } as const satisfies Record<RetentionSignal, string>
 
+/** Follows the description of a signal whose period can't be changed (session replays, product events). */
+export const FIXED_PERIOD_NOTE = " Kept for the default period, which can't be changed yet."
+
 /** What a viewer without Manage retention reads above the periods, on the org tab and a source. */
 export const READ_ONLY_NOTE = "Only people with Manage retention can change these periods. Admin has it."
 

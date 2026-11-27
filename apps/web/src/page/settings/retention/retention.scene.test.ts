@@ -257,6 +257,17 @@ describe("retention tab", () => {
 		)
 	})
 
+	test("session replays and product events show their period with no picker", () => {
+		scene(
+			{ update, view: withViewInputs(view, inputs)() },
+			given(loaded()),
+			expectView(role("combobox", { name: "Traces" })).toExist(),
+			expectView(role("combobox", { name: "Session replays" })).not.toExist(),
+			expectView(role("combobox", { name: "Product events" })).not.toExist(),
+			expectView(text("365 days")).toExist(),
+		)
+	})
+
 	test("an org on its own ClickHouse is told its cluster keeps the retention, with no pickers", () => {
 		const own = update(
 			init(ADMIN).model,

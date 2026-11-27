@@ -9,7 +9,7 @@ Hosted Maple deletes data automatically once it passes its retention period. The
 
 ## Set your own periods
 
-Traces, logs, metrics, session replays, product events and profiles each have a period you can change in **Settings → Retention**: 3, 7, 14, 30, 60, 90, 180, 365 or 730 days. A source can keep a signal for a period of its own, shorter or longer than the organization's, from its **Settings** tab. Changing a period needs the **Manage retention** permission.
+Traces, logs, metrics and profiles each have a period you can change in **Settings → Retention**: 3, 7, 14, 30, 60, 90, 180, 365 or 730 days. Session replays and product events keep their default period for now. A source can keep a signal for a period of its own, shorter or longer than the organization's, from its **Settings** tab. Changing a period needs the **Manage retention** permission.
 
 Data is stored under the period in force when it arrived:
 
@@ -17,7 +17,7 @@ Data is stored under the period in force when it arrived:
 - **A longer period** applies to data received from about a minute after the change, once the ingest gateway reads it. The full history fills in over time; data already stored keeps its earlier period.
 - **Reads** of each signal reach as far back as the longest period any of your sources keeps it, the default included. This holds for every signal once your organization has changed any period, even after you set them all back to their defaults.
 
-The same settings are in the API: `GET /v2/retention`, `PATCH /v2/retention` and `PATCH /v2/retention/sources/{id}`. A patch that changes nothing writes nothing. An organization that stores telemetry in its own ClickHouse keeps the retention set in that cluster instead, and the API refuses changes with `retention_own_warehouse` (409).
+The same settings are in the API: `GET /v2/retention`, `PATCH /v2/retention` and `PATCH /v2/retention/sources/{id}`. Setting session replays or product events is refused with `retention_invalid` (400). A patch that changes nothing writes nothing. An organization that stores telemetry in its own ClickHouse keeps the retention set in that cluster instead, and the API refuses changes with `retention_own_warehouse` (409).
 
 ## Telemetry
 

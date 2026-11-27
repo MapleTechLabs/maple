@@ -152,7 +152,7 @@ const invalid = publicError(RetentionInvalidError)
 const ownWarehouse = publicError(RetentionOwnWarehouseError)
 
 const WRITE_NOTE =
-	"Data keeps the period in force when it arrived. Once an organization has set any period, reads of every signal reach back as far as the longest period any source keeps it, the default included: a shorter period (or going back to a shorter default) hides older data unless another source keeps it longer, and a longer one applies to data received from about a minute after the change, once the ingest gateway reads the new policy. A patch that changes nothing writes nothing. Refused with `retention_own_warehouse` (409) for an organization on its own ClickHouse. Requires the `retention:write` scope and the Manage retention permission."
+	"Data keeps the period in force when it arrived. Once an organization has set any period, reads of every signal reach back as far as the longest period any source keeps it, the default included: a shorter period (or going back to a shorter default) hides older data unless another source keeps it longer, and a longer one applies to data received from about a minute after the change, once the ingest gateway reads the new policy. Session replays and product events keep their default for now: setting either is refused with `retention_invalid` (400). A patch that changes nothing writes nothing. Refused with `retention_own_warehouse` (409) for an organization on its own ClickHouse. Requires the `retention:write` scope and the Manage retention permission."
 
 export class V2RetentionApiGroup extends HttpApiGroup.make("retention")
 	.add(

@@ -120,7 +120,7 @@ export const init = (flags: Flags): Return => {
 											value: "90",
 										}),
 										RetentionModel.Message.ChangedPeriod({
-											signal: "sessions",
+											signal: "metrics",
 											value: "7",
 										}),
 									]

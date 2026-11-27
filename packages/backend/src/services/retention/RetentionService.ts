@@ -5,6 +5,7 @@ import { RetentionInvalidError, RetentionPersistenceError, SourceNotFoundError }
 import {
 	DEFAULT_RETENTION_DAYS,
 	hasRetentionOverrides,
+	isAdjustableRetentionSignal,
 	organizationRetentionDays,
 	readHorizonDays,
 	RETENTION_PERIODS,
@@ -200,13 +201,25 @@ const NO_OVERRIDES: RetentionOverrides = {}
 
 const decodeOverrides = Schema.decodeUnknownEffect(RetentionOverrides)
 
-/** Periods a caller may store: one of `RETENTION_PERIODS`, for known signals only. */
+/** Periods a caller may store: one of `RETENTION_PERIODS`, for signals whose period can change. */
 const validOverrides = (input: RetentionOverrides) =>
 	decodeOverrides(input).pipe(
 		Effect.mapError(
 			() =>
 				new RetentionInvalidError({
 					message: `Retention must be one of ${Arr.join(Arr.map(RETENTION_PERIODS, String), ", ")} days`,
+				}),
+		),
+		Effect.filterOrFail(
+			(overrides) =>
+				Arr.every(
+					RETENTION_SIGNALS,
+					(signal) => isAdjustableRetentionSignal(signal) || overrides[signal] === undefined,
+				),
+			() =>
+				new RetentionInvalidError({
+					message:
+						"Session replays and product events keep their default period and can't be changed yet",
 				}),
 		),
 	)

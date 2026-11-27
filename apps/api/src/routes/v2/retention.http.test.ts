@@ -193,6 +193,8 @@ describe("v2 retention", () => {
 		const token = await harness.key()
 		const refused = await harness.request("PATCH", "/v2/retention", token, { logs: 45 })
 		expect(refused.status).toBe(400)
+		const replays = await harness.request("PATCH", "/v2/retention", token, { sessions: 90 })
+		expect(replays.status).toBe(400)
 		const after = await harness.request("GET", "/v2/retention", token)
 		expect(after.body.organization.set.logs).toBeNull()
 		expect(harness.auditActions()).toEqual([])
