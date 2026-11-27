@@ -111,10 +111,11 @@ export const update = (model: Model, message: Message): Return =>
 				// The overrides list falls back to ids; the tab still works.
 				onFailure: () => ({ model }),
 			}),
+		// Loaded data stays while it refetches, so the draft is still compared against it.
 		ClickedRetry: () => ({
 			model: {
 				...model,
-				policy: AsyncData.Loading(),
+				policy: Option.getOrElse(AsyncData.revalidateOrLoad(model.policy), () => model.policy),
 			},
 			commands: [FetchRetention(), ...(model.sourceNames === null ? [FetchSourceNames()] : [])],
 		}),
