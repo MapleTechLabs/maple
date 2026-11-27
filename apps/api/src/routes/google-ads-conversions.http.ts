@@ -59,8 +59,17 @@ export const GoogleAdsConversionsRoute = HttpRouter.use((router) =>
 				Effect.tap((response) =>
 					Effect.annotateCurrentSpan("http.response.status_code", response.status),
 				),
-				Effect.catchTag("@maple/backend/ad-conversions/AdConversionPersistenceError", () =>
-					Effect.succeed(plain("Temporarily unavailable", 503, { "retry-after": "300" })),
+				Effect.catchTag("@maple/backend/ad-conversions/AdConversionPersistenceError", (error) =>
+					Effect.logError("Google Ads conversion export failed").pipe(
+						Effect.annotateLogs({ error: error.message }),
+						Effect.andThen(
+							Effect.annotateCurrentSpan({
+								"http.response.status_code": 503,
+								"error.type": error._tag,
+							}),
+						),
+						Effect.as(plain("Temporarily unavailable", 503, { "retry-after": "300" })),
+					),
 				),
 			),
 		)

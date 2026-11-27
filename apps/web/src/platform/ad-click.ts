@@ -1,14 +1,15 @@
+import { AD_CLICK_COOKIE, AdClickId, AdClickType } from "@maple/domain/ad-click"
 import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 /**
  * The ad click the landing site kept in the `maple_ad_click` cookie (`<type>.<id>.<clickTimeMs>`),
  * handed to Clerk sign-up as `unsafeMetadata.adClick` so the API can report the conversion.
  */
-export const AD_CLICK_COOKIE = "maple_ad_click"
+export { AD_CLICK_COOKIE }
 
 const AdClickMetadata = Schema.Struct({
-	type: Schema.Literals(["gclid", "gbraid", "wbraid"]),
-	id: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,256}$/)),
+	type: AdClickType,
+	id: AdClickId,
 	clickTime: Schema.NumberFromString.check(Schema.isInt()),
 })
 export type AdClickMetadata = typeof AdClickMetadata.Type

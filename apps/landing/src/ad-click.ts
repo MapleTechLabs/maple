@@ -1,3 +1,4 @@
+import { AD_CLICK_COOKIE, AD_CLICK_ID_PATTERN, AD_CLICK_TYPES } from "@maple/domain/ad-click"
 import { Array as Arr, Option, String as Str } from "effect"
 
 /**
@@ -5,10 +6,8 @@ import { Array as Arr, Option, String as Str } from "effect"
  * sign-up. Never set for visitors in the EEA, the UK or Switzerland (where we ask no consent), for
  * an unknown country, or when the browser sends Global Privacy Control.
  */
-export const AD_CLICK_COOKIE = "maple_ad_click"
-const CLICK_PARAMS = ["gclid", "gbraid", "wbraid"] as const
+export { AD_CLICK_COOKIE }
 const MAX_AGE_SECONDS = 90 * 24 * 60 * 60
-const CLICK_ID = /^[A-Za-z0-9_-]{1,256}$/
 
 /** EU and EEA members (with their outermost regions), the UK and its dependencies, Switzerland. */
 const NO_CAPTURE_COUNTRIES: ReadonlySet<string> = new Set([
@@ -62,6 +61,8 @@ export const mayCaptureIn = (country: string | undefined): boolean =>
 	country !== undefined &&
 	/^[A-Z]{2}$/.test(country) &&
 	country !== "XX" &&
+	// Cloudflare's code for a Tor exit, which hides the real country.
+	country !== "T1" &&
 	!NO_CAPTURE_COUNTRIES.has(country)
 
 /** `Domain=maple.dev` on maple.dev and its subdomains, so the dashboard can read it; host-only elsewhere. */
@@ -78,9 +79,9 @@ export const adClickCookie = (
 		return null
 	}
 	const url = new URL(request.url)
-	const found = Arr.findFirst(CLICK_PARAMS, (param) => {
+	const found = Arr.findFirst(AD_CLICK_TYPES, (param) => {
 		const value = url.searchParams.get(param)
-		return value !== null && CLICK_ID.test(value)
+		return value !== null && AD_CLICK_ID_PATTERN.test(value)
 	})
 	if (Option.isNone(found)) return null
 	const id = url.searchParams.get(found.value) ?? ""

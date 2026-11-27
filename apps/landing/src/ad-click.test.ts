@@ -16,7 +16,7 @@ describe("adClickCookie", () => {
 		)
 	})
 
-	it.each(["DE", "FR", "NO", "GB", "CH", "XX", undefined])(
+	it.each(["DE", "FR", "NO", "GB", "CH", "XX", "T1", undefined])(
 		"keeps nothing for a visitor in %s",
 		(country) => {
 			expect(adClickCookie(page("https://maple.dev/?gclid=abc"), country, NOW)).toBeNull()

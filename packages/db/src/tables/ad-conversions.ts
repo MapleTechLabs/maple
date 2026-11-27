@@ -1,10 +1,9 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { UserId } from "@maple/primitives"
+import { AdClickType } from "@maple/domain/ad-click"
 import { Schema } from "effect"
 
-/** The click id an ad link carried: `gclid` on most clicks, `gbraid`/`wbraid` from iOS. */
-export const AdClickType = Schema.Literals(["gclid", "gbraid", "wbraid"])
-export type AdClickType = typeof AdClickType.Type
+export { AdClickType }
 
 /** The conversions reported back to the ad platform. */
 export const AdConversionName = Schema.Literals(["signup", "activated"])

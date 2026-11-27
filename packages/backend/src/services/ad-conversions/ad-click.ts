@@ -1,4 +1,4 @@
-import { AdClickType } from "@maple/db/tables"
+import { AdClickId, AdClickType } from "@maple/domain/ad-click"
 import { Duration, Option, Schema, String as Str } from "effect"
 
 /**
@@ -7,11 +7,7 @@ import { Duration, Option, Schema, String as Str } from "effect"
  */
 export const AdClick = Schema.Struct({
 	type: AdClickType,
-	id: Schema.String.check(
-		Schema.isMinLength(1),
-		Schema.isMaxLength(256),
-		Schema.isPattern(/^[A-Za-z0-9_-]+$/),
-	),
+	id: AdClickId,
 	/** Epoch ms of the click. */
 	clickTime: Schema.Number.check(Schema.isInt()),
 })
