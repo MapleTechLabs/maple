@@ -53,6 +53,11 @@ const startupPlan = startupPlanWith([
 	item("traces", 100, 0.3),
 	item("metrics", 100, 0.3),
 	item("profiles", 10, 0.6),
+	// Storage per GB-month, billed per 0.01 GB-month, each signal with its own allowance.
+	item("storage_traces", 100, 0.0015, 0.01),
+	item("storage_logs", 100, 0.0015, 0.01),
+	item("storage_metrics", 300, 0.0015, 0.01),
+	item("storage_profiles", 10, 0.0015, 0.01),
 	item("browser_sessions", 5_000, 0.002),
 	// Billed per 1,000 events: `amount` is the price of one billing block.
 	item("product_events", 1_000_000, 0.005, 1_000),
@@ -366,6 +371,10 @@ describe("buildSpendModel", () => {
 			traces: "$0.30/GB",
 			metrics: "Rate unavailable",
 			profiles: "$0.60/GB",
+			storage_traces: "$0.15/GB-month",
+			storage_logs: "$0.15/GB-month",
+			storage_metrics: "$0.15/GB-month",
+			storage_profiles: "$0.15/GB-month",
 			browser_sessions: "$0.002/session",
 			product_events: "Included",
 			ai_credits: "$1/credit",
@@ -383,6 +392,10 @@ describe("buildSpendModel", () => {
 			traces: "$0.30/GB",
 			metrics: "$0.30/GB",
 			profiles: "$0.60/GB",
+			storage_traces: "$0.15/GB-month",
+			storage_logs: "$0.15/GB-month",
+			storage_metrics: "$0.15/GB-month",
+			storage_profiles: "$0.15/GB-month",
 			browser_sessions: "$0.002/session",
 			product_events: "$5/1M events",
 			ai_credits: "$1/credit",
@@ -392,6 +405,7 @@ describe("buildSpendModel", () => {
 		expect(featureUnit("browser_sessions")).toBe("sessions")
 		expect(featureUnit("logs")).toBe("GB")
 		expect(featureUnit("profiles")).toBe("GB")
+		expect(featureUnit("storage_metrics")).toBe("GB-month")
 	})
 
 	it("falls back to the calendar month with no active subscription", () => {

@@ -2,7 +2,7 @@
 // kept, past a monthly allowance per signal. Pure, so the web app can price a retention period
 // before it is saved.
 
-import { Schema } from "effect"
+import { Record as Rec, Schema } from "effect"
 
 /** The signals billed per GB at ingest, so stored per GB. Named as their Autumn ingest features. */
 export const STORAGE_SIGNALS = ["traces", "logs", "metrics", "profiles"] as const
@@ -30,6 +30,11 @@ export const INCLUDED_STORAGE_GB_MONTHS = {
 } as const satisfies Record<StorageSignal, number>
 
 const isStorageSignal = Schema.is(StorageSignal)
+
+const storageFeatureIds: ReadonlySet<string> = new Set(Rec.values(STORAGE_FEATURE_IDS))
+
+/** A per-signal storage feature: GB-months kept, billed past what the plan includes for that signal. */
+export const isStorageFeatureId = (featureId: string): boolean => storageFeatureIds.has(featureId)
 
 /** The storage feature for a ledger row's signal, or undefined for a signal storage does not bill. */
 export const storageFeatureOf = (signal: string): string | undefined =>

@@ -1,3 +1,4 @@
+import { isStorageFeatureId as isStorageFeature } from "@maple/domain/storage-pricing"
 import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import type { BillingCustomer } from "@maple/domain/http"
@@ -36,13 +37,15 @@ type H = HtmlBuilder<Message>
 const featureUsage = (featureId: string, value: number): string =>
 	featureUnit(featureId) === "GB" ? formatUsage(value) : formatCount(value)
 
-/** A volume with its unit: "164.00 GB", "3,412 sessions", or dollars for AI credits ("$4.20"). */
+/** A volume with its unit: "164.00 GB", "3,412 sessions", "41.20 GB-month", or dollars for AI credits ("$4.20"). */
 const withUnit = (featureId: string, value: number) =>
 	featureId === AI_CREDITS_FEATURE_ID
 		? formatCredits(value)
-		: featureUnit(featureId) === "GB"
-			? featureUsage(featureId, value)
-			: `${formatCount(value)} ${featureUnit(featureId)}`
+		: isStorageFeature(featureId)
+			? `${value.toFixed(2)} GB-month`
+			: featureUnit(featureId) === "GB"
+				? featureUsage(featureId, value)
+				: `${formatCount(value)} ${featureUnit(featureId)}`
 
 /** "164.00 GB of 100.00 GB": usage against the allotment, or what stands in for one. */
 const usageLine = (feature: FeatureSpend): string => {
@@ -50,7 +53,7 @@ const usageLine = (feature: FeatureSpend): string => {
 	if (feature.unlimited) return `${used}, unlimited`
 	if (feature.included === null)
 		return feature.ratePerUnit === null ? `${used}, not on your plan` : `${used}, no allotment`
-	if (feature.featureId === AI_CREDITS_FEATURE_ID)
+	if (feature.featureId === AI_CREDITS_FEATURE_ID || isStorageFeature(feature.featureId))
 		return `${used} of ${withUnit(feature.featureId, feature.included)}`
 	return featureUnit(feature.featureId) === "GB"
 		? formatUsageAgainst(feature.used, feature.included)

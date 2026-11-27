@@ -43,6 +43,7 @@ const rateText = (a: Allotment): string => {
 	const rate = rateLabel(a.rate)
 	if (a.unit === "sessions") return m.pricing_rate_session({ rate })
 	if (a.unit === "events") return m.pricing_rate_events({ rate, block: rateBlock(a) })
+	if (a.unit === "gb_month") return m.pricing_rate_gb_month({ rate })
 	return m.pricing_rate_gb({ rate })
 }
 

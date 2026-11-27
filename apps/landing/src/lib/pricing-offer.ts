@@ -15,6 +15,7 @@
  */
 import { PRICING_CARD_FEATURE_IDS, TRIAL_PLAN_ID, isAdvertisedPricingFeature } from "@maple/domain/billing"
 import * as m from "../paraglide/messages.js"
+import { isStorageFeatureId } from "@maple/domain/storage-pricing"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
@@ -61,10 +62,10 @@ export const PlansListResponse = Schema.Struct({ list: Schema.Array(Plan) })
 export type PlansListResponse = typeof PlansListResponse.Type
 
 /**
- * browser_sessions is metered per session, product_events per event, and
- * ai_credits in dollars of model usage; every other signal is per GB.
+ * browser_sessions is metered per session, product_events per event, ai_credits
+ * in dollars of model usage and storage per GB-month; every other signal is per GB.
  */
-export type Unit = "gb" | "sessions" | "events" | "usd"
+export type Unit = "gb" | "gb_month" | "sessions" | "events" | "usd"
 
 export interface Allotment {
 	featureId: string
@@ -97,7 +98,13 @@ export interface Offer {
 }
 
 /** Canonical row order: Autumn can return items in any order. */
-const DATA_FEATURE_ORDER: ReadonlyArray<string> = PRICING_CARD_FEATURE_IDS
+/** The card's one storage row: Autumn bills it per signal, each at the same rate. */
+const STORAGE_ROW_ID = "storage"
+
+const DATA_FEATURE_ORDER: ReadonlyArray<string> = Arr.flatMap(PRICING_CARD_FEATURE_IDS, (id) =>
+	// Storage reads right after the GB signals whose volume it keeps.
+	id === "metrics" ? [id, STORAGE_ROW_ID] : [id],
+)
 
 const dataFeatureRank = (id: string) => DATA_FEATURE_ORDER.indexOf(id)
 
@@ -237,13 +244,42 @@ export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => 
 					rateUnits,
 				}
 			},
-		).sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
+		)
+			.concat(storageAllotment(product.items))
+			.sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
 		ctaLabel:
 			freeTrial === undefined
 				? m.cta_get_started()
 				: m.pricing_start_trial({ duration: String(freeTrial.duration_length) }),
 	}
 }
+
+/**
+ * One storage row for the per-signal storage features, or none when the plan has none. The
+ * rate is per GB-month: Autumn bills it per 0.01 GB-month, so it is not floored to one unit.
+ */
+const storageAllotment = (items: ReadonlyArray<typeof PlanItem.Type>): ReadonlyArray<Allotment> =>
+	Option.match(
+		Arr.findFirst(items, (item) => isStorageFeatureId(item.feature_id)),
+		{
+			onNone: () => [],
+			onSome: (item) => {
+				const amount = item.price?.amount
+				const billingUnits = item.price?.billing_units ?? 1
+				return [
+					{
+						featureId: STORAGE_ROW_ID,
+						label: m.pricing_storage(),
+						unit: "gb_month",
+						included: 0,
+						unlimited: item.unlimited === true,
+						rate: amount == null || billingUnits <= 0 ? undefined : amount / billingUnits,
+						rateUnits: 1,
+					},
+				]
+			},
+		},
+	)
 
 const fallbackOffer = (labels: Record<string, string>): Offer => ({
 	name: "Startup",
@@ -266,6 +302,14 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 			label: labels.metrics,
 			unit: "gb",
 			included: 100,
+			rate: 0.15,
+			rateUnits: 1,
+		},
+		{
+			featureId: STORAGE_ROW_ID,
+			label: m.pricing_storage(),
+			unit: "gb_month",
+			included: 0,
 			rate: 0.15,
 			rateUnits: 1,
 		},
@@ -320,7 +364,16 @@ const count = (n: number) =>
 export const rateBlock = (a: Allotment) => count(a.rateUnits)
 
 export const volume = (a: Allotment, n: number) =>
-	a.unlimited ? m.pricing_unlimited() : a.unit === "gb" ? `${n} GB` : a.unit === "usd" ? money(n) : count(n)
+	a.unlimited
+		? m.pricing_unlimited()
+		: a.unit === "gb"
+			? `${n} GB`
+			: a.unit === "gb_month"
+				? // Each signal's storage is included up to what its own volume needs at the default retention.
+					m.pricing_storage_included()
+				: a.unit === "usd"
+					? money(n)
+					: count(n)
 
 /**
  * AI usage has no flat rate: a credit is a dollar of model spend, priced per

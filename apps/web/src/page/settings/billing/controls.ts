@@ -1,3 +1,4 @@
+import { isStorageFeatureId as isStorageFeature } from "@maple/domain/storage-pricing"
 import type { BillingCustomer, BillingSpendLimit } from "@maple/domain/http"
 import {
 	UpdateBillingControlsRequest,
@@ -42,7 +43,11 @@ export const updateFeatureControls = ({
 
 /** Can a cap bound this feature's bill? Not when it is unlimited, hard-capped or has no known rate. */
 export const capApplies = (feature: FeatureSpend): boolean =>
-	!feature.unlimited && feature.ratePerUnit !== null && feature.overageAllowed !== false
+	// Storage is never capped: a cap would refuse the daily bill for data already kept.
+	!isStorageFeature(feature.featureId) &&
+	!feature.unlimited &&
+	feature.ratePerUnit !== null &&
+	feature.overageAllowed !== false
 
 /** Features that bill overage with no cap; any one of them leaves the maximum invoice unbounded. */
 export const uncappedFeatures = (

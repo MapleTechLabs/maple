@@ -22,9 +22,15 @@ import { complianceMarkdown } from "../lib/compliance"
 import { scaleProofMarkdown } from "../lib/scale-proof"
 import { Array as Arr } from "effect"
 
-/** "GB", "session", or "1,000 events": the block the rate is quoted per. */
+/** "GB", "GB-month", "session", or "1,000 events": the block the rate is quoted per. */
 const unitLabel = (a: Allotment) =>
-	a.unit === "gb" ? "GB" : a.unit === "sessions" ? "session" : `${rateBlock(a)} events`
+	a.unit === "gb"
+		? "GB"
+		: a.unit === "gb_month"
+			? "GB-month"
+			: a.unit === "sessions"
+				? "session"
+				: `${rateBlock(a)} events`
 
 export const GET: APIRoute = async ({ site }) => {
 	const offer = await getOffer()

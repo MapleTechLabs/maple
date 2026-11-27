@@ -58,7 +58,9 @@ const rowRate = (a: Allotment) => {
     const rendered =
         a.unit === "gb"
             ? m.pricing_rate_gb({ rate: RATE_SLOT })
-            : a.unit === "sessions"
+            : a.unit === "gb_month"
+              ? m.pricing_rate_gb_month({ rate: RATE_SLOT })
+              : a.unit === "sessions"
               ? m.pricing_rate_session({ rate: RATE_SLOT })
               : m.pricing_rate_events({ rate: RATE_SLOT, block: rateBlock(a) })
     const [before, after = ""] = rendered.split(RATE_SLOT)

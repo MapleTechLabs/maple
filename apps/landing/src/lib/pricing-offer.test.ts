@@ -170,10 +170,47 @@ describe("pricing offer", () => {
 			"logs",
 			"traces",
 			"metrics",
+			"storage",
 			"browser_sessions",
 			"product_events",
 			"ai_credits",
 		])
+	})
+
+	it("shows the per-signal storage features as one row per GB-month, after the GB signals", () => {
+		const storageItem = (featureId: string, included: number) => ({
+			feature_id: featureId,
+			included,
+			unlimited: false,
+			pooled: false,
+			reset: null,
+			price: {
+				amount: 0.0015,
+				interval: "month",
+				billing_units: 0.01,
+				billing_method: "usage_based",
+				max_purchase: null,
+			},
+		})
+		const [startup, ...rest] = recorded.list
+		const withStorage = {
+			list: [
+				{
+					...startup,
+					items: [
+						storageItem("storage_logs", 100),
+						...startup.items,
+						storageItem("storage_metrics", 300),
+					],
+				},
+				...rest,
+			],
+		}
+		const offer = resolveOffer(Option.some(Schema.decodeSync(PlansListResponse)(withStorage)))
+		const storage = offer.allotments.filter((a) => a.unit === "gb_month")
+		expect(storage.map((a) => [a.featureId, a.rate])).toEqual([["storage", 0.15]])
+		const ids = offer.allotments.map((a) => a.featureId)
+		expect(ids.indexOf("storage")).toBe(ids.indexOf("traces") + 1)
 	})
 
 	it("falls back without a request when the secret key is missing", async () => {
