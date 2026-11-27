@@ -54,7 +54,7 @@ export const evaluationColumnsSql = (opts: {
           if(${finite}, toFloat64OrZero(${a(OTEL.scoreValue)}), 0) AS ScoreValue,
           toUInt8(${finite}) AS HasScore,
           ${a(OTEL.scoreLabel)} AS ScoreLabel,
-          multiIf(${verdict} IN ('pass', 'fail'), ${verdict}, ${label} IN (${list(EVALUATION_PASS_LABELS)}), 'pass', ${label} IN (${list(EVALUATION_FAIL_LABELS)}), 'fail', ${value} = 'true' OR (${typedBoolean} AND ${value} IN ('1', '1.0')), 'pass', ${value} = 'false' OR (${typedBoolean} AND ${value} IN ('0', '0.0')), 'fail', '') AS Verdict,
+          multiIf(${verdict} IN ('pass', 'fail'), ${verdict}, ${label} IN (${list(EVALUATION_PASS_LABELS)}), 'pass', ${label} IN (${list(EVALUATION_FAIL_LABELS)}), 'fail', ${value} = 'true' OR (${typedBoolean} AND ${finite} AND toFloat64OrZero(${a(OTEL.scoreValue)}) = 1), 'pass', ${value} = 'false' OR (${typedBoolean} AND ${finite} AND toFloat64OrZero(${a(OTEL.scoreValue)}) = 0), 'fail', '') AS Verdict,
           leftUTF8(${a(OTEL.explanation)}, ${EVALUATION_EXPLANATION_MAX}) AS Explanation,
           ${a(OTEL.errorType)} AS ErrorType,
           ${a(MAPLE.annotatorKind)} AS AnnotatorKind,

@@ -223,6 +223,7 @@ describeWithChdb("ai_evaluations views", () => {
 		scored("Bool false", " False ")
 		scored("Typed one", "1", "Boolean")
 		scored("Typed zero", "0.0", "boolean")
+		scored("Typed one, long", "1.00", "boolean")
 		// An untyped 0 / 1 may be a 0..1 score: no verdict.
 		scored("Untyped one", "1")
 		const verdicts = Rec.fromEntries(
@@ -233,12 +234,14 @@ describeWithChdb("ai_evaluations views", () => {
 			"Bool false": verdicts["Bool false"],
 			"Typed one": verdicts["Typed one"],
 			"Typed zero": verdicts["Typed zero"],
+			"Typed one, long": verdicts["Typed one, long"],
 			"Untyped one": verdicts["Untyped one"],
 		}).toEqual({
 			"Bool true": "pass",
 			"Bool false": "fail",
 			"Typed one": "pass",
 			"Typed zero": "fail",
+			"Typed one, long": "pass",
 			"Untyped one": "",
 		})
 	})
