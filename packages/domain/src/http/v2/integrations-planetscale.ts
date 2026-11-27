@@ -25,7 +25,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions, V2TimeRangeInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { ScrapeTargetPublicId } from "./scrape-targets"
-import { EndpointAccess, handler, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 // PlanetScale integration. An org connects PlanetScale over OAuth, binds the
 // grant to one PlanetScale organization, and Maple provisions a managed scrape
@@ -945,7 +945,7 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 			success: V2PlanetScaleOrganizationList,
 			error: [V2InsufficientPermissions.schema, ...organizationErrors],
 		})
-			.annotate(EndpointAccess, handler("integrations:manage"))
+			.annotate(EndpointAccess, handlerChecks("integrations:manage"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "listPlanetScaleOrganizations",
@@ -1040,7 +1040,7 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 			success: V2PlanetScaleWebhookConfig,
 			error: [V2InsufficientPermissions.schema, integrationPersistence],
 		})
-			.annotate(EndpointAccess, handler("integrations:manage"))
+			.annotate(EndpointAccess, handlerChecks("integrations:manage"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "getPlanetScaleWebhookConfig",
@@ -1091,4 +1091,4 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 				"Connect PlanetScale to your organization and manage what Maple collects from it: connection status, organization binding, the metrics service token that enables branch-metrics scraping, the database inventory, webhook setup, query insights, and the lifecycle event timeline.",
 		}),
 	)
-	.annotate(EndpointAccess, handler("integrations:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("integrations:manage")) {}

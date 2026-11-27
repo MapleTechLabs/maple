@@ -5,7 +5,7 @@ import { AlertSeverity } from "../alerts"
 import { AuditDetectionFilters } from "../audit-trail"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { EndpointAccess, handler } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 // The Security hub's audit log: audit events from connected platforms and Maple itself in one
 // list. Dashboard only (the session tier refuses API keys) and behind `audit_log:read`.
@@ -259,19 +259,19 @@ export class AuditTrailApiGroup extends HttpApiGroup.make("auditTrail")
 			query: AuditTrailListQuery,
 			success: AuditTrailListResponse,
 			error: [AuditTrailPersistenceError, AuditTrailForbiddenError],
-		}).annotate(EndpointAccess, handler("audit_log:read")),
+		}).annotate(EndpointAccess, handlerChecks("audit_log:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("sources", "/sources", {
 			success: AuditTrailSourcesResponse,
 			error: [AuditTrailPersistenceError, AuditTrailForbiddenError],
-		}).annotate(EndpointAccess, handler("audit_log:read")),
+		}).annotate(EndpointAccess, handlerChecks("audit_log:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("listDetections", "/detections", {
 			success: AuditDetectionListResponse,
 			error: [AuditTrailPersistenceError, AuditTrailForbiddenError],
-		}).annotate(EndpointAccess, handler("audit_log:read")),
+		}).annotate(EndpointAccess, handlerChecks("audit_log:read")),
 	)
 	.add(
 		HttpApiEndpoint.post("createDetection", "/detections", {
@@ -302,4 +302,4 @@ export class AuditTrailApiGroup extends HttpApiGroup.make("auditTrail")
 	)
 	.prefix("/internal/audit-trail")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, handler("audit_log:read")) {}
+	.annotate(EndpointAccess, handlerChecks("audit_log:read")) {}

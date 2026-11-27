@@ -5,7 +5,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
-import { EndpointAccess, handler, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 const ingestKeysExample = {
 	object: "ingest_keys",
@@ -78,7 +78,7 @@ export class V2IngestKeysApiGroup extends HttpApiGroup.make("ingestKeys")
 			success: V2IngestKeys,
 			error: [V2InsufficientPermissions.schema, ...ingestKeyErrors],
 		})
-			.annotate(EndpointAccess, handler("ingest_keys:view"))
+			.annotate(EndpointAccess, handlerChecks("ingest_keys:view"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "getIngestKeys",
@@ -138,4 +138,4 @@ export class V2IngestKeysApiGroup extends HttpApiGroup.make("ingestKeys")
 				"Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. Any member may read the public key; reading both keys takes an engineer or admin, and rolling one takes an admin.",
 		}),
 	)
-	.annotate(EndpointAccess, handler("ingest_keys:roll")) {}
+	.annotate(EndpointAccess, handlerChecks("ingest_keys:roll")) {}

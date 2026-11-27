@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { AuditLogEntryId } from "@maple/primitives"
 import { AuditActorType, AuditLogPersistenceError, AuditLogSource, AuditOutcome } from "../audit-log"
-import { EndpointAccess, handler } from "../endpoint-access"
+import { EndpointAccess, handlerChecks } from "../endpoint-access"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
@@ -241,7 +241,7 @@ export class V2AuditLogApiGroup extends HttpApiGroup.make("auditLog")
 			success: AuditLogEntryList,
 			error: [V2ParameterInvalid.schema, V2InsufficientPermissions.schema, auditLogPersistence],
 		})
-			.annotate(EndpointAccess, handler("audit_log:read"))
+			.annotate(EndpointAccess, handlerChecks("audit_log:read"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "listAuditLogEntries",

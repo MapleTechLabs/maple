@@ -27,7 +27,7 @@ import {
 import { recordImpersonation } from "@maple/backend/services/auth/impersonation-audit"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordAccessDenial } from "@maple/backend/services/auth/audit-denial"
-import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
+import { type AuditedReadSubject, withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import {
@@ -38,7 +38,7 @@ import {
 	deviceRateLimitKey,
 } from "./ApiV2RateLimiter"
 import { API_KEY_DEFAULT_ROLES, getBasicPassword, getBearerToken } from "./bearer-token"
-import { type AccessDenial, watchHandlerAccess } from "./access-span"
+import { watchHandlerAccess } from "./access-span"
 import { checkEndpointAccessV2 } from "./endpoint-gate"
 import { provideRequestTenant } from "./request-tenant"
 
@@ -170,19 +170,26 @@ export const ApiAuthorizationV2Live = Layer.effect(
 								retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
 							})
 						}
+						const label = "Device credential"
+						const caller: AuditedReadSubject = {
+							orgId: resolved.orgId,
+							actor: { type: "user", userId: resolved.userId, label },
+							source: "api",
+						}
+						const recordDenied = recordAccessDenial(audit, request, caller)
 						// A device credential's scopes are its whole authority: no exemptions.
 						const { route } = yield* HttpRouter.RouteContext
 						const required = requiredScopeForRoute(request.method, route.path)
 						if (required === null || !scopeAllows(resolved.scopes, required)) {
-							return yield* V2InsufficientScope.make(
-								"This device credential cannot call this endpoint.",
-							)
+							const message = "This device credential cannot call this endpoint."
+							yield* recordDenied({ message })
+							return yield* V2InsufficientScope.make(message)
 						}
 						const requestedOrg = getOrgSelectionHeader(request.headers)
 						if (requestedOrg !== undefined && requestedOrg !== resolved.orgId) {
-							return yield* V2OrganizationAccessDenied.make(
-								"A device credential cannot select a different organization.",
-							)
+							const message = "A device credential cannot select a different organization."
+							yield* recordDenied({ message })
+							return yield* V2OrganizationAccessDenied.make(message)
 						}
 						const tenant = new CurrentTenant.TenantSchema({
 							orgId: resolved.orgId,
@@ -192,14 +199,6 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							authMode: "self_hosted",
 							scopes: resolved.scopes,
 						})
-						const label = "Device credential"
-						const caller = {
-							orgId: resolved.orgId,
-							actor: { type: "user", userId: resolved.userId, label },
-							source: "api",
-						} as const
-						const recordDenied = (denial: AccessDenial) =>
-							recordAccessDenial(audit, request, caller, denial)
 						yield* checkEndpointAccessV2(tenant.permissions, options, route.path, recordDenied)
 						return yield* httpEffect.pipe(
 							watchHandlerAccess(options, recordDenied),
@@ -236,19 +235,17 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						// denials carry the same actor attribution as successes, tagged
 						// `outcome: "denied"`, coalesced so a looping client cannot
 						// amplify into unbounded rows.
-						const actor = {
-							type: "api_key",
-							userId: resolved.userId,
-							apiKeyId: resolved.keyId,
-							label: resolved.name,
-						} as const
-						const recordDenied = (denial: AccessDenial) =>
-							recordAccessDenial(
-								audit,
-								request,
-								{ orgId: resolved.orgId, actor, source: "api" },
-								denial,
-							)
+						const caller: AuditedReadSubject = {
+							orgId: resolved.orgId,
+							actor: {
+								type: "api_key",
+								userId: resolved.userId,
+								apiKeyId: resolved.keyId,
+								label: resolved.name,
+							},
+							source: "api",
+						}
+						const recordDenied = recordAccessDenial(audit, request, caller)
 						// Deny-list, not an allow-list: `mcp` keys are minted through a
 						// path that does not gate on organization admin, so they must
 						// never reach the public API. `device` keys are admitted
@@ -257,7 +254,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						// them, not by whatever is holding them.
 						if (resolved.kind === "mcp") {
 							const message = "This API key is only valid for the MCP server."
-							yield* recordDenied({ reason: message })
+							yield* recordDenied({ message: message })
 							return yield* V2InvalidCredentials.make(message)
 						}
 
@@ -268,7 +265,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						// is missing, so it is rejected rather than promoted.
 						if (resolved.kind === "device" && resolved.roles === null) {
 							const message = "This device credential is not valid."
-							yield* recordDenied({ reason: message })
+							yield* recordDenied({ message: message })
 							return yield* V2InvalidCredentials.make(message)
 						}
 
@@ -318,7 +315,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							!scopeAllows(resolved.scopes, required)
 						) {
 							const message = `This API key does not have the "${required.family}:${required.access}" scope required for this request.`
-							yield* recordDenied({ reason: message })
+							yield* recordDenied({ message: message })
 							return yield* V2InsufficientScope.make(message)
 						}
 
@@ -329,7 +326,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						const requestedOrg = getOrgSelectionHeader(request.headers)
 						if (requestedOrg !== undefined && requestedOrg !== resolved.orgId) {
 							const message = "An API key cannot select a different organization."
-							yield* recordDenied({ reason: message })
+							yield* recordDenied({ message: message })
 							return yield* V2OrganizationAccessDenied.make(message)
 						}
 
@@ -352,11 +349,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 								source: "api",
 							}),
 							// Telemetry and replay reads are recorded (see `AuditedRead`).
-							withAuditedRead(audit, request, options, {
-								orgId: resolved.orgId,
-								actor,
-								source: "api",
-							}),
+							withAuditedRead(audit, request, options, caller),
 						)
 					}
 
@@ -381,13 +374,12 @@ export const ApiAuthorizationV2Live = Layer.effect(
 					}
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					const { route } = yield* HttpRouter.RouteContext
-					const caller = {
+					const caller: AuditedReadSubject = {
 						orgId: tenant.orgId,
 						actor: { type: "user", userId: tenant.userId },
 						source: "dashboard",
-					} as const
-					const recordDenied = (denial: AccessDenial) =>
-						recordAccessDenial(audit, request, caller, denial)
+					}
+					const recordDenied = recordAccessDenial(audit, request, caller)
 					yield* checkEndpointAccessV2(tenant.permissions, options, route.path, recordDenied)
 					return yield* httpEffect.pipe(
 						watchHandlerAccess(options, recordDenied),

@@ -4,8 +4,7 @@ import {
 	decideEndpointAccess,
 	type EndpointAccessDecision,
 } from "@maple/domain/http"
-import { isRegisteredRead } from "@maple/domain/http/access-catalog"
-import { V2InsufficientPermissions } from "@maple/domain/http/v2"
+import { decideEndpointAccessV2, V2InsufficientPermissions } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
 import { Effect } from "effect"
 import { type AccessDenial, annotateAccessSpan } from "./access-span"
@@ -21,13 +20,13 @@ const refusalOf = (
 		case "Denied":
 			return {
 				permission: decision.permission,
-				reason:
+				message:
 					decision.permission === "telemetry:read" && Policy.isScoped(permissions)
 						? Policy.scopedAccessMessage
 						: Policy.denialFor(decision.permission).message,
 			}
 		case "Unmarked":
-			return { reason: Policy.limitedAccessMessage }
+			return { message: Policy.limitedAccessMessage }
 	}
 }
 
@@ -36,7 +35,7 @@ const settle = <E>(
 	decision: EndpointAccessDecision,
 	permissions: Policy.Grants,
 	onDenied: (denial: AccessDenial) => Effect.Effect<void>,
-	refuse: (message: string) => E,
+	toError: (message: string) => E,
 ): Effect.Effect<void, E> => {
 	const refusal = refusalOf(decision, permissions)
 	if (refusal === undefined) return annotateAccessSpan("allowed", "edge")
@@ -44,10 +43,8 @@ const settle = <E>(
 		decision._tag === "Unmarked" ? "unmarked" : "denied",
 		"edge",
 		refusal.permission,
-	).pipe(Effect.andThen(onDenied(refusal)), Effect.andThen(Effect.fail(refuse(refusal.reason))))
+	).pipe(Effect.andThen(onDenied(refusal)), Effect.andThen(Effect.fail(toError(refusal.message))))
 }
-
-const unrecorded = (): Effect.Effect<void> => Effect.void
 
 /**
  * Fails unless `permissions` reach the endpoint's `EndpointAccess` rule. It runs in the auth
@@ -57,7 +54,7 @@ const unrecorded = (): Effect.Effect<void> => Effect.void
 export const checkEndpointAccess = (
 	permissions: Policy.Grants,
 	called: CalledEndpoint,
-	onDenied: (denial: AccessDenial) => Effect.Effect<void> = unrecorded,
+	onDenied: (denial: AccessDenial) => Effect.Effect<void>,
 ): Effect.Effect<void, CurrentTenant.LimitedRoleError> =>
 	settle(
 		decideEndpointAccess(permissions, called),
@@ -74,12 +71,8 @@ export const checkEndpointAccessV2 = (
 	permissions: Policy.Grants,
 	called: CalledEndpoint,
 	routePath: string,
-	onDenied: (denial: AccessDenial) => Effect.Effect<void> = unrecorded,
-): Effect.Effect<void, ReturnType<typeof V2InsufficientPermissions.make>> => {
-	const effective: EndpointAccessDecision = !isRegisteredRead(called, routePath)
-		? decideEndpointAccess(permissions, called)
-		: Policy.can(permissions, "telemetry:read")
-			? { _tag: "Allowed" }
-			: { _tag: "Denied", permission: "telemetry:read" }
-	return settle(effective, permissions, onDenied, (message) => V2InsufficientPermissions.make(message))
-}
+	onDenied: (denial: AccessDenial) => Effect.Effect<void>,
+): Effect.Effect<void, ReturnType<typeof V2InsufficientPermissions.make>> =>
+	settle(decideEndpointAccessV2(permissions, called, routePath), permissions, onDenied, (message) =>
+		V2InsufficientPermissions.make(message),
+	)

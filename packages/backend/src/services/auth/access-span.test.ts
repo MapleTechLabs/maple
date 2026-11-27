@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { type CalledEndpoint, EndpointAccess, handler as handlerRule, requires } from "@maple/domain/http"
+import { type CalledEndpoint, EndpointAccess, handlerChecks, requires } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Context, Effect, Ref } from "effect"
 import { type AccessDenial, watchHandlerAccess } from "./access-span"
@@ -13,7 +13,7 @@ const handler = (grants: Policy.Grants, permission: Policy.Permission) =>
 /** A write whose group asks for Read telemetry and whose handler may ask for Manage alerts. */
 const alertWrite: CalledEndpoint = {
 	group: { annotations: Context.make(EndpointAccess, requires("telemetry:read")) },
-	endpoint: { method: "POST", annotations: Context.make(EndpointAccess, handlerRule("alerts:manage")) },
+	endpoint: { method: "POST", annotations: Context.make(EndpointAccess, handlerChecks("alerts:manage")) },
 }
 
 const accessOf = (span: { readonly attributes: ReadonlyMap<string, unknown> }) => ({
@@ -41,9 +41,7 @@ describe("watchHandlerAccess", () => {
 				permission: "alerts:manage",
 				undeclared: undefined,
 			})
-			expect(yield* Ref.get(denials)).toEqual([
-				{ permission: "alerts:manage", reason: Policy.denialFor("alerts:manage").message },
-			])
+			expect(yield* Ref.get(denials)).toEqual([Policy.denialFor("alerts:manage")])
 		}).pipe(Effect.withSpan("http.server")),
 	)
 
@@ -65,6 +63,17 @@ describe("watchHandlerAccess", () => {
 				outcome: undefined,
 				undeclared: "query:sql",
 			})
+		}).pipe(Effect.withSpan("http.server")),
+	)
+
+	it.effect("lists every undeclared permission a handler asked, each once", () =>
+		Effect.gen(function* () {
+			yield* Effect.all([
+				handler(["query:sql", "billing:manage"], "query:sql"),
+				handler(["query:sql", "billing:manage"], "billing:manage"),
+				handler(["query:sql", "billing:manage"], "query:sql"),
+			]).pipe(watchHandlerAccess(alertWrite, () => Effect.void))
+			expect(accessOf(yield* Effect.currentSpan).undeclared).toBe("query:sql,billing:manage")
 		}).pipe(Effect.withSpan("http.server")),
 	)
 

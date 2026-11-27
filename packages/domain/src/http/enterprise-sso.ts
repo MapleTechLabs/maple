@@ -3,7 +3,7 @@ import { Schema, String as Str } from "effect"
 import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { EndpointAccess, handler } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 /**
  * Lower-cased hostname with at least one dot, no wildcard and no trailing dot. Capped at 236 so
@@ -295,7 +295,7 @@ export class EnterpriseSsoApiGroup extends HttpApiGroup.make("enterpriseSso")
 		HttpApiEndpoint.get("get", "/", {
 			success: EnterpriseSsoDocument,
 			error: readErrors,
-		}).annotate(EndpointAccess, handler("sso:manage")),
+		}).annotate(EndpointAccess, handlerChecks("sso:manage")),
 	)
 	.add(
 		HttpApiEndpoint.post("addDomain", "/domains", {
@@ -393,4 +393,4 @@ export class EnterpriseSsoApiGroup extends HttpApiGroup.make("enterpriseSso")
 	)
 	.prefix("/internal/enterprise-sso")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, handler("sso:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("sso:manage")) {}

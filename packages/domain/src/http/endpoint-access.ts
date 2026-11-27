@@ -4,18 +4,19 @@ import { type Permission, SCOPED_READ } from "../policy"
 /**
  * What an endpoint asks of the caller's permissions, checked in the auth layers before the handler
  * runs. Mark the endpoint, or its whole group with `.annotate(EndpointAccess, …)`; a mark is one
- * rule or a list of them (`[requires("dashboards:edit"), handler("query:sql")]`). Both apply: an
+ * rule or a list of them (`[requires("dashboards:edit"), handlerChecks("query:sql")]`). Both apply: an
  * endpoint marked `requires("dashboards:edit")` in a group marked `requires("telemetry:read")` needs
- * both, and `"personal"` or `"handler"` on an endpoint keeps its group's `requires`.
+ * both, and `"personal"` or `handlerChecks(…)` on an endpoint keeps its group's `requires`. An
+ * endpoint's `handlerChecks(…)` replaces its group's.
  *
  * - `{ requires }`: the caller must hold every permission it lists.
  * - `"personal"`: open to every member: the caller's own state (sessions, revoking their own
  *   devices, preferences), or a read of something that is not telemetry or configuration.
- * - `handler(…)`: the handler checks permissions itself, because which one depends on the payload
+ * - `handlerChecks(…)`: the handler checks permissions itself, because which one depends on the payload
  *   or the resource (a status page's visibility, a key's kind). It names every permission the
  *   handler may ask; on a group, that is what its writes may ask (`handlerPermissions`).
  *
- * A GET or HEAD that no `requires` or `"personal"` covers (unmarked, or only `handler`) needs
+ * A GET or HEAD that no `requires` or `"personal"` covers (unmarked, or only `handlerChecks`) needs
  * `telemetry:read`: what an org has configured is read by those who can read its telemetry, and a
  * role built without it (billing only, say) sees only what is marked open to it. Anything else
  * unmarked is refused, so an endpoint added later cannot change data until someone decides what it
@@ -34,7 +35,7 @@ export const requires = (...permissions: Arr.NonEmptyReadonlyArray<Permission>):
 	requires: permissions,
 })
 
-export const handler = (...permissions: Arr.NonEmptyReadonlyArray<Permission>): EndpointAccessRule => ({
+export const handlerChecks = (...permissions: Arr.NonEmptyReadonlyArray<Permission>): EndpointAccessRule => ({
 	handler: permissions,
 })
 
@@ -88,7 +89,7 @@ export const requiredPermissions = (called: CalledEndpoint): ReadonlyArray<Permi
 }
 
 /**
- * The permissions the endpoint's handler may ask on top: its own `handler(…)` mark, else its
+ * The permissions the endpoint's handler may ask on top: its own `handlerChecks(…)` mark, else its
  * group's for a write. A group's mark says nothing about its reads, which the gate already covers.
  */
 export const handlerPermissions = (called: CalledEndpoint): ReadonlyArray<Permission> => {

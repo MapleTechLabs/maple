@@ -43,7 +43,7 @@ import {
 	IssueSeveritySource,
 	WorkflowState,
 } from "../error-issues"
-import { EndpointAccess, handler, requires } from "./endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "./endpoint-access"
 import { SymbolicatedStack } from "../errors/js-stack"
 import { GroupingRule } from "../tinybird/grouping"
 import { GroupingConfig, OrgGroupingRule } from "../tinybird/grouping-rules"
@@ -1032,7 +1032,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			payload: IssueEscalationPolicyUpsertRequest,
 			success: IssueEscalationPolicyDocument,
 			error: [ErrorForbiddenError, ErrorPersistenceError, ErrorValidationError],
-		}).annotate(EndpointAccess, handler("error_policy:manage")),
+		}).annotate(EndpointAccess, handlerChecks("error_policy:manage")),
 	)
 	.add(
 		HttpApiEndpoint.post("evaluateEscalationPolicy", "/escalation-policy/evaluate", {

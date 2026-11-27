@@ -14,7 +14,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess, handler, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 // The chat-platform surface: one contract for every chat platform Maple can
 // connect to. The platform is a value (`connector`), never a path segment or a
@@ -465,7 +465,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				chatPersistence,
 			],
 		})
-			.annotate(EndpointAccess, handler("integrations:manage"))
+			.annotate(EndpointAccess, handlerChecks("integrations:manage"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "listChatWorkspaceDestinations",
@@ -498,4 +498,4 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				"Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist. Where a connector's platform can say who acted, each member may also link their own chat account to their Maple user.",
 		}),
 	)
-	.annotate(EndpointAccess, handler("integrations:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("integrations:manage")) {}

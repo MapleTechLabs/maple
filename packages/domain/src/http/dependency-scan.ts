@@ -12,7 +12,7 @@ import {
 } from "../dependency-scan"
 import { SessionAuthorization } from "./current-tenant"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"
-import { EndpointAccess, handler } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 // The Security Center's Dependencies tab: known vulnerable packages in connected repositories'
 // lockfiles. Dashboard only, served by the api Worker.
@@ -141,7 +141,7 @@ export class DependencyScanApiGroup extends HttpApiGroup.make("dependencyScan")
 		HttpApiEndpoint.get("listRepositories", "/repositories", {
 			success: DependencyScanRepositoriesResponse,
 			error: [DependencyScanPersistenceError, DependencyScanForbiddenError],
-		}).annotate(EndpointAccess, handler("security:manage")),
+		}).annotate(EndpointAccess, handlerChecks("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.post("scanRepository", "/repositories/:repositoryId/scan", {
@@ -159,7 +159,7 @@ export class DependencyScanApiGroup extends HttpApiGroup.make("dependencyScan")
 			query: DependencyFindingsQuery,
 			success: DependencyFindingsResponse,
 			error: [DependencyScanPersistenceError, DependencyScanForbiddenError],
-		}).annotate(EndpointAccess, handler("security:manage")),
+		}).annotate(EndpointAccess, handlerChecks("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.patch("updateFinding", "/findings/:findingId", {
@@ -175,4 +175,4 @@ export class DependencyScanApiGroup extends HttpApiGroup.make("dependencyScan")
 	)
 	.prefix("/internal/dependency-scan")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, handler("security:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("security:manage")) {}

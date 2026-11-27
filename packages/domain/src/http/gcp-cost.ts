@@ -8,7 +8,7 @@ import {
 	IntegrationsPersistenceError,
 	IntegrationsValidationError,
 } from "./integrations"
-import { EndpointAccess, handler } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 /** A GCP connection a billing export can be read through. */
 export const GcpCostConnector = Schema.Struct({
@@ -93,4 +93,4 @@ export class GcpCostApiGroup extends HttpApiGroup.make("gcpCost")
 	)
 	.prefix("/internal/cost/gcp")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, handler("integrations:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("integrations:manage")) {}
