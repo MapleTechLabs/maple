@@ -27,12 +27,47 @@ export interface OtlpLayerOptions {
 	readonly metricsExportInterval?: Duration.Input | undefined
 	readonly tracerExportInterval?: Duration.Input | undefined
 	readonly shutdownTimeout?: Duration.Input | undefined
+	readonly maxQueueSize?: number | undefined
+	readonly onDrop?: ((drop: ExportDrop) => void) | undefined
+	/** Prefix of the default drop warning, e.g. `"[MapleServerSDK]"`. */
+	readonly logPrefix: string
 	readonly spans: SpanFilterInput
 	/** Set when a profiler links samples to spans: the tracer then records span switches on it. */
 	readonly spanTimeline?: SpanTimeline | undefined
 }
 
-const tracerLayer = (url: string, options: OtlpLayerOptions) =>
+/** Telemetry the exporter dropped because its pending queue was full. */
+export interface ExportDrop {
+	readonly signal: "traces" | "logs"
+	readonly count: number
+	/** Items of this signal dropped since the layer started. */
+	readonly total: number
+}
+
+/** The order of magnitude of a running total, -1 before anything was dropped. */
+const magnitude = (n: number) => (n === 0 ? -1 : Math.floor(Math.log10(n)))
+
+/**
+ * The per-signal `onDrop` handed to Effect's exporters. Without a caller hook it warns on
+ * `console` (not the Effect logger, whose queue may be the full one) when the running total
+ * reaches 1, 10, 100, ... so an outage is reported without a line per dropped batch.
+ */
+export const makeDropReporter = (options: Pick<OtlpLayerOptions, "onDrop" | "logPrefix">) => {
+	const totals = { traces: 0, logs: 0 }
+	return (signal: ExportDrop["signal"]) => (count: number) => {
+		const before = totals[signal]
+		const total = before + count
+		totals[signal] = total
+		if (options.onDrop !== undefined) return options.onDrop({ signal, count, total })
+		if (magnitude(total) > magnitude(before)) {
+			console.warn(
+				`${options.logPrefix} export queue full: ${signal === "traces" ? "spans" : "log records"} dropped, ${total} so far. Raise \`maxQueueSize\` or check that the ingest endpoint is reachable.`,
+			)
+		}
+	}
+}
+
+const tracerLayer = (url: string, options: OtlpLayerOptions, onDrop: (count: number) => void) =>
 	Layer.effect(
 		Tracer.Tracer,
 		Effect.gen(function* () {
@@ -47,6 +82,8 @@ const tracerLayer = (url: string, options: OtlpLayerOptions) =>
 				exportInterval: options.tracerExportInterval ?? Duration.seconds(5),
 				maxBatchSize: options.maxBatchSize ?? 1000,
 				shutdownTimeout: options.shutdownTimeout ?? Duration.seconds(3),
+				maxQueueSize: options.maxQueueSize,
+				onDrop,
 				body(spans: OtlpTracer.ScopeSpan["spans"]) {
 					const data: OtlpTracer.TraceData = {
 						resourceSpans: [{ resource, scopeSpans: [{ scope, spans }] }],
@@ -69,6 +106,7 @@ export const makeOtlpLayer = (
 ): Layer.Layer<OtlpExporter.Flusher, never, HttpClient.HttpClient> => {
 	const base = HttpClientRequest.get(options.baseUrl)
 	const url = (path: string) => HttpClientRequest.appendUrl(base, path).url
+	const reportDrop = makeDropReporter(options)
 	return Layer.mergeAll(
 		OtlpLogger.layer({
 			url: url("/v1/logs"),
@@ -76,6 +114,8 @@ export const makeOtlpLayer = (
 			headers: options.headers,
 			exportInterval: options.loggerExportInterval,
 			maxBatchSize: options.maxBatchSize,
+			maxQueueSize: options.maxQueueSize,
+			onDrop: reportDrop("logs"),
 			shutdownTimeout: options.shutdownTimeout,
 			excludeLogSpans: options.loggerExcludeLogSpans,
 		}),
@@ -86,6 +126,6 @@ export const makeOtlpLayer = (
 			exportInterval: options.metricsExportInterval,
 			shutdownTimeout: options.shutdownTimeout,
 		}),
-		tracerLayer(url("/v1/traces"), options),
+		tracerLayer(url("/v1/traces"), options, reportDrop("traces")),
 	).pipe(Layer.provide(OtlpSerialization.layerJson))
 }
