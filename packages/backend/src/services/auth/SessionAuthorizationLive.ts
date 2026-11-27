@@ -74,7 +74,7 @@ export const SessionAuthorizationLive = Layer.effect(
 						recordAccessDenial(audit, request, caller, denial)
 					yield* checkEndpointAccess(tenant.permissions, options, recordDenied)
 					return yield* httpEffect.pipe(
-						watchHandlerAccess(recordDenied),
+						watchHandlerAccess(options, recordDenied),
 						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, actor),
 						// Telemetry and replay reads are recorded (see `AuditedRead`).
@@ -117,7 +117,7 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 						recordAccessDenial(audit, request, caller, denial)
 					yield* checkEndpointAccess(tenant.permissions, options, recordDenied)
 					return yield* httpEffect.pipe(
-						watchHandlerAccess(recordDenied),
+						watchHandlerAccess(options, recordDenied),
 						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, actor),
 						withAuditedRead(audit, request, options, caller),

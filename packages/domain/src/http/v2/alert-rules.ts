@@ -42,7 +42,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicError, publicErrors } from "./public-error"
 import { V2ManagedWarehouseErrors, V2QueryEngineRouteErrors, V2WarehouseErrors } from "./query-errors"
 import { AlertIncidentPublicId, AlertRulePublicId, EscalationChainPublicId } from "./resource-ids"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handler, requires } from "../endpoint-access"
 
 export { AlertIncidentPublicId, AlertRulePublicId } from "./resource-ids"
 
@@ -1120,4 +1120,4 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				"Monitors over your telemetry: error rate, latency percentiles, Apdex, throughput, metrics, query-builder queries, and raw SQL. Rules evaluate on a rolling window, open incidents after consecutive breaches, and notify their alert destinations. Mutations are admin-only.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("alerts:manage", "query:sql")) {}

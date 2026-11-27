@@ -3,7 +3,7 @@ import { Schema, String as Str } from "effect"
 import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handler } from "./endpoint-access"
 
 /**
  * Lower-cased hostname with at least one dot, no wildcard and no trailing dot. Capped at 236 so
@@ -290,7 +290,13 @@ const writeErrors = [
 ] as const
 
 export class EnterpriseSsoApiGroup extends HttpApiGroup.make("enterpriseSso")
-	.add(HttpApiEndpoint.get("get", "/", { success: EnterpriseSsoDocument, error: readErrors }))
+	.add(
+		// Without `sso:manage` the read answers with the summary, not the settings.
+		HttpApiEndpoint.get("get", "/", {
+			success: EnterpriseSsoDocument,
+			error: readErrors,
+		}).annotate(EndpointAccess, handler("sso:manage")),
+	)
 	.add(
 		HttpApiEndpoint.post("addDomain", "/domains", {
 			payload: SsoAddDomainRequest,
@@ -387,4 +393,4 @@ export class EnterpriseSsoApiGroup extends HttpApiGroup.make("enterpriseSso")
 	)
 	.prefix("/internal/enterprise-sso")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("sso:manage")) {}

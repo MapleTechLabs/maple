@@ -202,7 +202,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							recordAccessDenial(audit, request, caller, denial)
 						yield* checkEndpointAccessV2(tenant.permissions, options, route.path, recordDenied)
 						return yield* httpEffect.pipe(
-							watchHandlerAccess(recordDenied),
+							watchHandlerAccess(options, recordDenied),
 							provideRequestTenant(tenant),
 							Effect.provideService(CurrentAuditActor, {
 								type: "user",
@@ -343,7 +343,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						})
 						yield* checkEndpointAccessV2(tenant.permissions, options, route.path, recordDenied)
 						return yield* httpEffect.pipe(
-							watchHandlerAccess(recordDenied),
+							watchHandlerAccess(options, recordDenied),
 							provideRequestTenant(tenant),
 							Effect.provideService(CurrentAuditActor, {
 								type: "api_key",
@@ -390,7 +390,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						recordAccessDenial(audit, request, caller, denial)
 					yield* checkEndpointAccessV2(tenant.permissions, options, route.path, recordDenied)
 					return yield* httpEffect.pipe(
-						watchHandlerAccess(recordDenied),
+						watchHandlerAccess(options, recordDenied),
 						provideRequestTenant(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, {
 							type: "user",

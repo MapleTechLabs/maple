@@ -34,7 +34,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicError, publicErrors } from "./public-error"
 import { AlertDestinationPublicId } from "./resource-ids"
 import { ChatWorkspacePublicId } from "./integrations-chat"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, handler } from "../endpoint-access"
 
 export { AlertDestinationPublicId } from "./resource-ids"
 
@@ -669,4 +669,4 @@ export class V2AlertDestinationsApiGroup extends HttpApiGroup.make("alertDestina
 				"Notification channels for alert rules: PagerDuty, generic webhooks, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("alerts:manage")) {}

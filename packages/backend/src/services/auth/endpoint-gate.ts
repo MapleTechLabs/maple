@@ -4,7 +4,8 @@ import {
 	decideEndpointAccess,
 	type EndpointAccessDecision,
 } from "@maple/domain/http"
-import { requiredScopeForRoute, V2InsufficientPermissions } from "@maple/domain/http/v2"
+import { isRegisteredRead } from "@maple/domain/http/access-catalog"
+import { V2InsufficientPermissions } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
 import { Effect } from "effect"
 import { type AccessDenial, annotateAccessSpan } from "./access-span"
@@ -75,13 +76,10 @@ export const checkEndpointAccessV2 = (
 	routePath: string,
 	onDenied: (denial: AccessDenial) => Effect.Effect<void> = unrecorded,
 ): Effect.Effect<void, ReturnType<typeof V2InsufficientPermissions.make>> => {
-	const decision = decideEndpointAccess(permissions, called)
-	const effective: EndpointAccessDecision =
-		decision._tag === "Unmarked" &&
-		requiredScopeForRoute(called.endpoint.method, routePath)?.access === "read"
-			? Policy.can(permissions, "telemetry:read")
-				? { _tag: "Allowed" }
-				: { _tag: "Denied", permission: "telemetry:read" }
-			: decision
+	const effective: EndpointAccessDecision = !isRegisteredRead(called, routePath)
+		? decideEndpointAccess(permissions, called)
+		: Policy.can(permissions, "telemetry:read")
+			? { _tag: "Allowed" }
+			: { _tag: "Denied", permission: "telemetry:read" }
 	return settle(effective, permissions, onDenied, (message) => V2InsufficientPermissions.make(message))
 }

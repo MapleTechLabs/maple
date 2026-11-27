@@ -7,7 +7,7 @@ import {
 	OpenRouterKeyUpdateRequest,
 	OpenRouterKeyValidationError,
 } from "./openrouter-key"
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handler } from "./endpoint-access"
 
 /** The saved management key never comes back: `keyLabel` is how OpenRouter masks it. */
 export class OpenRouterCostKeySaved extends Schema.Class<OpenRouterCostKeySaved>("OpenRouterCostKeySaved")({
@@ -37,4 +37,4 @@ export class OpenRouterCostApiGroup extends HttpApiGroup.make("openRouterCost")
 	)
 	.prefix("/internal/cost/openrouter")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("integrations:manage")) {}

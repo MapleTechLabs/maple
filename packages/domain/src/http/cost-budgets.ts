@@ -7,7 +7,7 @@ import { CostBudgetAmount, CostBudgetBasis, CostBudgetPeriod, CostBudgetProgress
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { CloudCostPersistenceError, costEndpointErrors } from "./query-engine"
-import { EndpointAccess, requires } from "./endpoint-access"
+import { EndpointAccess, handler, requires } from "./endpoint-access"
 
 // Cost budgets: an amount per calendar period over a slice of the org's spend. Each one is a
 // hidden `cost_budget` alert rule, so its incidents and notifications are the alerting ones.
@@ -185,4 +185,4 @@ export class CostBudgetsApiGroup extends HttpApiGroup.make("costBudgets")
 	)
 	.prefix("/internal/cost/budgets")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("slos:manage")) {}

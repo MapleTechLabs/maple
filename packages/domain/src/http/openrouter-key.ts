@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handler } from "./endpoint-access"
 
 export const OPENROUTER_KEY_MAX_LENGTH = 256
 
@@ -113,4 +113,4 @@ export class OpenRouterKeyApiGroup extends HttpApiGroup.make("openRouterKey")
 	)
 	.prefix("/internal/openrouter-key")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("llm_keys:manage")) {}

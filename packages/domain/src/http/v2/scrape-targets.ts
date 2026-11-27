@@ -22,7 +22,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handler, requires } from "../endpoint-access"
 
 /** `scrp_…` public ID ⇄ internal `ScrapeTargetId` (raw UUID). */
 export const ScrapeTargetPublicId = PublicId(PublicIdPrefixes.scrapeTarget, ScrapeTargetId)
@@ -388,14 +388,16 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 			query: ListQuery,
 			success: ScrapeTargetList,
 			error: [V2ParameterInvalid.schema, scrapePersistence, scrapeStoredConfigInvalid],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listScrapeTargets",
-				summary: "List scrape targets",
-				description:
-					"Returns your organization's scrape targets, most recently created first. Cursor-paginated. Requires the `scrape_targets:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handler("scrape_targets:manage"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listScrapeTargets",
+					summary: "List scrape targets",
+					description:
+						"Returns your organization's scrape targets, most recently created first. Cursor-paginated. Requires the `scrape_targets:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("create", "/", {
@@ -422,14 +424,16 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 			params: { id: ScrapeTargetPublicId },
 			success: V2ScrapeTarget,
 			error: [scrapeNotFound, scrapePersistence, scrapeStoredConfigInvalid],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getScrapeTarget",
-				summary: "Retrieve a scrape target",
-				description:
-					"Returns a single scrape target by its `scrp_…` ID. Requires the `scrape_targets:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handler("scrape_targets:manage"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getScrapeTarget",
+					summary: "Retrieve a scrape target",
+					description:
+						"Returns a single scrape target by its `scrp_…` ID. Requires the `scrape_targets:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.patch("update", "/:id", {
@@ -513,4 +517,4 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 				"Metrics endpoints Maple scrapes on a schedule — self-hosted Prometheus endpoints and PlanetScale branch metrics. Manage targets, probe them on demand, and inspect recent scrape checks. Credentials are write-only.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("scrape_targets:manage")) {}

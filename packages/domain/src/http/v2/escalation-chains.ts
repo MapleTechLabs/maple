@@ -29,7 +29,7 @@ import {
 	EscalationChainPublicId,
 	OnCallSchedulePublicId,
 } from "./resource-ids"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, handler } from "../endpoint-access"
 
 export { EscalationChainPublicId } from "./resource-ids"
 
@@ -306,4 +306,4 @@ export class V2EscalationChainsApiGroup extends HttpApiGroup.make("escalationCha
 				"Step-by-step paging for alert incidents: notify the first responder, wait for an acknowledgement, then widen the circle. A rule's severity tier names the chain it starts.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("oncall:manage")) {}

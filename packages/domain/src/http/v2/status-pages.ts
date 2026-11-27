@@ -44,7 +44,7 @@ import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { UptimeMonitorPublicId } from "./uptime-monitors"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handler, requires } from "../endpoint-access"
 
 /** `stp_…` public ID ⇄ internal `StatusPageId` (raw UUID). */
 export const StatusPagePublicId = PublicId(PublicIdPrefixes.statusPage, StatusPageId)
@@ -1550,7 +1550,10 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				"Public status pages for your customers, served from edge storage so they stay up when Maple does not. Components follow your uptime monitors.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(
+		EndpointAccess,
+		handler("status_pages:edit", "status_pages:access", "status_pages:break_glass"),
+	) {}
 
 export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPageIncidents")
 	.add(

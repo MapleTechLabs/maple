@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { ChatProposalDecision } from "../chat-session"
 import { LimitedRoleError, SessionAuthorization } from "./current-tenant"
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handler } from "./endpoint-access"
 
 /**
  * Decide an approval-gated AI chat proposal as the signed-in user.
@@ -75,7 +75,7 @@ export class ChatApiGroup extends HttpApiGroup.make("chat")
 		})
 			// Deciding a proposal needs what approving its tool does (`dashboards:edit` for a dashboard
 			// change, else `ai:act`); the handler reads the tool off the session. The change runs as the caller.
-			.annotate(EndpointAccess, "handler"),
+			.annotate(EndpointAccess, handler("dashboards:edit", "ai:act")),
 	)
 	.prefix("/internal/chat")
 	.middleware(SessionAuthorization) {}

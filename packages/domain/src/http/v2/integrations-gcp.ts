@@ -19,7 +19,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, handler } from "../endpoint-access"
 
 // Google Cloud integration. No OAuth: an org registers a connector for a project, a folder or a
 // whole organization, and an administrator runs the generated `gcloud` script. The script routes
@@ -443,4 +443,4 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				"Connect Google Cloud projects, folders or organizations: register a connector, choose whether it forwards logs and whether Maple may read metrics and resources, fetch the `gcloud` scripts that set it up, and see whether logs are arriving.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("integrations:manage")) {}

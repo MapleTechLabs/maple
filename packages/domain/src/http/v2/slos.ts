@@ -10,7 +10,7 @@ import { V2WarehouseReadErrors } from "./query-errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { AlertDestinationPublicId, AlertRulePublicId } from "./resource-ids"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handler, requires } from "../endpoint-access"
 
 /** `slo_…` public ID ⇄ internal `SloId` (raw UUID). */
 export const SloPublicId = PublicId(PublicIdPrefixes.slo, SloId)
@@ -413,4 +413,4 @@ export class V2SlosApiGroup extends HttpApiGroup.make("slos")
 				"Service level objectives over a service's entry-point spans, with an error budget measured over a rolling window.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("slos:manage")) {}

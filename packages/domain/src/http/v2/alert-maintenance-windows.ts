@@ -16,7 +16,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { AlertMaintenanceWindowPublicId } from "./resource-ids"
 import { V2AlertSilenceMatchers } from "./alert-silences"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, handler } from "../endpoint-access"
 
 export const V2MaintenanceScheduleOnce = Schema.Struct({
 	type: Schema.Literal("once"),
@@ -269,4 +269,4 @@ export class V2AlertMaintenanceWindowsApiGroup extends HttpApiGroup.make("alertM
 				"Planned, recurring quiet periods for alerting. Each occurrence silences matching rules and can keep its hours out of anomaly baselines.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("alerts:manage")) {}

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Context, Option } from "effect"
 import * as Policy from "../policy"
+import { TENANT_GATES } from "./access-catalog"
 import { MapleAiApi } from "./ai-api"
 import { MapleApi } from "./api"
-import { Authorization, RegionlessSessionAuthorization, SessionAuthorization } from "./current-tenant"
+import { SessionAuthorization } from "./current-tenant"
 import {
 	type CalledEndpoint,
 	decideEndpointAccess,
@@ -13,7 +14,6 @@ import {
 	ScopedTelemetry,
 } from "./endpoint-access"
 import { MapleInternalApi } from "./internal-api"
-import { AuthorizationV2 } from "./v2/auth"
 import { MapleApiV2 } from "./v2/api"
 
 type Endpoint = CalledEndpoint["endpoint"] & {
@@ -25,13 +25,7 @@ type Group = CalledEndpoint["group"] & {
 	readonly endpoints: { readonly [name: string]: Endpoint }
 }
 
-/** The middlewares that resolve a tenant, and so run the endpoint gate. */
-const gated: ReadonlyArray<unknown> = [
-	Authorization,
-	SessionAuthorization,
-	RegionlessSessionAuthorization,
-	AuthorizationV2,
-]
+const gated = TENANT_GATES
 
 const apis = [MapleApi, MapleInternalApi, MapleApiV2, MapleAiApi] as const
 

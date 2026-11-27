@@ -20,6 +20,11 @@
   handler, `tool` for an MCP tool) and `maple.access.permission` on a refusal. `Policy.check`
   reports to `Policy.AccessSink`, which the auth layers set per request (`auth/access-span.ts`). A
   refusal built by hand after `Policy.can` is not reported.
+- What each permission opens is derived, not written down: `http/access-catalog.ts` reads the same
+  marks the gate reads (`accessCatalogOf`, `endpointsBehind`). A handler that checks permissions
+  itself names them in its mark, `handler("alerts:manage", "query:sql")`; a check for one the
+  endpoint does not declare sets `maple.access.undeclared` on the request's span, so a missing
+  declaration is found by querying Maple's own traces for that attribute.
 - A refusal is an `api.request` audit entry with `outcome: "denied"` (`auth/audit-denial.ts`),
   written at most once a minute per caller, request and reason. A person refused Read telemetry is
   the exception and stays on the span: a role without it asks for telemetry on every page it opens.

@@ -18,7 +18,7 @@ import {
 	SecurityAuditValidationModel,
 } from "../security-audit"
 import { SessionAuthorization } from "./current-tenant"
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handler } from "./endpoint-access"
 import { HttpTaggedError } from "./error-policy"
 
 /** The highest monthly spend limit an org may set, in whole US dollars. */
@@ -573,7 +573,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		HttpApiEndpoint.get("getSettings", "/settings", {
 			success: SecurityAuditSettings,
 			error: gatedErrors,
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.put("updateSettings", "/settings", {
@@ -618,7 +618,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 	.prefix("/api/security-audit")
 	.middleware(SessionAuthorization)
 	// Each handler checks `security:manage` or `security_audit:run` itself.
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("security:manage", "security_audit:run")) {}
 
 /**
  * The scheduled security audit's reads, served by the api Worker, which stays warm: answered
@@ -630,28 +630,28 @@ export class SecurityAuditReadsApiGroup extends HttpApiGroup.make("securityAudit
 		HttpApiEndpoint.get("listTargets", "/targets", {
 			success: SecurityAuditTargetsResponse,
 			error: gatedErrors,
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.get("listRuns", "/runs", {
 			query: SecurityAuditListRunsQuery,
 			success: SecurityAuditRunsResponse,
 			error: gatedErrors,
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.get("getRun", "/runs/:runId", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditRunDetail,
 			error: [...gatedErrors, SecurityAuditRunNotFoundError],
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.get("listRunUnits", "/runs/:runId/units", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditUnitsResponse,
 			error: [...gatedErrors, SecurityAuditRunNotFoundError],
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.get("listRunEvents", "/runs/:runId/events", {
@@ -659,14 +659,14 @@ export class SecurityAuditReadsApiGroup extends HttpApiGroup.make("securityAudit
 			query: SecurityAuditListEventsQuery,
 			success: SecurityAuditEventsResponse,
 			error: [...gatedErrors, SecurityAuditRunNotFoundError],
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.get("listRunFindings", "/runs/:runId/findings", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditFindingsResponse,
 			error: [...gatedErrors, SecurityAuditRunNotFoundError],
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.add(
 		HttpApiEndpoint.get("listFindings", "/targets/:targetId/findings", {
@@ -674,9 +674,9 @@ export class SecurityAuditReadsApiGroup extends HttpApiGroup.make("securityAudit
 			query: SecurityAuditListFindingsQuery,
 			success: SecurityAuditFindingsResponse,
 			error: [...gatedErrors, SecurityAuditTargetNotFoundError],
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.prefix("/api/security-audit")
 	.middleware(SessionAuthorization)
 	// Each handler checks `security:manage` or `security_audit:run` itself.
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("security:manage")) {}

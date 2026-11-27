@@ -1,5 +1,6 @@
+import { type CalledEndpoint, handlerPermissions, requiredPermissions } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Effect, Option } from "effect"
+import { Array as Arr, Effect, Option } from "effect"
 
 /** Where a request was decided: by the endpoint gate, or by a check inside the handler. */
 export type AccessSite = "edge" | "handler"
@@ -30,20 +31,30 @@ export const annotateAccessSpan = (
 ): Effect.Effect<void> => Effect.annotateCurrentSpan(accessAttributes(outcome, site, permission))
 
 /**
- * Runs a handler with its permission checks watched: one that refuses marks the request's span
- * (not the service span the check ran in) and is handed to `onDenied`.
+ * Runs a handler with its permission checks watched. One that refuses marks the request's span
+ * (not the service span the check ran in) and is handed to `onDenied`. One the endpoint does not
+ * declare (`requires` or `handler(…)`) is named in `maple.access.undeclared`, allowed or not: the
+ * access catalog is missing it.
  */
 export const watchHandlerAccess =
-	(onDenied: (denial: AccessDenial) => Effect.Effect<void>) =>
-	<A, E, R>(handler: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-		Effect.flatMap(Effect.option(Effect.currentSpan), (requestSpan) =>
+	(called: CalledEndpoint, onDenied: (denial: AccessDenial) => Effect.Effect<void>) =>
+	<A, E, R>(handler: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
+		const declared = [...requiredPermissions(called), ...handlerPermissions(called)]
+		return Effect.flatMap(Effect.option(Effect.currentSpan), (requestSpan) =>
 			Effect.provideService(handler, Policy.AccessSink, ({ permission, allowed }) => {
-				if (allowed) return Effect.void
 				if (Option.isSome(requestSpan)) {
-					requestSpan.value.attribute("maple.access.outcome", "denied")
-					requestSpan.value.attribute("maple.access.site", "handler")
-					requestSpan.value.attribute("maple.access.permission", permission)
+					if (!Arr.contains(declared, permission)) {
+						requestSpan.value.attribute("maple.access.undeclared", permission)
+					}
+					if (!allowed) {
+						requestSpan.value.attribute("maple.access.outcome", "denied")
+						requestSpan.value.attribute("maple.access.site", "handler")
+						requestSpan.value.attribute("maple.access.permission", permission)
+					}
 				}
-				return onDenied({ permission, reason: Policy.denialFor(permission).message })
+				return allowed
+					? Effect.void
+					: onDenied({ permission, reason: Policy.denialFor(permission).message })
 			}),
 		)
+	}

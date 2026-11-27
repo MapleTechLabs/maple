@@ -10,7 +10,7 @@ import {
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { EndpointAccess } from "./endpoint-access"
+import { EndpointAccess, handler } from "./endpoint-access"
 
 // The Security hub's Cloud tab: findings the AWS connection's `security` module pulls from
 // GuardDuty, Security Hub, Inspector and Access Analyzer, matched to the services they affect.
@@ -224,7 +224,7 @@ export class CloudSecurityApiGroup extends HttpApiGroup.make("cloudSecurity")
 		HttpApiEndpoint.get("overview", "/overview", {
 			success: CloudSecurityOverviewResponse,
 			error: [CloudSecurityDisabledError, CloudSecurityForbiddenError, CloudSecurityPersistenceError],
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.add(
 		// A POST for the list filters; it only reads. Not for analysts: the Security Center is engineers' and admins'.
@@ -244,10 +244,10 @@ export class CloudSecurityApiGroup extends HttpApiGroup.make("cloudSecurity")
 				CloudSecurityPersistenceError,
 				CloudFindingNotFoundError,
 			],
-		}),
+		}).annotate(EndpointAccess, handler("security:manage")),
 	)
 	.prefix("/internal/cloud-security")
 	.middleware(SessionAuthorization)
 	// Findings carry principals, addresses and exposed resources, and the list reads telemetry.
 	.annotate(AuditedRead, "telemetry.read")
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("security:manage")) {}

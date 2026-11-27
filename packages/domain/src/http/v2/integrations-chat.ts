@@ -14,7 +14,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess, handler, requires } from "../endpoint-access"
 
 // The chat-platform surface: one contract for every chat platform Maple can
 // connect to. The platform is a value (`connector`), never a path segment or a
@@ -464,14 +464,16 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				chatConfiguration,
 				chatPersistence,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listChatWorkspaceDestinations",
-				summary: "List a chat workspace's alert destinations",
-				description:
-					"Lists the channels in a linked workspace that Maple can post an alert to, read live from the chat platform. A workspace whose install predates channel access answers `integration_not_connected`: reinstall the app to grant it. Requires an org-admin or engineer role and the `integrations:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, handler("integrations:manage"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listChatWorkspaceDestinations",
+					summary: "List a chat workspace's alert destinations",
+					description:
+						"Lists the channels in a linked workspace that Maple can post an alert to, read live from the chat platform. A workspace whose install predates channel access answers `integration_not_connected`: reinstall the app to grant it. Requires an org-admin or engineer role and the `integrations:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("deleteWorkspace", "/chat_workspaces/:id", {
@@ -496,4 +498,4 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				"Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist. Where a connector's platform can say who acted, each member may also link their own chat account to their Maple user.",
 		}),
 	)
-	.annotate(EndpointAccess, "handler") {}
+	.annotate(EndpointAccess, handler("integrations:manage")) {}
