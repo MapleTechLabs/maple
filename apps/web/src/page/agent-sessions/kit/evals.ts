@@ -13,16 +13,20 @@ import type { TypographyTone } from "@maple/views/ui/typography"
 const LIVE_WINDOW_SLACK_MS = 3_600_000
 
 /**
- * The window the evals pages read scores over. A window ending near now (a preset like "Last 1
- * week", whose end the frame snaps down for the cache) reads to now: scores are written as they
- * happen, so the snapped end hid the newest ones until a Reload.
+ * The window the evals pages read scores over. A preset window (like "Last 1 week", whose end the
+ * frame snaps down for the cache) reads to now: scores are written as they happen, so the snapped
+ * end hid the newest ones until a Reload. A range the user set with an end keeps that end.
  */
 export const scoresWindow = (
 	window: { readonly startTime: string; readonly endTime: string },
 	nowMs: number,
+	search: { readonly endTime?: string | undefined },
 ): { readonly startTime: string; readonly endTime: string } => {
 	const endMs = parseWarehouseDateTime(window.endTime)
-	return Number.isFinite(endMs) && endMs <= nowMs && nowMs - endMs < LIVE_WINDOW_SLACK_MS
+	return search.endTime === undefined &&
+		Number.isFinite(endMs) &&
+		endMs <= nowMs &&
+		nowMs - endMs < LIVE_WINDOW_SLACK_MS
 		? { startTime: window.startTime, endTime: formatWarehouseDateTime(nowMs) }
 		: window
 }

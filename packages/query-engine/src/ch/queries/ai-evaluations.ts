@@ -166,6 +166,9 @@ export function aiEvaluationBreakdownQuery() {
 		.format("JSON")
 }
 
+/** A session in the window matches on scores written up to this long after it, as its page reads. */
+const SESSION_SCORES_TAIL_SECONDS = EVALUATION_SESSION_SCORES_TAIL_MS / 1000
+
 /** One evaluator's latest verdict, the Agent Sessions list's evaluation filter. */
 export interface AiEvaluationMatch {
 	readonly name: string
@@ -177,9 +180,6 @@ export interface AiEvaluationMatch {
  * session-scope scores name, and the traces its other scores grade (filed under each trace's
  * session). A score naming only a response matches neither.
  */
-/** A session in the window matches on scores written up to this long after it, as its page reads. */
-const SESSION_SCORES_TAIL_SECONDS = EVALUATION_SESSION_SCORES_TAIL_MS / 1000
-
 export function aiEvaluationMatchSubqueries(match: AiEvaluationMatch) {
 	const named = ($: Columns) => $.Scope.eq("session").and($.SessionId.neq(""))
 	return {

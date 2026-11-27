@@ -8,13 +8,18 @@ const at = (ms: number) => formatWarehouseDateTime(ms)
 describe("scoresWindow", () => {
 	it("reads a window snapped a few minutes short of now to now", () => {
 		const window = { startTime: at(NOW - 7 * 86_400_000), endTime: at(NOW - 7 * 60_000) }
-		expect(scoresWindow(window, NOW)).toEqual({ startTime: window.startTime, endTime: at(NOW) })
+		expect(scoresWindow(window, NOW, {})).toEqual({ startTime: window.startTime, endTime: at(NOW) })
+	})
+
+	it("keeps the end of a range the user set, even one ending minutes ago", () => {
+		const window = { startTime: at(NOW - 3_600_000), endTime: at(NOW - 7 * 60_000) }
+		expect(scoresWindow(window, NOW, { endTime: window.endTime })).toEqual(window)
 	})
 
 	it("keeps a window that ended long ago, or one that ends in the future", () => {
 		const past = { startTime: at(NOW - 3 * 86_400_000), endTime: at(NOW - 2 * 86_400_000) }
-		expect(scoresWindow(past, NOW)).toEqual(past)
+		expect(scoresWindow(past, NOW, {})).toEqual(past)
 		const future = { startTime: at(NOW - 3_600_000), endTime: at(NOW + 60_000) }
-		expect(scoresWindow(future, NOW)).toEqual(future)
+		expect(scoresWindow(future, NOW, {})).toEqual(future)
 	})
 })

@@ -26,7 +26,7 @@ const scopeOf = (search: Search, context: PageContext): Frame.Scope => ({
 
 const requestAll = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	if (model.frame.window === null) return { model }
-	const window = scoresWindow(model.frame.window, model.frame.nowMs)
+	const window = scoresWindow(model.frame.window, model.frame.nowMs, model.search)
 	const data = { startTime: window.startTime, endTime: window.endTime }
 	return applySteps<Model, Message>(model, [
 		keyed(

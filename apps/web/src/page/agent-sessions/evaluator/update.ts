@@ -27,7 +27,7 @@ const scopeOf = (search: Search, context: PageContext): Frame.Scope => ({
 
 const requestAll = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	if (model.frame.window === null) return { model }
-	const window = scoresWindow(model.frame.window, model.frame.nowMs)
+	const window = scoresWindow(model.frame.window, model.frame.nowMs, model.search)
 	const input: DetailInput = {
 		startTime: window.startTime,
 		endTime: window.endTime,
