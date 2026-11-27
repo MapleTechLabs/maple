@@ -1,0 +1,282 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "what-a-funnel-measures", text: "What a funnel measures" },
+    { depth: 2, slug: "steps", text: "Choose the steps" },
+    { depth: 2, slug: "build", text: "Build the funnel" },
+    { depth: 2, slug: "count-and-window", text: "Count by and window" },
+    { depth: 2, slug: "read", text: "Read the result" },
+    { depth: 3, slug: "leavers", text: "What leavers did next" },
+    { depth: 2, slug: "filter-a-step", text: "Filter a step" },
+    { depth: 2, slug: "fix", text: "From drop-off to a fix" },
+    { depth: 2, slug: "mistakes", text: "What distorts a funnel" },
+    { depth: 2, slug: "posthog", text: "Coming from PostHog" },
+];
+
+const serverStep = String.raw`// The billing webhook: the browser has left for the payment page, so this step is server-side.
+span.setAttributes({
+  "maple.product_event.name": "plan_started",
+  "maple.product_event.user_id": user.id, // the same id the browser passes to identify()
+  "maple.product_event.group_id": org.id,
+})`;
+
+const faqs = [
+    {
+        question: "What is funnel analysis?",
+        answer:
+            "Funnel analysis counts how many people complete each step of an ordered sequence, such as starting signup, finishing it, connecting data and starting a paid plan. The difference between two steps is the drop-off, and the step with the largest drop-off is where to look first.",
+    },
+    {
+        question: "How do you calculate funnel conversion rate?",
+        answer:
+            "Divide the number of people who reached the last step by the number who entered the first step, counting each person once and only when they completed the steps in order within the conversion window. Step conversion is the same ratio between two neighbouring steps.",
+    },
+    {
+        question: "What is a conversion window?",
+        answer:
+            "The conversion window is how long a person has to finish the funnel after their first step. A checkout fits in an hour. Signup to a paid plan needs days. A window that is too short hides people who converted later, and one that is too long credits steps that had nothing to do with each other.",
+    },
+    {
+        question: "How many steps should a funnel have?",
+        answer:
+            "Three to five. Each step should be something a person must do to reach the next one. Optional steps make the funnel look worse than the product is, because everyone who skipped the optional step counts as dropped.",
+    },
+    {
+        question: "Why does my funnel show 0% at a server-side step?",
+        answer:
+            "Usually an identity mismatch. If the browser identifies people by one id and the backend sends another, or sends only an account id, the server event cannot be joined to the person who did the earlier steps. Send the same user id from both, or count the funnel by account.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="Funnel Analysis: How to Find Where Signups Drop Off | Maple"
+    description="How to do funnel analysis: choose the steps, set the conversion window, read drop-off and time to convert, see what leavers did next, and avoid the mistakes that distort a funnel."
+    title="Funnel analysis: find where signups drop off"
+    lede="How to build a signup-to-paid funnel, pick a conversion window that fits it, and read the result well enough to know which step to fix first."
+    category="Product analytics"
+    readMinutes={8}
+    published="2026-11-28"
+    modified="2026-11-28"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            A <strong>funnel</strong> answers one question: of the people who did the first thing, how many went on to do the next, and the next. It turns "signups feel low" into a step and a number.
+        </p>
+        <p>
+            This guide walks through one funnel, from signup to a paid plan, and then through reading it. The screenshots show example data in Maple. The same steps apply in other product analytics tools, though they show what leavers did next in a different place.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>Use three to five steps, each one required to reach the next.</li>
+                <li>Count people, not sessions, when the funnel spans more than one visit.</li>
+                <li>Set the conversion window from how long the journey really takes, and test it by widening it once.</li>
+                <li>Start with the step that loses the most people, and look at what leavers did next before guessing why.</li>
+                <li>A step that shows 0% is usually an identity problem: its events carry a different id than the steps before it.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="what-a-funnel-measures" class="scroll-mt-24">
+        <h2>What a funnel measures</h2>
+        <p>
+            A funnel is an ordered list of steps. A person <strong>enters</strong> when they do step one. They <strong>convert</strong> when they do every later step, in order, before the conversion window runs out. Other things they do in between do not matter.
+        </p>
+        <p>
+            Three numbers come out of it. <strong>Conversion</strong> is the share of people who entered and reached the last step. <strong>Drop-off</strong> is the share lost between two steps. <strong>Time to convert</strong> is how long the people who finished took.
+        </p>
+    </section>
+
+    <section id="steps" class="scroll-mt-24">
+        <h2>Choose the steps</h2>
+        <p>
+            The steps come from your <a href="/guides/event-tracking-plan">tracking plan</a>. For a SaaS product, the journey from visitor to customer usually has four:
+        </p>
+        <ol class="guide-list">
+            <li><code>signup_started</code>: someone opens the signup form.</li>
+            <li><code>signup_completed</code>: the account exists.</li>
+            <li><code>onboarding_connected</code>: the product has their data and can show something useful. This is the activation step, and it is different in every product.</li>
+            <li><code>plan_started</code>: they pay.</li>
+        </ol>
+        <p>
+            Every step should be required for the next. If people can pay without finishing onboarding, a funnel with onboarding in the middle counts those customers as lost. Put optional actions in a separate funnel, or look at them with <a href="/guides/user-path-analysis">paths</a>.
+        </p>
+    </section>
+
+    <section id="build" class="scroll-mt-24">
+        <h2>Build the funnel</h2>
+        <p>
+            In Maple, open <strong>Product analytics</strong> and pick the <strong>Funnels</strong> tab. An empty funnel suggests a few pairs made from your most common custom events, which is a quick way to start.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/funnel-analysis-01-suggestions.webp" data-zoomable alt="An empty funnel in Maple: the Steps panel with an Add step button, Count by, Within and Break down by controls, and three suggested funnels such as signup_started to signup_completed." width="1820" height="1140" loading="lazy" />
+            <figcaption>A new funnel, with suggestions made from your own events.</figcaption>
+        </figure>
+        <p>
+            Add a step for each thing people do, in order. A funnel takes up to ten. A step is an event by name, a page view by path, or, for the first step only, where the session came from: a referrer, a UTM tag, a country.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/funnel-analysis-02-steps.webp" data-zoomable alt="The Steps panel with four event steps in order: signup_started, signup_completed, onboarding_connected and plan_started. Count by is set to Person and Within to 7 days." width="1820" height="768" loading="lazy" />
+            <figcaption>Four steps, counted by person, with seven days to finish.</figcaption>
+        </figure>
+        <p>
+            The funnel lives in the URL. Copy the link and a teammate opens the same steps and settings.
+        </p>
+    </section>
+
+    <section id="count-and-window" class="scroll-mt-24">
+        <h2>Count by and window</h2>
+        <p>
+            Two settings change what the funnel means, and both are easy to leave on a default that does not fit.
+        </p>
+        <h3>Who is counted</h3>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>Count by</th><th>Counts</th><th>Use for</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Person</td><td>The user when the event has one, else the anonymous visitor. A visit before sign-in and the activity after it are one person.</td><td>Most funnels</td></tr>
+                    <tr><td>Visitor</td><td>The anonymous browser or device</td><td>Marketing site funnels</td></tr>
+                    <tr><td>User</td><td>Signed-in users only</td><td>In-product funnels</td></tr>
+                    <tr><td>Group</td><td>The account. Several users of one account are one.</td><td><a href="/guides/b2b-product-analytics">B2B funnels</a></td></tr>
+                    <tr><td>Session</td><td>Each browser session on its own</td><td>Single-visit flows like checkout</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            A signup funnel crosses the sign-in boundary and often several days, so count it by <strong>Person</strong>. Counting by session would lose everyone who signed up on Monday and paid on Thursday.
+        </p>
+        <p>
+            One caveat for B2B products. When several people share an account, teammates who join later sign up and never pay themselves, so a signup-to-paid funnel counted by person understates conversion. <a href="/guides/b2b-product-analytics">Part 5</a> covers counting by account.
+        </p>
+        <h3>The conversion window</h3>
+        <p>
+            <strong>Within</strong> is how long a person has to finish after their first step. The right value depends on the journey: an hour for a checkout, days for signup to paid. If a person tries more than once, the attempt that gets furthest is the one counted.
+        </p>
+        <p>
+            Time to convert only measures people who finished inside the window, so it cannot show the ones who would have finished later. To test a window, widen it once. If conversion barely moves between 7 and 30 days, the shorter window is enough. If it rises, the shorter one was cutting people off. Use a date range several times longer than the window, so that most people who entered have had time to finish.
+        </p>
+    </section>
+
+    <section id="read" class="scroll-mt-24">
+        <h2>Read the result</h2>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/funnel-analysis-03-dropoff.webp" data-zoomable alt="A funnel result in Maple: 1.2K people entered, up 9.2%, conversion 5.1%, up 0.8 points, median time to convert 2 days 6 hours, biggest drop 84% before plan_started. Below, a drop-off chart with one column per step: 100%, 62%, 32% and 5.1%." width="1820" height="1076" loading="lazy" />
+            <figcaption>The headline numbers and the drop-off chart. The dark part of each column is who left since the previous step.</figcaption>
+        </figure>
+        <p>Read it in this order:</p>
+        <ol class="guide-list">
+            <li><strong>Entered.</strong> 1.2K people started signing up, 9.2% more than in the week before. A conversion rate means little without this number next to it.</li>
+            <li><strong>Conversion.</strong> 5.1% reached <code>plan_started</code>, up 0.8 points. The comparison is with the same length of time before the selected range.</li>
+            <li><strong>Time to convert.</strong> The median is 2 days 6 hours, and 90% finished within 6 days 8 hours. That is close to the seven-day limit, which is a reason to rerun the funnel with 30 days and see whether conversion rises.</li>
+            <li><strong>Biggest drop.</strong> 84% of the people who connected their data did not start a plan. That is the largest share lost at one step. The largest number of people is lost earlier.</li>
+        </ol>
+        <p>
+            The chart shows the same thing by step. 62% finish signup. Half of those connect data. The absolute losses are largest at the top: 464 people start signing up and never finish, against 327 who activate and do not pay. In this example the early steps lose the most people, and a fix there feeds every step after it.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/funnel-analysis-04-steps-table.webp" data-zoomable alt="The Steps table of a funnel: for each of the four steps the number of people, the share of everyone who entered, the share of the previous step, how many dropped, the median and p90 time from the previous step, and what leavers did next." width="1820" height="522" loading="lazy" />
+            <figcaption>The Steps table: counts, time between steps, and where the people who left went.</figcaption>
+        </figure>
+        <p>
+            The table adds the time between steps. People finish signup in a median of 3 minutes, connect data within 2 hours, and start a plan 2 days after that. A long gap is not a problem by itself. A long gap before a step with a large drop means people leave and do not come back, which a reminder email or a shorter step can address.
+        </p>
+
+        <h3 id="leavers" class="scroll-mt-24">What leavers did next</h3>
+        <p>
+            The last column lists, for each step, the first thing people did after the last step they reached. In the example:
+        </p>
+        <ul class="guide-list">
+            <li>Of the people who started signup and did not finish, 45% opened the docs and 14% went to the pricing page. That suggests a question the form did not answer.</li>
+            <li>Of those who signed up and never connected data, 37% went to a dashboard first and 27% to the onboarding screen. The largest group skipped onboarding.</li>
+            <li>Of those who activated and did not pay, 43% created a dashboard next. They kept using the product without paying. That points at pricing or plan limits, or in a B2B product at teammates of an account that already pays.</li>
+        </ul>
+        <p>
+            These are readings to test. The funnel shows where people went, and the reason still has to be found. "Nothing after" means the person sent no further event in the selected range. The example range is one week, the same length as the window, so people who entered in its last days have not had seven days yet. For a real decision, use a month or more.
+        </p>
+    </section>
+
+    <section id="filter-a-step" class="scroll-mt-24">
+        <h2>Filter a step</h2>
+        <p>
+            A step can be narrowed to events that carry a property value. Turn on <strong>Filter by property</strong> and write the condition on the step: <code>method = "google"</code> on <code>signup_completed</code> counts only Google signups, and <code>plan = "pro"</code> on <code>plan_started</code> counts only that plan.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/funnel-analysis-05-step-filters.webp" data-zoomable alt="The Steps panel with Filter by property turned on. The signup_completed step has the filter method = google and the plan_started step has plan = pro." width="1820" height="1034" loading="lazy" />
+            <figcaption>Property filters on two steps. Only equality and AND are supported.</figcaption>
+        </figure>
+        <p>
+            The same event can be two steps with different filters, for example <code>plan_started</code> with one plan and later with another, which makes an upgrade funnel. To compare every value of a property side by side, use a <a href="/guides/conversion-by-channel">breakdown</a> instead of a filter.
+        </p>
+    </section>
+
+    <section id="fix" class="scroll-mt-24">
+        <h2>From drop-off to a fix</h2>
+        <p>
+            A funnel says where people leave. It does not say why. Three follow-ups get from the number to a cause:
+        </p>
+        <ul class="guide-list">
+            <li><strong>Watch a few sessions.</strong> The <strong>Replays</strong> button opens session replays for the same time range. It is not filtered to the people who left, so pick sessions that reach the page of the step. A handful of recordings is a quick way to form a guess.</li>
+            <li><strong>Check for errors.</strong> A step that fails for some users looks like drop-off. Search the errors and traces of the request behind the step for the same time range. When a step comes from a traced request, its events link to their traces.</li>
+            <li><strong>Split the funnel.</strong> Break it down by signup method, channel or plan. A step that converts at 60% overall can be 80% for one group and 20% for another.</li>
+        </ul>
+        <p>
+            Later steps often run on the server, because the browser has left for a payment page. Send them with the same user id the browser uses:
+        </p>
+        <Code code={serverStep} lang="typescript" title="billing-webhook.ts" />
+    </section>
+
+    <section id="mistakes" class="scroll-mt-24">
+        <h2>What distorts a funnel</h2>
+        <ul class="guide-list">
+            <li><strong>Optional steps.</strong> A step people can skip makes everyone who skipped it a drop-off.</li>
+            <li><strong>A window shorter than the journey.</strong> Conversion looks low and the last step looks broken.</li>
+            <li><strong>A range that ends today.</strong> People who entered yesterday have not had seven days yet. Read recent periods as incomplete.</li>
+            <li><strong>Split identities.</strong> If the server step carries a different id than the browser steps, nobody reaches it. If it carries only an account id, count by Group.</li>
+            <li><strong>Small numbers.</strong> A move from 3 of 40 to 5 of 42 is not a trend. Widen the range before acting on it.</li>
+        </ul>
+    </section>
+
+    <section id="posthog" class="scroll-mt-24">
+        <h2>Coming from PostHog</h2>
+        <p>
+            A Maple funnel is close to a PostHog funnel insight with sequential step order. The settings map like this:
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>PostHog</th><th>Maple</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Funnel insight</td><td><strong>Product analytics</strong>, <strong>Funnels</strong> tab, or a Funnel widget on a dashboard</td></tr>
+                    <tr><td>Conversion window limit</td><td><strong>Within</strong></td></tr>
+                    <tr><td>Aggregating by users or groups</td><td><strong>Count by</strong></td></tr>
+                    <tr><td>Breakdown</td><td><strong>Break down by</strong></td></tr>
+                    <tr><td>Step order: sequential, strict, any</td><td>Sequential only</td></tr>
+                    <tr><td>Exclusion steps</td><td>Not available</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Maple lists what leavers did next on every step, where PostHog opens a paths insight from a funnel step, and it links server-side steps to their traces. It lacks strict and any-order funnels, exclusion steps, and step filters beyond equality. Maple also has no retention chart in the dashboard yet. Retention and cohort questions are answered through its MCP server, which lets an AI assistant query your events.
+        </p>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>Funnels on the events you already send</h3>
+            <p>Browser events, server events and annotated spans land in one table, so a single funnel can start on the marketing site and end at a billing webhook.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/product-events/funnels" class="guide-button guide-button--primary">Funnels docs</a>
+                <a href="/docs/product-events/overview" class="guide-button">Product events</a>
+            </div>
+        </div>
+    </section>
+</GuidePage>

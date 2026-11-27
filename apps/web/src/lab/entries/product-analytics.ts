@@ -65,6 +65,7 @@ const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
+// The leavers agree with PATHS below: nobody leaves by a route the paths chart does not draw.
 const FUNNEL: ReadonlyArray<FunnelRow> = [
 	{ name: "signup_started", value: 1_206 },
 	{
@@ -89,9 +90,10 @@ const FUNNEL: ReadonlyArray<FunnelRow> = [
 		sinceStartP50Ms: 2 * HOUR,
 		sinceStartP90Ms: 27 * HOUR,
 		leavers: [
-			{ name: "", count: 190 },
-			{ name: "docs_opened", count: 96 },
-			{ name: "query_run", count: 41 },
+			{ name: "dashboard_viewed", count: 130 },
+			{ name: "onboarding_viewed", count: 96 },
+			{ name: "docs_opened", count: 70 },
+			{ name: "", count: 27 },
 		],
 	},
 	{
@@ -103,8 +105,8 @@ const FUNNEL: ReadonlyArray<FunnelRow> = [
 		sinceStartP90Ms: 6 * DAY + 8 * HOUR,
 		leavers: [
 			{ name: "dashboard_created", count: 140 },
-			{ name: "query_run", count: 88 },
-			{ name: "", count: 61 },
+			{ name: "alert_created", count: 58 },
+			{ name: "", count: 52 },
 		],
 	},
 ]
@@ -130,12 +132,12 @@ const FUNNEL_BY_SOURCE: ReadonlyArray<FunnelGroupRow> = Arr.flatMap(GROUPS, ([gr
 	Arr.map(FUNNEL, (row, index) => ({ name: row.name, value: counts[index] ?? 0, group })),
 )
 
-/** The same funnel split by the users' current `plan` property. */
+/** The same funnel split by the users' current `plan` property. Each step adds up to FUNNEL's. */
 const FUNNEL_BY_PLAN: ReadonlyArray<FunnelGroupRow> = Arr.flatMap(
 	[
-		["free", [702, 401, 118, 4]],
-		["pro", [318, 241, 214, 52]],
-		["team", [96, 81, 70, 18]],
+		["free", [702, 401, 99, 4]],
+		["pro", [318, 241, 214, 43]],
+		["team", [96, 81, 70, 14]],
 		["(none)", [90, 19, 5, 0]],
 	] as const,
 	([group, counts]) =>
@@ -244,7 +246,7 @@ const searchOf = (scenario: Scenario): Search => {
 					step.kind === "event" && step.eventName === "signup_completed"
 						? { ...step, attributeEquals: { method: "google" } }
 						: step.kind === "event" && step.eventName === "plan_started"
-							? { ...step, attributeEquals: { plan: "startup" } }
+							? { ...step, attributeEquals: { plan: "pro" } }
 							: step,
 				),
 			}

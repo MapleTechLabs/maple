@@ -1,0 +1,295 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "unit", text: "The account is the unit" },
+    { depth: 2, slug: "send-the-account", text: "Send the account" },
+    { depth: 2, slug: "properties", text: "User and account properties" },
+    { depth: 3, slug: "what-goes-where", text: "What goes where" },
+    { depth: 2, slug: "count-by-account", text: "Count by account" },
+    { depth: 2, slug: "by-plan", text: "Break down by plan" },
+    { depth: 2, slug: "current-value", text: "Current value, not past value" },
+    { depth: 2, slug: "account-only-events", text: "Events without a user" },
+    { depth: 2, slug: "numbers", text: "The numbers to watch" },
+    { depth: 2, slug: "posthog", text: "Coming from PostHog" },
+];
+
+const browserIdentify = String.raw`import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.identify({
+  id: user.id,
+  groupId: org.id, // the account this user belongs to
+  groupName: org.name,
+  traits: { role: "admin" },
+})`;
+
+const serverProps = String.raw`{"name":"$identify","user_id":"user_123","set":{"role":"admin"},"set_once":{"signup_channel":"newsletter"}}
+{"name":"$groupidentify","group_id":"org_456","group_set":{"plan":"pro","seats":12,"industry":"fintech"}}
+{"name":"plan_started","user_id":"user_123","group_id":"org_456","attributes":{"plan":"pro","seats":12},"group_set":{"plan":"pro"}}`;
+
+const webhook = String.raw`curl -X POST https://ingest.maple.dev/v1/events \
+  -H "Authorization: Bearer YOUR_INGEST_KEY" \
+  -H "Content-Type: application/x-ndjson" \
+  --data-binary $'{"name":"plan_started","group_id":"org_456","attributes":{"plan":"pro"},"group_set":{"plan":"pro"}}\n'`;
+
+const faqs = [
+    {
+        question: "How is B2B product analytics different from B2C?",
+        answer:
+            "In a B2B product the customer is an account with several users, and the account is what signs up, activates, pays and churns. Counting individual users overstates drop-off, because most users of a paying account never start a plan themselves. B2B analytics counts accounts and uses account properties such as plan and seat count.",
+    },
+    {
+        question: "What is group analytics?",
+        answer:
+            "Group analytics attaches each event to a group, usually the account or workspace, as well as to the user. Charts and funnels can then count distinct accounts instead of distinct users, and filter or break down by properties of the account.",
+    },
+    {
+        question: "What is the difference between a user property and an account property?",
+        answer:
+            "A user property describes one person: their role, their signup channel. An account property describes the company: its plan, seat count, industry. Plan belongs on the account, because everyone in the account shares it.",
+    },
+    {
+        question: "Should a funnel count users or accounts?",
+        answer:
+            "Count accounts when the outcome belongs to the account, such as activating or starting a paid plan. Count users when the question is about individual behaviour, such as whether invited teammates finish their own onboarding.",
+    },
+    {
+        question: "Why do invited users look like drop-offs in my funnel?",
+        answer:
+            "Because they sign up into an account that already pays, so they never reach the payment step themselves. Counted by user they never convert. Counted by account they belong to an account that already did.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="B2B Product Analytics: Account-Level Funnels and Properties | Maple"
+    description="How to set up B2B product analytics: send the account on every event, set user and account properties, count funnels by account instead of user, and break conversion down by plan."
+    title="B2B product analytics: accounts, plans and seats"
+    lede="In a B2B product the customer is a company, and a company has many users. How to count accounts, describe them with properties, and stop invited teammates from looking like drop-off."
+    category="Product analytics"
+    readMinutes={8}
+    published="2026-11-28"
+    modified="2026-11-28"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            A lot of product analytics advice assumes one person equals one customer. In a B2B product that is wrong in a specific way: an <strong>account</strong> signs up, activates and pays, and inside it are five or fifty people who each do a small part. Count people, and the numbers for signup, activation and payment come out skewed.
+        </p>
+        <p>
+            This guide is the last part of the series. It builds on the <a href="/guides/event-tracking-plan">tracking plan</a> and the <a href="/guides/funnel-analysis">signup funnel</a> from the earlier parts.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>Send the account id on every event, from the browser and the backend.</li>
+                <li>Count funnels by account when the outcome belongs to the account: activation, payment.</li>
+                <li>Plan, seats and industry are account properties. Role is a user property.</li>
+                <li>A property filter reads the current value. Use an event property for what was true at the time.</li>
+                <li>Billing webhooks often know the account and not the user. Those funnels must be counted by account.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="unit" class="scroll-mt-24">
+        <h2>The account is the unit</h2>
+        <p>
+            Take a signup-to-paid funnel counted by person. One founder signs up, connects the product and starts a plan. Then she invites four colleagues. Each of them signs up too, into an account that already pays, and none of them ever reaches the payment step.
+        </p>
+        <p>
+            Counted by person, that is five signups and one conversion: 20%. Counted by account, it is one signup and one conversion. The product did nothing wrong, and the first number says four people were lost.
+        </p>
+        <p>
+            The same distortion runs through activation and retention. An account is active when anyone in it is. It has churned when nobody is. Both are questions about the group.
+        </p>
+    </section>
+
+    <section id="send-the-account" class="scroll-mt-24">
+        <h2>Send the account</h2>
+        <p>
+            Every event needs to say which account it belongs to. In Maple that is the <strong>group id</strong>: your own id for the account, workspace or organization.
+        </p>
+        <p>
+            In the browser, pass it when you identify the user. Every event after that carries it:
+        </p>
+        <Code code={browserIdentify} lang="typescript" title="app.ts" />
+        <p>
+            On the server, send <code>group_id</code> next to <code>user_id</code> on every event, or <code>maple.product_event.group_id</code> on an annotated span. Use the same id in both places. An event with no group id is left out of everything counted by account.
+        </p>
+        <p>
+            Maple has one group per event. If your product has two levels, such as an organization with several workspaces, pick the level that pays.
+        </p>
+    </section>
+
+    <section id="properties" class="scroll-mt-24">
+        <h2>User and account properties</h2>
+        <p>
+            An id says which account. <strong>Properties</strong> say what kind: its plan, how many seats it has, its industry. Users have properties too, such as a role. Both are written with three operations:
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>Operation</th><th>Effect</th><th>Use for</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>set</code></td><td>Sets the value. A later <code>set</code> replaces it.</td><td>State that changes: <code>plan</code>, <code>seats</code>, <code>role</code></td></tr>
+                    <tr><td><code>set_once</code></td><td>Sets the value only if there is none yet.</td><td>Facts about the start: <code>signup_channel</code>, <code>first_plan</code></td></tr>
+                    <tr><td><code>unset</code></td><td>Removes the property.</td><td>State that ended: <code>trial_ends</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            On the <a href="/docs/product-events/api#user-and-account-properties">events API</a>, <code>set</code>, <code>set_once</code> and <code>unset</code> apply to the user, and <code>group_set</code>, <code>group_set_once</code> and <code>group_unset</code> to the account. Any event can carry them. <code>$identify</code> and <code>$groupidentify</code> are events that exist only to carry them.
+        </p>
+        <Code code={serverProps} lang="json" title="POST /v1/events" />
+        <p>
+            The third line does two things. It records the plan as an <strong>event property</strong>, the plan chosen at that moment, and it updates the account's <code>plan</code> to its new current value. In the browser, the <code>traits</code> passed to <code>identify()</code> become user properties.
+        </p>
+
+        <h3 id="what-goes-where" class="scroll-mt-24">What goes where</h3>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>Property</th><th>Belongs on</th><th>Why</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>plan</code>, <code>seats</code>, <code>mrr_band</code></td><td>Account</td><td>Everyone in the account shares it</td></tr>
+                    <tr><td><code>industry</code>, <code>company_size</code></td><td>Account</td><td>Describes the company</td></tr>
+                    <tr><td><code>role</code>, <code>team</code></td><td>User</td><td>Differs per person</td></tr>
+                    <tr><td><code>signup_channel</code></td><td>User or account, with <code>set_once</code></td><td>A fact about how they arrived</td></tr>
+                    <tr><td>Plan chosen at checkout</td><td>Event</td><td>True at that moment only</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Update the account's properties from the place that owns the truth. The plan changes in your billing webhook, so that is where <code>group_set</code> belongs.
+        </p>
+    </section>
+
+    <section id="count-by-account" class="scroll-mt-24">
+        <h2>Count by account</h2>
+        <p>
+            In a Maple funnel, <strong>Count by</strong> decides who is counted. <strong>Group</strong> counts accounts: several users of one account are one, and the steps can be done by different people in it.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/b2b-product-analytics-02-count-by.webp" data-zoomable alt="The Steps panel of a funnel in Maple with four steps from signup_started to plan_started. The Count by control offers Person, Visitor, User, Group and Session, and Break down by is set to the plan property." width="1820" height="768" loading="lazy" />
+            <figcaption>Count by sets the unit. Group counts each account once, whoever in it did the step.</figcaption>
+        </figure>
+        <p>
+            In a team, one person signs up, another connects the data source and a third enters the card. By person, nobody completes that funnel. By account, it is one conversion.
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>Question</th><th>Count by</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>How many accounts that sign up start a plan?</td><td>Group</td></tr>
+                    <tr><td>How many accounts reach activation in their first week?</td><td>Group</td></tr>
+                    <tr><td>Do invited teammates finish their own onboarding?</td><td>User</td></tr>
+                    <tr><td>How many visitors to the pricing page sign up?</td><td>Person</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            The first step of an account funnel has to carry a group id. <code>signup_started</code> from an anonymous visitor does not have one yet, so start account funnels at the first event after the account exists, such as <code>signup_completed</code>.
+        </p>
+    </section>
+
+    <section id="by-plan" class="scroll-mt-24">
+        <h2>Break down by plan</h2>
+        <p>
+            <strong>Break down by</strong> lists user properties and account properties next to the session and event dimensions. Choosing one splits the funnel into a row per value.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/b2b-product-analytics-01-by-plan.webp" data-zoomable alt="A signup-to-paid funnel counted by person and broken down by the user property plan: free 702 entered, 4 converted, 0.57%; pro 318 entered, 43 converted, 14%; team 96 entered, 14 converted, 15%; Not set 90 entered, none converted." width="1820" height="414" loading="lazy" />
+            <figcaption>The signup funnel on example data, counted by person and split by each person's current plan.</figcaption>
+        </figure>
+        <p>
+            This table is the problem from the start of the guide, in numbers. 414 of the people who started signing up are on a paid plan today: 318 on pro and 96 on team. Only 57 of them started a plan themselves within the window. Most of the other 357 joined an account that someone else pays for. Counted by person, every one of them is a drop-off.
+        </p>
+        <p>
+            The other two rows have their own explanations. The 4 conversions on <strong>free</strong> are people who started a plan and have since gone back to free: the table shows the plan they have now. <strong>Not set</strong> is people who never got a plan property at all, mostly because they did not finish signing up.
+        </p>
+        <p>
+            For a breakdown that says something about the product, split by a property the funnel does not change: the account's <code>industry</code> or <code>company_size</code>, or the user's <code>role</code>. "Fintech accounts activate at twice the rate of the rest" is a finding. "Paying accounts have paid" is not.
+        </p>
+    </section>
+
+    <section id="current-value" class="scroll-mt-24">
+        <h2>Current value, not past value</h2>
+        <p>
+            A filter or breakdown by a user or account property reads the property's <strong>current value</strong> and applies it to all of that user's or account's events, including earlier ones. Filter by <code>plan = pro</code> and you get everything today's pro accounts ever did, including what they did while on the free plan.
+        </p>
+        <p>That is the right behaviour for some questions and the wrong one for others:</p>
+        <ul class="guide-list">
+            <li><strong>"What did accounts that are now on pro do in their first week?"</strong> Use the account property. You want today's pro accounts and their history.</li>
+            <li><strong>"How do people on the free plan use exports?"</strong> Use an event property. Send <code>plan</code> on the event, and it records the plan at that moment.</li>
+            <li><strong>"Which signup channel produces accounts that pay?"</strong> Write the channel on the account with <code>group_set_once</code> at signup, then break the account funnel down by that property. It keeps the first value and never changes.</li>
+        </ul>
+        <p>
+            Properties are kept for a year past their last write. Setting them again on a regular event, such as sign-in, keeps them fresh.
+        </p>
+    </section>
+
+    <section id="account-only-events" class="scroll-mt-24">
+        <h2>Events without a user</h2>
+        <p>
+            Some of the most important events have no user. A billing provider's webhook says which account started a plan. It does not say who clicked. Send the event with the account alone:
+        </p>
+        <Code code={webhook} lang="shell" />
+        <p>
+            An event with only a group id is stored and counted, but it cannot be linked to a person. A funnel counted by <strong>Person</strong> that ends on such an event shows 0%, however many accounts paid. Count that funnel by <strong>Group</strong>. If your billing provider lets you attach metadata to a checkout, pass your user id through it and send both.
+        </p>
+    </section>
+
+    <section id="numbers" class="scroll-mt-24">
+        <h2>The numbers to watch</h2>
+        <p>With accounts and properties in place, the standard B2B questions become funnels and charts:</p>
+        <ul class="guide-list">
+            <li><strong>Account activation rate.</strong> A funnel by Group from <code>signup_completed</code> to your activation event, within seven days.</li>
+            <li><strong>Trial or free to paid.</strong> The same funnel extended to <code>plan_started</code>, with a window as long as your trial or sales cycle.</li>
+            <li><strong>Time to value.</strong> The time to convert of the activation funnel: the median, and the time 90% finish within.</li>
+            <li><strong>Team adoption.</strong> A funnel by Group from <code>plan_started</code> to <code>invite_sent</code>. Single-user accounts are worth watching as their own group.</li>
+            <li><strong>Active accounts.</strong> A dashboard chart over product events that counts distinct accounts per week.</li>
+        </ul>
+        <p>
+            When one account's numbers look wrong, the <strong>Users</strong> page opens a single user with their sessions, errors, traces and events in one place.
+        </p>
+    </section>
+
+    <section id="posthog" class="scroll-mt-24">
+        <h2>Coming from PostHog</h2>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>PostHog</th><th>Maple</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>posthog.group("company", id, props)</code></td><td><code>groupId</code> in <code>identify()</code>, <code>group_set</code> for the properties</td></tr>
+                    <tr><td>Several group types per project</td><td>One group per event</td></tr>
+                    <tr><td>Person properties, <code>$set</code> and <code>$set_once</code></td><td>User properties, <code>set</code> and <code>set_once</code></td></tr>
+                    <tr><td>Group properties</td><td>Account properties</td></tr>
+                    <tr><td>Funnel aggregated by a group type</td><td><strong>Count by</strong> Group</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Two differences matter when moving a setup over. Maple has a single group level, so a project that uses both a company and a workspace group type has to choose one. And Maple always reads a property at its current value, where PostHog by default reads person properties as they were when the event happened. That changes the result of any filter on a property that moves. Use event properties in Maple for anything that must be true at the time.
+        </p>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>Accounts, users and their traces in one place</h3>
+            <p>The same user and account ids sit on product events, session replays and traces. When an account's funnel stalls, the sessions, requests and errors of its users are in the same tool.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/product-events/api#user-and-account-properties" class="guide-button guide-button--primary">Properties reference</a>
+                <a href="/docs/product-events/funnels" class="guide-button">Funnels docs</a>
+            </div>
+        </div>
+    </section>
+</GuidePage>

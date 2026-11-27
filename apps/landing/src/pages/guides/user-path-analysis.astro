@@ -1,0 +1,232 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "what-it-shows", text: "What a path chart shows" },
+    { depth: 2, slug: "paths-or-funnels", text: "Paths or funnels" },
+    { depth: 2, slug: "anchor", text: "Pick an anchor" },
+    { depth: 2, slug: "read", text: "Read the chart" },
+    { depth: 3, slug: "tables", text: "Next steps and endings" },
+    { depth: 2, slug: "before", text: "Look backwards" },
+    { depth: 2, slug: "settings", text: "Steps and branches" },
+    { depth: 2, slug: "act", text: "Turn a path into a funnel" },
+    { depth: 2, slug: "pitfalls", text: "Pitfalls" },
+    { depth: 2, slug: "posthog", text: "Coming from PostHog" },
+];
+
+const faqs = [
+    {
+        question: "What is user path analysis?",
+        answer:
+            "User path analysis shows the sequences of events and page views people go through before or after a chosen point, such as finishing signup. It counts how many people took each route, so the common ones and the dead ends stand out.",
+    },
+    {
+        question: "What is the difference between a funnel and a path?",
+        answer:
+            "A funnel measures a sequence you define: how many people completed steps A, B and C in order. A path shows the sequences people actually followed from a starting point, including the ones you did not expect. Use paths to discover the steps and funnels to measure them.",
+    },
+    {
+        question: "How do I read a path chart?",
+        answer:
+            "Read it left to right from the anchor. Each column is one step later. The height of a block is the number of people who did that thing at that step, and the bands between blocks show how many moved from one to the next. A block labelled Ended counts people who did nothing further.",
+    },
+    {
+        question: "What should I use as the starting point of a path?",
+        answer:
+            "Pick a moment where people choose what to do next: completing signup, landing on the pricing page, creating their first project. Anchoring on a page view everyone has, such as the homepage, produces a chart too wide to read.",
+    },
+    {
+        question: "Why does my path chart have a large Other block?",
+        answer:
+            "Only the most common few events are named at each step, and the rest are folded into Other so the flows still add up. A large Other block means behaviour is spread over many events. Raise the number of branches, or filter to a smaller group of people.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="User Path Analysis: What People Do After Signup | Maple"
+    description="How to do user path analysis: pick an anchor event, read a path chart, find the routes that lead to activation and the dead ends, look backwards from an outcome, and turn a path into a funnel."
+    title="User path analysis: what people do after signup"
+    lede="A funnel measures the route you planned. A path chart shows the routes people took. How to read one, and what to do with what it shows."
+    category="Product analytics"
+    readMinutes={7}
+    published="2026-11-28"
+    modified="2026-11-28"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            A <a href="/guides/funnel-analysis">funnel</a> needs you to know the steps in advance. Often you do not know what people do after they sign up. <strong>Path analysis</strong> answers that by starting from one event and counting what people did next, and after that, a few steps deep.
+        </p>
+        <p>
+            The screenshots show example data in Maple. Path charts in other tools read the same way.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>Use paths to find the steps and funnels to measure them.</li>
+                <li>Anchor on a decision point, such as <code>signup_completed</code>, not on a page everyone sees.</li>
+                <li>Look at where sequences end as closely as at where they continue.</li>
+                <li>Run the chart backwards from an outcome to see what came right before it.</li>
+                <li>Start with three steps and four branches, and add more only to follow one route.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="what-it-shows" class="scroll-mt-24">
+        <h2>What a path chart shows</h2>
+        <p>
+            A path chart starts from an <strong>anchor</strong>: one event or one page. For every person who reached it, the chart takes the next events and page views in order and counts how many people did each one first, second and third.
+        </p>
+        <p>
+            Each column is one step later. The blocks in a column are the most common things people did at that step, and the bands between columns show how many people moved from one block to the next. A block named <strong>Ended</strong> counts the people whose sequence stopped there.
+        </p>
+    </section>
+
+    <section id="paths-or-funnels" class="scroll-mt-24">
+        <h2>Paths or funnels</h2>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th></th><th>Funnel</th><th>Paths</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>You provide</td><td>Every step, in order</td><td>One anchor</td></tr>
+                    <tr><td>It answers</td><td>How many people completed the steps</td><td>What people did next, or just before</td></tr>
+                    <tr><td>Other events in between</td><td>Ignored</td><td>Shown</td></tr>
+                    <tr><td>Use it to</td><td>Measure a known journey over time</td><td>Discover the journeys that exist</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            They are used together. A funnel shows that half the people who sign up never connect their data. A path chart from <code>signup_completed</code> shows what they did instead.
+        </p>
+    </section>
+
+    <section id="anchor" class="scroll-mt-24">
+        <h2>Pick an anchor</h2>
+        <p>
+            In Maple, open <strong>Product analytics</strong> and pick the <strong>Paths</strong> tab. Choose an event or a page as the anchor. The <strong>Paths</strong> link on any row of the Events tab does the same thing.
+        </p>
+        <p>Good anchors are moments where people choose what to do next:</p>
+        <ul class="guide-list">
+            <li><code>signup_completed</code>: what do new users do first?</li>
+            <li>The <code>/pricing</code> page: where do people go after reading it?</li>
+            <li><code>invite_sent</code>: what does a team do once a second person joins?</li>
+            <li>An error page, or <code>checkout_failed</code>: do people retry or leave?</li>
+        </ul>
+        <p>
+            A page nearly everyone sees, such as the homepage or the dashboard home, makes a poor anchor. Everything follows it, so the chart shows a little of everything.
+        </p>
+        <p>
+            A person is counted once, from the first time they reached the anchor in the selected range. A run of the same event repeated in a row is collapsed into one, so ten <code>query_run</code> events in a row are one step.
+        </p>
+    </section>
+
+    <section id="read" class="scroll-mt-24">
+        <h2>Read the chart</h2>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/user-path-analysis-01-paths.webp" data-zoomable alt="The Paths tab in Maple anchored on signup_completed with direction After, 3 steps and 4 branches. Of 742 people, 410 went to onboarding_viewed, 160 to dashboard_viewed and 92 to docs_opened. At step 2 the largest blocks are onboarding_connected, query_run and /pricing, and at step 3 dashboard_created, alert_created and query_run." width="1820" height="1570" loading="lazy" />
+            <figcaption>What 742 people did after signing up, three steps deep.</figcaption>
+        </figure>
+        <p>Start at the anchor and read one column at a time.</p>
+        <ol class="guide-list">
+            <li><strong>Step 1.</strong> Of 742 people who signed up, 410 went into onboarding, 160 skipped it and opened a dashboard, and 92 opened the docs. Another 50 did something less common, grouped as Other, and 30 did nothing at all after signing up.</li>
+            <li><strong>Step 2.</strong> The onboarding group mostly connected their data: 290 people. The group that skipped onboarding ran a query or went to the pricing page.</li>
+            <li><strong>Step 3.</strong> People who connected data went on to create a dashboard or an alert. That is the intended route.</li>
+        </ol>
+        <p>
+            Then follow the bands that leave the main route. The 160 people who skipped onboarding are worth a look of their own: 90 of them reach <code>query_run</code> anyway, which means onboarding is not required for them, and 40 go to <code>/pricing</code> as their second step.
+        </p>
+
+        <h3 id="tables" class="scroll-mt-24">Next steps and endings</h3>
+        <p>
+            Two tables under the chart give the same data as numbers.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/user-path-analysis-02-next-steps.webp" data-zoomable alt="Two tables under a path chart. Most common next step: onboarding_viewed 410 people, 55%; dashboard_viewed 160, 22%; docs_opened 92, 12%; Other 50. Where sequences ended: onboarding_viewed 60, docs_opened 58, onboarding_connected 56, /pricing 42 and others, each with a Paths from here link." width="1820" height="750" loading="lazy" />
+            <figcaption>The first step after the anchor, and the last thing people did before their sequence ended.</figcaption>
+        </figure>
+        <p>
+            <strong>Most common next step</strong> is the first column of the chart with shares: 55% go to onboarding, 22% to a dashboard, 12% to the docs.
+        </p>
+        <p>
+            <strong>Where sequences ended</strong> lists the last thing people did. 58 sequences ended on <code>docs_opened</code>, and the docs appear in this chart only as a first step, taken by 92 people. So most people who open the docs right after signing up go no further. Another 60 ended on the onboarding screen itself, without connecting anything.
+        </p>
+        <p>
+            <strong>Paths from here</strong> on any row moves the anchor to that event, so you can keep following a route past the three steps on screen.
+        </p>
+    </section>
+
+    <section id="before" class="scroll-mt-24">
+        <h2>Look backwards</h2>
+        <p>
+            Set <strong>Direction</strong> to <strong>Before</strong> and the chart runs the other way: the steps that led up to the anchor, counted back from the last time each person reached it.
+        </p>
+        <p>This is the view for outcomes:</p>
+        <ul class="guide-list">
+            <li>Before <code>plan_started</code>: what did people do in the steps before they paid? If most of them created an alert right before, alerts are worth showing earlier.</li>
+            <li>Before <code>plan_cancelled</code>: which screens did people visit on the way out?</li>
+            <li>Before a support page: which feature sent them there?</li>
+        </ul>
+        <p>
+            A step that shows up before the good outcome and is missing from the routes that end early is a candidate for your activation event. Check it with a funnel before believing it.
+        </p>
+    </section>
+
+    <section id="settings" class="scroll-mt-24">
+        <h2>Steps and branches</h2>
+        <p>
+            Two controls set how much the chart shows. <strong>Steps</strong> is how many steps deep it goes, from one to five. <strong>Branches</strong> is how many things are named at each step: 3, 4, 6 or 10. Everything else at that step is folded into <strong>Other</strong>, so the flows still add up to the number of people.
+        </p>
+        <p>
+            Start with three steps and four branches. Each extra step multiplies the routes, and past the third the groups are usually too small to act on. If <strong>Other</strong> is the biggest block, raise the branches, or narrow the people with the filters on the left: one country, one site, new visitors only.
+        </p>
+    </section>
+
+    <section id="act" class="scroll-mt-24">
+        <h2>Turn a path into a funnel</h2>
+        <p>
+            A path chart is a snapshot. Once it shows a route worth improving, measure that route with a funnel so you can see it change week by week.
+        </p>
+        <p>
+            From the example, two funnels follow. The main route becomes <code>signup_completed</code>, <code>onboarding_connected</code>, <code>dashboard_created</code>. The onboarding screen is left out, because the chart showed people reaching the product without it. The detour becomes <code>signup_completed</code>, <code>docs_opened</code>, <code>onboarding_connected</code>, to measure how many people come back from the docs. Then change something, such as a link from the docs back into onboarding, and watch the second funnel.
+        </p>
+        <p>
+            Both charts can also sit on a dashboard, as a Paths widget and a Funnel widget, next to the rest of your product numbers.
+        </p>
+    </section>
+
+    <section id="pitfalls" class="scroll-mt-24">
+        <h2>Pitfalls</h2>
+        <ul class="guide-list">
+            <li><strong>Reading order as cause.</strong> People who create a dashboard convert more. They may also have been more committed before they created it.</li>
+            <li><strong>Too few events.</strong> Paths can only show what you track. If onboarding has four screens and one event, the chart cannot say where inside it people stop. Add events to the <a href="/guides/event-tracking-plan">tracking plan</a> where the chart goes blank.</li>
+            <li><strong>Noisy events.</strong> An event that fires on every page, such as a heartbeat, appears at every step. Stop sending it as a product event.</li>
+            <li><strong>Acting on thin bands.</strong> A route taken by 12 people is an anecdote. Widen the time range first.</li>
+        </ul>
+    </section>
+
+    <section id="posthog" class="scroll-mt-24">
+        <h2>Coming from PostHog</h2>
+        <p>
+            Maple's Paths tab does the job of a PostHog paths insight. A path with a start point is <strong>Direction: After</strong> with that event or page as the anchor, and a path with an end point is <strong>Direction: Before</strong>.
+        </p>
+        <p>
+            Custom events, page views and mobile screen views appear together in one chart. Maple goes up to five steps deep and names up to ten branches per step. It adds the two tables under the chart, with a link to continue from any row. PostHog's paths insight also has wildcard groups, path cleaning rules and exclusions. Maple's Paths tab has none of those.
+        </p>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>Paths over browser and server events</h3>
+            <p>Server-side events and annotated spans are part of the same sequences as page views and browser events, so a path can run from the pricing page through a checkout request to the webhook that confirmed it.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/product-events/overview" class="guide-button guide-button--primary">Product events docs</a>
+                <a href="/docs/dashboards/build-dashboards" class="guide-button">Dashboards</a>
+            </div>
+        </div>
+    </section>
+</GuidePage>
