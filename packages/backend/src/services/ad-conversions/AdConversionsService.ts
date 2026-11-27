@@ -1,5 +1,7 @@
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AdClickErasures, AdConversions } from "@maple/db/tables"
+import type { MapleDb } from "@maple/db/client"
 import type { UserId } from "@maple/domain/http"
 import { Array as Arr, Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -27,6 +29,12 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 				makePersistenceErrorMapper(AdConversionPersistenceError, "Ad conversion persistence error"),
 			)
 
+			// Sign-up and erasure take the same per-user lock, so a sign-up can never land after an erasure.
+			const lockUser = (db: MapleDb, userId: UserId) =>
+				db.execute(
+					Orm.sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext('ad_conversions'))`,
+				)
+
 			/** The sign-up of a user whose sign-up carried an ad click, unless the user is already deleted. */
 			const recordSignup = Effect.fn("AdConversionsService.recordSignup")(function* (
 				userId: UserId,
@@ -37,6 +45,7 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 				const recorded = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							yield* lockUser(db, userId)
 							const erased = yield* db.run(
 								PG.from(AdClickErasures)
 									.select(($) => ({ userId: $.userId }))
@@ -44,7 +53,7 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 									.limit(1),
 							)
 							if (erased.length > 0) return false
-							yield* db.run(
+							const inserted = yield* db.run(
 								PG.insertInto(AdConversions)
 									.values({
 										userId,
@@ -54,9 +63,10 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 										clickAt: click.clickTime,
 										convertedAt,
 									})
-									.onConflictDoNothing(),
+									.onConflictDoNothing()
+									.returning(($) => ({ userId: $.userId })),
 							)
-							return true
+							return inserted.length > 0
 						}),
 					),
 				)
@@ -123,6 +133,7 @@ export class AdConversionsService extends Context.Service<AdConversionsService>(
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							yield* lockUser(db, userId)
 							yield* db.run(
 								PG.insertInto(AdClickErasures)
 									.values({ userId, erasedAt: now })

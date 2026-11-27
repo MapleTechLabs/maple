@@ -1,5 +1,5 @@
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { Clock, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Effect, Exit, Layer, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { DEFAULT_MAPLE_REGION } from "@maple/domain/organization-regions"
 import { ClerkWebhookSecret } from "@maple/infra/secrets"
@@ -361,7 +361,15 @@ const handler = Effect.gen(function* () {
 			return yield* revoke(
 				revocation.revokeUser(userId.value).pipe(
 					Effect.exit,
-					Effect.flatMap((swept) => Effect.andThen(adConversions.forgetUser(userId.value), swept)),
+					Effect.flatMap((swept) =>
+						adConversions
+							.forgetUser(userId.value)
+							.pipe(
+								Effect.flatMap(() =>
+									Exit.isSuccess(swept) ? Effect.void : Effect.failCause(swept.cause),
+								),
+							),
+					),
 				),
 			)
 		}

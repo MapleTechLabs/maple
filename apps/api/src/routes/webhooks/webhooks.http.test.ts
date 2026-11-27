@@ -790,6 +790,36 @@ describe("ClerkWebhookRouter", () => {
 				// Clerk retries a 500, so the failed delivery must not emit member_removed.
 				assert.strictEqual(events.tracked.length, before)
 			}).pipe(Effect.ensuring(Effect.promise(broken.dispose)))
+
+			// A failed user sweep is a 500 too, and the user's ad clicks are still forgotten.
+			const ads = recordingAdConversions()
+			const brokenUser = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					events.layer,
+					recordingRevocation(true).layer,
+					recordingAudit().layer,
+					recordingCancellationQueue().layer,
+					BillingCustomerResolver.standalone,
+					OrganizationRegionService.servesAll,
+					recordingSso().layer,
+					ads.layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const body = JSON.stringify({ type: "user.deleted", data: { id: "user_9" } })
+				const headers = yield* signedHeaders(
+					CLERK_SECRET,
+					body,
+					yield* Clock.currentTimeMillis,
+					"msg_user_fail",
+				)
+				const response = yield* post(brokenUser.handler, "/webhooks/clerk", body, headers)
+				assert.strictEqual(response.status, 500)
+				assert.deepStrictEqual(ads.calls, ["forget:user_9"])
+			}).pipe(Effect.ensuring(Effect.promise(brokenUser.dispose)))
 		}),
 	)
 
