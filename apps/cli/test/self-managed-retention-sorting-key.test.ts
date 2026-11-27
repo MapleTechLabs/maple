@@ -21,7 +21,7 @@ import {
 import { describeWithChdb } from "./libchdb-test-support"
 
 const TABLES = ["trace_index", "trace_facets_hourly"] as const
-const retentionStorage = Arr.findFirst(migrations, (migration) => migration.version === 76).pipe(
+const retentionStorage = Arr.findFirst(migrations, (migration) => migration.version === 77).pipe(
 	Option.getOrThrow,
 )
 
@@ -30,8 +30,8 @@ const snapshotTable = (name: string): string =>
 		Str.startsWith(`CREATE TABLE IF NOT EXISTS ${name} (`)(stmt),
 	).pipe(Option.getOrThrow)
 
-/** The table as a v75 cluster holds it: no RetentionDays, the key without it. */
-const v75Table = (name: string): string =>
+/** The table as a v76 cluster holds it: no RetentionDays, the key without it. */
+const v76Table = (name: string): string =>
 	pipe(
 		snapshotTable(name),
 		Str.replace(",\n    RetentionDays UInt16 DEFAULT 30", ""),
@@ -40,7 +40,7 @@ const v75Table = (name: string): string =>
 		Str.replace("toIntervalDay(least(RetentionDays, 30))", "INTERVAL 30 DAY"),
 	)
 
-/** 0076's statements for the two tables whose sorting key gains the column. */
+/** 0077's statements for the two tables whose sorting key gains the column. */
 const sortingKeyPart = {
 	...retentionStorage,
 	statements: Arr.filter(
@@ -107,7 +107,7 @@ const failureOf = (apply: Promise<unknown>): Promise<string> =>
 const isCopy = (sql: string) => /^INSERT INTO \S+_retention_repair`? SELECT/.test(sql)
 const shortCopy = (sql: string) => (isCopy(sql) ? `${sql} LIMIT 1` : sql)
 
-describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", () => {
+describeWithChdb("a self-managed v76 store applies 0077's sorting-key change", () => {
 	let root = ""
 	let opened: Chdb | undefined
 	const open = async (label: string, tables: (name: string) => string) => {
@@ -166,7 +166,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 		)
 
 	test("a column an older snapshot pass added outside the key is dropped and re-added in it", async () => {
-		const db = await open("repair", v75Table)
+		const db = await open("repair", v76Table)
 		for (const table of TABLES)
 			db.exec(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS RetentionDays UInt16 DEFAULT 30`)
 		await applyKeyPart(db)
@@ -174,8 +174,8 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 		db.close()
 	}, 60_000)
 
-	test("a clean v75 store gains the column in its key, and a rerun plans no drop", async () => {
-		const db = await open("clean", v75Table)
+	test("a clean v76 store gains the column in its key, and a rerun plans no drop", async () => {
+		const db = await open("clean", v76Table)
 		await applyKeyPart(db)
 		expectKeyed(db)
 		const rerun = await applyKeyPart(db)
@@ -193,7 +193,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 		).toBe("")
 
 	test("0s an earlier failed run stored are moved to 30, and no row is lost", async () => {
-		const db = await open("zeros", v75Table)
+		const db = await open("zeros", v76Table)
 		failBeforeDefault(db, keyAlter)
 		await applyKeyPart(db)
 		expectKeyed(db, "2")
@@ -216,7 +216,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 
 	for (const [point, crashedAfter] of crashPoints)
 		test(`a rerun after a crash after ${point} neither duplicates nor leaves a 0`, async () => {
-			const db = await open(`crash-${point}`, v75Table)
+			const db = await open(`crash-${point}`, v76Table)
 			failBeforeDefault(db, keyAlter)
 			expect(await failureOf(applyKeyPart(db, crashingAfter(db, crashedAfter)))).toContain(
 				"crashed after",
@@ -228,7 +228,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 		}, 60_000)
 
 	test("a copy that fails partway is copied again on the rerun, and no row is lost", async () => {
-		const db = await open("partial-copy", v75Table)
+		const db = await open("partial-copy", v76Table)
 		failBeforeDefault(db, keyAlter)
 		const partial = crashingAfter(db, isCopy)
 		expect(await failureOf(applyKeyPart(db, async (sql) => partial(shortCopy(sql))))).toContain(
@@ -241,7 +241,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 	}, 60_000)
 
 	test("a short copy fails its check before any 0 row is deleted", async () => {
-		const db = await open("short-copy", v75Table)
+		const db = await open("short-copy", v76Table)
 		failBeforeDefault(db, keyAlter)
 		expect(await failureOf(applyKeyPart(db, async (sql) => db.query(shortCopy(sql))))).toContain(
 			"trace_index_retention_repair does not hold every 0 row of trace_index",
@@ -255,7 +255,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 	}, 60_000)
 
 	test("0s a merge writes during the run itself are repaired before it ends", async () => {
-		const db = await open("zeros-mid-run", v75Table)
+		const db = await open("zeros-mid-run", v76Table)
 		// A server restart between the stop and the DEFAULT: merges run, and a row lands as 0.
 		await applyKeyPart(db, async (sql) => {
 			const out = db.query(sql)
@@ -294,7 +294,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 	}
 
 	test("the local v69 step moves 0s a resumed store holds to 30, and no row is lost", async () => {
-		const db = await open("local-zeros", v75Table)
+		const db = await open("local-zeros", v76Table)
 		failBeforeDefault(db, keyAlter)
 		applyStepOperations(db, localOperations())
 		expectKeyed(db, "2")
@@ -304,7 +304,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 
 	for (const [point, crashedAfter] of crashPoints)
 		test(`the local v69 step resumed after a crash after ${point} neither duplicates nor leaves a 0`, async () => {
-			const db = await open(`local-crash-${point}`, v75Table)
+			const db = await open(`local-crash-${point}`, v76Table)
 			failBeforeDefault(db, keyAlter)
 			let crashed = false
 			const crashing = {
@@ -323,7 +323,7 @@ describeWithChdb("a self-managed v75 store applies 0076's sorting-key change", (
 			db.close()
 		}, 60_000)
 
-	test("a store created from the snapshot runs 0076 unchanged", async () => {
+	test("a store created from the snapshot runs 0077 unchanged", async () => {
 		const db = await open("fresh", snapshotTable)
 		const steps = await applyKeyPart(db)
 		expect(Arr.filter(steps, (step) => Str.includes("DROP COLUMN")(step.sql))).toEqual([])

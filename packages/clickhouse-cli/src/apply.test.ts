@@ -128,7 +128,7 @@ describe("reconcileSchemaFeatures", () => {
 })
 
 describe("applyMigrationSteps", () => {
-	const retentionStorage = migrations.find((migration) => migration.version === 76)
+	const retentionStorage = migrations.find((migration) => migration.version === 77)
 
 	/** A cluster that rejects `failing`, and answers the DEFAULT read-back with `defaultNow`. */
 	const cluster = (failing: string, defaultNow: string) => {
@@ -143,8 +143,8 @@ describe("applyMigrationSteps", () => {
 		return { executed, execute }
 	}
 
-	it("restores the DEFAULT, then restarts merges, when 0076's key ALTER fails; the ALTER's error stands", async () => {
-		if (retentionStorage === undefined) throw new Error("migration 76 is not bundled")
+	it("restores the DEFAULT, then restarts merges, when 0077's key ALTER fails; the ALTER's error stands", async () => {
+		if (retentionStorage === undefined) throw new Error("migration 77 is not bundled")
 		const steps = await expandMigrationToSteps(retentionStorage, "maple", async () => "")
 		const { executed, execute } = cluster("ALTER TABLE trace_index ADD COLUMN", "30")
 
@@ -158,7 +158,7 @@ describe("applyMigrationSteps", () => {
 	})
 
 	it("leaves merges stopped when the DEFAULT cannot be restored, and says what to run", async () => {
-		if (retentionStorage === undefined) throw new Error("migration 76 is not bundled")
+		if (retentionStorage === undefined) throw new Error("migration 77 is not bundled")
 		const steps = await expandMigrationToSteps(retentionStorage, "maple", async () => "")
 		const { executed, execute } = cluster("ALTER TABLE trace_index MODIFY COLUMN", "")
 

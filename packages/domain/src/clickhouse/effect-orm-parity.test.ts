@@ -146,7 +146,12 @@ describe("effect-orm DDL parity", () => {
 			).sort(),
 		)
 		expect(onePeriod.has("traces")).toBe(true)
-		for (const name of onePeriod) expect(shippedSql(name)).toContain(" + INTERVAL ")
+		// Each self-managed copy keeps its signal's default: the column's DEFAULT, as a fixed TTL.
+		for (const name of onePeriod) {
+			const days = /RetentionDays UInt16 DEFAULT (\d+)/.exec(renderedAsIs.get(name) ?? "")?.[1]
+			expect(days, name).toBeDefined()
+			expect(shippedSql(name), name).toContain(` + INTERVAL ${days} DAY`)
+		}
 	})
 	const shippedWithClickHouseOnly = new Map(
 		Arr.map(latestSnapshotStatements, (sql) => [nameOf(sql), normalize(sql)]),
