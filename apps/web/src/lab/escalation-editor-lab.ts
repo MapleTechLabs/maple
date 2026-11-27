@@ -18,7 +18,12 @@ import {
 	chainScheduleUuid,
 	populatedChains,
 } from "../page/alerts/shared/escalation-test-fixtures"
-import { memberId, oncallMembers, populatedSchedules } from "../page/alerts/shared/oncall-test-fixtures"
+import {
+	memberId,
+	membersWithAnalysts,
+	oncallMembers,
+	populatedSchedules,
+} from "../page/alerts/shared/oncall-test-fixtures"
 import { ORG, ruleId, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
@@ -35,6 +40,7 @@ export const LabState = Schema.Literals([
 	"leave",
 	"readonly",
 	"long",
+	"cannot-respond",
 ])
 export type LabState = typeof LabState.Type
 
@@ -112,6 +118,20 @@ const EVERYDAY = chainOf({
 })
 const LONG = populatedChains([])[2]
 
+/** The everyday chain with someone on its first step whose role cannot respond to incidents. */
+const UNANSWERED = chainOf({
+	n: 1,
+	name: "Checkout on-call",
+	description: "Checkout team first, then the platform lead.",
+	steps: [
+		{ destinations: [1], users: [memberId(5)], wait: 10 },
+		{ destinations: [2], wait: 15 },
+		{ destinations: [3], users: [memberId(0)], wait: 30 },
+	],
+	repeat: 2,
+	ruleIds: [ruleId(1), ruleId(2)],
+})
+
 const NO_COMMANDS: PageCommands = []
 
 /** The page's local Commands: the kit's, and its own focus moves, which only touch the DOM. */
@@ -128,7 +148,7 @@ const run = (model: ChainModel.Model, messages: ReadonlyArray<ChainMessage.Messa
 
 const pageFor = (state: LabState) => {
 	const isNew = state === "new" || state === "invalid"
-	const chain = state === "long" ? (LONG ?? EVERYDAY) : EVERYDAY
+	const chain = state === "long" ? (LONG ?? EVERYDAY) : state === "cannot-respond" ? UNANSWERED : EVERYDAY
 	const entered = chainInit(
 		isNew
 			? { _tag: "AlertsEscalationChainNew", search: {} }
@@ -144,7 +164,9 @@ const pageFor = (state: LabState) => {
 			orgId: ORG,
 			grants: Policy.grantsOf([state === "readonly" ? "org:member" : "org:engineer"]),
 		}),
-		M.CompletedFetchMembers({ result: Result.succeed(oncallMembers) }),
+		M.CompletedFetchMembers({
+			result: Result.succeed(state === "cannot-respond" ? membersWithAnalysts : oncallMembers),
+		}),
 		M.CompletedFetchSchedules({ result: Result.succeed(SCHEDULES) }),
 		M.UpdatedDestinations({ orgId: ORG, rows: DESTINATIONS }),
 		M.UpdatedRules({ orgId: ORG, rows: RULES }),
