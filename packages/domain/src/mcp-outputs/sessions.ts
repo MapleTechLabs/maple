@@ -454,6 +454,27 @@ export const GetAgentSessionOutput = Schema.Struct({
 	evidence: Schema.optionalKey(
 		Schema.Struct({ traceId: Schema.String, spanId: Schema.String, timestamp: Schema.String }),
 	),
+	/**
+	 * Evaluation scores on the session, failing first (`llmEvals` orgs only; absent otherwise).
+	 * Maple's own session-check scores are left out: `checks` already says them.
+	 */
+	scores: Schema.optionalKey(
+		Schema.Struct({
+			total: Schema.Number,
+			items: Schema.Array(
+				Schema.Struct({
+					name: Schema.String,
+					verdict: Schema.String,
+					label: Schema.String,
+					value: Schema.optionalKey(Schema.Number),
+					explanation: Schema.String,
+					source: Schema.String,
+					traceId: Schema.String,
+					spanId: Schema.String,
+				}),
+			),
+		}),
+	),
 })
 
 const TranscriptRowKind = Schema.Literals([
