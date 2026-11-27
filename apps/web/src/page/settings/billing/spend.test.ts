@@ -56,8 +56,8 @@ const startupPlan = startupPlanWith([
 	item("browser_sessions", 5_000, 0.002),
 	// Billed per 1,000 events: `amount` is the price of one billing block.
 	item("product_events", 1_000_000, 0.005, 1_000),
-	// One credit is one dollar: $10 included, then $1 per credit.
-	item("ai_credits", 10, 1),
+	// One credit is one dollar: $1 included, then $1 per credit.
+	item("ai_credits", 1, 1),
 ])
 
 type SubscriptionInput = Pick<BillingSubscription, "planId" | "status"> & Partial<BillingSubscription>
@@ -751,7 +751,7 @@ describe("AI credits", () => {
 			customer: buildCustomer({
 				balances: {
 					...dataBalances,
-					ai_credits: { granted: 10, usage: aiUsed, overageAllowed: true },
+					ai_credits: { granted: 1, usage: aiUsed, overageAllowed: true },
 				},
 				overageCaps,
 			}),
@@ -765,9 +765,9 @@ describe("AI credits", () => {
 	const aiRow = (result: NonNullable<ReturnType<typeof buildSpendModel>>) =>
 		Option.getOrThrow(Arr.findFirst(result.features, (feature) => feature.featureId === "ai_credits"))
 
-	it("bills AI credits past the included $10 at $1 each, in the cycle total", () => {
-		const within = withAi(4.2)
-		const over = withAi(14.5)
+	it("bills AI credits past the included $1 at $1 each, in the cycle total", () => {
+		const within = withAi(0.6)
+		const over = withAi(5.5)
 		expect(aiRow(within).overageCents).toBe(0)
 		expect(aiRow(over).overageCents).toBe(450)
 		expect(over.spendCents - within.spendCents).toBe(450)
@@ -790,7 +790,7 @@ describe("AI credits", () => {
 		)
 		const capped = withAi(0, { ...dataCaps, ai_credits: 25 })
 		const customer = buildCustomer({
-			balances: { ...dataBalances, ai_credits: { granted: 10, overageAllowed: true } },
+			balances: { ...dataBalances, ai_credits: { granted: 1, overageAllowed: true } },
 			overageCaps: { ...dataCaps, ai_credits: 25 },
 		})
 		// $39 base, 300 GB at $0.30, 10 GB of profiles at $0.60, 1,000 sessions at $0.002, and $25 of AI credits.
@@ -815,13 +815,13 @@ describe("AI credits", () => {
 				byModel: [],
 				codeReview: null,
 				days: [
-					new AiCreditDay({ date: "2026-07-01", credits: 8 }),
-					new AiCreditDay({ date: "2026-07-03", credits: 6 }),
+					new AiCreditDay({ date: "2026-07-01", credits: 0.5 }),
+					new AiCreditDay({ date: "2026-07-03", credits: 4.5 }),
 				],
 			}),
-			model: withAi(14),
+			model: withAi(5),
 		})
-		// 8 is included, 14 crosses the $10 allowance by $4.
+		// 0.5 is included, 5 crosses the $1 allowance by $4.
 		expect(Arr.map(series, (point) => point.ai_credits)).toEqual([0, 0, 4])
 		expect(series[2]?.total).toBe(39 + 4)
 	})
