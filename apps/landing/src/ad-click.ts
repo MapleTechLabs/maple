@@ -84,6 +84,9 @@ export const adClickCookie = (
 	})
 	if (Option.isNone(found)) return null
 	const id = url.searchParams.get(found.value) ?? ""
+	// A reload of the ad URL keeps the first click time.
+	const kept = `${AD_CLICK_COOKIE}=${found.value}.${id}.`
+	if (Str.includes(kept)(request.headers.get("Cookie") ?? "")) return null
 	const secure = url.protocol === "https:" ? "; Secure" : ""
 	return `${AD_CLICK_COOKIE}=${found.value}.${id}.${nowMs}; Path=/; Max-Age=${MAX_AGE_SECONDS}; SameSite=Lax${secure}${domainAttribute(url.hostname)}`
 }

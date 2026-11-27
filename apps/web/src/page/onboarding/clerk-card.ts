@@ -27,7 +27,9 @@ export const MountClerkCard = Mount.define("MountClerkCard", {
 				if (component === "SignIn") clerk.mountSignIn(element, props)
 				else if (component === "SignUp") {
 					// The landing site's ad click rides along, so the API can report the sign-up.
-					const adClick = readAdClick(document.cookie)
+					// Global Privacy Control turned on after the click still keeps it out of sign-up.
+					const gpc = "globalPrivacyControl" in navigator && navigator.globalPrivacyControl === true
+					const adClick = gpc ? Option.none() : readAdClick(document.cookie)
 					clerk.mountSignUp(
 						element,
 						Option.isSome(adClick)

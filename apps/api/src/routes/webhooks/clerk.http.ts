@@ -357,9 +357,12 @@ const handler = Effect.gen(function* () {
 				})
 				return webhookText("Unrecognized user payload", 400)
 			}
-			// The ad click goes with the user; a failure retries with the sweep.
+			// The ad click goes with the user. Both always run, so neither failure skips the sweep.
 			return yield* revoke(
-				Effect.andThen(adConversions.forgetUser(userId.value), revocation.revokeUser(userId.value)),
+				revocation.revokeUser(userId.value).pipe(
+					Effect.exit,
+					Effect.flatMap((swept) => Effect.andThen(adConversions.forgetUser(userId.value), swept)),
+				),
 			)
 		}
 

@@ -32,6 +32,17 @@ describe("adClickCookie", () => {
 		expect(adClickCookie(page("https://maple.dev/?gclid=a%3Bb"), "US", NOW)).toBeNull()
 	})
 
+	it("keeps the first click time when the same ad URL is reloaded", () => {
+		const reload = page("https://maple.dev/?gclid=abc", {
+			Cookie: "maple_ad_click=gclid.abc.1700000000000",
+		})
+		expect(adClickCookie(reload, "US", NOW)).toBeNull()
+		const newClick = page("https://maple.dev/?gclid=def", {
+			Cookie: "maple_ad_click=gclid.abc.1700000000000",
+		})
+		expect(adClickCookie(newClick, "US", NOW)).toContain("maple_ad_click=gclid.def.")
+	})
+
 	it("is host-only off maple.dev", () => {
 		expect(adClickCookie(page("https://landing.localhost/?gclid=abc"), "AU", NOW)).not.toContain(
 			"Domain=",
