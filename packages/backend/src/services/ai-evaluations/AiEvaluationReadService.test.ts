@@ -238,7 +238,9 @@ describe("AiEvaluationReadService", () => {
 						!isResponseSpansRead(sql) && Str.includes(`IN ('${TRACE_A}', '${TRACE_B}')`)(sql),
 				),
 			).toHaveLength(1)
-			expect(Arr.filter(statements, (sql) => Str.includes("Scope = 'session'")(sql))).toHaveLength(1)
+			expect(
+				Arr.filter(statements, (sql) => Str.includes("SessionId = 'session-1'")(sql)),
+			).toHaveLength(1)
 		}).pipe(Effect.provide(layer))
 	})
 
