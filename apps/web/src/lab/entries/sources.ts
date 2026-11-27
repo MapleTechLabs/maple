@@ -1,5 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
+import { PushSourcePlatform } from "@maple/primitives"
 import {
 	encodePublicId,
 	PublicIdPrefixes,
@@ -40,7 +41,8 @@ import {
 } from "../sources-integrations-fixture"
 
 // `/lab/sources`: the sources list, one source and the connect flow (its picker, a push source before
-// and after Create) as an engineer or a member (`?page=list|detail|new|push|sent&role=engineer|member`),
+// and after Create) as an engineer or a member (`?page=list|detail|new|push|sent&role=engineer|member`,
+// `&platform=kubernetes` for another push platform than Node.js),
 // over fixture sources in mixed health states. Typing and toggles work; nothing is read or saved.
 // `cloudflare`/`planetscale` and their `-card` pages show an integration's flow step and card.
 
@@ -57,7 +59,10 @@ const context: PageContext = {
 }
 
 const encoded = (index: number, fields: Readonly<Record<string, unknown>>): typeof V2Source.Encoded => ({
-	id: encodePublicId(PublicIdPrefixes.source, `0199a0e1-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`),
+	id: encodePublicId(
+		PublicIdPrefixes.source,
+		`0199a0e1-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`,
+	),
 	object: "source",
 	name: `Source ${index}`,
 	description: null,
@@ -170,15 +175,17 @@ const SOURCES: ReadonlyArray<V2Source> = [
 ]
 
 /** What Create answers on the `sent` page: a fresh source and its one-time token. */
-const CREATED = Schema.decodeSync(V2SourceWithSecret)({
-	...encoded(0, {
-		name: "checkout-api",
-		last_used_at: null,
-		created_at: "2026-11-06T12:00:00.000Z",
-		health: health("pending", null),
-	}),
-	secret: "maple_src_Q7xZa91kLmN0pQrStUvWxYz0123456789abcd",
-})
+const created = (platform: PushSourcePlatform) =>
+	Schema.decodeSync(V2SourceWithSecret)({
+		...encoded(0, {
+			platform,
+			name: "checkout-api",
+			last_used_at: null,
+			created_at: "2026-11-06T12:00:00.000Z",
+			health: health("pending", null),
+		}),
+		secret: "maple_src_Q7xZa91kLmN0pQrStUvWxYz0123456789abcd",
+	})
 
 const USAGE = Schema.decodeSync(V2SourceUsage)({
 	object: "source_usage",
@@ -265,22 +272,27 @@ const detailModel = (role: LabRole): DetailModel => {
 const isIntegrationPage = (page: LabPage): page is IntegrationLabPage =>
 	Arr.some(INTEGRATION_PAGES, (candidate) => candidate === page)
 
-const newModel = (role: LabRole, page: LabPage): NewModel => {
+const newModel = (role: LabRole, page: LabPage, platform: PushSourcePlatform): NewModel => {
 	if (isIntegrationPage(page)) return integrationFlowModel(page, context, grantsOf(role))
-	const search = page === "push" || page === "sent" ? { platform: "nodejs" as const } : {}
+	const search = page === "push" || page === "sent" ? { platform } : {}
 	const granted = newUpdate(
 		newInit(AppRoute.SourcesNew({ search }), context).model,
 		NewMessage.CompletedReadGrants({ grants: grantsOf(role) }),
 		context,
 	).model
 	return page === "sent"
-		? newUpdate(granted, NewMessage.CompletedCreate({ result: Result.succeed(CREATED) }), context).model
+		? newUpdate(
+				granted,
+				NewMessage.CompletedCreate({ result: Result.succeed(created(platform)) }),
+				context,
+			).model
 		: granted
 }
 
 const Model = Schema.Struct({
 	page: Schema.Literals(PAGES),
 	role: Schema.Literals(ROLES),
+	platform: PushSourcePlatform,
 	list: ListModel,
 	detail: DetailModel,
 	create: NewModel,
@@ -299,25 +311,31 @@ const Message = defineMessageUnion({
 })
 type Message = typeof Message.Type
 
-const Flags = Schema.Struct({ page: Schema.Literals(PAGES), role: Schema.Literals(ROLES) })
+const Flags = Schema.Struct({
+	page: Schema.Literals(PAGES),
+	role: Schema.Literals(ROLES),
+	platform: PushSourcePlatform,
+})
 type Flags = typeof Flags.Type
 
 const decodePage = Schema.decodeUnknownOption(Schema.Literals(PAGES))
 const decodeRole = Schema.decodeUnknownOption(Schema.Literals(ROLES))
+const decodePlatform = Schema.decodeUnknownOption(PushSourcePlatform)
 
-const build = (page: LabPage, role: LabRole): Model => ({
+const build = (page: LabPage, role: LabRole, platform: PushSourcePlatform): Model => ({
 	page,
 	role,
+	platform,
 	list: listModel(role),
 	detail: detailModel(role),
-	create: newModel(role, page),
+	create: newModel(role, page, platform),
 	card: integrationCardModel(page === "planetscale-card" ? page : "cloudflare-card", context),
 })
 
 const update = (model: Model, message: Message) =>
 	Message.match(message, {
-		ClickedPage: ({ page }) => ({ model: build(page, model.role) }),
-		ClickedRole: ({ role }) => ({ model: build(model.page, role) }),
+		ClickedPage: ({ page }) => ({ model: build(page, model.role, model.platform) }),
+		ClickedRole: ({ role }) => ({ model: build(model.page, role, model.platform) }),
 		GotListMessage: ({ message: inner }) => ({
 			model: { ...model, list: listUpdate(model.list, inner, context).model },
 		}),
@@ -408,9 +426,13 @@ export const lab = defineShellLab("Sources", {
 		return {
 			page: Option.getOrElse(decodePage(params.get("page")), (): LabPage => "list"),
 			role: Option.getOrElse(decodeRole(params.get("role")), (): LabRole => "member"),
+			platform: Option.getOrElse(
+				decodePlatform(params.get("platform")),
+				(): PushSourcePlatform => "nodejs",
+			),
 		}
 	}),
-	init: (flags: Flags) => ({ model: build(flags.page, flags.role) }),
+	init: (flags: Flags) => ({ model: build(flags.page, flags.role, flags.platform) }),
 	update,
 	view,
 	before: switcher,

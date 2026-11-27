@@ -11,8 +11,8 @@ import { panel } from "@maple/views/ui/panel"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../../kit/code-block"
-import { icon } from "@maple/views/ui/icon"
-import { maskedToken, type SourceSnippet, sourceSnippets } from "./snippets"
+import * as Recipe from "../../kit/install-recipe"
+import { type SourceSnippet, sourceRecipes, sourceSnippets } from "./snippets"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
@@ -24,6 +24,8 @@ export const Model = Schema.Struct({
 	endpointCopy: CopyButton.Model,
 	headerCopy: CopyButton.Model,
 	codeCopy: CopyButton.Model,
+	/** A collector platform's install: its picked tool, open files and copies. */
+	recipe: Recipe.Model,
 })
 export type Model = typeof Model.Type
 
@@ -32,6 +34,7 @@ export const Message = defineMessageUnion({
 	GotEndpointCopyMessage: { message: CopyButton.Message },
 	GotHeaderCopyMessage: { message: CopyButton.Message },
 	GotCodeCopyMessage: { message: CopyButton.Message },
+	GotRecipeMessage: { message: Recipe.Message },
 })
 export type Message = typeof Message.Type
 
@@ -43,6 +46,7 @@ export const init = (platform: SourcePlatform, idBase = 60): Model => {
 		endpointCopy: CopyButton.init(),
 		headerCopy: CopyButton.init(),
 		codeCopy: CopyButton.init(),
+		recipe: Recipe.init(),
 	}
 }
 
@@ -75,6 +79,15 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 				),
 			}
 		},
+		GotRecipeMessage: ({ message: inner }) => {
+			const step = Recipe.update(model.recipe, inner)
+			return {
+				model: { ...model, recipe: step.model },
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotRecipeMessage({ message: child }),
+				),
+			}
+		},
 		GotCodeCopyMessage: ({ message: inner }) => {
 			const step = CopyButton.update(model.codeCopy, inner)
 			return {
@@ -101,7 +114,7 @@ export type SetupViewConfig<P> = Readonly<{
 
 export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => {
 	const { model, token } = config
-	const shown = token ?? maskedToken(config.keyPrefix)
+	const shown = token ?? Recipe.maskedSecret(config.keyPrefix ?? "maple_src_")
 	const snippets = sourceSnippets(config.platform, shown, config.name)
 	const snippet = Option.getOrElse(
 		Arr.findFirst(snippets, (entry) => entry.id === model.tabs.selected),
@@ -110,6 +123,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 	const isCompact = config.isCompact ?? false
 	return vstack(h, { gap: "4" }, [
 		...(isCompact ? [] : [reference(h, config, shown)]),
+		...collectorSteps(h, config, shown),
 		...snippetTabs(h, config, snippets, snippet),
 		...(token === null && !isCompact
 			? [
@@ -158,6 +172,23 @@ const reference = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>, shown: stri
 	])
 }
 
+/** A collector platform's install, as the collector dialog shows it; the key is shown once or masked for good. */
+const collectorSteps = <P>(
+	h: HtmlBuilder<P>,
+	config: SetupViewConfig<P>,
+	shown: string,
+): ReadonlyArray<Html> => {
+	const recipes = sourceRecipes(config.platform)
+	return recipes === null
+		? []
+		: Recipe.view(h, {
+				model: config.model.recipe,
+				toParentMessage: (message) => config.toParentMessage(Message.GotRecipeMessage({ message })),
+				recipes,
+				key: { isLoading: false, value: shown },
+			})
+}
+
 /** The platform's snippets, behind tabs when it has more than one. */
 const snippetTabs = <P>(
 	h: HtmlBuilder<P>,
@@ -181,16 +212,6 @@ const snippetTabs = <P>(
 									viewInputs: {
 										variant: "underline",
 										labels: Arr.map(snippets, (entry) => entry.label),
-										tabContent: (value: string, label: string) => {
-											const mark = Option.flatMapNullishOr(
-												Arr.findFirst(snippets, (entry) => entry.id === value),
-												(entry) => entry.icon,
-											)
-											return Option.match(mark, {
-												onNone: () => [label],
-												onSome: (name) => [icon(h, name, { size: 14 }), label],
-											})
-										},
 										panel: () => undefined,
 									},
 								}),
