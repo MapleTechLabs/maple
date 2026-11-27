@@ -728,13 +728,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				},
 			}
 		},
-		ClickedRetryRetention: () =>
-			model.retention === null
-				? { model }
-				: {
-						model: { ...model, retention: { ...model.retention, policy: AsyncData.Loading() } },
-						commands: [FetchSourceRetention()],
-					},
+		ClickedRetryRetention: () => {
+			const retention = model.retention
+			if (retention === null) return { model }
+			// Loaded data stays while it refetches, so the draft is still compared against it.
+			const policy = Option.getOrElse(
+				AsyncData.revalidateOrLoad(retention.policy),
+				() => retention.policy,
+			)
+			return {
+				model: { ...model, retention: { ...retention, policy } },
+				commands: [FetchSourceRetention()],
+			}
+		},
 		ChangedRetentionPeriod: ({ signal, value }) => changedPeriod(model, signal, value),
 		CompletedSaveRetention: ({ result }) => {
 			const retention = model.retention

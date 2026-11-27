@@ -5,7 +5,8 @@ import { expect as expectView, given, role, scene, text, withViewInputs } from "
 import type { RetentionDays } from "@maple/domain/retention"
 import { describe, expect, test } from "vitest"
 import { Message } from "./model"
-import { changedSignals, init, update } from "./update"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import { changedSignals, init, revisit, update } from "./update"
 import { view } from "./view"
 
 const DEFAULTS = { traces: 30, logs: 30, metrics: 90, sessions: 30, events: 365, profiles: 14 }
@@ -65,6 +66,21 @@ const withNames = (model: ReturnType<typeof loaded>) =>
 	).model
 
 describe("retention tab", () => {
+	test("a retry after a failed refresh keeps the periods picked but not saved", () => {
+		const edited = pick(loaded(), "logs", "90")
+		const failed = update(
+			revisit(edited).model,
+			Message.CompletedFetchPolicy({ result: Result.fail(toLoadFailure("connection reset")) }),
+		).model
+		const retried = update(failed, Message.ClickedRetry()).model
+		const settled = update(
+			retried,
+			Message.CompletedFetchPolicy({ result: Result.succeed(policy()) }),
+		).model
+		expect(settled.draft?.logs).toBe(90)
+		expect(changedSignals(settled)).toEqual(["logs"])
+	})
+
 	test("entry reads the policy and the source names", () => {
 		const names = Arr.map(init(ADMIN).commands ?? [], (command) => command.name)
 		expect(names).toContain("FetchRetention")
