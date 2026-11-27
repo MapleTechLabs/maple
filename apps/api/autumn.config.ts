@@ -206,11 +206,10 @@ export const startup = plan({
 			},
 		},
 		{
-			// Each monitor past the included ones is billed monthly, prorated from the day it is
-			// created or deleted. The trial has no price, so there the 11th is refused instead.
+			// Each monitor past the included ones is billed monthly. The trial has no price, so
+			// there the 11th is refused instead.
 			featureId: UPTIME_MONITORS_FEATURE_ID,
 			included: UPTIME_MONITORS_INCLUDED,
-			proration: { onIncrease: "prorate", onDecrease: "prorate" },
 			price: {
 				amount: UPTIME_MONITOR_OVERAGE_USD,
 				billingUnits: 1,

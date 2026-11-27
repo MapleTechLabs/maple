@@ -55,7 +55,7 @@ export const monitorCostNotice = (allowance: MonitorAllowance | null): MonitorCo
 		return {
 			tone: "info",
 			title: `This monitor adds ${price} to your bill`,
-			body: `Your plan includes ${included} monitors and this organization has ${used}. Each one past ${included} costs ${price}, prorated from the day it's created.`,
+			body: `Your plan includes ${included} monitors and this organization has ${used}. Each one past ${included} costs ${price}.`,
 			needsCard: false,
 		}
 	if (used === included - 1)
