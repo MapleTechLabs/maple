@@ -37,6 +37,8 @@ export const evaluationColumnsSql = (opts: {
 	const label = `lower(trimBoth(${a(OTEL.scoreLabel)}))`
 	const verdict = `lower(trimBoth(${a(MAPLE.verdict)}))`
 	const scope = `lower(trimBoth(${a(MAPLE.scope)}))`
+	const value = `lower(trimBoth(${a(OTEL.scoreValue)}))`
+	const typedBoolean = `lower(trimBoth(${a(MAPLE.scoreType)})) = 'boolean'`
 	// A finite number: `nan` and `inf` parse as floats and would poison every mean.
 	const finite = `isFinite(toFloat64OrZero(${a(OTEL.scoreValue)})) AND isNotNull(toFloat64OrNull(${a(OTEL.scoreValue)}))`
 	// An explicit target replaces the record's context as a PAIR: a target trace with the record's own
@@ -52,7 +54,7 @@ export const evaluationColumnsSql = (opts: {
           if(${finite}, toFloat64OrZero(${a(OTEL.scoreValue)}), 0) AS ScoreValue,
           toUInt8(${finite}) AS HasScore,
           ${a(OTEL.scoreLabel)} AS ScoreLabel,
-          multiIf(${verdict} IN ('pass', 'fail'), ${verdict}, ${label} IN (${list(EVALUATION_PASS_LABELS)}), 'pass', ${label} IN (${list(EVALUATION_FAIL_LABELS)}), 'fail', '') AS Verdict,
+          multiIf(${verdict} IN ('pass', 'fail'), ${verdict}, ${label} IN (${list(EVALUATION_PASS_LABELS)}), 'pass', ${label} IN (${list(EVALUATION_FAIL_LABELS)}), 'fail', ${value} = 'true' OR (${typedBoolean} AND ${value} IN ('1', '1.0')), 'pass', ${value} = 'false' OR (${typedBoolean} AND ${value} IN ('0', '0.0')), 'fail', '') AS Verdict,
           leftUTF8(${a(OTEL.explanation)}, ${EVALUATION_EXPLANATION_MAX}) AS Explanation,
           ${a(OTEL.errorType)} AS ErrorType,
           ${a(MAPLE.annotatorKind)} AS AnnotatorKind,

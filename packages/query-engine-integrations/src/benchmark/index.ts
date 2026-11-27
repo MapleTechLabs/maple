@@ -486,6 +486,18 @@ export const integrationFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "ai-sessions",
+		name: "aiResponseSpansQuery",
+		label: "byTraces",
+		compile: () => compileUnsafe(CH.aiResponseSpansQuery({ traceIds: [AI_TRACE_ID] }), window),
+	},
+	{
+		module: "ai-sessions",
+		name: "aiResponseSpansQuery",
+		label: "byResponses",
+		compile: () => compileUnsafe(CH.aiResponseSpansQuery({ responseIds: ["resp_1"] }), window),
+	},
+	{
+		module: "ai-sessions",
 		name: "aiTraceSpansQuery",
 		label: "default",
 		compile: () =>

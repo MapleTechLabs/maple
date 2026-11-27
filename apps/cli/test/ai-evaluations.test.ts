@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
+import * as Integrations from "@maple/query-engine-integrations"
 import { CH as Compile, formatWarehouseDateTime } from "@maple/query-engine"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import { OrgId } from "@maple/domain"
@@ -208,6 +209,142 @@ describeWithChdb("ai_evaluations views", () => {
 				DeploymentEnv: "production",
 			},
 		])
+	})
+
+	test("reads a verdict from a boolean value", () => {
+		const scored = (name: string, value: string, type = "") =>
+			insertLog(db, {
+				"event.name": "gen_ai.evaluation.result",
+				"gen_ai.evaluation.name": name,
+				"gen_ai.evaluation.score.value": value,
+				"maple_ai.evaluation.score.type": type,
+			})
+		scored("Bool true", "true")
+		scored("Bool false", " False ")
+		scored("Typed one", "1", "Boolean")
+		scored("Typed zero", "0.0", "boolean")
+		// An untyped 0 / 1 may be a 0..1 score: no verdict.
+		scored("Untyped one", "1")
+		const verdicts = Rec.fromEntries(
+			Arr.map(rows(db), (row): [string, string] => [row.Name, row.Verdict]),
+		)
+		expect({
+			"Bool true": verdicts["Bool true"],
+			"Bool false": verdicts["Bool false"],
+			"Typed one": verdicts["Typed one"],
+			"Typed zero": verdicts["Typed zero"],
+			"Untyped one": verdicts["Untyped one"],
+		}).toEqual({
+			"Bool true": "pass",
+			"Bool false": "fail",
+			"Typed one": "pass",
+			"Typed zero": "fail",
+			"Untyped one": "",
+		})
+	})
+})
+
+describeWithChdb("ai_evaluations re-scores and response-only scores", () => {
+	let root = ""
+	let db: Chdb
+	const params = {
+		orgId: Schema.decodeSync(OrgId)(ORG),
+		startTime: formatWarehouseDateTime(AT_MS - 3_600_000),
+		endTime: formatWarehouseDateTime(AT_MS + 3_600_000),
+	}
+	const run = <A>(compiled: { readonly sql: string }, schema: Schema.Codec<A, unknown>) =>
+		decodeJsonEachRow(schema)(db.query(normalizeSqlForClickHouseClient(compiled.sql)))
+	const score = (
+		extra: Readonly<Record<string, string>>,
+		opts: { readonly atMs?: number; readonly traceId?: string; readonly spanId?: string } = {},
+	) =>
+		insertLog(
+			db,
+			{ "event.name": "gen_ai.evaluation.result", "gen_ai.evaluation.name": "Correctness", ...extra },
+			opts.traceId ?? TRACE,
+			opts.spanId ?? SPAN,
+			opts.atMs ?? AT_MS,
+		)
+	const Summary = Schema.Struct({
+		name: Schema.String,
+		scoreCount: CH.CHNumber,
+		passCount: CH.CHNumber,
+		failCount: CH.CHNumber,
+	})
+	const Score = Schema.Struct({
+		verdict: Schema.String,
+		traceId: Schema.String,
+		responseId: Schema.String,
+	})
+
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), "maple-ai-evaluations-rescores-"))
+		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
+		// A judge re-scores one span under one identifier: the later verdict replaces the first.
+		score(
+			{ "gen_ai.evaluation.score.label": "fail", "maple_ai.evaluation.identifier": "run-1" },
+			{ atMs: AT_MS - 60_000 },
+		)
+		score({ "gen_ai.evaluation.score.label": "pass", "maple_ai.evaluation.identifier": "run-1" })
+		// An OTLP retry of an unkeyed score is one score; a different score at the same instant is not.
+		score({ "gen_ai.evaluation.score.label": "fail" }, { spanId: "d2d2d2d2d2d2d2d2" })
+		score({ "gen_ai.evaluation.score.label": "fail" }, { spanId: "d2d2d2d2d2d2d2d2" })
+		score({ "gen_ai.evaluation.score.label": "pass" }, { spanId: "d2d2d2d2d2d2d2d2" })
+		// A score written with no trace context, naming only the provider's response.
+		score(
+			{ "gen_ai.evaluation.score.label": "pass", "gen_ai.response.id": "resp_42" },
+			{ traceId: "", spanId: "" },
+		)
+		db.exec(
+			`INSERT INTO ai_trace_index (OrgId, Timestamp, TraceId, SpanId, ResponseId) VALUES ('${ORG}', '${ts(AT_MS)}', '${TRACE}', 'e3e3e3e3e3e3e3e3', 'resp_42'), ('${ORG}', '${ts(AT_MS)}', '${TRACE}', 'f4f4f4f4f4f4f4f4', '')`,
+		)
+	})
+
+	afterAll(() => {
+		db.close()
+		rmSync(root, { recursive: true, force: true })
+	})
+
+	test("counts a re-scored target and a resent score once, with the latest verdict", () => {
+		expect(run(Compile.compileUnsafe(CH.aiEvaluationsSummaryQuery(), params), Summary)).toEqual([
+			{ name: "Correctness", scoreCount: 4, passCount: 3, failCount: 1 },
+		])
+		const failures = run(
+			Compile.compileUnsafe(CH.aiEvaluationScoresQuery({ verdict: "fail" }), params),
+			Score,
+		)
+		// The replaced `fail` of run-1 is not a failure any more.
+		expect(failures).toEqual([{ verdict: "fail", traceId: TRACE, responseId: "" }])
+	})
+
+	test("finds response-only scores by response, and the span each response came from", () => {
+		expect(
+			run(
+				Compile.compileUnsafe(CH.aiEvaluationScoresQuery({ responseIds: ["resp_42"] }), params),
+				Score,
+			),
+		).toEqual([{ verdict: "pass", traceId: "", responseId: "resp_42" }])
+		const spans = Schema.Struct({
+			responseId: Schema.String,
+			traceId: Schema.String,
+			spanId: Schema.String,
+		})
+		const expected = [{ responseId: "resp_42", traceId: TRACE, spanId: "e3e3e3e3e3e3e3e3" }]
+		expect(
+			run(
+				Compile.compileUnsafe(Integrations.aiResponseSpansQuery({ traceIds: [TRACE] }), params),
+				spans,
+			),
+		).toEqual(expected)
+		expect(
+			run(
+				Compile.compileUnsafe(
+					Integrations.aiResponseSpansQuery({ responseIds: ["resp_42"] }),
+					params,
+				),
+				spans,
+			),
+		).toEqual(expected)
 	})
 })
 

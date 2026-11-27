@@ -33,6 +33,10 @@ export const AI_EVALUATION_SERIES_MAX_BUCKETS = 1_000
 /** Traces one session-scores read accepts: a session page's loaded traces. */
 export const AI_EVALUATION_SESSION_MAX_TRACES = 500
 
+/** How far past a session's last span its scores read looks: judges, people and batch jobs score
+ *  after the run ends, often hours later. */
+export const AI_EVALUATION_SESSION_SCORES_TAIL_MS = 24 * 3_600_000
+
 /** Volume, verdicts and mean score of a set of scores. A pass rate is `pass / (pass + fail)`. */
 export const AiEvaluationMeasures = Schema.Struct({
 	scoreCount: Schema.Number,

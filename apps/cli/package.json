@@ -26,6 +26,7 @@
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",
+		"@maple/query-engine-integrations": "workspace:*",
 		"@types/bun": "^1.4.5",
 		"@types/node": "catalog:tooling",
 		"fast-check": "^4.11.0",

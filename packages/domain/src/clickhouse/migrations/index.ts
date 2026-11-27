@@ -74,6 +74,7 @@ import { migration_0072_ai_evaluations } from "./0072_ai_evaluations"
 import { migration_0073_error_fingerprint_default_extension } from "./0073_error_fingerprint_default_extension"
 import { migration_0074_service_identity } from "./0074_service_identity"
 import { migration_0075_retention_days } from "./0075_retention_days"
+import { migration_0076_ai_evaluation_boolean_verdicts } from "./0076_ai_evaluation_boolean_verdicts"
 import { Array as Arr } from "effect"
 
 /**
@@ -181,6 +182,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0073_error_fingerprint_default_extension,
 	migration_0074_service_identity,
 	migration_0075_retention_days,
+	migration_0076_ai_evaluation_boolean_verdicts,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

@@ -1,3 +1,33 @@
+-- builder:ai-sessions:aiResponseSpansQuery:byResponses
+SELECT
+          ai_trace_index.ResponseId AS responseId,
+          any(ai_trace_index.TraceId) AS traceId,
+          any(ai_trace_index.SpanId) AS spanId
+        FROM ai_trace_index
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.ResponseId != ''
+          AND ai_trace_index.ResponseId IN ('resp_1')
+        GROUP BY responseId
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:ai-sessions:aiResponseSpansQuery:byTraces
+SELECT
+          ai_trace_index.ResponseId AS responseId,
+          any(ai_trace_index.TraceId) AS traceId,
+          any(ai_trace_index.SpanId) AS spanId
+        FROM ai_trace_index
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.ResponseId != ''
+          AND ai_trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef')
+        GROUP BY responseId
+        LIMIT 2000
+        FORMAT JSON
+
 -- builder:ai-sessions:aiSessionDetailsQuery:default
 SELECT
           if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,

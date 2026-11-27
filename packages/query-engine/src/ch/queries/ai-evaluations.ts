@@ -2,11 +2,12 @@
 // the span it grades. The Evals tab, the session page's scores and the
 // evaluation MCP tools all read through these, so the numbers agree everywhere.
 //
-// A pass rate is `pass / (pass + fail)`: scores whose label says neither (numeric or categorical
-// ones) count toward the evaluator's volume and its mean, never toward its pass rate.
+// Every read counts a re-scored target once (`latestScores`). A pass rate is `pass / (pass + fail)`:
+// scores whose label says neither (numeric or categorical ones) count toward the evaluator's volume
+// and its mean, never toward its pass rate.
 
 import * as CH from "@maple-dev/effect-orm/expr"
-import { type ColumnAccessor, from, param } from "@maple-dev/effect-orm/clickhouse"
+import { type ColumnAccessor, from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam } from "../tables"
 
@@ -18,14 +19,64 @@ const windowConds = ($: Columns) => [
 	$.Timestamp.lte(param.dateTime("endTime")),
 ]
 
-const measures = ($: Columns) => ({
+/**
+ * The window's scores, one per re-scored target: a later score with the same target, evaluator
+ * and `Identifier` replaces the earlier one. A score with no identifier is keyed by its timestamp
+ * and content, so only an exact resend (an OTLP retry) merges into it. `conds` narrow the raw rows, and may only
+ * name columns of the key; a filter on what a re-score can change (the verdict) goes outside.
+ */
+const latestScores = (conds: ($: Columns) => ReadonlyArray<CH.Condition | undefined> = () => []) =>
+	fromQuery(
+		from(Datasources.aiEvaluations)
+			.select(($) => ({
+				traceId: $.TraceId,
+				spanId: $.SpanId,
+				responseId: $.ResponseId,
+				name: $.Name,
+				scope: $.Scope,
+				sessionId: $.SessionId,
+				scoreKey: CH.if_(
+					$.Identifier.eq(""),
+					CH.toString_(
+						CH.cityHash64($.Timestamp, $.ScoreValue, $.ScoreLabel, $.Verdict, $.Explanation),
+					),
+					$.Identifier,
+				),
+				at: CH.max_($.Timestamp),
+				scoreValue: CH.argMax($.ScoreValue, $.Timestamp),
+				hasScore: CH.argMax($.HasScore, $.Timestamp),
+				scoreLabel: CH.argMax($.ScoreLabel, $.Timestamp),
+				verdict: CH.argMax($.Verdict, $.Timestamp),
+				explanation: CH.argMax($.Explanation, $.Timestamp),
+				errorType: CH.argMax($.ErrorType, $.Timestamp),
+				annotatorKind: CH.argMax($.AnnotatorKind, $.Timestamp),
+				source: CH.argMax($.Source, $.Timestamp),
+				evaluatorVersion: CH.argMax($.EvaluatorVersion, $.Timestamp),
+				judgeModel: CH.argMax($.JudgeModel, $.Timestamp),
+				serviceName: CH.argMax($.ServiceName, $.Timestamp),
+				deploymentEnv: CH.argMax($.DeploymentEnv, $.Timestamp),
+			}))
+			.where(($) => [...windowConds($), ...conds($)])
+			.groupBy("traceId", "spanId", "responseId", "name", "scope", "sessionId", "scoreKey"),
+		"scores",
+	)
+
+/** The columns of `latestScores` a measure reads. */
+interface ScoreColumns {
+	readonly verdict: CH.Expr<string>
+	readonly hasScore: CH.Expr<number>
+	readonly scoreValue: CH.Expr<number>
+	readonly errorType: CH.Expr<string>
+}
+
+const measures = ($: ScoreColumns) => ({
 	scoreCount: CH.count(),
-	passCount: CH.countIf($.Verdict.eq("pass")),
-	failCount: CH.countIf($.Verdict.eq("fail")),
-	valueCount: CH.countIf($.HasScore.eq(1)),
+	passCount: CH.countIf($.verdict.eq("pass")),
+	failCount: CH.countIf($.verdict.eq("fail")),
+	valueCount: CH.countIf($.hasScore.eq(1)),
 	// avgIf over no numeric scores is NaN, which no row decoder accepts.
-	avgValue: CH.ifNotFinite(CH.avgIf($.ScoreValue, $.HasScore.eq(1)), CH.lit(0)),
-	errorCount: CH.countIf($.ErrorType.neq("")),
+	avgValue: CH.ifNotFinite(CH.avgIf($.scoreValue, $.hasScore.eq(1)), CH.lit(0)),
+	errorCount: CH.countIf($.errorType.neq("")),
 })
 
 export interface AiEvaluationsSummaryOpts {
@@ -37,21 +88,16 @@ export interface AiEvaluationsSummaryOpts {
 /** One row per evaluator in the window: volume, verdicts, mean score, failures of the evaluator itself. */
 export function aiEvaluationsSummaryQuery(opts: AiEvaluationsSummaryOpts = {}) {
 	return (
-		from(Datasources.aiEvaluations)
+		// A score with no `gen_ai.evaluation.name` belongs to no evaluator.
+		latestScores(($) => [$.Name.neq(""), opts.name === undefined ? undefined : $.Name.eq(opts.name)])
 			.select(($) => ({
-				name: $.Name,
+				name: $.name,
 				...measures($),
-				traceCount: CH.uniqIf($.TraceId, $.TraceId.neq("")),
-				sources: CH.groupUniqArrayIf(8)($.Source, $.Source.neq("")),
-				annotatorKinds: CH.groupUniqArrayIf(8)($.AnnotatorKind, $.AnnotatorKind.neq("")),
-				lastSeen: CH.toString_(CH.max_($.Timestamp)),
+				traceCount: CH.uniqIf($.traceId, $.traceId.neq("")),
+				sources: CH.groupUniqArrayIf(8)($.source, $.source.neq("")),
+				annotatorKinds: CH.groupUniqArrayIf(8)($.annotatorKind, $.annotatorKind.neq("")),
+				lastSeen: CH.toString_(CH.max_($.at)),
 			}))
-			// A score with no `gen_ai.evaluation.name` belongs to no evaluator.
-			.where(($) => [
-				...windowConds($),
-				$.Name.neq(""),
-				opts.name === undefined ? undefined : $.Name.eq(opts.name),
-			])
 			.groupBy("name")
 			.orderBy(["scoreCount", "desc"], ["name", "asc"])
 			.limit(opts.limit ?? 200)
@@ -59,14 +105,15 @@ export function aiEvaluationsSummaryQuery(opts: AiEvaluationsSummaryOpts = {}) {
 	)
 }
 
+const byName = ($: Columns) => [$.Name.eq(param.string("name"))]
+
 /** One evaluator's measures per time bucket (`bucketSeconds` param), oldest first. */
 export function aiEvaluationTimeseriesQuery() {
-	return from(Datasources.aiEvaluations)
+	return latestScores(byName)
 		.select(($) => ({
-			bucket: CH.toString_(CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds"))),
+			bucket: CH.toString_(CH.toStartOfInterval($.at, param.int("bucketSeconds"))),
 			...measures($),
 		}))
-		.where(($) => [...windowConds($), $.Name.eq(param.string("name"))])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
 		.limit(2_000)
@@ -75,13 +122,12 @@ export function aiEvaluationTimeseriesQuery() {
 
 /** One evaluator's measures split by the service that emitted the score. */
 export function aiEvaluationBreakdownQuery() {
-	return from(Datasources.aiEvaluations)
+	return latestScores(byName)
 		.select(($) => ({
-			serviceName: $.ServiceName,
-			deploymentEnv: $.DeploymentEnv,
+			serviceName: $.serviceName,
+			deploymentEnv: $.deploymentEnv,
 			...measures($),
 		}))
-		.where(($) => [...windowConds($), $.Name.eq(param.string("name"))])
 		.groupBy("serviceName", "deploymentEnv")
 		.orderBy(["scoreCount", "desc"])
 		.limit(50)
@@ -95,6 +141,8 @@ export interface AiEvaluationScoresOpts {
 	readonly traceIds?: ReadonlyArray<string>
 	/** Only session-scope scores naming this session. */
 	readonly sessionId?: string
+	/** Only scores with no trace context that name one of these responses; must not be empty. */
+	readonly responseIds?: ReadonlyArray<string>
 	readonly verdict?: "pass" | "fail"
 	/** Leaves this verdict out, so a read can be disjoint from one asking for it. */
 	readonly excludeVerdict?: "fail"
@@ -104,40 +152,43 @@ export interface AiEvaluationScoresOpts {
 }
 
 /**
- * Individual scores, newest first. A session's scores are two reads, by its traces and by its
- * session id: one `OR` of both would scan every row the org has in the window.
+ * Individual scores, newest first. A session's scores are separate reads, by its traces, by its
+ * session id and by its responses: one `OR` of them would scan every row the org has in the window.
  */
 export function aiEvaluationScoresQuery(opts: AiEvaluationScoresOpts = {}) {
 	const traceIds = opts.traceIds
 	const sessionId = opts.sessionId
-	return from(Datasources.aiEvaluations)
+	const responseIds = opts.responseIds
+	return latestScores(($) => [
+		opts.name === undefined ? undefined : $.Name.eq(opts.name),
+		opts.excludeNamedSessions === true ? $.Scope.neq("session").or($.SessionId.eq("")) : undefined,
+		traceIds === undefined ? undefined : CH.inList($.TraceId, traceIds),
+		sessionId === undefined ? undefined : $.Scope.eq("session").and($.SessionId.eq(sessionId)),
+		responseIds === undefined ? undefined : $.TraceId.eq("").and(CH.inList($.ResponseId, responseIds)),
+	])
 		.select(($) => ({
-			timestamp: CH.toString_($.Timestamp),
-			name: $.Name,
-			traceId: $.TraceId,
-			spanId: $.SpanId,
-			scope: $.Scope,
-			sessionId: $.SessionId,
-			scoreValue: $.ScoreValue,
-			hasScore: $.HasScore,
-			scoreLabel: $.ScoreLabel,
-			verdict: $.Verdict,
-			explanation: $.Explanation,
-			errorType: $.ErrorType,
-			annotatorKind: $.AnnotatorKind,
-			source: $.Source,
-			evaluatorVersion: $.EvaluatorVersion,
-			judgeModel: $.JudgeModel,
-			serviceName: $.ServiceName,
+			timestamp: CH.toString_($.at),
+			name: $.name,
+			traceId: $.traceId,
+			spanId: $.spanId,
+			responseId: $.responseId,
+			scope: $.scope,
+			sessionId: $.sessionId,
+			scoreValue: $.scoreValue,
+			hasScore: $.hasScore,
+			scoreLabel: $.scoreLabel,
+			verdict: $.verdict,
+			explanation: $.explanation,
+			errorType: $.errorType,
+			annotatorKind: $.annotatorKind,
+			source: $.source,
+			evaluatorVersion: $.evaluatorVersion,
+			judgeModel: $.judgeModel,
+			serviceName: $.serviceName,
 		}))
 		.where(($) => [
-			...windowConds($),
-			opts.name === undefined ? undefined : $.Name.eq(opts.name),
-			opts.verdict === undefined ? undefined : $.Verdict.eq(opts.verdict),
-			opts.excludeVerdict === undefined ? undefined : $.Verdict.neq(opts.excludeVerdict),
-			opts.excludeNamedSessions === true ? $.Scope.neq("session").or($.SessionId.eq("")) : undefined,
-			traceIds === undefined ? undefined : CH.inList($.TraceId, traceIds),
-			sessionId === undefined ? undefined : $.Scope.eq("session").and($.SessionId.eq(sessionId)),
+			opts.verdict === undefined ? undefined : $.verdict.eq(opts.verdict),
+			opts.excludeVerdict === undefined ? undefined : $.verdict.neq(opts.excludeVerdict),
 		])
 		.orderBy(["timestamp", "desc"])
 		.limit(opts.limit ?? 200)
