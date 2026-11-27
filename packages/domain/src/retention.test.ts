@@ -78,7 +78,7 @@ describe("the RetentionDays column", () => {
 				return [match?.[1] ?? statement, Number(match?.[2])] as const
 			}),
 		)
-		// `product_events` came later, in migration 0076.
+		// `product_events` came later, in migration 0077.
 		const expected = Record.fromEntries(
 			Arr.map(
 				Arr.filter(rawTables, ({ datasource }) => datasource !== "product_events"),
