@@ -398,7 +398,7 @@ const make = Effect.gen(function* () {
 					: yield* scores(
 							tenant,
 							payload,
-							{ responseIds, limit: SESSION_SCORES_LIMIT },
+							{ responseIds, excludeNamedSessions: true, limit: SESSION_SCORES_LIMIT },
 							"aiSessionResponseEvaluations",
 						)
 			return Arr.map([...byTrace, ...bySession, ...byResponse], (row) => onResponseSpan(row, spans))
