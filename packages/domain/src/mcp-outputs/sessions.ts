@@ -332,6 +332,9 @@ export const ListAgentSessionsFilters = Schema.Struct({
 	tools: Schema.optionalKey(StringList),
 	search: Schema.optionalKey(Schema.String),
 	hasErrors: Schema.optionalKey(Schema.Boolean),
+	evaluation: Schema.optionalKey(
+		Schema.Struct({ name: Schema.String, verdict: Schema.Literals(["pass", "fail"]) }),
+	),
 	sortBy: Schema.Literals(AI_SESSION_SORT_KEYS),
 	sortDir: Schema.Literals(["asc", "desc"]),
 })

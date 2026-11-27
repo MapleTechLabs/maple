@@ -18,6 +18,9 @@ import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { AI_EVALUATOR_NAME_MAX_UNITS } from "@maple/domain/http"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { makeWarehouseServiceStub } from "../v2/v2-test-support"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiSessionsInternalLive } from "./ai-sessions.http"
@@ -76,10 +79,16 @@ const spanRow = (index: number) => ({
 	spanAttributes: { "gen_ai.operation.name": "chat", "maple_ai.session.id": SESSION_ID },
 })
 
-const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
+const makeHarness = (
+	overrides: Partial<WarehouseQueryServiceApi>,
+	flags: { readonly llmEvals: boolean } = { llmEvals: false },
+) => {
 	const routes = HttpApiBuilder.layer(AiSessionsOnlyApi).pipe(
 		Layer.provide(HttpAiSessionsInternalLive),
 		Layer.provide(Layer.effect(AiSessionReadService, AiSessionReadService.make)),
+		Layer.provide(
+			OrganizationFeatureFlagsService.fixed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, ...flags }),
+		),
 		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
 		Layer.provideMerge(Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub(overrides))),
@@ -919,6 +928,78 @@ describe("POST /internal/ai-sessions/list filters and sort", () => {
 					})
 				).status,
 			).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("POST /internal/ai-sessions/list evaluation filter", () => {
+	const EVALUATION = { name: "context_window", verdict: "fail" }
+
+	it("matches sessions by the evaluator's latest verdict, by session id and by trace", async () => {
+		let sql = ""
+		const harness = makeHarness(
+			{
+				compiledQuery: (_tenant, compiled) => {
+					sql = compiledQueryOf(compiled).sql
+					return Effect.succeed([])
+				},
+			},
+			{ llmEvals: true },
+		)
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/list", {
+				...WINDOW,
+				evaluation: EVALUATION,
+			})
+			expect(response.status).toBe(200)
+			expect(sql).toContain("FROM ai_evaluations")
+			expect(sql).toContain("'context_window'")
+			expect(sql).toContain("sessionId IN (SELECT")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses the filter outside the llmEvals rollout without reading the warehouse", async () => {
+		let reads = 0
+		const harness = makeHarness({
+			compiledQuery: () => {
+				reads += 1
+				return Effect.succeed([])
+			},
+		})
+
+		try {
+			const refused = await harness.post("/internal/ai-sessions/list", {
+				...WINDOW,
+				evaluation: EVALUATION,
+			})
+			expect(refused.status).toBe(403)
+			expect(refused.body._tag).toBe("@maple/http/ai-evaluations/LlmEvalsDisabledError")
+			expect(reads).toBe(0)
+			// The list itself still answers without the filter.
+			expect((await harness.post("/internal/ai-sessions/list", WINDOW)).status).toBe(200)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("rejects an empty or overlong evaluator name and an unknown verdict at the boundary", async () => {
+		const harness = makeHarness({ compiledQuery: () => Effect.succeed([]) }, { llmEvals: true })
+
+		try {
+			for (const evaluation of [
+				{ name: "", verdict: "fail" },
+				{ name: Str.repeat(AI_EVALUATOR_NAME_MAX_UNITS + 1)("x"), verdict: "fail" },
+				{ name: "context_window", verdict: "maybe" },
+			]) {
+				expect(
+					(await harness.post("/internal/ai-sessions/list", { ...WINDOW, evaluation })).status,
+				).toBe(400)
+			}
 		} finally {
 			await harness.dispose()
 		}

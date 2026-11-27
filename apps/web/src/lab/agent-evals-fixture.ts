@@ -33,6 +33,8 @@ const measures = (
 	scoreCount,
 	passCount,
 	failCount,
+	filterablePassCount: passCount,
+	filterableFailCount: failCount,
 	valueCount: avgValue < 0 ? 0 : scoreCount - errorCount,
 	avgValue: avgValue < 0 ? 0 : avgValue,
 	errorCount,

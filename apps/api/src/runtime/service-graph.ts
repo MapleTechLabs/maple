@@ -332,7 +332,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SessionReplayReadService.layer,
 	UsersReadService.layer,
 	McpReadService.layer,
-	AiSessionReadService.layer,
+	AiSessionReadService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	AiEvaluationReadService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	SessionCheckScoresService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	DigestService.layer,

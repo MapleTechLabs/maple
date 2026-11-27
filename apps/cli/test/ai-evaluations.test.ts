@@ -588,3 +588,146 @@ describeWithChdb("ai_evaluations reads", () => {
 		expect(new Set(Arr.map(rows, (row) => row.traceId))).toEqual(new Set([TRACE, ""]))
 	})
 })
+
+describeWithChdb("the Agent Sessions evaluation filter", () => {
+	let root = ""
+	let db: Chdb
+	const params = {
+		orgId: Schema.decodeSync(OrgId)(ORG),
+		startTime: formatWarehouseDateTime(AT_MS - 3_600_000),
+		endTime: formatWarehouseDateTime(AT_MS + 3_600_000),
+	}
+	const trace = (digit: string) => Str.repeat(32)(digit)
+	const Ranked = Schema.Struct({ sessionId: Schema.String })
+	const matching = (
+		verdict: "pass" | "fail",
+		name = "Context window",
+		extra: { readonly toolNames?: ReadonlyArray<string> } = {},
+	) => {
+		const evaluation = { name, verdict }
+		const ranked = decodeJsonEachRow(Ranked)(
+			db.query(
+				normalizeSqlForClickHouseClient(
+					Compile.compileUnsafe(Integrations.aiSessionRankQuery({ evaluation, ...extra }), params)
+						.sql,
+				),
+			),
+		)
+		// A usage sort ranks on the netted level instead: the same sessions must match there.
+		const netted = decodeJsonEachRow(Ranked)(
+			db.query(
+				normalizeSqlForClickHouseClient(
+					Compile.compileUnsafe(
+						Integrations.aiSessionPageQuery({ evaluation, sortBy: "cost", ...extra }),
+						params,
+					).sql,
+				),
+			),
+		)
+		const ids = (rows: ReadonlyArray<{ readonly sessionId: string }>) =>
+			Arr.sort(
+				Arr.map(rows, (row) => row.sessionId),
+				Str.Order,
+			)
+		expect(ids(netted)).toEqual(ids(ranked))
+		return ids(ranked)
+	}
+
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), "maple-ai-evaluations-filter-"))
+		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
+		// sess-a, sess-b, sess-c, sess-e and sess-f carry a session id; trace 4 has none (`trace:` session).
+		const sessions: ReadonlyArray<readonly [string, string]> = [
+			[trace("1"), "sess-a"],
+			[trace("2"), "sess-b"],
+			[trace("3"), "sess-c"],
+			[trace("4"), ""],
+			[trace("5"), "sess-e"],
+			[trace("6"), "sess-f"],
+		]
+		db.exec(
+			`INSERT INTO ai_trace_index (OrgId, Timestamp, TraceId, SpanId, SessionId, IsLlmCall) VALUES ${Arr.join(
+				Arr.map(
+					sessions,
+					([traceId, sessionId]) =>
+						`('${ORG}', '${ts(AT_MS)}', '${traceId}', 'a1a1a1a1a1a1a1a1', '${sessionId}', 1)`,
+				),
+				", ",
+			)}`,
+		)
+		const score = (
+			name: string,
+			extra: Readonly<Record<string, string>>,
+			traceId: string,
+			atMs = AT_MS,
+		) =>
+			insertLog(
+				db,
+				{ "event.name": "gen_ai.evaluation.result", "gen_ai.evaluation.name": name, ...extra },
+				traceId,
+				SPAN,
+				atMs,
+			)
+		const fail = { "gen_ai.evaluation.score.label": "fail" }
+		// sess-a: a failing score on its trace.
+		score("Context window", fail, trace("1"))
+		// sess-b: a session-scope failure naming it, emitted on sess-e's trace, which it does not file under.
+		score(
+			"Context window",
+			{ ...fail, "maple_ai.evaluation.scope": "session", "maple_ai.evaluation.session.id": "sess-b" },
+			trace("5"),
+		)
+		// sess-c: failed, then re-scored to pass under the same identifier.
+		score(
+			"Context window",
+			{ ...fail, "maple_ai.evaluation.identifier": "judge-1" },
+			trace("3"),
+			AT_MS - 60_000,
+		)
+		score(
+			"Context window",
+			{ "gen_ai.evaluation.score.label": "pass", "maple_ai.evaluation.identifier": "judge-1" },
+			trace("3"),
+		)
+		// The sessionless trace 4: a failing score on it.
+		score("Context window", fail, trace("4"))
+		// sess-f: another evaluator's failure.
+		score("Relevance", fail, trace("6"))
+		// sess-g: its first trace called `search_logs`, its second was graded and failed.
+		db.exec(
+			`INSERT INTO ai_trace_index (OrgId, Timestamp, TraceId, SpanId, SessionId, IsLlmCall, IsToolCall, ToolName) VALUES ('${ORG}', '${ts(AT_MS)}', '${trace("7")}', 'a1a1a1a1a1a1a1a1', 'sess-g', 0, 1, 'search_logs'), ('${ORG}', '${ts(AT_MS)}', '${trace("8")}', 'a1a1a1a1a1a1a1a1', 'sess-g', 1, 0, '')`,
+		)
+		score("Grounded answer", fail, trace("8"))
+		// Judges score late: one written hours after the window ends counts, one past a day does not.
+		score("Late judge", fail, trace("6"), AT_MS + 3 * 3_600_000)
+		score("Late judge", fail, trace("1"), AT_MS + 30 * 3_600_000)
+		// A response-only failure is out of the filter's scope.
+		score("Context window", { ...fail, "gen_ai.response.id": "resp_9" }, "")
+	})
+
+	afterAll(() => {
+		db.close()
+		rmSync(root, { recursive: true, force: true })
+	})
+
+	test("matches sessions by trace-filed and session-scope scores, latest verdict only", () => {
+		expect(matching("fail")).toEqual(["sess-a", "sess-b", `trace:${trace("4")}`])
+	})
+
+	test("matches a re-scored session by its new verdict", () => {
+		expect(matching("pass")).toEqual(["sess-c"])
+	})
+
+	test("matches a session whose tool and failing score are on different traces", () => {
+		expect(matching("fail", "Grounded answer", { toolNames: ["search_logs"] })).toEqual(["sess-g"])
+	})
+
+	test("matches scores written up to a day after the window ends", () => {
+		expect(matching("fail", "Late judge")).toEqual(["sess-f"])
+	})
+
+	test("matches only the named evaluator", () => {
+		expect(matching("fail", "Relevance")).toEqual(["sess-f"])
+		expect(matching("fail", "Unknown")).toEqual([])
+	})
+})

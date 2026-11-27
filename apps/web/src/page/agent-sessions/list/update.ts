@@ -20,6 +20,7 @@ import {
 	DetectModels,
 	FetchDetails,
 	FetchDistributions,
+	FetchEvaluators,
 	FetchFacets,
 	FetchFirstPage,
 	FetchNextPage,
@@ -30,7 +31,11 @@ import {
 } from "./command"
 import {
 	detailsKeyOf,
+	effectiveSearch,
+	evaluationOf,
+	evaluationOptionKey,
 	FILTER_KEYS,
+	parseEvaluationOptionKey,
 	filterInputs,
 	filterKeyOf,
 	hasNextPage,
@@ -122,6 +127,11 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 		"Load",
 		(key) => FetchDistributions({ key, window }),
 	)
+	const [evaluators, evaluatorCommands] = model.hasEvals
+		? keyed(model.evaluators, requestKey(org, "listAiEvaluators", { data: window }), "Load", (key) =>
+				FetchEvaluators({ key, window }),
+			)
+		: ([model.evaluators, []] as const)
 	const [tabSessions, sessionsCommands] = keyed(
 		model.tabSessions,
 		requestKey(org, "getAiToolTotals", { data: tabWindow }),
@@ -140,6 +150,7 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 		firstPage,
 		facets,
 		distributions,
+		evaluators,
 		tabSessions,
 		tabTools,
 		morePages: isNewFilter ? { filterKey, pages: [] } : model.morePages,
@@ -156,6 +167,7 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 			...pageCommands,
 			...facetCommands,
 			...distributionCommands,
+			...evaluatorCommands,
 			...sessionsCommands,
 			...toolsCommands,
 		],
@@ -320,8 +332,12 @@ const applyRange = (
 }
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
+	const hasEvals = context.hasLlmEvals === true
 	const model: Model = {
-		search: route.search,
+		search: effectiveSearch(route.search, hasEvals),
+		routeSearch: route.search,
+		hasEvals,
+		evaluators: Keyed.idle(),
 		window: null,
 		tabWindow: null,
 		nowMs: 0,
@@ -371,7 +387,7 @@ export const routeChanged = (
 	route: { readonly search: Search },
 	context: PageContext,
 ): Return => {
-	if (searchHref(model.search) === searchHref(route.search)) return { model }
+	if (searchHref(model.routeSearch) === searchHref(route.search)) return { model }
 	const query = route.search.q ?? ""
 	const changedDrafts = Rec.fromEntries(
 		Arr.map(
@@ -388,7 +404,8 @@ export const routeChanged = (
 	return requestAll(
 		{
 			...model,
-			search: route.search,
+			search: effectiveSearch(route.search, model.hasEvals),
+			routeSearch: route.search,
 			rangeDrafts: { ...model.rangeDrafts, ...changedDrafts },
 			searchInput: isOutsideQuery ? query : model.searchInput,
 			lastSentQuery: isOutsideQuery ? query : model.lastSentQuery,
@@ -398,11 +415,15 @@ export const routeChanged = (
 	)
 }
 
-/** The week starts at the selected zone's midnight, so a zone change re-resolves it. */
-export const contextChanged = (model: Model, context: PageContext): Return => ({
-	model,
-	commands: [ResolveWindow({ mode: "Load", timeZone: context.timeZone })],
-})
+/** The week starts at the selected zone's midnight, so a zone change re-resolves it; a rollout
+ *  answer re-derives the search the reads run under. */
+export const contextChanged = (model: Model, context: PageContext): Return => {
+	const hasEvals = context.hasLlmEvals === true
+	return {
+		model: { ...model, hasEvals, search: effectiveSearch(model.routeSearch, hasEvals) },
+		commands: [ResolveWindow({ mode: "Load", timeZone: context.timeZone })],
+	}
+}
 
 const nextPage = (model: Model): Return => {
 	const { window } = model
@@ -477,6 +498,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchDistributions: ({ key, result }) => ({
 			model: { ...model, distributions: Keyed.accept(model.distributions, key, result) },
 		}),
+		CompletedFetchEvaluators: ({ key, result }) => ({
+			model: { ...model, evaluators: Keyed.accept(model.evaluators, key, result) },
+		}),
 		CompletedFetchTabSessions: ({ key, result }) => ({
 			model: { ...model, tabSessions: Keyed.accept(model.tabSessions, key, result) },
 		}),
@@ -541,6 +565,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...Rec.fromEntries(Arr.map(FILTER_KEYS, (key) => [key, undefined])),
 			}),
 		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
+		ToggledEvaluation: ({ key }) => navigate(model, toggledEvaluation(model.search, key)),
 		ToggledGrouped: () =>
 			navigate(model, { ...model.search, grouped: model.search.grouped === true ? undefined : true }),
 		ChangedRangeDraft: ({ range, min, max }) => {
@@ -601,3 +626,13 @@ const toggledFacet = (search: Search, facet: ListFacet, name: string): Search =>
 	...search,
 	[facet]: toggled(search[facet], name),
 })
+
+/** One evaluation option at a time: a new one replaces the current, the current one clears. */
+const toggledEvaluation = (search: Search, key: string): Search => {
+	const current = evaluationOf(search)
+	const chosen = parseEvaluationOptionKey(key)
+	const isCurrent = current !== undefined && evaluationOptionKey(current) === key
+	return isCurrent || chosen === undefined
+		? { ...search, evaluator: undefined, evaluatorVerdict: undefined }
+		: { ...search, evaluator: chosen.name, evaluatorVerdict: chosen.verdict }
+}

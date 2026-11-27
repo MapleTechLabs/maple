@@ -50,6 +50,10 @@ export const MAPLE_EVALUATION_ATTRS = {
 	targetSpanId: "maple_ai.evaluation.target.span_id",
 } as const
 
+/** How far past a session's last span its scores are read: judges, people and batch jobs score
+ *  after the run ends, often hours later. */
+export const EVALUATION_SESSION_SCORES_TAIL_MS = 24 * 3_600_000
+
 /** Longest evaluator name kept, in characters; the read APIs accept names up to this length. */
 export const EVALUATION_NAME_MAX = 200
 

@@ -9,14 +9,18 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import { type ColumnAccessor, from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import { EVALUATION_SESSION_SCORES_TAIL_MS } from "@maple/domain/gen-ai-evaluation"
 import { orgIdParam } from "../tables"
 
 type Columns = ColumnAccessor<typeof Datasources.aiEvaluations.columns>
 
-const windowConds = ($: Columns) => [
+/** `tailSeconds` reads scores written that long after the window ends (judges score late). */
+const windowConds = ($: Columns, tailSeconds = 0) => [
 	$.OrgId.eq(orgIdParam),
 	$.Timestamp.gte(param.dateTime("startTime")),
-	$.Timestamp.lte(param.dateTime("endTime")),
+	tailSeconds === 0
+		? $.Timestamp.lte(param.dateTime("endTime"))
+		: $.Timestamp.lte(CH.intervalAdd(param.dateTime("endTime"), tailSeconds)),
 ]
 
 /**
@@ -27,7 +31,10 @@ const windowConds = ($: Columns) => [
  * only an exact resend merges into it. `conds` narrow the raw rows; a filter on what a re-score
  * can change (the verdict) goes outside.
  */
-const latestScores = (conds: ($: Columns) => ReadonlyArray<CH.Condition | undefined> = () => []) =>
+const latestScores = (
+	conds: ($: Columns) => ReadonlyArray<CH.Condition | undefined> = () => [],
+	tailSeconds = 0,
+) =>
 	fromQuery(
 		from(Datasources.aiEvaluations)
 			.select(($) => ({
@@ -72,7 +79,7 @@ const latestScores = (conds: ($: Columns) => ReadonlyArray<CH.Condition | undefi
 				serviceName: CH.argMax($.ServiceName, $.Timestamp),
 				deploymentEnv: CH.argMax($.DeploymentEnv, $.Timestamp),
 			}))
-			.where(($) => [...windowConds($), ...conds($)])
+			.where(($) => [...windowConds($, tailSeconds), ...conds($)])
 			.groupBy("target", "name", "scope", "sessionId", "scoreKey"),
 		"scores",
 	)
@@ -95,6 +102,13 @@ const measures = ($: ScoreColumns) => ({
 	errorCount: CH.countIf($.errorType.neq("")),
 })
 
+/** Whether the Agent Sessions filter can reach a score: it grades a trace or names a session. */
+const filterable = ($: {
+	readonly traceId: CH.Expr<string>
+	readonly scope: CH.Expr<string>
+	readonly sessionId: CH.Expr<string>
+}) => $.traceId.neq("").or($.scope.eq("session").and($.sessionId.neq("")))
+
 export interface AiEvaluationsSummaryOpts {
 	/** Only this evaluator (`gen_ai.evaluation.name`). */
 	readonly name?: string
@@ -110,6 +124,8 @@ export function aiEvaluationsSummaryQuery(opts: AiEvaluationsSummaryOpts = {}) {
 				name: $.name,
 				...measures($),
 				traceCount: CH.uniqIf($.traceId, $.traceId.neq("")),
+				filterablePassCount: CH.countIf($.verdict.eq("pass").and(filterable($))),
+				filterableFailCount: CH.countIf($.verdict.eq("fail").and(filterable($))),
 				sources: CH.groupUniqArrayIf(8)($.source, $.source.neq("")),
 				annotatorKinds: CH.groupUniqArrayIf(8)($.annotatorKind, $.annotatorKind.neq("")),
 				lastSeen: CH.toString_(CH.max_($.at)),
@@ -148,6 +164,35 @@ export function aiEvaluationBreakdownQuery() {
 		.orderBy(["scoreCount", "desc"])
 		.limit(50)
 		.format("JSON")
+}
+
+/** A session in the window matches on scores written up to this long after it, as its page reads. */
+const SESSION_SCORES_TAIL_SECONDS = EVALUATION_SESSION_SCORES_TAIL_MS / 1000
+
+/** One evaluator's latest verdict, the Agent Sessions list's evaluation filter. */
+export interface AiEvaluationMatch {
+	readonly name: string
+	readonly verdict: "pass" | "fail"
+}
+
+/**
+ * What an evaluation filter matches, over the window's latest scores: the sessions its
+ * session-scope scores name, and the traces its other scores grade (filed under each trace's
+ * session). A score naming only a response matches neither.
+ */
+export function aiEvaluationMatchSubqueries(match: AiEvaluationMatch) {
+	const named = ($: Columns) => $.Scope.eq("session").and($.SessionId.neq(""))
+	return {
+		sessionIds: latestScores(($) => [$.Name.eq(match.name), named($)], SESSION_SCORES_TAIL_SECONDS)
+			.select(($) => ({ sessionId: $.sessionId }))
+			.where(($) => [$.verdict.eq(match.verdict)]),
+		traceIds: latestScores(
+			($) => [$.Name.eq(match.name), $.TraceId.neq(""), CH.not(named($))],
+			SESSION_SCORES_TAIL_SECONDS,
+		)
+			.select(($) => ({ traceId: $.traceId }))
+			.where(($) => [$.verdict.eq(match.verdict)]),
+	}
 }
 
 export interface AiEvaluationScoresOpts {
