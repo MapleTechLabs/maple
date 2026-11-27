@@ -10,6 +10,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
 import { DEFAULT_EVALS_PRESET } from "../evals/update"
 import { type DetailInput, FetchDetail, Message } from "./message"
+import { scoresWindow } from "../kit/evals"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -25,8 +26,8 @@ const scopeOf = (search: Search, context: PageContext): Frame.Scope => ({
 })
 
 const requestAll = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
-	const window = model.frame.window
-	if (window === null) return { model }
+	if (model.frame.window === null) return { model }
+	const window = scoresWindow(model.frame.window, model.frame.nowMs)
 	const input: DetailInput = {
 		startTime: window.startTime,
 		endTime: window.endTime,

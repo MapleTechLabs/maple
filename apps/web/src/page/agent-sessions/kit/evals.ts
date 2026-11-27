@@ -1,4 +1,5 @@
 import type { AiEvaluationMeasures, AiEvaluationScore } from "@maple/domain/http"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { formatNumber, formatPercentColumn } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -7,6 +8,24 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import type { TypographyTone } from "@maple/views/ui/typography"
 
 // The evals pages' shared readings of a score set: pass rate, mean, a score's verdict tone.
+
+/** How close to now a window must end for its scores read to run to now. */
+const LIVE_WINDOW_SLACK_MS = 3_600_000
+
+/**
+ * The window the evals pages read scores over. A window ending near now (a preset like "Last 1
+ * week", whose end the frame snaps down for the cache) reads to now: scores are written as they
+ * happen, so the snapped end hid the newest ones until a Reload.
+ */
+export const scoresWindow = (
+	window: { readonly startTime: string; readonly endTime: string },
+	nowMs: number,
+): { readonly startTime: string; readonly endTime: string } => {
+	const endMs = parseWarehouseDateTime(window.endTime)
+	return Number.isFinite(endMs) && endMs <= nowMs && nowMs - endMs < LIVE_WINDOW_SLACK_MS
+		? { startTime: window.startTime, endTime: formatWarehouseDateTime(nowMs) }
+		: window
+}
 
 /** An empty cell: no verdicts, or no numeric values. */
 export const NO_VALUE = "-"

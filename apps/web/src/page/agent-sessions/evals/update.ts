@@ -9,6 +9,7 @@ import { liftFrame, resolveFrame, routeFrame } from "../../kit/time-frame-step"
 import { DEFAULT_TOOL_PRESET } from "../../kit/tools/model"
 import { FetchEvaluators, Message } from "./message"
 import type { Model } from "./model"
+import { scoresWindow } from "../kit/evals"
 
 type Return = PageReturn<Model, Message>
 type Search = typeof AgentSessionEvalsSearch.Type
@@ -24,8 +25,8 @@ const scopeOf = (search: Search, context: PageContext): Frame.Scope => ({
 })
 
 const requestAll = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
-	const window = model.frame.window
-	if (window === null) return { model }
+	if (model.frame.window === null) return { model }
+	const window = scoresWindow(model.frame.window, model.frame.nowMs)
 	const data = { startTime: window.startTime, endTime: window.endTime }
 	return applySteps<Model, Message>(model, [
 		keyed(

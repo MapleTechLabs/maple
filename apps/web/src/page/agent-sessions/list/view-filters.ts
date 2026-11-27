@@ -1,6 +1,6 @@
-import type { AiSessionDistribution } from "@maple/domain/http"
+import type { AiEvaluatorSummary, AiSessionDistribution } from "@maple/domain/http"
 import { getServiceColor } from "@maple/ui/lib/colors"
-import { Option, Array as Arr } from "effect"
+import { Option, Order, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "@maple/views/ui/checkbox"
@@ -202,29 +202,35 @@ const singleCheckbox = (
 	])
 }
 
+/** Maple's own session checks: listed after the org's evaluators, which they would crowd out. */
+const isSessionCheck = (evaluator: { readonly sources: ReadonlyArray<string> }) =>
+	Arr.contains(evaluator.sources, "maple_check")
+
 /** The evaluation score options: each evaluator once per verdict it gave, counted in scores. */
-const evaluationOptions = (model: Model) =>
-	Arr.flatMap(
+const evaluationOptions = (model: Model) => {
+	const evaluators: ReadonlyArray<AiEvaluatorSummary> = Arr.sort(
 		Option.getOrElse(AsyncData.getData(model.evaluators.data), () => []),
-		(evaluator) => [
-			...(evaluator.filterableFailCount > 0
-				? [
-						{
-							name: evaluationOptionKey({ name: evaluator.name, verdict: "fail" }),
-							count: evaluator.filterableFailCount,
-						},
-					]
-				: []),
-			...(evaluator.filterablePassCount > 0
-				? [
-						{
-							name: evaluationOptionKey({ name: evaluator.name, verdict: "pass" }),
-							count: evaluator.filterablePassCount,
-						},
-					]
-				: []),
-		],
+		Order.mapInput(Order.Boolean, isSessionCheck),
 	)
+	return Arr.flatMap(evaluators, (evaluator) => [
+		...(evaluator.filterableFailCount > 0
+			? [
+					{
+						name: evaluationOptionKey({ name: evaluator.name, verdict: "fail" }),
+						count: evaluator.filterableFailCount,
+					},
+				]
+			: []),
+		...(evaluator.filterablePassCount > 0
+			? [
+					{
+						name: evaluationOptionKey({ name: evaluator.name, verdict: "pass" }),
+						count: evaluator.filterablePassCount,
+					},
+				]
+			: []),
+	])
+}
 
 /** An option's label: the evaluator's name and the verdict, e.g. "Context window: fail". */
 const evaluationOptionLabel = (key: string): string => {
