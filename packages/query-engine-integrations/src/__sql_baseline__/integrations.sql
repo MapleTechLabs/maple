@@ -957,7 +957,7 @@ SELECT
         FROM ai_evaluations
         WHERE ai_evaluations.OrgId = 'org_sql_catalog'
           AND ai_evaluations.Timestamp >= '2026-01-01 10:30:00'
-          AND ai_evaluations.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_evaluations.Timestamp <= '2026-01-03 14:15:00' + INTERVAL 86400 SECOND
           AND ai_evaluations.Name = 'context_window'
           AND (ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != '')
         GROUP BY traceId, spanId, responseId, name, scope, sessionId, scoreKey) AS scores
@@ -987,7 +987,7 @@ SELECT
         FROM ai_evaluations
         WHERE ai_evaluations.OrgId = 'org_sql_catalog'
           AND ai_evaluations.Timestamp >= '2026-01-01 10:30:00'
-          AND ai_evaluations.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_evaluations.Timestamp <= '2026-01-03 14:15:00' + INTERVAL 86400 SECOND
           AND ai_evaluations.Name = 'context_window'
           AND ai_evaluations.TraceId != ''
           AND NOT ((ai_evaluations.Scope = 'session' AND ai_evaluations.SessionId != ''))

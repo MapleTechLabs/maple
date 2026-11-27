@@ -652,6 +652,9 @@ describeWithChdb("the Agent Sessions evaluation filter", () => {
 		score("Context window", fail, trace("4"))
 		// sess-f: another evaluator's failure.
 		score("Relevance", fail, trace("6"))
+		// Judges score late: one written hours after the window ends counts, one past a day does not.
+		score("Late judge", fail, trace("6"), AT_MS + 3 * 3_600_000)
+		score("Late judge", fail, trace("1"), AT_MS + 30 * 3_600_000)
 		// A response-only failure is out of the filter's scope.
 		score("Context window", { ...fail, "gen_ai.response.id": "resp_9" }, "")
 	})
@@ -667,6 +670,10 @@ describeWithChdb("the Agent Sessions evaluation filter", () => {
 
 	test("matches a re-scored session by its new verdict", () => {
 		expect(matching("pass")).toEqual(["sess-c"])
+	})
+
+	test("matches scores written up to a day after the window ends", () => {
+		expect(matching("fail", "Late judge")).toEqual(["sess-f"])
 	})
 
 	test("matches only the named evaluator", () => {

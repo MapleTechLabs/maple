@@ -9,14 +9,18 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import { type ColumnAccessor, from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import { EVALUATION_SESSION_SCORES_TAIL_MS } from "@maple/domain/gen-ai-evaluation"
 import { orgIdParam } from "../tables"
 
 type Columns = ColumnAccessor<typeof Datasources.aiEvaluations.columns>
 
-const windowConds = ($: Columns) => [
+/** `tailSeconds` reads scores written that long after the window ends (judges score late). */
+const windowConds = ($: Columns, tailSeconds = 0) => [
 	$.OrgId.eq(orgIdParam),
 	$.Timestamp.gte(param.dateTime("startTime")),
-	$.Timestamp.lte(param.dateTime("endTime")),
+	tailSeconds === 0
+		? $.Timestamp.lte(param.dateTime("endTime"))
+		: $.Timestamp.lte(CH.intervalAdd(param.dateTime("endTime"), tailSeconds)),
 ]
 
 /**
@@ -25,7 +29,10 @@ const windowConds = ($: Columns) => [
  * and content, so only an exact resend (an OTLP retry) merges into it. `conds` narrow the raw rows, and may only
  * name columns of the key; a filter on what a re-score can change (the verdict) goes outside.
  */
-const latestScores = (conds: ($: Columns) => ReadonlyArray<CH.Condition | undefined> = () => []) =>
+const latestScores = (
+	conds: ($: Columns) => ReadonlyArray<CH.Condition | undefined> = () => [],
+	tailSeconds = 0,
+) =>
 	fromQuery(
 		from(Datasources.aiEvaluations)
 			.select(($) => ({
@@ -56,7 +63,7 @@ const latestScores = (conds: ($: Columns) => ReadonlyArray<CH.Condition | undefi
 				serviceName: CH.argMax($.ServiceName, $.Timestamp),
 				deploymentEnv: CH.argMax($.DeploymentEnv, $.Timestamp),
 			}))
-			.where(($) => [...windowConds($), ...conds($)])
+			.where(($) => [...windowConds($, tailSeconds), ...conds($)])
 			.groupBy("traceId", "spanId", "responseId", "name", "scope", "sessionId", "scoreKey"),
 		"scores",
 	)
@@ -145,13 +152,19 @@ export interface AiEvaluationMatch {
  * session-scope scores name, and the traces its other scores grade (filed under each trace's
  * session). A score naming only a response matches neither.
  */
+/** A session in the window matches on scores written up to this long after it, as its page reads. */
+const SESSION_SCORES_TAIL_SECONDS = EVALUATION_SESSION_SCORES_TAIL_MS / 1000
+
 export function aiEvaluationMatchSubqueries(match: AiEvaluationMatch) {
 	const named = ($: Columns) => $.Scope.eq("session").and($.SessionId.neq(""))
 	return {
-		sessionIds: latestScores(($) => [$.Name.eq(match.name), named($)])
+		sessionIds: latestScores(($) => [$.Name.eq(match.name), named($)], SESSION_SCORES_TAIL_SECONDS)
 			.select(($) => ({ sessionId: $.sessionId }))
 			.where(($) => [$.verdict.eq(match.verdict)]),
-		traceIds: latestScores(($) => [$.Name.eq(match.name), $.TraceId.neq(""), CH.not(named($))])
+		traceIds: latestScores(
+			($) => [$.Name.eq(match.name), $.TraceId.neq(""), CH.not(named($))],
+			SESSION_SCORES_TAIL_SECONDS,
+		)
 			.select(($) => ({ traceId: $.traceId }))
 			.where(($) => [$.verdict.eq(match.verdict)]),
 	}
