@@ -10,7 +10,7 @@ import { ListAiSessionsRequest, type OrgId } from "@maple/domain/http"
 import type { AiSessionListItem as AiSessionListItemSchema } from "@maple/domain/http"
 import { UserId } from "@maple/primitives"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -28,6 +28,14 @@ export const SESSION_IDLE_MS = 15 * 60_000
 export const ENROLL_LOOKBACK_MS = 3_600_000
 /** Sessions one org scores per tick; past it the rest of the window is skipped and counted. */
 export const SESSIONS_PER_TICK = 300
+/** The oldest session end a tick looks at: a cursor stuck further back (flag off, a long outage)
+ *  resumes from here instead of listing everything since. */
+export const MAX_CURSOR_LAG_MS = 6 * 3_600_000
+/** How far before the cursor the list starts: it lists by span START, so a session whose last
+ *  span started before the cursor but ended after it is still found. */
+export const LIST_LOOKBACK_MS = 3_600_000
+/** A tick starts no new org past this, well inside the lane's 10-minute deadline. */
+export const TICK_BUDGET_MS = 8 * 60_000
 const LIST_PAGE = 100
 const SESSION_CONCURRENCY = 4
 const ORG_CONCURRENCY = 2
@@ -44,9 +52,12 @@ export class SessionCheckScoringError extends Schema.TaggedError<SessionCheckSco
 
 export interface SessionCheckOrgResult {
 	readonly orgId: OrgId
-	readonly outcome: "scored" | "flag_off" | "not_due" | "failed"
+	readonly outcome: "scored" | "flag_off" | "not_due" | "failed" | "deferred"
 	readonly scored: number
+	/** Sessions whose scores the gateway did not take; they keep the cursor. */
 	readonly failed: number
+	/** Sessions left unscored: their spans could not be read, or only part of them could. */
+	readonly skipped: number
 	/** Finished sessions left out by the per-tick cap. */
 	readonly capped: number
 }
@@ -65,8 +76,9 @@ export const finishedSessions = (
 /**
  * Writes each finished Agent Session's checks as `maple_check` evaluation scores, for the orgs
  * enrolled in `ai_evaluation_runs` that have the `llmEvals` flag. Enrollment happens when the org
- * first reads its evaluators. The cursor only moves once every session of the window was scored,
- * so a failed session is retried next tick; re-scores replace the earlier ones on read.
+ * first reads its evaluators. The cursor only moves once the gateway took every session's scores,
+ * so a failed send is retried next tick; re-scores replace the earlier ones on read. A session
+ * whose spans cannot be read whole is skipped, not retried: its checks would be wrong.
  */
 export class SessionCheckScoresService extends Context.Service<SessionCheckScoresService>()(
 	"@maple/backend/services/ai-evaluations/SessionCheckScoresService",
@@ -83,7 +95,11 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 				(error) => new SessionCheckScoringError({ message: error.message }),
 			)
 
+			// Orgs this isolate already enrolled: the evaluators read calls `enroll` on every load.
+			const enrolled = new Set<OrgId>()
+
 			const enroll = Effect.fn("SessionCheckScores.enroll")(function* (orgId: OrgId) {
+				if (enrolled.has(orgId)) return
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
 					db.run(
@@ -97,6 +113,7 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 							.onConflictDoNothing(),
 					),
 				)
+				enrolled.add(orgId)
 			})
 
 			const listWindow = Effect.fn("SessionCheckScores.listWindow")(function* (
@@ -109,7 +126,7 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					reads.list(
 						tenant,
 						new ListAiSessionsRequest({
-							startTime: formatWarehouseDateTime(cursorMs),
+							startTime: formatWarehouseDateTime(cursorMs - LIST_LOOKBACK_MS),
 							endTime: formatWarehouseDateTime(nowMs),
 							limit: LIST_PAGE,
 							offset,
@@ -142,8 +159,19 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 				const loaded = yield* loadAiSessionSpans(tenant, {
 					sessionId: session.sessionId,
 					window: undefined,
-				}).pipe(Effect.provideService(AiSessionReadService, reads))
-				if (loaded.spans.length === 0) return false
+				}).pipe(
+					Effect.provideService(AiSessionReadService, reads),
+					Effect.catch((error) =>
+						Effect.annotateCurrentSpan("maple.evals.load_error", error.message).pipe(
+							Effect.as(undefined),
+						),
+					),
+				)
+				// Checks over part of a session would report a cut-off turn as a failure.
+				if (loaded === undefined || loaded.spans.length === 0 || loaded.truncated !== false) {
+					yield* Effect.annotateCurrentSpan("maple.evals.skipped", true)
+					return false
+				}
 				const turns = buildSessionTurns(loaded.spans)
 				const summary = buildSessionSummary({ spans: loaded.spans, turns })
 				const report = buildSessionChecks(turns, summary, buildSessionFindings(turns, summary))
@@ -168,14 +196,15 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 
 			const scoreOrg = Effect.fn("SessionCheckScores.scoreOrg")(function* (
 				orgId: OrgId,
-				cursorMs: number,
+				storedCursorMs: number,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const empty = { orgId, scored: 0, failed: 0, capped: 0 }
+				const empty = { orgId, scored: 0, failed: 0, skipped: 0, capped: 0 }
 				const flags = yield* featureFlags.flags(orgId)
 				if (!flags.llmEvals) return { ...empty, outcome: "flag_off" } satisfies SessionCheckOrgResult
 				const nowMs = yield* Clock.currentTimeMillis
 				const upperMs = nowMs - SESSION_IDLE_MS
+				const cursorMs = Math.max(storedCursorMs, nowMs - MAX_CURSOR_LAG_MS)
 				if (upperMs <= cursorMs)
 					return { ...empty, outcome: "not_due" } satisfies SessionCheckOrgResult
 
@@ -193,17 +222,19 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					outcomes,
 					(outcome) => outcome._tag === "Success" && outcome.success,
 				)
+				const skipped = outcomes.length - failed.length - scored.length
 				const capped = finished.length - batch.length
 				yield* Effect.annotateCurrentSpan({
 					"maple.evals.sessions_finished": finished.length,
 					"maple.evals.sessions_scored": scored.length,
 					"maple.evals.sessions_failed": failed.length,
+					"maple.evals.sessions_skipped": skipped,
 					"maple.evals.sessions_capped": capped,
 				})
 				const firstFailure = Option.flatMap(Arr.head(failed), (outcome) =>
 					outcome._tag === "Failure" ? Option.some(outcome.failure) : Option.none(),
 				)
-				// A failed session keeps the cursor, so the next tick tries the window again.
+				// A failed send keeps the cursor, so the next tick tries the window again.
 				yield* dbExecute((db) =>
 					db.run(
 						PG.update(AiEvaluationRuns)
@@ -223,23 +254,48 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					outcome: failed.length === 0 ? "scored" : "failed",
 					scored: scored.length,
 					failed: failed.length,
+					skipped,
 					capped,
 				} satisfies SessionCheckOrgResult
 			})
 
 			const runTick = Effect.fn("SessionCheckScores.runTick")(function* () {
-				const enrolled = yield* dbExecute((db) =>
+				const startedMs = yield* Clock.currentTimeMillis
+				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(AiEvaluationRuns)
-							.select(($) => ({ orgId: $.orgId, cursorAt: $.cursorAt }))
+							.select(($) => ({
+								orgId: $.orgId,
+								cursorAt: $.cursorAt,
+								lastRunAt: $.lastRunAt,
+							}))
 							.where(($) => [$.scorer.eq(SCORER)]),
 					),
 				)
+				// Least recently run first, so a tick cut short by its budget starts with the orgs it left.
+				const due = Arr.sort(
+					rows,
+					Order.mapInput(Order.Number, (row: (typeof rows)[number]) =>
+						row.lastRunAt === null ? -1 : row.lastRunAt,
+					),
+				)
+				const deferred = (orgId: OrgId): SessionCheckOrgResult => ({
+					orgId,
+					outcome: "deferred",
+					scored: 0,
+					failed: 0,
+					skipped: 0,
+					capped: 0,
+				})
 				// One org's failure must not stop the rest; its cursor stays and the next tick retries.
 				const results = yield* Effect.forEach(
-					enrolled,
+					due,
 					(row) =>
-						scoreOrg(row.orgId, row.cursorAt).pipe(
+						Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
+							nowMs - startedMs > TICK_BUDGET_MS
+								? Effect.succeed(deferred(row.orgId))
+								: scoreOrg(row.orgId, row.cursorAt),
+						).pipe(
 							Effect.catch((error) =>
 								Effect.logWarning("Session check scoring failed for an org").pipe(
 									Effect.annotateLogs({ orgId: row.orgId, error: error.message }),
@@ -248,6 +304,7 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 										outcome: "failed",
 										scored: 0,
 										failed: 0,
+										skipped: 0,
 										capped: 0,
 									}),
 								),
@@ -259,6 +316,7 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					orgs: results.length,
 					sessionsScored: Arr.reduce(results, 0, (sum, result) => sum + result.scored),
 					orgsFailed: Arr.filter(results, (result) => result.outcome === "failed").length,
+					orgsDeferred: Arr.filter(results, (result) => result.outcome === "deferred").length,
 				}
 			})
 
