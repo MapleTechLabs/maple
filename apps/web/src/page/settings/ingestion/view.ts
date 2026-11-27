@@ -100,7 +100,7 @@ const statusBanner = (h: H, model: Model): Html => {
 }
 
 /** The OTLP endpoint plus the org's ingest key pair. The pair is admin-only, so members see the endpoint. */
-const endpointAndKeysSection = (h: H, model: Model): Html =>
+export const endpointAndKeysSection = (h: H, model: Model, isHosted: boolean): Html =>
 	settingsSection(
 		h,
 		{
@@ -137,7 +137,8 @@ const endpointAndKeysSection = (h: H, model: Model): Html =>
 					}),
 					...(canViewKeys(model) ? ingestKeyRows(h, model) : []),
 					manageSourcesRow(h),
-					privateLinkRow(h),
+					// PrivateLink reaches Maple's own ingest, so a self-hosted install has nothing to request.
+					...(isHosted ? [privateLinkRow(h)] : []),
 				],
 			),
 		],
@@ -246,13 +247,13 @@ const addServiceSection = (h: H, model: Model): Html => {
 	)
 }
 
-/** The tab takes everything from its Model. */
-type NoInputs = Readonly<{ readonly none?: never }>
+/** Whether this is hosted Maple (Clerk auth) rather than a self-hosted install. */
+export type ViewInputs = Readonly<{ readonly isHosted: boolean }>
 
-export const view = Submodel.defineView<Model, Message, NoInputs>((model, _inputs, h) =>
+export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	settingsSections(h, [
 		statusBanner(h, model),
-		endpointAndKeysSection(h, model),
+		endpointAndKeysSection(h, model, inputs.isHosted),
 		addServiceSection(h, model),
 		...recommendationsSection(h, model),
 		ingestRulesSection(h, model.ingestRules, canManageRules(model)),

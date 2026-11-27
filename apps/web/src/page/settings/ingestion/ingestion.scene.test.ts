@@ -14,6 +14,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, type InitOptions, update } from "./update"
 import { recommendationsSection } from "./view-rules"
+import { endpointAndKeysSection } from "./view"
 
 const ADMIN = Policy.grantsOf(["org:admin"])
 
@@ -274,6 +275,26 @@ describe("ingestion tab", () => {
 			),
 			expectView(role("button", { name: "Reopen" })).toBeDisabled(),
 			expectView(role("group", { name: triageDenial })).toExist(),
+		)
+	})
+
+	test("hosted Maple offers PrivateLink as a prefilled support email; a self-hosted install does not", () => {
+		const link = role("link", { name: "Request PrivateLink" })
+		const sectionView = Submodel.defineView<Model, Message, Readonly<{ readonly isHosted: boolean }>>(
+			(model, inputs, h) => endpointAndKeysSection(h, model, inputs.isHosted),
+		)
+		scene(
+			{ update: step, view: withViewInputs(sectionView, { isHosted: true })() },
+			given(init(options).model),
+			expectView(link).toHaveAttr(
+				"href",
+				"mailto:support@maple.dev?subject=AWS%20PrivateLink%20request&body=AWS%20region%3A%0AAWS%20account%20ID%20that%20will%20connect%3A%0AMaple%20organization%3A%0A",
+			),
+		)
+		scene(
+			{ update: step, view: withViewInputs(sectionView, { isHosted: false })() },
+			given(init(options).model),
+			expectView(link).not.toExist(),
 		)
 	})
 })
