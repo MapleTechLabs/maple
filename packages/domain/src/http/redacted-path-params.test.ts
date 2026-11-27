@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Array as Arr, Context, String as Str } from "effect"
+import { Array as Arr, Context, Predicate, Schema, SchemaAST, String as Str } from "effect"
 import { HttpApi, type HttpApiGroup } from "effect/http-api"
 import { MapleApi } from "./api"
 import { MapleInternalApi } from "./internal-api"
@@ -15,6 +15,20 @@ type Route = {
 	readonly redacted: ReadonlyArray<string>
 }
 
+// HttpApi redacts a param whose schema is `Schema.Redacted` without a `RedactedNames` entry.
+const isRedactedSchema = (ast: SchemaAST.AST) =>
+	SchemaAST.isDeclaration(ast) &&
+	Predicate.hasProperty(ast.annotations?.["representation"], "id") &&
+	ast.annotations["representation"].id === "effect/schema/Redacted"
+
+const redactedBySchema = (params: Schema.Top | undefined): ReadonlyArray<string> =>
+	params !== undefined && SchemaAST.isObjects(params.ast)
+		? Arr.map(
+				Arr.filter(params.ast.propertySignatures, (signature) => isRedactedSchema(signature.type)),
+				(signature) => String(signature.name),
+			)
+		: []
+
 const routesOf = <Groups extends HttpApiGroup.Constraint>(api: HttpApi.HttpApi<string, Groups>) => {
 	const routes: Array<Route> = []
 	HttpApi.reflect(api, {
@@ -23,7 +37,10 @@ const routesOf = <Groups extends HttpApiGroup.Constraint>(api: HttpApi.HttpApi<s
 			routes.push({
 				route: `${endpoint.method} ${endpoint.path}`,
 				params: Arr.map(Arr.filter(Str.split(endpoint.path, "/"), Str.startsWith(":")), Str.slice(1)),
-				redacted: Context.getOrUndefined(mergedAnnotations, HttpApi.RedactedNames)?.params ?? [],
+				redacted: [
+					...(Context.getOrUndefined(mergedAnnotations, HttpApi.RedactedNames)?.params ?? []),
+					...redactedBySchema(endpoint.params),
+				],
 			}),
 	})
 	return routes

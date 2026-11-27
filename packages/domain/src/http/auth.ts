@@ -1,4 +1,4 @@
-import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { OrgId, UserId } from "@maple/primitives"
 import {
@@ -299,17 +299,21 @@ export class AuthApiGroup extends HttpApiGroup.make("auth")
  * Login approvals: each approve mints a credential for the signed-in user, so
  * these accept only a human session, never an API key (`SessionAuthorization`).
  */
+// A pending login's user code approves a CLI session. As a `Redacted` param, server spans,
+// request logs and client errors record it as `REDACTED` with no `RedactedNames` entry.
+const CliUserCodeParams = { userCode: Schema.Redacted(Schema.String) }
+
 export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 	.add(
 		HttpApiEndpoint.get("cliDeviceInspect", "/cli/device/:userCode", {
-			params: { userCode: Schema.String },
+			params: CliUserCodeParams,
 			success: CliDeviceInfoResponse,
 			error: [CliDeviceNotFoundError, CliDeviceExpiredError, CliDevicePersistenceError],
 		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("cliDeviceApprove", "/cli/device/:userCode/approve", {
-			params: { userCode: Schema.String },
+			params: CliUserCodeParams,
 			success: CliDeviceActionResponse,
 			error: [
 				CliDeviceNotFoundError,
@@ -321,7 +325,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 	)
 	.add(
 		HttpApiEndpoint.post("cliDeviceDeny", "/cli/device/:userCode/deny", {
-			params: { userCode: Schema.String },
+			params: CliUserCodeParams,
 			success: CliDeviceActionResponse,
 			error: [
 				CliDeviceNotFoundError,
@@ -367,6 +371,4 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 		}).annotate(EndpointAccess, "personal"),
 	)
 	.prefix("/api/auth")
-	.middleware(SessionAuthorization)
-	// A pending login's user code approves a CLI session: spans and request logs record it as `REDACTED`.
-	.annotate(HttpApi.RedactedNames, { params: ["userCode"] }) {}
+	.middleware(SessionAuthorization) {}
