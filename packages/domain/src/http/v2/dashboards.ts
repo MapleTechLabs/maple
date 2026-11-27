@@ -51,7 +51,7 @@ import {
 	ShareWidgetNotFoundError,
 } from "../share"
 import { WireValue } from "../../wire"
-import { EndpointAccess, handler, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -580,7 +580,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardMutation,
 			error: dashboardCreateErrors,
 		})
-			.annotate(EndpointAccess, [requires("dashboards:edit"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:edit"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "createDashboard",
@@ -596,7 +596,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardPersesImportResponse,
 			error: dashboardCreateErrors,
 		})
-			.annotate(EndpointAccess, [requires("dashboards:edit"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:edit"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "importPersesDashboard",
@@ -612,7 +612,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardGrafanaImportResponse,
 			error: dashboardCreateErrors,
 		})
-			.annotate(EndpointAccess, [requires("dashboards:edit"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:edit"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "importGrafanaDashboard",
@@ -718,7 +718,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardMutation,
 			error: [dashboardNotFound, ...dashboardUpdateErrors],
 		})
-			.annotate(EndpointAccess, [requires("dashboards:edit"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:edit"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "updateDashboard",
@@ -787,7 +787,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardMutation,
 			error: [dashboardNotFound, dashboardVersionNotFound, ...dashboardUpdateErrors],
 		})
-			.annotate(EndpointAccess, [requires("dashboards:edit"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:edit"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "restoreDashboardVersion",
@@ -839,7 +839,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				shareWidgetNotFound,
 			],
 		})
-			.annotate(EndpointAccess, [requires("dashboards:share"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:share"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "upsertDashboardWidgetShare",
@@ -863,7 +863,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardStoredConfigInvalid,
 			],
 		})
-			.annotate(EndpointAccess, [requires("dashboards:share"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:share"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "rotateDashboardWidgetShare",
@@ -917,7 +917,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardStoredConfigInvalid,
 			],
 		})
-			.annotate(EndpointAccess, [requires("dashboards:share"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:share"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "upsertDashboardShare",
@@ -941,7 +941,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardStoredConfigInvalid,
 			],
 		})
-			.annotate(EndpointAccess, [requires("dashboards:share"), handler("query:sql")])
+			.annotate(EndpointAccess, [requires("dashboards:share"), handlerChecks("query:sql")])
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "rotateDashboardShare",

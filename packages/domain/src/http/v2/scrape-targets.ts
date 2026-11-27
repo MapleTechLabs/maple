@@ -22,7 +22,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess, handler, requires } from "../endpoint-access"
+import { EndpointAccess, handlerChecks, requires } from "../endpoint-access"
 
 /** `scrp_…` public ID ⇄ internal `ScrapeTargetId` (raw UUID). */
 export const ScrapeTargetPublicId = PublicId(PublicIdPrefixes.scrapeTarget, ScrapeTargetId)
@@ -389,7 +389,7 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 			success: ScrapeTargetList,
 			error: [V2ParameterInvalid.schema, scrapePersistence, scrapeStoredConfigInvalid],
 		})
-			.annotate(EndpointAccess, handler("scrape_targets:manage"))
+			.annotate(EndpointAccess, handlerChecks("scrape_targets:manage"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "listScrapeTargets",
@@ -425,7 +425,7 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 			success: V2ScrapeTarget,
 			error: [scrapeNotFound, scrapePersistence, scrapeStoredConfigInvalid],
 		})
-			.annotate(EndpointAccess, handler("scrape_targets:manage"))
+			.annotate(EndpointAccess, handlerChecks("scrape_targets:manage"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "getScrapeTarget",
@@ -517,4 +517,4 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 				"Metrics endpoints Maple scrapes on a schedule — self-hosted Prometheus endpoints and PlanetScale branch metrics. Manage targets, probe them on demand, and inspect recent scrape checks. Credentials are write-only.",
 		}),
 	)
-	.annotate(EndpointAccess, handler("scrape_targets:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("scrape_targets:manage")) {}

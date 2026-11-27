@@ -10,7 +10,7 @@ import {
 	OrgClickHouseSettingsUpstreamUnavailableError,
 	OrgClickHouseSettingsValidationError,
 } from "./org-clickhouse-settings-errors"
-import { EndpointAccess, handler } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 export * from "./org-clickhouse-settings-errors"
 
@@ -224,7 +224,7 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 		HttpApiEndpoint.get("get", "/", {
 			success: OrgClickHouseSettingsResponse,
 			error: [OrgClickHouseSettingsForbiddenError, OrgClickHouseSettingsPersistenceError],
-		}).annotate(EndpointAccess, handler("warehouse:manage")),
+		}).annotate(EndpointAccess, handlerChecks("warehouse:manage")),
 	)
 	.add(
 		HttpApiEndpoint.put("upsert", "/", {
@@ -251,7 +251,7 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 				OrgClickHouseSettingsUpstreamRejectedError,
 				OrgClickHouseSettingsUpstreamUnavailableError,
 			],
-		}).annotate(EndpointAccess, handler("warehouse:manage")),
+		}).annotate(EndpointAccess, handlerChecks("warehouse:manage")),
 	)
 	.add(
 		// Kicks off the background apply Workflow and returns immediately. Heavy
@@ -272,7 +272,7 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 		HttpApiEndpoint.get("applySchemaStatus", "/apply-schema/status", {
 			success: OrgClickHouseApplySchemaStatus,
 			error: [OrgClickHouseSettingsForbiddenError, OrgClickHouseSettingsPersistenceError],
-		}).annotate(EndpointAccess, handler("warehouse:manage")),
+		}).annotate(EndpointAccess, handlerChecks("warehouse:manage")),
 	)
 	.add(
 		HttpApiEndpoint.get("collectorConfig", "/collector-config", {
@@ -283,7 +283,7 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 				OrgClickHouseSettingsPersistenceError,
 				OrgClickHouseSettingsEncryptionError,
 			],
-		}).annotate(EndpointAccess, handler("warehouse:manage")),
+		}).annotate(EndpointAccess, handlerChecks("warehouse:manage")),
 	)
 	.add(
 		HttpApiEndpoint.delete("delete", "/", {
@@ -293,4 +293,4 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 	)
 	.prefix("/internal/org-clickhouse-settings")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, handler("warehouse:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("warehouse:manage")) {}

@@ -8,7 +8,7 @@ import {
 	CostConnectionValidationError,
 } from "./cost-connections"
 import { SessionAuthorization } from "./current-tenant"
-import { EndpointAccess, handler } from "./endpoint-access"
+import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 /** Far above any Cloudflare token (about 40 to 60 characters): it only bounds what the request carries. */
 export const CLOUDFLARE_COST_TOKEN_MAX_LENGTH = 256
@@ -40,4 +40,4 @@ export class CloudflareCostApiGroup extends HttpApiGroup.make("cloudflareCost")
 	)
 	.prefix("/internal/cost/cloudflare")
 	.middleware(SessionAuthorization)
-	.annotate(EndpointAccess, handler("integrations:manage")) {}
+	.annotate(EndpointAccess, handlerChecks("integrations:manage")) {}

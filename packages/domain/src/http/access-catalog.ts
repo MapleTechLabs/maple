@@ -8,7 +8,7 @@ import {
 	requiredPermissions,
 	ScopedTelemetry,
 } from "./endpoint-access"
-import { AuthorizationV2, requiredScopeForRoute } from "./v2/auth"
+import { AuthorizationV2, isRegisteredRead } from "./v2/auth"
 
 // What each permission opens, read off the API values the gate itself reads, so it cannot say
 // something the gate does not do. It imports no API: `maple-access-catalog.ts` reads Maple's.
@@ -34,13 +34,6 @@ export interface CatalogApi {
 	readonly identifier: string
 	readonly groups: Rec.ReadonlyRecord<string, CatalogGroup>
 }
-
-/**
- * Whether an unmarked `/v2` write is a read by the scope registry (a POST search), which the gate
- * lets through with `telemetry:read` rather than refusing. `routePath` is the route template.
- */
-export const isRegisteredRead = (called: CalledEndpoint, routePath: string): boolean =>
-	isUnmarked(called) && requiredScopeForRoute(called.endpoint.method, routePath)?.access === "read"
 
 /** What one gated endpoint asks of its caller. */
 export interface EndpointAccessEntry {
