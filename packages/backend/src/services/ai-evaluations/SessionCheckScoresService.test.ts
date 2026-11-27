@@ -406,7 +406,7 @@ describe("SessionCheckScoresService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
-	it.effect("keeps the cursor when the list stops before the sessions it has not seen", () => {
+	it.effect("moves on, saying so, when the lookback alone overflows the list", () => {
 		const world = makeWorld({ crowded: true })
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(NOW)
@@ -414,7 +414,9 @@ describe("SessionCheckScoresService", () => {
 			yield* scores.enroll(ORG)
 			yield* scores.runTick()
 			assert.strictEqual(world.bodies.length, 0)
-			assert.deepStrictEqual(yield* runRow, [{ cursorAt: NOW - ENROLL_LOOKBACK_MS, lastError: null }])
+			const [row] = yield* runRow
+			assert.strictEqual(row?.cursorAt, NOW - SESSION_IDLE_MS)
+			assert.ok(Str.includes("not scored")(row?.lastError ?? ""))
 		}).pipe(Effect.provide(world.layer))
 	})
 

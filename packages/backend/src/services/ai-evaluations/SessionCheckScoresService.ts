@@ -38,7 +38,7 @@ export const LIST_LOOKBACK_MS = 3_600_000
 export const TICK_BUDGET_MS = 8 * 60_000
 const LIST_PAGE = 100
 /** Sessions one tick lists, scored or not; past it the cursor stops where the list did. */
-const LIST_MAX_ROWS = 1_000
+const LIST_MAX_ROWS = 2_000
 const SESSION_CONCURRENCY = 4
 const ORG_CONCURRENCY = 2
 
@@ -225,21 +225,22 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 				const batch = Arr.take(finished, SESSIONS_PER_TICK)
 				// The next cursor leaves every session this tick did not get to eligible: those past the
 				// batch end after its last one, and those past a cut list started (so ended) after its last row.
-				const nextCursorMs = Math.max(
-					cursorMs,
-					Math.min(
-						upperMs,
-						Option.match(Arr.get(finished, SESSIONS_PER_TICK), {
+				const listCutMs = listed.complete
+					? upperMs
+					: Option.match(Arr.last(listed.rows), {
 							onNone: () => upperMs,
-							onSome: (row) => parseWarehouseDateTime(row.endTime) - 1,
-						}),
-						listed.complete
-							? upperMs
-							: Option.match(Arr.last(listed.rows), {
-									onNone: () => upperMs,
-									onSome: (row) => parseWarehouseDateTime(row.startTime) - 1,
-								}),
-					),
+							onSome: (row) => parseWarehouseDateTime(row.startTime) - 1,
+						})
+				// A list cut before the cursor means the lookback alone overflowed it: holding the cursor
+				// would list the same rows forever, so the tick moves on and says what it skipped.
+				const overflowed = listCutMs <= cursorMs
+				const nextCursorMs = Math.min(
+					upperMs,
+					Option.match(Arr.get(finished, SESSIONS_PER_TICK), {
+						onNone: () => upperMs,
+						onSome: (row) => parseWarehouseDateTime(row.endTime) - 1,
+					}),
+					overflowed ? upperMs : listCutMs,
 				)
 				const ingestKey = (yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID)).publicKey
 				const outcomes = yield* Effect.forEach(
@@ -266,6 +267,7 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 					"maple.evals.sessions_skipped": skipped,
 					"maple.evals.sessions_capped": capped,
 					"maple.evals.list_complete": listed.complete,
+					"maple.evals.list_overflowed": overflowed,
 				})
 				const firstFailure = Option.flatMap(Arr.head(failed), (outcome) =>
 					outcome._tag === "Failure" ? Option.some(outcome.failure) : Option.none(),
@@ -278,7 +280,10 @@ export class SessionCheckScoresService extends Context.Service<SessionCheckScore
 								...(retryable.length === 0 ? { cursorAt: nextCursorMs } : undefined),
 								lastRunAt: nowMs,
 								lastError: Option.match(firstFailure, {
-									onNone: () => null,
+									onNone: () =>
+										overflowed
+											? `More than ${LIST_MAX_ROWS} sessions in the window; the rest were not scored.`
+											: null,
 									onSome: (error) => error.message,
 								}),
 							})
