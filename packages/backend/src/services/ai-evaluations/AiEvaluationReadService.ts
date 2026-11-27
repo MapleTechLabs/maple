@@ -208,6 +208,12 @@ const make = Effect.gen(function* () {
 						]),
 					),
 				),
+				// Resolving responses is extra: when it fails, the scores still read, unresolved.
+				Effect.catch((error) =>
+					Effect.annotateCurrentSpan("maple.ai.response_spans_error", error.message).pipe(
+						Effect.as<ResponseSpans>({}),
+					),
+				),
 			)
 
 	/** The spans of the rows' scores that name only a response. */
