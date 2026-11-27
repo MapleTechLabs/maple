@@ -259,11 +259,25 @@ describe("v2 aws integration over HTTP", () => {
 		const refused = await harness.request("GET", `${CONNECTIONS}/${id}/setup`, reader.secret)
 		expect([refused.status, refused.body.error.code]).toEqual([403, "insufficient_scope"])
 		expect(refused.body.error.message).toContain('"integrations:write"')
-		// The refusal is recorded like every other scope refusal, against the key that tried.
+		// Each refusal is recorded against the key that tried: the scope refusal at the gate, and the
+		// member's two inside the handler, which name the permission it lacked.
 		const denied = await harness.audited("api.request")
-		expect(Arr.map(denied, (entry) => [entry.outcome, entry.apiKeyId, entry.metadata])).toEqual([
-			["denied", reader.id, { method: "GET", path: `${CONNECTIONS}/${id}/setup` }],
-		])
+		expect(Arr.map(denied, (entry) => [entry.outcome, entry.apiKeyId, entry.metadata])).toEqual(
+			expect.arrayContaining([
+				["denied", reader.id, { method: "GET", path: `${CONNECTIONS}/${id}/setup` }],
+				[
+					"denied",
+					member.id,
+					{ method: "GET", path: `${CONNECTIONS}/${id}/setup`, permission: "integrations:manage" },
+				],
+				[
+					"denied",
+					member.id,
+					{ method: "DELETE", path: `${CONNECTIONS}/${id}`, permission: "integrations:manage" },
+				],
+			]),
+		)
+		expect(denied).toHaveLength(3)
 		const writer = await harness.adminKey(["integrations:write"])
 		expect((await harness.request("GET", `${CONNECTIONS}/${id}/setup`, writer.secret)).status).toBe(200)
 
