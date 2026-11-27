@@ -29,7 +29,7 @@ export const MAPLE_EVALUATION_ATTRS = {
 	scope: "maple_ai.evaluation.scope",
 	/** An explicit `pass` / `fail`, read before the label (a judge whose label is categorical). */
 	verdict: "maple_ai.evaluation.verdict",
-	/** `boolean`: a value of 1 passes and 0 fails (Langfuse BOOLEAN scores, other 0/1 checks). */
+	/** `boolean`: a value of 1 passes and 0 fails. */
 	scoreType: "maple_ai.evaluation.score.type",
 	/** The session a `session`-scope score grades. */
 	sessionId: "maple_ai.evaluation.session.id",
