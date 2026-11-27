@@ -1,5 +1,5 @@
 import { Array as Arr, Context, Record as Rec } from "effect"
-import type { Permission } from "../policy"
+import { type Permission, SCOPED_READ } from "../policy"
 import { Authorization, RegionlessSessionAuthorization, SessionAuthorization } from "./current-tenant"
 import {
 	type CalledEndpoint,
@@ -103,8 +103,13 @@ export interface OpenedEndpoint extends EndpointAccessEntry {
 	readonly use: PermissionUse
 }
 
+// The scoped read stands in for Read telemetry on an endpoint marked for it, and nowhere else.
+const isRequired = (entry: EndpointAccessEntry, permission: Permission): boolean =>
+	Arr.contains(entry.requires, permission) ||
+	(permission === SCOPED_READ && entry.scoped && Arr.contains(entry.requires, "telemetry:read"))
+
 const useOf = (entry: EndpointAccessEntry, permission: Permission): PermissionUse | undefined =>
-	Arr.contains(entry.requires, permission)
+	isRequired(entry, permission)
 		? "requires"
 		: Arr.contains(entry.handler, permission)
 			? "handler"

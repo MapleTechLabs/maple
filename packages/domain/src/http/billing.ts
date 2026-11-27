@@ -716,7 +716,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getDailySpend", "/daily-spend", {
 			success: DailySpendResponse,
 			error: [BillingForbiddenError, ...billingTransportErrors, WarehouseQueryError],
-		}).annotate(EndpointAccess, ["personal", handlerChecks("billing:manage")]),
+		}).annotate(EndpointAccess, ["personal", handlerChecks("telemetry:read", "billing:manage")]),
 	)
 	.add(
 		HttpApiEndpoint.put("updateBillingControls", "/billing-controls", {
