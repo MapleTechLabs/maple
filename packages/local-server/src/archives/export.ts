@@ -645,7 +645,6 @@ export const planHourShards = (
 ): ShardPlan[] => {
 	const plans: ShardPlan[] = []
 	for (const p of parts) {
-		const domainWidth = p.offsetMax - p.offsetMin + 1
 		const rowsPerShard = Math.max(1, settings.maxShardRows)
 		for (let lo = p.offsetMin; lo <= p.offsetMax; lo += rowsPerShard) {
 			const hiExclusive = Math.min(lo + rowsPerShard, p.offsetMax + 1)
@@ -655,9 +654,6 @@ export const planHourShards = (
 				matchingRows: p.matchingRows,
 			})
 		}
-		// domainWidth is informational; if a part's domain is empty of matching
-		// rows it was filtered out by enumeratePartsForHour (HAVING matching > 0).
-		void domainWidth
 	}
 	return plans
 }
