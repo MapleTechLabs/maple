@@ -154,6 +154,11 @@ export function trackLanding(event: LandingEvent, props?: TrackProps): void {
 	MapleBrowser.track(event, props)
 }
 
+/** Record a failure that leaves part of the page broken, as an error the errors page groups. */
+export function captureLandingError(error: unknown, attributes?: Record<string, string>): void {
+	MapleBrowser.captureException(error, { attributes })
+}
+
 /**
  * Attach the signed-in user to the session. Called from the NavBar island,
  * which is the one place Clerk is mounted. The email is deliberately left off —

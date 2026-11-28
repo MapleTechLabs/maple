@@ -5,7 +5,7 @@ import { Command, Mount, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { trackLanding } from "../../lib/telemetry"
+import { captureLandingError, trackLanding } from "../../lib/telemetry"
 import { PART } from "./parts"
 import type { Viewer, ViewerEvent } from "./viewer"
 
@@ -216,6 +216,8 @@ let gestures: Promise<typeof import("./viewer")> | undefined
 const loadGestures = () => {
 	gestures ??= import("./viewer").catch((cause: unknown) => {
 		gestures = undefined
+		// Every press is dropped until a load succeeds: the error is how a dead lightbox shows up.
+		captureLandingError(cause, { "maple.landing.component": "lightbox" })
 		return Promise.reject(cause)
 	})
 	return gestures

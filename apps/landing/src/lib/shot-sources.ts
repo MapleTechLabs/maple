@@ -14,11 +14,11 @@ const Manifest = Schema.fromJsonString(
 		Schema.Struct({ width: Schema.Number, widths: Schema.Array(Schema.Number) }),
 	),
 )
-type Manifest = typeof Manifest.Type
+export type ShotManifest = typeof Manifest.Type
 
-let manifest: Manifest | undefined
+let manifest: ShotManifest | undefined
 
-const load = (): Manifest => {
+const load = (): ShotManifest => {
 	if (manifest !== undefined) return manifest
 	const path = join(process.cwd(), SHOT_VARIANTS_MANIFEST)
 	manifest = existsSync(path)
@@ -34,17 +34,21 @@ export type ShotSources = Readonly<{ srcset?: string; sizes?: string }>
  * size from layout (`auto`, lazy images) pick the copy for the drawn width; the rest assume the
  * widest case, so no plate ever gets a softer copy than its box needs.
  */
-export const shotSources = (src: string, zoom = 1): ShotSources => {
-	const entry = load()[src]
-	if (entry === undefined) return {}
-	const copies = entry.widths.map(
-		(w) => `${src.replace("/screenshots/", `/screenshots/${SHOT_VARIANT_DIR}/${w}/`)} ${w}w`,
-	)
-	return {
-		srcset: [...copies, `${src} ${entry.width}w`].join(", "),
-		sizes: `auto, ${Math.round(Math.max(1, zoom) * 100)}vw`,
+export const shotSourcesIn =
+	(copies: ShotManifest) =>
+	(src: string, zoom = 1): ShotSources => {
+		const entry = copies[src]
+		if (entry === undefined) return {}
+		const narrower = entry.widths.map(
+			(w) => `${src.replace("/screenshots/", `/screenshots/${SHOT_VARIANT_DIR}/${w}/`)} ${w}w`,
+		)
+		return {
+			srcset: [...narrower, `${src} ${entry.width}w`].join(", "),
+			sizes: `auto, ${Math.round(Math.max(1, zoom) * 100)}vw`,
+		}
 	}
-}
+
+export const shotSources = (src: string, zoom = 1): ShotSources => shotSourcesIn(load())(src, zoom)
 
 const BARE_SHOT = /<img\b(?![^>]*\ssrcset=)([^>]*?)\ssrc="(\/screenshots\/[^"]+\.webp)"([^>]*)>/g
 
@@ -52,10 +56,14 @@ const BARE_SHOT = /<img\b(?![^>]*\ssrcset=)([^>]*?)\ssrc="(\/screenshots\/[^"]+\
  * Gives every capture a page writes as a bare `<img>` (guides, docs prose, changelog) its copies.
  * A plate that already has a `srcset` (a cropped window sizes its own) is left as it is.
  */
-export const withShotSources = (html: string): string =>
-	html.replace(BARE_SHOT, (tag: string, before: string, src: string, after: string) => {
-		const { srcset, sizes } = shotSources(src)
-		return srcset === undefined || sizes === undefined
-			? tag
-			: `<img${before} src="${src}" srcset="${srcset}" sizes="${sizes}"${after}>`
-	})
+export const withShotSourcesIn =
+	(copies: ShotManifest) =>
+	(html: string): string =>
+		html.replace(BARE_SHOT, (tag: string, before: string, src: string, after: string) => {
+			const { srcset, sizes } = shotSourcesIn(copies)(src)
+			return srcset === undefined || sizes === undefined
+				? tag
+				: `<img${before} src="${src}" srcset="${srcset}" sizes="${sizes}"${after}>`
+		})
+
+export const withShotSources = (html: string): string => withShotSourcesIn(load())(html)
