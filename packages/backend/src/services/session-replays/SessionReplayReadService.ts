@@ -7,6 +7,7 @@ import { Context, Effect, Layer, Option } from "effect"
 import type { DateTime } from "effect"
 import { MAX_REPLAY_CHUNKS_PER_REQUEST, MAX_REPLAY_EVENTS_RESPONSE_BYTES } from "@maple/domain/http/v2"
 import { CH } from "@maple/query-engine"
+import { isMissingReplayRetentionDays } from "@maple/backend/services/warehouse/missing-table"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	ReplayBlobStore,
@@ -164,24 +165,37 @@ const make = Effect.gen(function* () {
 		window: SessionWindow,
 		range: EventChunkRange,
 	) {
-		const compiled = CH.compile(
-			CH.sessionReplayEventsQuery({
-				...window,
-				fromChunkSeq: range.fromChunkSeq,
-				toChunkSeq: range.toChunkSeq,
-				limit: range.limit,
-				offset: range.offset,
-			}),
-			{ orgId: tenant.orgId, sessionId },
+		const read = (unstampedPeriods: boolean) =>
+			warehouse.compiledQueryBounded(
+				tenant,
+				CH.compile(
+					CH.sessionReplayEventsQuery({
+						...window,
+						fromChunkSeq: range.fromChunkSeq,
+						toChunkSeq: range.toChunkSeq,
+						limit: range.limit,
+						offset: range.offset,
+						unstampedPeriods,
+					}),
+					{ orgId: tenant.orgId, sessionId },
+				),
+				{
+					profile: "list",
+					context: "v2GetReplayEvents",
+					responseLimits: {
+						maxRows: MAX_REPLAY_CHUNKS_PER_REQUEST + 1,
+						maxBytes: MAX_REPLAY_EVENTS_RESPONSE_BYTES,
+					},
+				},
+			)
+		// A self-managed cluster below migration 0075 has no RetentionDays: read the default.
+		const rows = yield* read(false).pipe(
+			Effect.catchIf(isMissingReplayRetentionDays, () =>
+				Effect.annotateCurrentSpan({ "maple.replay.unstamped_periods": true }).pipe(
+					Effect.andThen(read(true)),
+				),
+			),
 		)
-		const rows = yield* warehouse.compiledQueryBounded(tenant, compiled, {
-			profile: "list",
-			context: "v2GetReplayEvents",
-			responseLimits: {
-				maxRows: MAX_REPLAY_CHUNKS_PER_REQUEST + 1,
-				maxBytes: MAX_REPLAY_EVENTS_RESPONSE_BYTES,
-			},
-		})
 		return yield* someUnlessMissing(tenant, sessionId, window, range.offset)(rows)
 	})
 

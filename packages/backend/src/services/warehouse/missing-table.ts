@@ -117,6 +117,10 @@ export const isMissingServiceIdentityColumns = namesDriftedColumn(
 	/[`'](?:service_platforms_hourly\.)?(?:ScopeNames|TelemetrySdkName|TelemetrySdkLanguage|OsName|ClassifiedSpanCount|ServerSpanCount|ConsumerSpanCount|RootSpanCount)[`']/,
 )
 
+/** `session_replay_events` predates `RetentionDays` (migration 0075): schema drift naming it. Replay
+ * chunks then read the column default, which is what an unstamped row holds. */
+export const isMissingReplayRetentionDays = namesDriftedColumn(/\bRetentionDays\b/)
+
 /** `service_usage` predates its profile columns (migration 0068): schema drift naming one of them.
  * The billing chart then reads no profile usage. */
 export const isMissingServiceUsageProfiles = namesDriftedColumn(/\bProfile(?:RowCount|SizeBytes)\b/)

@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { RetentionOverrides } from "@maple/domain/retention"
+import { StoredRetentionOverrides } from "@maple/domain/retention"
 import { OrgId, UserId } from "@maple/primitives"
 
 // One row per org that changed its retention; a missing row or signal means the default.
@@ -7,7 +7,7 @@ import { OrgId, UserId } from "@maple/primitives"
 export const OrgRetentionPolicies = PG.table("org_retention_policies", {
 	columns: {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		retentionDays: PG.column(PG.jsonb(RetentionOverrides), {
+		retentionDays: PG.column(PG.jsonb(StoredRetentionOverrides), {
 			name: "retention_days",
 			defaultExpr: "'{}'::jsonb",
 		}),

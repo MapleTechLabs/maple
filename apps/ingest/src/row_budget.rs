@@ -3,7 +3,9 @@
 //! by the request's size. Mirrors `telemetry`'s encoders: never below what they write.
 
 use crate::retention::RetentionSignal;
-use crate::telemetry::{self, AttributeMappingRule, RowKind, SamplingPolicy, SourceStamps};
+use crate::telemetry::{
+    self, AttributeMappingRule, EventsStamps, RowKind, SamplingPolicy, SourceStamps,
+};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
@@ -351,9 +353,18 @@ pub struct RowPlan {
     pub pieces: Vec<RowPiece>,
     /// The shard key every piece is written under: the one the whole request had.
     pub routing_key: u64,
+    /// Traces only: what each resource's rows carry as `events_retention_days`.
+    pub events: EventsStamps,
 }
 
 impl RowPlan {
+    /// The plan, its trace rows carrying `events` as their sources' events periods.
+    #[must_use]
+    pub fn with_events(mut self, events: EventsStamps) -> Self {
+        self.events = events;
+        self
+    }
+
     /// The most any one piece holds at once.
     pub fn largest_piece_heap(&self) -> u64 {
         self.pieces
@@ -482,6 +493,7 @@ impl Tally {
             total: self.total,
             pieces: self.pieces,
             routing_key,
+            events: EventsStamps::default(),
         }
     }
 }

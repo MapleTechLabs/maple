@@ -1,10 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Effect, Exit, Layer, Option, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { spanDetail } from "./span-detail"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
 import { OrgId } from "@maple/domain"
+import { WarehouseQuotaExceededError } from "@maple/domain/http/warehouse-errors"
 
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const SPAN_ID = "b7ad6b7169203331"
@@ -49,22 +50,52 @@ const probeHits = (sql: string) => {
  * A warehouse holding the span. A hinted (bounded) lookup misses unless `boundedHit`, as if the
  * hint pointed elsewhere; the trace-bounds probe answers when `indexed`.
  */
-const makeExecutor = (
-	sqls: string[],
-	opts: { readonly indexed?: boolean; readonly boundedHit?: boolean } = {},
-): WarehouseExecutorApi => ({
+type ExecutorOpts = {
+	readonly indexed?: boolean
+	readonly boundedHit?: boolean
+	/** The probe at this index, and every later one, runs past its time limit. */
+	readonly overBudgetFromProbe?: number
+	/** The span starts here, before the probed bounds: a bounded lookup hits only if it reaches back. */
+	readonly spanStart?: string
+	/** The span read itself runs past its time limit. */
+	readonly readOverBudget?: boolean
+}
+
+const makeExecutor = (sqls: string[], opts: ExecutorOpts = {}): WarehouseExecutorApi => ({
 	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => {
 		const query = compiledQueryOf(compiled)
 		sqls.push(query.sql)
+		if (
+			isProbe(query.sql) &&
+			opts.overBudgetFromProbe !== undefined &&
+			Arr.filter(sqls, isProbe).length > opts.overBudgetFromProbe
+		)
+			return Effect.fail(
+				new WarehouseQuotaExceededError({
+					message: "traceLocateProbe ran past its time limit",
+					pipeName: "traceLocateProbe",
+					setting: "max_execution_time",
+				}),
+			)
 		if (isProbe(query.sql))
 			return query
 				.decodeFirstRow(opts.indexed === false || !probeHits(query.sql) ? [] : [probeRow])
 				.pipe(Effect.orDie)
+		if (opts.readOverBudget === true)
+			return Effect.fail(
+				new WarehouseQuotaExceededError({
+					message: "spanDetail ran past its time limit",
+					pipeName: "spanDetail",
+					setting: "max_execution_time",
+				}),
+			)
 		const bounded = Str.includes("Timestamp >=")(query.sql)
+		const lower = probeBound(query.sql, ">=")
+		const reaches = opts.spanStart === undefined || (lower !== undefined && lower <= opts.spanStart)
 		return query
-			.decodeFirstRow(!bounded || opts.boundedHit === true ? [detailRow] : [])
+			.decodeFirstRow(!bounded || (opts.boundedHit === true && reaches) ? [detailRow] : [])
 			.pipe(Effect.orDie)
 	},
 	query: () => Effect.succeed({ data: [] }),
@@ -73,7 +104,7 @@ const makeExecutor = (
 const run = (
 	sqls: string[],
 	timestampHint?: Date,
-	opts?: { readonly indexed?: boolean; readonly boundedHit?: boolean },
+	opts?: ExecutorOpts,
 	lookup?: { readonly nowMs?: number; readonly lookbackHours?: number },
 ) =>
 	Effect.gen(function* () {
@@ -118,27 +149,100 @@ describe("spanDetail", () => {
 		}),
 	)
 
-	it.effect("reports an unindexed trace as not found after the day tiers, not an unbounded scan", () =>
+	it.effect("reports an unindexed trace as not found after the tiers, none wider than a year", () =>
 		Effect.gen(function* () {
 			const sqls: string[] = []
 			const result = yield* run(sqls, undefined, { indexed: false })
 			assert.isFalse(result.found)
-			assert.lengthOf(sqls, 3)
+			// 24h, 7d, 30d, 90d, 365d, then the rest of the 730 days.
+			assert.lengthOf(sqls, 6)
 			assert.isTrue(Arr.every(sqls, (sql) => isProbe(sql) && Str.includes("Bucket >=")(sql)))
+			assert.include(sqls[4], "Bucket >= toStartOfFiveMinutes(toDateTime64('2025-03-25 00:00:00', 9))")
+			assert.include(sqls[5], "Bucket >= toStartOfFiveMinutes(toDateTime64('2024-03-25 00:00:00', 9))")
 		}),
 	)
 
-	it.effect("reaches a trace past the default 30 days when given a longer lookback", () =>
+	it.effect(
+		"reads the whole lookback window when the newest tier runs past its budget, and finds the span",
+		() =>
+			Effect.gen(function* () {
+				const sqls: string[] = []
+				// The trace is five days old; the newest-day probe times out, so no tier confirms a miss.
+				const result = yield* run(sqls, undefined, { boundedHit: true, overBudgetFromProbe: 0 })
+				assert.isTrue(result.found)
+				assert.lengthOf(sqls, 2)
+				assert.isTrue(isProbe(Arr.getUnsafe(sqls, 0)))
+				assert.include(sqls[1], "Timestamp >= '2024-03-25 00:00:00'")
+				assert.include(sqls[1], "Timestamp <= '2026-03-25 00:00:01'")
+			}),
+	)
+
+	it.effect(
+		"surfaces the read's own budget error, not a miss, when the whole-window read runs past it too",
+		() =>
+			Effect.gen(function* () {
+				const exit = yield* Effect.exit(
+					run([], undefined, { boundedHit: true, overBudgetFromProbe: 1, readOverBudget: true }),
+				)
+				assert.isTrue(Exit.isFailure(exit))
+				assert.deepStrictEqual(
+					Option.map(Exit.findErrorOption(exit), (error) => error._tag),
+					Option.some("@maple/http/errors/WarehouseQuotaExceededError"),
+				)
+			}),
+	)
+
+	it.effect("reads back to the lookback edge when the walk back runs past its budget", () =>
+		Effect.gen(function* () {
+			const sqls: string[] = []
+			// The week tier finds the trace; the day below its edge times out, so the trace's start
+			// is unknown. The span sits in an older day no probe reached.
+			const result = yield* run(sqls, undefined, {
+				boundedHit: true,
+				overBudgetFromProbe: 2,
+				spanStart: "2026-01-10 00:00:00",
+			})
+			assert.isTrue(result.found)
+			assert.lengthOf(sqls, 4)
+			assert.include(sqls[3], "Timestamp >= '2024-03-24 23:59:59'")
+			assert.include(sqls[3], "Timestamp <= '2026-03-20 08:00:04'")
+		}),
+	)
+
+	it.effect("keeps the found bounds when the walk back completes", () =>
+		Effect.gen(function* () {
+			const sqls: string[] = []
+			const result = yield* run(sqls, undefined, { boundedHit: true, spanStart: "2026-03-20 07:59:57" })
+			assert.isTrue(result.found)
+			assert.include(sqls[3], "Timestamp >= '2026-03-20 07:59:57'")
+		}),
+	)
+
+	it.effect("reaches a trace past 30 days unless the org's horizon is shorter", () =>
 		Effect.gen(function* () {
 			// The fixture trace is 66 days old by then.
 			const nowMs = Date.parse("2026-05-25T00:00:00Z")
-			const byDefault = yield* run([], undefined, { boundedHit: true }, { nowMs })
-			assert.isFalse(byDefault.found)
+			const within30Days = yield* run(
+				[],
+				undefined,
+				{ boundedHit: true },
+				{ nowMs, lookbackHours: 30 * 24 },
+			)
+			assert.isFalse(within30Days.found)
 			const sqls: string[] = []
 			const kept = yield* run(sqls, undefined, { boundedHit: true }, { nowMs, lookbackHours: 90 * 24 })
 			assert.isTrue(kept.found)
-			// The widest tier starts 90 days back, where the default stopped at 30.
-			assert.include(sqls[2], "Bucket >= toStartOfFiveMinutes(toDateTime64('2026-02-24 00:00:00', 9))")
+			// The 90-day tier holds it, after the day, week and month tiers miss.
+			assert.include(sqls[3], "Bucket >= toStartOfFiveMinutes(toDateTime64('2026-02-24 00:00:00', 9))")
+			// Without a horizon the lookup may reach 730 days, but stops at the same tier.
+			const defaultSqls: string[] = []
+			const byDefault = yield* run(defaultSqls, undefined, { boundedHit: true }, { nowMs })
+			assert.isTrue(byDefault.found)
+			assert.include(
+				defaultSqls[3],
+				"Bucket >= toStartOfFiveMinutes(toDateTime64('2026-02-24 00:00:00', 9))",
+			)
+			assert.isFalse(Arr.some(defaultSqls, Str.includes("2024-05-25")))
 		}),
 	)
 

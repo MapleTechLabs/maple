@@ -4,10 +4,9 @@ import { RetentionInvalidError, RetentionPersistenceError, SourceNotFoundError }
 import {
 	DEFAULT_RETENTION_DAYS,
 	hasRetentionOverrides,
-	MAX_RETENTION_DAYS,
-	MIN_RETENTION_DAYS,
 	organizationRetentionDays,
 	readHorizonDays,
+	RETENTION_PERIODS,
 	RETENTION_SIGNALS,
 	type RetentionDaysBySignal,
 	RetentionOverrides,
@@ -165,13 +164,13 @@ const NO_OVERRIDES: RetentionOverrides = {}
 
 const decodeOverrides = Schema.decodeUnknownEffect(RetentionOverrides)
 
-/** Periods a caller may store: whole days within the bounds, for known signals only. */
+/** Periods a caller may store: one of `RETENTION_PERIODS`, for known signals only. */
 const validOverrides = (input: RetentionOverrides) =>
 	decodeOverrides(input).pipe(
 		Effect.mapError(
 			() =>
 				new RetentionInvalidError({
-					message: `Retention must be a whole number of days from ${MIN_RETENTION_DAYS} to ${MAX_RETENTION_DAYS}`,
+					message: `Retention must be one of ${Arr.join(Arr.map(RETENTION_PERIODS, String), ", ")} days`,
 				}),
 		),
 	)

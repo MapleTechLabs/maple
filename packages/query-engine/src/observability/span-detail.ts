@@ -1,7 +1,7 @@
 import { Clock, DateTime, Effect, Option } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
-import { TRACE_RETENTION_HOURS, locateTrace } from "./locate-trace"
+import { TRACE_LOOKUP_MAX_HOURS, locateTrace } from "./locate-trace"
 
 import { formatWarehouseDateTime, formatWarehouseDateTimeMs } from "../datetime"
 import { parseProjectedAttributes } from "../row-text"
@@ -21,7 +21,7 @@ export interface SpanDetailInput {
 	readonly rangeHours?: number
 	/**
 	 * How far back `trace_index` is searched when there is no hint: the org's traces
-	 * retention where the caller knows it. Defaults to 30 days.
+	 * read horizon where the caller knows it, else the longest retention (730 days).
 	 */
 	readonly lookbackHours?: number
 }
@@ -58,17 +58,24 @@ const PROBE_PAD_MS = 1_000
 
 const probedTraceRange = Effect.fnUntraced(function* (traceId: string, lookbackHours: number) {
 	const nowMs = yield* Clock.currentTimeMillis
-	const found = yield* locateTrace(traceId, {
-		nowMs,
-		oldestMs: nowMs - lookbackHours * 60 * 60 * 1000,
-	})
-	return Option.match(found, {
-		onNone: () => undefined,
-		onSome: (bounds) => ({
-			startTime: formatWarehouseDateTime(bounds.startMs - PROBE_PAD_MS),
-			endTime: formatWarehouseDateTime(bounds.endMs + PROBE_PAD_MS),
-		}),
-	})
+	const oldestMs = nowMs - lookbackHours * 60 * 60 * 1000
+	const found = yield* locateTrace(traceId, { nowMs, oldestMs })
+	switch (found._tag) {
+		case "Missing":
+			return undefined
+		// A tier ran past its budget before the trace was found: read the whole lookback window,
+		// so a miss there is a real one, and that read's own budget error surfaces as itself.
+		case "Incomplete":
+			return {
+				startTime: formatWarehouseDateTime(oldestMs),
+				endTime: formatWarehouseDateTime(nowMs + PROBE_PAD_MS),
+			}
+		case "Found":
+			return {
+				startTime: formatWarehouseDateTime(found.bounds.startMs - PROBE_PAD_MS),
+				endTime: formatWarehouseDateTime(found.bounds.endMs + PROBE_PAD_MS),
+			}
+	}
 })
 
 /**
@@ -96,7 +103,7 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 	// probe seeks every retained partition and ran past its 5s limit on large orgs.
 	const probed = hintedRange === undefined
 	const range =
-		hintedRange ?? (yield* probedTraceRange(input.traceId, input.lookbackHours ?? TRACE_RETENTION_HOURS))
+		hintedRange ?? (yield* probedTraceRange(input.traceId, input.lookbackHours ?? TRACE_LOOKUP_MAX_HOURS))
 	yield* Effect.annotateCurrentSpan("maple.query.trace_probed", probed)
 	if (range === undefined) {
 		return {

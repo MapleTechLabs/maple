@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { Array as Arr, Option, Record, Schema } from "effect"
+import { Array as Arr, Option, Record, Schema, String as Str } from "effect"
 import { migration_0075_retention_days } from "./clickhouse/migrations/0075_retention_days"
+import { latestSnapshotStatements } from "./generated/clickhouse-schema"
 import { tinybirdProjectManifest } from "./generated/tinybird-project-manifest"
 import {
 	DEFAULT_RETENTION_DAYS,
@@ -10,60 +11,60 @@ import {
 	readHorizonDays,
 	RETENTION_SIGNAL_DATASOURCES,
 	RETENTION_SIGNALS,
-	RETENTION_STAMP_LADDER,
+	RETENTION_PERIODS,
 	RETENTION_TIME_COLUMNS,
 	retentionStampDays,
 	RetentionOverrides,
 	sourceRetentionDays,
 } from "./retention"
 
-const ttlDays = (datasource: string): number | undefined =>
+const manifestContent = (datasource: string): string | undefined =>
 	Option.getOrUndefined(
-		Option.flatMap(
-			Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === datasource),
-			(found) =>
-				Option.map(
-					Option.fromNullishOr(/ENGINE_TTL "[^"]+ \+ INTERVAL (\d+) DAY"/.exec(found.content)),
-					(match) => Number(match[1]),
-				),
+		Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === datasource),
+	)?.content
+
+const rawTables = Arr.flatMap(RETENTION_SIGNALS, (signal) =>
+	Arr.map(RETENTION_SIGNAL_DATASOURCES[signal], (datasource) => ({ signal, datasource }) as const),
+)
+
+const columnDefault = (datasource: string): number | undefined =>
+	Option.getOrUndefined(
+		Option.map(
+			Option.fromNullishOr(
+				/\bRetentionDays UInt16 [^\n]*DEFAULT (\d+)/.exec(manifestContent(datasource) ?? ""),
+			),
+			(match) => Number(match[1]),
 		),
 	)
 
-describe("retention defaults", () => {
-	it("match what every raw table of the signal keeps today", () => {
-		for (const signal of RETENTION_SIGNALS) {
-			for (const datasource of RETENTION_SIGNAL_DATASOURCES[signal]) {
-				expect(ttlDays(datasource), `${signal}: ${datasource}`).toBe(DEFAULT_RETENTION_DAYS[signal])
-			}
+describe("the RetentionDays column", () => {
+	it("defaults to the signal's default period, so an unstamped row keeps what it kept before", () => {
+		for (const { signal, datasource } of rawTables) {
+			expect(columnDefault(datasource), datasource).toBe(DEFAULT_RETENTION_DAYS[signal])
 		}
 	})
-})
 
-describe("the RetentionDays column", () => {
-	const columnDefault = (datasource: string): number | undefined =>
-		Option.getOrUndefined(
-			Option.flatMap(
-				Arr.findFirst(
-					tinybirdProjectManifest.datasources,
-					(candidate) => candidate.name === datasource,
-				),
-				(found) =>
-					Option.map(
-						Option.fromNullishOr(
-							/\bRetentionDays UInt16 [^\n]*DEFAULT (\d+)/.exec(found.content),
-						),
-						(match) => Number(match[1]),
-					),
-			),
-		)
+	it("decides when each managed raw row expires, one period per partition", () => {
+		for (const { datasource } of rawTables) {
+			const day = `toDate(${RETENTION_TIME_COLUMNS[datasource]})`
+			const content = manifestContent(datasource)
+			expect(content, datasource).toContain(`ENGINE_PARTITION_KEY "(RetentionDays, ${day})"`)
+			expect(content, datasource).toContain(`ENGINE_TTL "${day} + toIntervalDay(RetentionDays)"`)
+			expect(content, datasource).toContain(`ENGINE_SETTINGS "ttl_only_drop_parts=1"`)
+		}
+	})
 
-	it("defaults to the days each raw table keeps, so an unstamped row expires as it does today", () => {
-		for (const signal of RETENTION_SIGNALS) {
-			for (const datasource of RETENTION_SIGNAL_DATASOURCES[signal]) {
-				// `product_events` gets the column when it is rebuilt.
-				if (datasource === "product_events") continue
-				expect(columnDefault(datasource), datasource).toBe(ttlDays(datasource))
-			}
+	it("leaves a self-managed table one period, its default, since nothing stamps it there", () => {
+		for (const { signal, datasource } of rawTables) {
+			const day = `toDate(${RETENTION_TIME_COLUMNS[datasource]})`
+			const created = Arr.findFirst(latestSnapshotStatements, (statement) =>
+				Str.startsWith(`CREATE TABLE IF NOT EXISTS ${datasource} (`)(statement),
+			)
+			const statement = Option.getOrUndefined(created)
+			expect(statement, datasource).toContain(`\nPARTITION BY ${day}\n`)
+			expect(statement, datasource).toContain(
+				`\nTTL ${day} + INTERVAL ${DEFAULT_RETENTION_DAYS[signal]} DAY`,
+			)
 		}
 	})
 
@@ -77,13 +78,11 @@ describe("the RetentionDays column", () => {
 				return [match?.[1] ?? statement, Number(match?.[2])] as const
 			}),
 		)
+		// `product_events` came later, in migration 0077.
 		const expected = Record.fromEntries(
 			Arr.map(
-				Arr.filter(
-					Arr.flatMap(RETENTION_SIGNALS, (signal) => RETENTION_SIGNAL_DATASOURCES[signal]),
-					(datasource) => datasource !== "product_events",
-				),
-				(datasource) => [datasource, ttlDays(datasource)] as const,
+				Arr.filter(rawTables, ({ datasource }) => datasource !== "product_events"),
+				({ signal, datasource }) => [datasource, DEFAULT_RETENTION_DAYS[signal]] as const,
 			),
 		)
 		expect(migrated).toEqual(expected)
@@ -110,9 +109,9 @@ describe("retention time columns", () => {
 
 describe("retention stamp", () => {
 	it("stores a period under the shortest ladder period that covers it", () => {
-		expect(Arr.map([1, 3, 4, 30, 31, 45, 366, 551, MAX_RETENTION_DAYS], retentionStampDays)).toEqual([
-			3, 3, 7, 30, 60, 60, 550, 800, 800,
-		])
+		expect(Arr.map([1, 3, 4, 30, 31, 45, 366, 551, MAX_RETENTION_DAYS, 800], retentionStampDays)).toEqual(
+			[3, 3, 7, 30, 60, 60, 730, 730, 730, 730],
+		)
 	})
 
 	it("stores every default under its own days, so an untouched org keeps nothing longer", () => {
@@ -123,8 +122,8 @@ describe("retention stamp", () => {
 		}
 	})
 
-	it("tops out at the longest period a policy can ask for", () => {
-		expect(Arr.lastNonEmpty(RETENTION_STAMP_LADDER)).toBe(MAX_RETENTION_DAYS)
+	it("stores every period a policy can hold under exactly its own days", () => {
+		for (const days of RETENTION_PERIODS) expect(retentionStampDays(days)).toBe(days)
 	})
 
 	it("never stores a period under fewer days than it asks for", () => {
@@ -136,12 +135,12 @@ describe("retention stamp", () => {
 
 describe("retention resolution", () => {
 	it("an organization overrides the default per signal", () => {
-		expect(organizationRetentionDays({ traces: 45 })).toEqual({ ...DEFAULT_RETENTION_DAYS, traces: 45 })
+		expect(organizationRetentionDays({ traces: 60 })).toEqual({ ...DEFAULT_RETENTION_DAYS, traces: 60 })
 	})
 
 	it("a source's own period wins over the organization's, shorter or longer", () => {
-		const days = sourceRetentionDays({ traces: 45, logs: 60 }, { traces: 3, logs: 400 })
-		expect(days).toEqual({ ...DEFAULT_RETENTION_DAYS, traces: 3, logs: 400 })
+		const days = sourceRetentionDays({ traces: 60, logs: 60 }, { traces: 3, logs: 365 })
+		expect(days).toEqual({ ...DEFAULT_RETENTION_DAYS, traces: 3, logs: 365 })
 	})
 
 	it("a source with no period for a signal follows the organization, not the default", () => {
@@ -149,9 +148,14 @@ describe("retention resolution", () => {
 	})
 
 	it("reads reach the longest source, and a shorter source does not pull them in", () => {
-		const horizon = readHorizonDays({ traces: 45 }, [{ traces: 3 }, { traces: 400 }, { logs: 7 }])
-		expect(horizon.traces).toBe(400)
+		const horizon = readHorizonDays({ traces: 60 }, [{ traces: 3 }, { traces: 365 }, { logs: 7 }])
+		expect(horizon.traces).toBe(365)
 		expect(horizon.logs).toBe(DEFAULT_RETENTION_DAYS.logs)
+	})
+
+	it("reaches as far as the period a stored off-list value is stamped with", () => {
+		expect(readHorizonDays({ traces: 550 }, []).traces).toBe(730)
+		expect(readHorizonDays({}, [{ logs: 45 }]).logs).toBe(60)
 	})
 
 	it("shortening the organization shortens reads when no source keeps more", () => {
@@ -167,12 +171,13 @@ describe("retention resolution", () => {
 describe("RetentionOverrides", () => {
 	const decode = Schema.decodeUnknownOption(RetentionOverrides)
 
-	it("accepts whole days up to the maximum", () => {
-		expect(Option.isSome(decode({ traces: 1, logs: MAX_RETENTION_DAYS }))).toBe(true)
+	it("accepts every period", () => {
+		for (const days of RETENTION_PERIODS) expect(Option.isSome(decode({ traces: days }))).toBe(true)
 	})
 
 	it.each([
 		["zero days", { traces: 0 }],
+		["a day count between periods", { traces: 45 }],
 		["past the maximum", { traces: MAX_RETENTION_DAYS + 1 }],
 		["a fraction of a day", { traces: 1.5 }],
 		["a string", { traces: "30" }],

@@ -483,6 +483,12 @@ describe("mapWarehouseError", () => {
 				classify("p", "Unknown expression or function identifier 'SampleRate' in scope", "maple"),
 			).toBeInstanceOf(WarehouseSchemaDriftError)
 		})
+
+		it("classifies newer ClickHouse's untyped unknown-identifier wording, as Tinybird sends it", () => {
+			expect(
+				classify("p", "Unknown expression identifier `RetentionDays` in scope SELECT ...", "maple"),
+			).toBeInstanceOf(WarehouseSchemaDriftError)
+		})
 	})
 
 	it("defaults unrecognized errors to the generic query error", () => {

@@ -6,11 +6,11 @@ use serde_json::Value;
 
 pub const MIN_RETENTION_DAYS: u16 = 1;
 /// The longest any signal can be kept: the top of the storage ladder.
-pub const MAX_RETENTION_DAYS: u16 = 800;
+pub const MAX_RETENTION_DAYS: u16 = 730;
 
-/// The periods rows are physically stored under. A policy keeps its exact days for
-/// reads; a row is stamped with the next period up.
-pub const STAMP_LADDER: [u16; 10] = [3, 7, 14, 30, 60, 90, 180, 365, 550, 800];
+/// The periods rows are stored under: the periods a policy can hold. A stored value off
+/// the ladder is stamped with the next period up.
+pub const STAMP_LADDER: [u16; 9] = [3, 7, 14, 30, 60, 90, 180, 365, 730];
 
 /// A signal with a retention period: the families a source can be limited to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -105,7 +105,7 @@ fn valid_days(value: &Value) -> Option<u16> {
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
-        reason = "a whole number already checked to lie in 1..=800"
+        reason = "a whole number already checked to lie in 1..=730"
     )]
     let days = days as u16;
     Some(days)

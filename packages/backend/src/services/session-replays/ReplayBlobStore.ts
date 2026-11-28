@@ -12,10 +12,14 @@ import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bind
 //   - **No bucket.** Self-hosted installs and the Docker image of this API have
 //     no R2, so no host provides `ReplayBlobBucket` and hydration becomes a
 //     no-op.
-//   - **Non-empty `events` on a row.** That row predates the R2 cutover (or came
-//     from a BYO-ClickHouse org, which never stops writing inline). It passes
-//     through untouched. This is the dual-read, and it is the whole migration
-//     strategy: no backfill, the old rows age out on the table's 30-day TTL.
+//   - **Non-empty `events` on a row.** That row predates the R2 cutover, or was
+//     written by a gateway with no bucket. It passes through untouched. This is
+//     the dual-read, and it is the whole migration strategy: no backfill, the old
+//     rows age out on their own TTL.
+//
+// An org on its own ClickHouse still has its chunks stored as objects by the
+// hosted gateway. Its rows omit `RetentionDays` and read the column default, so
+// the gateway keys those objects under the default period to match.
 
 /**
  * Object key for one replay chunk.
@@ -24,13 +28,26 @@ import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bind
  * Nothing at runtime cross-checks the two — a divergence reads as "every
  * recording is empty", so the shared shape is asserted in both test suites.
  */
-export const replayObjectKey = (orgId: string, sessionId: string, chunkSeq: number): string =>
+export const replayObjectKey = (
+	retentionDays: number,
+	orgId: string,
+	sessionId: string,
+	chunkSeq: number,
+): string => `${replayRetentionPrefix(retentionDays)}${legacyReplayObjectKey(orgId, sessionId, chunkSeq)}`
+
+/** The bucket prefix one retention period's objects live under; each has its own lifecycle rule. */
+export const replayRetentionPrefix = (retentionDays: number): string => `r${retentionDays}/`
+
+/** Where objects were written before keys carried their period; kept readable until they expire. */
+export const legacyReplayObjectKey = (orgId: string, sessionId: string, chunkSeq: number): string =>
 	`v1/${orgId}/${sessionId}/${Str.padStart(8, "0")(String(chunkSeq))}.json.gz`
 
 /** The subset of a `session_replay_events` row hydration needs. */
 export interface HydratableChunk {
 	readonly chunkSeq: number
 	readonly events: string
+	/** The row's stamped period, which names the object's key prefix. */
+	readonly retentionDays?: number
 }
 
 export interface ReplayBlobStoreApi {
@@ -74,8 +91,19 @@ const makeHydrate =
 			(chunk) => {
 				// Pre-cutover row: the payload is already in hand.
 				if (chunk.events !== "") return Effect.succeedSome(chunk)
-				const key = replayObjectKey(orgId, sessionId, chunk.chunkSeq)
-				return bucket.getBytes(key).pipe(
+				const legacyKey = legacyReplayObjectKey(orgId, sessionId, chunk.chunkSeq)
+				const key =
+					chunk.retentionDays === undefined
+						? legacyKey
+						: replayObjectKey(chunk.retentionDays, orgId, sessionId, chunk.chunkSeq)
+				// A row stamped before keys carried the period points at the legacy key.
+				const fetch =
+					key === legacyKey
+						? bucket.getBytes(key)
+						: bucket
+								.getBytes(key)
+								.pipe(Effect.filterOrElse(Option.isSome, () => bucket.getBytes(legacyKey)))
+				return fetch.pipe(
 					Effect.flatMap(
 						Option.match({
 							onNone: () => Effect.succeed(Option.none<T>()),

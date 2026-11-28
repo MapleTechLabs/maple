@@ -8,7 +8,7 @@
  * step's `sql` in order; the Workflow additionally wraps each in a durable
  * `step.do(step.name, …)` for resumability + progress.
  */
-import { Option, Schema, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 import {
 	compileBackfillChunk,
@@ -18,6 +18,20 @@ import {
 	type BackfillSpec,
 } from "./backfill"
 import type { ClickHouseMigration } from "./migrations"
+import {
+	dropUnkeyedColumnSql,
+	finishZeroKeyRepairSql,
+	isDropUnkeyedColumn,
+	isRepairZeroKeyColumn,
+	keyColumnProbeSql,
+	readyTableProbeSql,
+	renderRepairZeroKeyColumnFull,
+	stagedPartitionsSql,
+	unkeyedColumnProbeSql,
+	zeroKeyRepairStatements,
+	zeroKeyRowsProbeSql,
+	type RepairZeroKeyColumnSpec,
+} from "./unkeyed-column"
 
 export interface ApplyStep {
 	/** Stable, unique step name — the Workflow's durable step key + UI label. */
@@ -25,6 +39,47 @@ export interface ApplyStep {
 	readonly sql: string
 	/** True for backfill chunks (long-running); false for structural DDL. */
 	readonly backfill: boolean
+	/**
+	 * Run when this step fails, before its failure is reported: the `SYSTEM START MERGES` of a
+	 * `SYSTEM STOP MERGES` an earlier step ran, so a failed apply never leaves merges stopped.
+	 */
+	readonly onFailure?: string
+	/** Restores the pair's column DEFAULT before `onFailure` restarts merges; see {@link RestoreDefault}. */
+	readonly restoreBeforeRestart?: RestoreDefault
+	/**
+	 * A 0-row repair, decided when it runs: an executor calls {@link runZeroKeyRepair} with it in
+	 * place of running `sql`, which only describes it.
+	 */
+	readonly repair?: ZeroKeyRepair
+}
+
+export interface ZeroKeyRepair {
+	readonly spec: RepairZeroKeyColumnSpec
+	readonly database: string
+}
+
+/**
+ * A pair that stops merges while a key column has no DEFAULT: a merge then would store the type's
+ * 0 in every row it writes. On failure the DEFAULT is set again and checked before merges restart;
+ * if it cannot be confirmed, merges stay stopped and the failure carries `recovery`.
+ */
+export interface RestoreDefault {
+	/** The pair's own `MODIFY COLUMN ... DEFAULT` statement. */
+	readonly sql: string
+	/** One JSONEachRow row with the column's `default_expression`; no row when it does not exist. */
+	readonly verifySql: string
+	readonly expected: string
+	/** What an operator runs by hand when merges were left stopped. */
+	readonly recovery: string
+}
+
+/**
+ * Whether merges may restart after `verifySql` answered `response`: the column is absent (the
+ * key ALTER never ran, so no row can hold its 0) or its DEFAULT is back.
+ */
+export const defaultRestored = (restore: RestoreDefault, response: string): boolean => {
+	const row = parseFirstRow(response)
+	return row === null || row.default_expression === restore.expected
 }
 
 export type ExecFn = (sql: string) => Promise<string>
@@ -69,6 +124,13 @@ const parseFirstRow = (text: string): Record<string, unknown> | null => {
 	}
 	return null
 }
+
+/** The `p` of each JSONEachRow row, as a partition id. */
+const partitionIds = (text: string): ReadonlyArray<string> =>
+	Arr.flatMap(Str.split("\n")(text), (line) => {
+		const row = decodeJsonRow(Str.trim(line))
+		return Option.isSome(row) && typeof row.value.p === "string" ? [row.value.p] : []
+	})
 
 /**
  * Expand one backfill into day-aligned chunk steps by reading the source's
@@ -126,6 +188,22 @@ export const expandMigrationToSteps = async (
 	for (const stmt of migration.statements) {
 		if (isBackfill(stmt)) {
 			steps.push(...(await expandBackfill(stmt, database, exec)))
+		} else if (isDropUnkeyedColumn(stmt)) {
+			const unkeyed = parseFirstRow(await exec(unkeyedColumnProbeSql(stmt, database)))
+			if (unkeyed !== null)
+				steps.push({
+					name: `m${migration.version}:stmt${index}`,
+					sql: dropUnkeyedColumnSql(stmt, database),
+					backfill: false,
+				})
+		} else if (isRepairZeroKeyColumn(stmt)) {
+			// Always planned: the column and any 0s it holds only exist once earlier steps ran.
+			steps.push({
+				name: `m${migration.version}:stmt${index}`,
+				sql: renderRepairZeroKeyColumnFull(stmt),
+				backfill: false,
+				repair: { spec: stmt, database },
+			})
 		} else {
 			steps.push({
 				name: `m${migration.version}:stmt${index}`,
@@ -135,5 +213,88 @@ export const expandMigrationToSteps = async (
 		}
 		index += 1
 	}
-	return steps
+	return restartMergesOnFailure(steps, database)
+}
+
+/**
+ * Runs a 0-row repair from the cluster's state now, so a rerun after a crash at any point resumes it
+ * (see `RepairZeroKeyColumnSpec`). Any failed statement fails the repair.
+ */
+export const runZeroKeyRepair = async (repair: ZeroKeyRepair, exec: ExecFn): Promise<void> => {
+	const { spec, database } = repair
+	const found = async (sql: string) => parseFirstRow(await exec(sql)) !== null
+	const keyed = await found(keyColumnProbeSql(spec, database))
+	const ready = keyed && (await found(readyTableProbeSql(spec, database)))
+	const zeros = keyed && !ready && (await found(zeroKeyRowsProbeSql(spec, database)))
+	const planned = zeroKeyRepairStatements(spec, database, { keyed, ready, zeros })
+	await runInOrder(planned.statements, exec)
+	if (!planned.finish) return
+	const partitions = partitionIds(await exec(stagedPartitionsSql(spec, database)))
+	await runInOrder(finishZeroKeyRepairSql(spec, database, partitions), exec)
+}
+
+const runInOrder = (statements: ReadonlyArray<string>, exec: ExecFn): Promise<void> =>
+	Arr.reduce(statements, Promise.resolve(), (previous, sql) =>
+		previous.then(async () => {
+			await exec(sql)
+		}),
+	)
+
+const STOP_MERGES = /^SYSTEM STOP MERGES (\S+)$/
+const SET_DEFAULT = /^ALTER TABLE (?:\S+\.)?`?(\w+)`? MODIFY COLUMN `?(\w+)`? \S+ DEFAULT (.+)$/
+
+/** The pair's `MODIFY COLUMN ... DEFAULT`, as a restore an executor runs before restarting merges. */
+const restoreFor = (
+	pair: ReadonlyArray<ApplyStep>,
+	restart: string,
+	database: string,
+): RestoreDefault | undefined => {
+	for (const step of pair) {
+		const sql = Str.trim(step.sql)
+		const match = SET_DEFAULT.exec(sql)
+		const [, table, column, expected] = match ?? []
+		if (table === undefined || column === undefined || expected === undefined) continue
+		const db = database.length === 0 ? "currentDatabase()" : `'${Str.replace(/'/g, "''")(database)}'`
+		return {
+			sql,
+			verifySql: `SELECT default_expression FROM system.columns WHERE database = ${db} AND table = '${table}' AND name = '${column}' FORMAT JSONEachRow`,
+			expected: Str.trim(expected),
+			recovery: `Merges on ${table} were left stopped because ${column}'s DEFAULT could not be restored; a merge would store 0 in it. Run \`${sql}\`, then \`${restart}\`.`,
+		}
+	}
+	return undefined
+}
+
+/**
+ * Every step between a `SYSTEM STOP MERGES <t>` and its `SYSTEM START MERGES <t>` restarts them on
+ * failure, after restoring the pair's column DEFAULT when it sets one.
+ */
+const restartMergesOnFailure = (
+	steps: ReadonlyArray<ApplyStep>,
+	database: string,
+): ReadonlyArray<ApplyStep> => {
+	const out: ApplyStep[] = []
+	let index = 0
+	while (index < steps.length) {
+		const step = Arr.getUnsafe(steps, index)
+		const stopped = Option.fromNullishOr(STOP_MERGES.exec(Str.trim(step.sql))?.[1])
+		out.push(step)
+		index += 1
+		if (Option.isNone(stopped)) continue
+		const restart = `SYSTEM START MERGES ${stopped.value}`
+		const end = Option.getOrElse(
+			Arr.findFirstIndex(Arr.drop(steps, index), (candidate) => Str.trim(candidate.sql) === restart),
+			() => steps.length - index,
+		)
+		const pair = Arr.take(Arr.drop(steps, index), end)
+		const restore = restoreFor(pair, restart, database)
+		for (const inside of pair)
+			out.push(
+				restore === undefined
+					? { ...inside, onFailure: restart }
+					: { ...inside, onFailure: restart, restoreBeforeRestart: restore },
+			)
+		index += end
+	}
+	return out
 }

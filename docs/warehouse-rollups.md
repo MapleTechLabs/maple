@@ -30,10 +30,42 @@ still looks reasonable. See the comment on `edgeGrain` in
 
 The raw tables (`RETENTION_SIGNAL_DATASOURCES` in `packages/domain/src/retention.ts`) carry a
 `RetentionDays` column: the days the row is stored for. The ingest gateway stamps it from the
-source's retention policy. A row written without it (a self-managed insert, forward write mode)
-takes the column default, the period the table keeps today. Nothing reads the column yet, so the
-TTLs above still decide when a row expires. `product_events` does not have it yet: views fill that table and a forward query
-guards it, so it gets the column when it is rebuilt.
+source's retention policy; a row written without it takes the signal's default. On the managed
+warehouse each raw table is partitioned `(RetentionDays, toDate(<time column>))` with
+`TTL toDate(<time column>) + toIntervalDay(RetentionDays)` and `ttl_only_drop_parts = 1`, so every
+partition holds one period and expires whole. The 30d in the table above is the default.
+
+The row-level projections of `traces` (`trace_index`, `trace_list_mv`, `service_map_spans`,
+`service_map_children`, `service_overview_spans`, `ai_trace_index`, `ai_crawler_requests`,
+`scanner_requests`) copy the span's `RetentionDays` and share its TTL rule, so a trace and its
+index are due to expire on the same day. ClickHouse removes expired parts in the background, table
+by table, so one can still be readable for a while after the other is gone. Rollups keep their
+fixed periods, except `trace_facets_hourly`: it keeps one row per `RetentionDays` (in its sorting
+key) and expires each at `least(RetentionDays, 30)` days, the same day as the `trace_list_mv` row it
+counts. Removal is asynchronous here too, so until a merge drops the facet row the traces sidebar
+can still count a span the list no longer shows; hours past 30 days read `trace_list_mv`. `product_events`
+expires at the source's `events` period: direct rows carry the gateway's stamp, and the two views
+copy `EventsRetentionDays` from the `session_events` or `traces` row, which the gateway stamps
+with the source's events period (`events_retention_days`), never that row's own `RetentionDays`.
+
+### Follow-up: end the RetentionDays rollout
+
+The deploy that partitions the raw tables by `RetentionDays` carries one-shot config, all keyed off
+`RETENTION_ROLLOUT_PENDING` in `packages/domain/src/tinybird/retention-rollout.ts`:
+
+- `SELECT *` forward queries on every datasource fed from a raw table,
+- `SELECT *, toUInt16(30) AS RetentionDays` on the span projections and `trace_facets_hourly`, and
+  `SELECT *, toUInt16(365) AS RetentionDays` on `product_events`,
+- no `deploymentMethod: "alter"` on `service_overview_spans_mv`, `ai_trace_index_mv` and
+  `scanner_requests_mv`.
+
+Once that deploy is live in every workspace, set the flag to `false` in the next PR and run
+`bun run tinybird:manifest`. Left on, the next deploy that copies one of these tables resets
+every stamped row to the default period. `retention-rollout.test.ts` holds the config to the flag.
+
+Self-managed ClickHouse and Maple Local keep one period per table: their inserts never write the
+column (`SELF_MANAGED_INSERT_OMITTED_COLUMNS`), so the DDL emitter turns the row-level layout back
+into a daily partition and a fixed TTL at the column default.
 
 ---
 

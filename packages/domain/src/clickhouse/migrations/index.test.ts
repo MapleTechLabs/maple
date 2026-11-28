@@ -1,4 +1,4 @@
-import { Option, String as Str, Array as Arr } from "effect"
+import { Option, Predicate, String as Str, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
@@ -18,8 +18,9 @@ import { migration_0037_service_overview_spans_span_kind } from "./0037_service_
 import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
 import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
+import { migration_0077_retention_storage } from "./0077_retention_storage"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
-import { migrations } from "./index"
+import { migrationFailureIsSkippable, migrations } from "./index"
 
 const indexWhere = <A>(xs: ReadonlyArray<A>, predicate: (a: A) => boolean): number =>
 	Option.getOrElse(Arr.findFirstIndex(xs, predicate), () => -1)
@@ -348,11 +349,15 @@ describe("migration 0034: trace_facets_hourly", () => {
 		expect(drop).toBe("DROP VIEW IF EXISTS trace_facets_hourly_mv")
 		expect(truncate).toBe("TRUNCATE TABLE IF EXISTS trace_facets_hourly")
 		expect(backfill).toBe(traceFacetsHourlyBackfill)
-		// 0045 later moved its TTL onto the partition's day.
-		expect(latestSnapshotStatements).toContain(
-			Str.replace("TTL Hour + INTERVAL", "TTL toDate(Hour) + INTERVAL")(String(table)),
+		// 0045 moved its TTL onto the partition's day and 0077 added RetentionDays, so the table and
+		// view are checked for what this one created.
+		// 0034 predates per-row retention: its table has the fixed TTL and no RetentionDays column.
+		expect(table).toContain("TTL Hour + INTERVAL 30 DAY")
+		expect(table).not.toContain("RetentionDays")
+		expect(view).toContain(
+			"CREATE MATERIALIZED VIEW IF NOT EXISTS trace_facets_hourly_mv TO trace_facets_hourly",
 		)
-		expect(latestSnapshotStatements).toContain(view)
+		expect(view).toContain("FROM trace_list_mv")
 	})
 })
 
@@ -364,14 +369,105 @@ describe("migration 0037: service_overview_spans records why a row is an entry p
 		expect(addKind).toContain("ADD COLUMN IF NOT EXISTS SpanKind")
 		expect(addRoot).toContain("ADD COLUMN IF NOT EXISTS IsRoot")
 		expect(drop).toBe("DROP VIEW IF EXISTS service_overview_spans_mv")
-		expect(create).toBe(
-			Option.getOrUndefined(
-				Arr.findFirst(latestSnapshotStatements, (stmt) =>
-					Str.includes("service_overview_spans_mv TO")(stmt),
-				),
-			),
-		)
+		// Migration 0077 recreated the view again, so this one is checked for what it added.
+		expect(create).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS service_overview_spans_mv TO")
+		expect(create).toContain("SpanKind")
 		expect(create).toContain("toUInt8(ParentSpanId = '') AS IsRoot")
+	})
+})
+
+describe("migration 0077: span projections and product events carry their retention", () => {
+	const statements = Arr.filter(migration_0077_retention_storage.statements, Predicate.isString)
+	const creates = Arr.filter(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
+	const viewName = (stmt: string) => Arr.getUnsafe(Str.split(" ")(stmt), 6)
+
+	it("drops each view right before creating it as the schema ships it, the key tables' around their key change", () => {
+		const viewNames = Arr.map(creates, viewName)
+		const keyTableViews = ["trace_index_mv", "trace_facets_hourly_mv"]
+		for (const name of viewNames) {
+			const drop = statements.indexOf(`DROP VIEW IF EXISTS ${name}`)
+			const create = indexWhere(statements, (stmt) =>
+				Str.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${name} `)(stmt),
+			)
+			expect(drop, name).toBeGreaterThanOrEqual(0)
+			if (!keyTableViews.includes(name)) {
+				expect(create, name).toBe(drop + 1)
+				continue
+			}
+			// No insert reaches the table while its key column has no DEFAULT, and the view is
+			// dropped only once merges stopped, so a missing SYSTEM MERGES grant leaves it intact.
+			const table = Str.replace(/_mv$/, "")(name)
+			const between = statements.slice(drop + 1, create)
+			expect(statements[drop - 1], name).toBe(`SYSTEM STOP MERGES ${table}`)
+			expect(between, name).toContain(
+				`ALTER TABLE ${table} MODIFY COLUMN RetentionDays UInt16 DEFAULT 30`,
+			)
+			expect(between, name).toContain(`SYSTEM START MERGES ${table}`)
+		}
+		for (const create of creates) {
+			expect(latestSnapshotStatements, viewName(create)).toContain(create)
+		}
+	})
+
+	it("repairs stored 0s after merges restart and before the facet TTL reads RetentionDays", () => {
+		const all = migration_0077_retention_storage.statements
+		const at = (predicate: (stmt: (typeof all)[number]) => boolean) => indexWhere(all, predicate)
+		for (const table of ["trace_index", "trace_facets_hourly"]) {
+			const repair = at(
+				(stmt) =>
+					Predicate.hasProperty(stmt, "kind") &&
+					stmt.kind === "repair-zero-key-column" &&
+					stmt.table === table,
+			)
+			expect(repair, table).toBe(at((stmt) => stmt === `SYSTEM START MERGES ${table}`) + 1)
+		}
+		const facetRepair = at(
+			(stmt) =>
+				Predicate.hasProperty(stmt, "kind") &&
+				stmt.kind === "repair-zero-key-column" &&
+				stmt.table === "trace_facets_hourly",
+		)
+		expect(facetRepair).toBeLessThan(
+			at((stmt) => Predicate.isString(stmt) && Str.includes("trace_facets_hourly MODIFY TTL")(stmt)),
+		)
+	})
+
+	it("copies each span's RetentionDays, and the events period into product_events", () => {
+		for (const create of creates) {
+			const fromTraces = Str.includes("FROM traces")(create)
+			const fromTraceList = Str.includes("FROM trace_list_mv")(create)
+			const intoEvents = Str.includes(" TO product_events AS")(create)
+			expect(create, viewName(create)).toMatch(
+				intoEvents
+					? /EventsRetentionDays AS RetentionDays/
+					: /\bRetentionDays\n\s+FROM trace(s|_list_mv)\n/,
+			)
+			expect(fromTraces || fromTraceList || intoEvents, viewName(create)).toBe(true)
+		}
+		expect(migration_0077_retention_storage.requiredForIngest).toBe(false)
+	})
+	it("fails the apply when a statement fails, so a dropped view is never left missing", () => {
+		expect(migrationFailureIsSkippable(migration_0077_retention_storage)).toBe(false)
+		expect(migrationFailureIsSkippable(migration_0068_service_usage_profiles)).toBe(true)
+	})
+	it("adds trace_index's column to its sorting key, then its default, as the schema ships it", () => {
+		const traceIndexAlters = Arr.filter(
+			statements,
+			(stmt) =>
+				Str.startsWith("ALTER TABLE trace_index ")(stmt) || Str.endsWith(" MERGES trace_index")(stmt),
+		)
+		expect(traceIndexAlters).toEqual([
+			"SYSTEM STOP MERGES trace_index",
+			"ALTER TABLE trace_index ADD COLUMN IF NOT EXISTS RetentionDays UInt16, MODIFY ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
+			"ALTER TABLE trace_index MODIFY COLUMN RetentionDays UInt16 DEFAULT 30",
+			"SYSTEM START MERGES trace_index",
+		])
+		const createTraceIndex = Arr.findFirst(latestSnapshotStatements, (stmt) =>
+			Str.includes("CREATE TABLE IF NOT EXISTS trace_index ")(stmt),
+		)
+		expect(Option.getOrThrow(createTraceIndex)).toContain(
+			"ORDER BY (OrgId, TraceId, ServiceName, Bucket, RetentionDays)",
+		)
 	})
 })
 
@@ -436,7 +532,13 @@ describe("migration 0045: TTL eviction drops whole parts", () => {
 					partition === undefined
 						? undefined
 						: firstGroup(/^to(?:Date|YYYYMM)\((\w+)\)$/)(partition)
-				return column === undefined || !Str.startsWith(`toDate(${column}) + INTERVAL `)(ttl)
+				return (
+					column === undefined ||
+					!(
+						Str.startsWith(`toDate(${column}) + INTERVAL `)(ttl) ||
+						Str.startsWith(`toDate(${column}) + toIntervalDay(`)(ttl)
+					)
+				)
 			}),
 			({ name }) => name,
 		)

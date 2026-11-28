@@ -1,4 +1,5 @@
 import type { BackfillSpec } from "../backfill"
+import type { DropUnkeyedColumnSpec, RepairZeroKeyColumnSpec } from "../unkeyed-column"
 import { migration_0001_initial } from "./0001_initial"
 import { migration_0002_service_map_edges_rollup } from "./0002_service_map_edges_rollup"
 import { migration_0003_error_events_label } from "./0003_error_events_label"
@@ -75,14 +76,16 @@ import { migration_0073_error_fingerprint_default_extension } from "./0073_error
 import { migration_0074_service_identity } from "./0074_service_identity"
 import { migration_0075_retention_days } from "./0075_retention_days"
 import { migration_0076_ai_evaluation_boolean_verdicts } from "./0076_ai_evaluation_boolean_verdicts"
+import { migration_0077_retention_storage } from "./0077_retention_storage"
 import { Array as Arr } from "effect"
 
 /**
- * A migration statement is either a raw SQL string (structural DDL) or a
+ * A migration statement is either a raw SQL string (structural DDL), a
  * structured {@link BackfillSpec} the apply engine can split into time-windowed
- * chunks (see `../backfill.ts`).
+ * chunks (see `../backfill.ts`), or a {@link DropUnkeyedColumnSpec} or
+ * {@link RepairZeroKeyColumnSpec} planned against the cluster.
  */
-export type MigrationStatement = string | BackfillSpec
+export type MigrationStatement = string | BackfillSpec | DropUnkeyedColumnSpec | RepairZeroKeyColumnSpec
 
 export interface ClickHouseMigration {
 	readonly version: number
@@ -90,7 +93,16 @@ export interface ClickHouseMigration {
 	readonly statements: ReadonlyArray<MigrationStatement>
 	/** Performance-only migrations are applied normally but do not gate direct ingest. */
 	readonly requiredForIngest?: boolean
+	/**
+	 * A failure fails the apply instead of being skipped, though the migration does not gate
+	 * ingest: set on one that drops a view it recreates, so a view is never left missing silently.
+	 */
+	readonly failureIsFatal?: boolean
 }
+
+/** Whether an apply may record a failed `migration` as skipped and retry it on the next apply. */
+export const migrationFailureIsSkippable = (migration: ClickHouseMigration): boolean =>
+	migration.requiredForIngest === false && migration.failureIsFatal !== true
 
 /**
  * Ordered list of every ClickHouse schema migration.
@@ -183,6 +195,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0074_service_identity,
 	migration_0075_retention_days,
 	migration_0076_ai_evaluation_boolean_verdicts,
+	migration_0077_retention_storage,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

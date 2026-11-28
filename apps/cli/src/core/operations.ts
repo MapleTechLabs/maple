@@ -13,6 +13,7 @@
 import { Clock, DateTime, Effect, Option, References, Schema, Array as Arr, String as Str } from "effect"
 import { CH, computeBucketSecondsForRange } from "@maple/query-engine"
 import { type TracesMetric } from "@maple/domain/query-engine"
+import { MAX_RETENTION_DAYS } from "@maple/domain/retention"
 import { prepareRawSql } from "@maple/query-engine/runtime"
 import {
 	type SqlQueryOptions,
@@ -287,8 +288,11 @@ export const searchTraces = (p: {
 		)
 	})
 
-/** How far back `maple trace <id>` looks for the trace when no window is given. */
-export const TRACE_LOOKBACK_DAYS = 30
+/**
+ * How far back `maple trace <id>` looks for the trace when no window is given: the CLI does
+ * not know the org's retention, so the longest any source can keep traces.
+ */
+export const TRACE_LOOKBACK_DAYS = MAX_RETENTION_DAYS
 
 export const inspectTrace = (p: { traceId: string; range?: Range }) =>
 	dispatch(

@@ -7,6 +7,7 @@ import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
 import {
 	cleanupTestDbs,
 	createTestDb,
+	executeSql,
 	insertTestSource,
 	makeSwitchableDatabase,
 	queryFirstRow,
@@ -97,8 +98,8 @@ describe("RetentionService", () => {
 		withDb(() =>
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
-				const policy = yield* retention.setOrganization(ORG, ANA, { traces: 45, logs: 7 })
-				assert.deepStrictEqual(policy.days, { ...DEFAULT_RETENTION_DAYS, traces: 45, logs: 7 })
+				const policy = yield* retention.setOrganization(ORG, ANA, { traces: 60, logs: 7 })
+				assert.deepStrictEqual(policy.days, { ...DEFAULT_RETENTION_DAYS, traces: 60, logs: 7 })
 				assert.deepStrictEqual(policy.readHorizonDays, policy.days)
 				assert.deepStrictEqual(yield* retention.get(ORG), policy)
 			}),
@@ -109,10 +110,10 @@ describe("RetentionService", () => {
 		withDb(() =>
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
-				yield* retention.setOrganization(ORG, ANA, { traces: 45, logs: 7 })
-				const policy = yield* retention.setOrganization(ORG, ANA, { metrics: 400 })
-				assert.deepStrictEqual(policy.overrides, { metrics: 400 })
-				assert.deepStrictEqual(policy.days, { ...DEFAULT_RETENTION_DAYS, metrics: 400 })
+				yield* retention.setOrganization(ORG, ANA, { traces: 60, logs: 7 })
+				const policy = yield* retention.setOrganization(ORG, ANA, { metrics: 365 })
+				assert.deepStrictEqual(policy.overrides, { metrics: 365 })
+				assert.deepStrictEqual(policy.days, { ...DEFAULT_RETENTION_DAYS, metrics: 365 })
 			}),
 		),
 	)
@@ -123,7 +124,7 @@ describe("RetentionService", () => {
 				const retention = yield* RetentionService
 				const debug = yield* source(db, ORG, "nodejs")
 				yield* source(db, ORG, "python")
-				yield* retention.setOrganization(ORG, ANA, { traces: 45 })
+				yield* retention.setOrganization(ORG, ANA, { traces: 60 })
 				const policy = yield* retention.setSource(ORG, ANA, debug, { traces: 3, logs: 90 })
 				assert.deepStrictEqual(policy.sources, [
 					{
@@ -133,7 +134,7 @@ describe("RetentionService", () => {
 					},
 				])
 				// The organization's own periods are unchanged by one source.
-				assert.deepStrictEqual(policy.days, { ...DEFAULT_RETENTION_DAYS, traces: 45 })
+				assert.deepStrictEqual(policy.days, { ...DEFAULT_RETENTION_DAYS, traces: 60 })
 			}),
 		),
 	)
@@ -145,9 +146,9 @@ describe("RetentionService", () => {
 				const short = yield* source(db, ORG, "nodejs")
 				const long = yield* source(db, ORG, "python")
 				yield* retention.setSource(ORG, ANA, short, { traces: 3 })
-				const policy = yield* retention.setSource(ORG, ANA, long, { logs: 400 })
+				const policy = yield* retention.setSource(ORG, ANA, long, { logs: 365 })
 				assert.strictEqual(policy.readHorizonDays.traces, DEFAULT_RETENTION_DAYS.traces)
-				assert.strictEqual(policy.readHorizonDays.logs, 400)
+				assert.strictEqual(policy.readHorizonDays.logs, 365)
 			}),
 		),
 	)
@@ -157,7 +158,7 @@ describe("RetentionService", () => {
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
 				const debug = yield* source(db, ORG, "nodejs")
-				yield* retention.setSource(ORG, ANA, debug, { logs: 400 })
+				yield* retention.setSource(ORG, ANA, debug, { logs: 365 })
 				const policy = yield* retention.setSource(ORG, ANA, debug, {})
 				assert.deepStrictEqual(policy.sources, [])
 				assert.deepStrictEqual(policy.readHorizonDays, DEFAULT_RETENTION_DAYS)
@@ -170,8 +171,8 @@ describe("RetentionService", () => {
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
 				const theirs = yield* source(db, OTHER_ORG, "nodejs")
-				yield* retention.setSource(OTHER_ORG, ANA, theirs, { traces: 400 })
-				yield* retention.setOrganization(OTHER_ORG, ANA, { logs: 400 })
+				yield* retention.setSource(OTHER_ORG, ANA, theirs, { traces: 365 })
+				yield* retention.setOrganization(OTHER_ORG, ANA, { logs: 365 })
 
 				const refused = yield* Effect.result(retention.setSource(ORG, ANA, theirs, { traces: 3 }))
 				assert.isTrue(Result.isFailure(refused))
@@ -188,7 +189,7 @@ describe("RetentionService", () => {
 						[theirs],
 					),
 				)
-				assert.deepStrictEqual(stored?.retention_days, { traces: 400 })
+				assert.deepStrictEqual(stored?.retention_days, { traces: 365 })
 			}),
 		),
 	)
@@ -198,10 +199,10 @@ describe("RetentionService", () => {
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
 				const debug = yield* source(db, ORG, "nodejs")
-				yield* retention.setOrganization(ORG, ANA, { logs: 800 })
-				const tooLong = yield* Effect.result(retention.setOrganization(ORG, ANA, { logs: 801 }))
+				yield* retention.setOrganization(ORG, ANA, { logs: 730 })
+				const offTheList = yield* Effect.result(retention.setOrganization(ORG, ANA, { logs: 45 }))
 				const fraction = yield* Effect.result(retention.setSource(ORG, ANA, debug, { traces: 1.5 }))
-				for (const refused of [tooLong, fraction]) {
+				for (const refused of [offTheList, fraction]) {
 					assert.isTrue(Result.isFailure(refused))
 					if (Result.isFailure(refused)) {
 						assert.strictEqual(
@@ -211,7 +212,7 @@ describe("RetentionService", () => {
 					}
 				}
 				const policy = yield* retention.get(ORG)
-				assert.deepStrictEqual(policy.overrides, { logs: 800 })
+				assert.deepStrictEqual(policy.overrides, { logs: 730 })
 				assert.deepStrictEqual(policy.sources, [])
 			}),
 		),
@@ -221,7 +222,7 @@ describe("RetentionService", () => {
 		withDb((db) =>
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
-				yield* retention.setOrganization(ORG, ANA, { traces: 45 })
+				yield* retention.setOrganization(ORG, ANA, { traces: 60 })
 				const rows = yield* Effect.promise(() =>
 					db.pglite.query<{ updated_by: string }>(
 						"SELECT updated_by FROM org_retention_policies WHERE org_id = $1",
@@ -238,6 +239,40 @@ describe("RetentionService", () => {
 })
 
 describe("RetentionService.readHorizon", () => {
+	it.effect("reads a stored period off the list as the gateway stamps it, without failing other orgs", () =>
+		withDb((db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const elsewhere = yield* source(db, OTHER_ORG, "nodejs")
+				yield* Effect.promise(() =>
+					executeSql(
+						db,
+						`INSERT INTO org_retention_policies (org_id, retention_days, created_at, updated_at)
+						 VALUES ($1, '{"traces": 45, "logs": 9000}'::jsonb, now(), now())`,
+						[ORG],
+					),
+				)
+				yield* Effect.promise(() =>
+					executeSql(
+						db,
+						`UPDATE sources SET retention_days = '{"metrics": 400}'::jsonb WHERE id = $1`,
+						[elsewhere],
+					),
+				)
+				// 45 rounds up to 60; 9000 is past the longest period, so logs inherit.
+				assert.deepStrictEqual((yield* retention.get(ORG)).overrides, { traces: 60 })
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
+					days: { ...DEFAULT_RETENTION_DAYS, traces: 60 },
+					configured: ["traces"],
+				})
+				assert.deepStrictEqual(yield* retention.readHorizon(OTHER_ORG), {
+					days: { ...DEFAULT_RETENTION_DAYS, metrics: 730 },
+					configured: ["metrics"],
+				})
+			}),
+		),
+	)
+
 	it.effect("an organization that set nothing reads the defaults, with no signal bounded", () =>
 		withDb(() =>
 			Effect.gen(function* () {
@@ -324,7 +359,7 @@ describe("RetentionService.readHorizon", () => {
 					call === readBack
 						? Effect.andThen(Deferred.succeed(parked, undefined), Deferred.await(release))
 						: Effect.void
-				const slow = yield* Effect.forkChild(retention.setSource(ORG, ANA, second, { logs: 400 }))
+				const slow = yield* Effect.forkChild(retention.setSource(ORG, ANA, second, { logs: 365 }))
 				yield* Deferred.await(parked)
 				yield* retention.setSource(ORG, ANA, first, { traces: 90 })
 				yield* Deferred.succeed(release, undefined)
@@ -332,7 +367,7 @@ describe("RetentionService.readHorizon", () => {
 				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).days, {
 					...DEFAULT_RETENTION_DAYS,
 					traces: 90,
-					logs: 400,
+					logs: 365,
 				})
 			}),
 		),
@@ -353,7 +388,7 @@ describe("RetentionService.readHorizon", () => {
 					call === commit
 						? Effect.andThen(Deferred.succeed(parked, undefined), Deferred.await(release))
 						: Effect.void
-				const slow = yield* Effect.forkChild(retention.setSource(ORG, ANA, second, { logs: 400 }))
+				const slow = yield* Effect.forkChild(retention.setSource(ORG, ANA, second, { logs: 365 }))
 				yield* Deferred.await(parked)
 				yield* retention.setSource(ORG, ANA, first, { traces: 90 })
 				database.down = true
@@ -363,7 +398,7 @@ describe("RetentionService.readHorizon", () => {
 				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).days, {
 					...DEFAULT_RETENTION_DAYS,
 					traces: 90,
-					logs: 400,
+					logs: 365,
 				})
 			}),
 		),

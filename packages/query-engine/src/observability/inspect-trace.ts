@@ -17,7 +17,7 @@ import type { InspectTraceOutput, SpanNode, TimeRange } from "./types"
 import { toLogEntry } from "./row-mappers"
 import { withKeyLogAttributes } from "./search-logs"
 import { parseProjectedAttributes } from "../row-text"
-import { TRACE_RETENTION_HOURS, locateTrace } from "./locate-trace"
+import { TRACE_LOOKUP_MAX_HOURS, locateTrace } from "./locate-trace"
 
 import { formatWarehouseDateTime } from "../datetime"
 const SKIP_ATTR_PREFIXES = ["http.request.header.", "http.response.header.", "signoz."]
@@ -61,7 +61,7 @@ export interface InspectTraceOptions {
 	/**
 	 * How far back `trace_index` is searched when there is no hint (or the hint
 	 * missed); the tree is then read from the trace's own bounds. The org's traces
-	 * retention where the caller knows it. Defaults to 30 days.
+	 * read horizon where the caller knows it, else the longest retention (730 days).
 	 */
 	readonly widenedLookbackHours?: number
 	/**
@@ -118,7 +118,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	const nowMs = yield* Clock.currentTimeMillis
 	const rangeHours = options?.rangeHours ?? DEFAULT_RANGE_HOURS
 	const hintMs = options?.timestampHint?.getTime()
-	const widenedHours = options?.widenedLookbackHours ?? TRACE_RETENTION_HOURS
+	const widenedHours = options?.widenedLookbackHours ?? TRACE_LOOKUP_MAX_HOURS
 	const oldestMs = Math.min(
 		nowMs - widenedHours * HOUR_MS,
 		hintMs === undefined ? nowMs : hintMs - HINT_LOOKBACK_SLACK_HOURS * HOUR_MS,
@@ -137,19 +137,24 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	type TraceWindowRead = Effect.Success<ReturnType<typeof read>>
 	// The trace's own bounds, padded like a hint so logs written after the last span start stay in.
 	const locateThenRead = (widened: boolean, onMiss: TraceWindowRead) =>
-		Effect.flatMap(locateTrace(traceId, { nowMs, oldestMs }), (found) =>
-			Option.match(found, {
-				onNone: () => Effect.succeed(onMiss),
-				onSome: (bounds) =>
-					read(
+		Effect.flatMap(locateTrace(traceId, { nowMs, oldestMs }), (found) => {
+			switch (found._tag) {
+				case "Missing":
+					return Effect.succeed(onMiss)
+				// A tier ran past its budget before the trace was found: read the whole lookback
+				// window rather than report a miss; that read's own budget error surfaces as itself.
+				case "Incomplete":
+					return read({ start_time: probed.startTime, end_time: probed.endTime }, widened)
+				case "Found":
+					return read(
 						{
-							start_time: formatWarehouseDateTime(bounds.startMs - rangeHours * HOUR_MS),
-							end_time: formatWarehouseDateTime(bounds.endMs + rangeHours * HOUR_MS),
+							start_time: formatWarehouseDateTime(found.bounds.startMs - rangeHours * HOUR_MS),
+							end_time: formatWarehouseDateTime(found.bounds.endMs + rangeHours * HOUR_MS),
 						},
 						widened,
-					),
-			}),
-		)
+					)
+			}
+		})
 
 	// An explicit window is read as given. A hint reads the hour around it and locates the trace
 	// in `trace_index` only on a miss. Without either, the trace is located first: reading a

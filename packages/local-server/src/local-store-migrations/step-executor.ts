@@ -3,6 +3,15 @@
 // the clone, bootstrap the target snapshot over it, verify, and never touch the source.
 import { resolve } from "node:path"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	finishZeroKeyRepairSql,
+	keyColumnProbeSql,
+	readyTableProbeSql,
+	stagedPartitionsSql,
+	zeroKeyRepairStatements,
+	zeroKeyRowsProbeSql,
+	type RepairZeroKeyColumnSpec,
+} from "@maple/domain/clickhouse"
 import { readRawTelemetryRetentionDays, type Chdb } from "../chdb"
 import { decodeJsonObjectRows } from "../chdb-rows"
 import type {
@@ -49,6 +58,12 @@ export type StepOperation =
 	| { readonly op: "drop"; readonly kind: "TABLE" | "VIEW"; readonly names: ReadonlyArray<string> }
 	| { readonly op: "backfill"; readonly statements: ReadonlyArray<string> }
 	| { readonly op: "modify-ttl"; readonly table: string; readonly ttl: string }
+	| {
+			readonly op: "add-sorting-column"
+			readonly table: string
+			readonly column: readonly [name: string, type: string, defaultExpression: string]
+			readonly sortingKey: ReadonlyArray<string>
+	  }
 
 export const addColumns = (
 	table: string,
@@ -85,6 +100,59 @@ export const backfill = (...statements: ReadonlyArray<string>): StepOperation =>
 /** `ttl` is the full TTL expression; MODIFY TTL replaces the table's previous one. */
 export const modifyTtl = (table: string, ttl: string): StepOperation => ({ op: "modify-ttl", table, ttl })
 
+/**
+ * Adds a column and appends it to the sorting key in the ALTER that adds it (the only way a column
+ * joins an existing key), then sets its DEFAULT, which ClickHouse refuses on a column added to the
+ * key. Old parts read the DEFAULT. Merges on the table stop around the pair, so none can write the
+ * column's 0 into a part before the DEFAULT exists. A failure between them leaves merges stopped
+ * only on the staged target, which is never cut over; the stop lives in the chDB session, and a
+ * resumed apply reruns every statement. A resumed store can hold 0s a merge wrote before the
+ * DEFAULT existed, and ClickHouse refuses UPDATE on a key column, so the 0 rows then move to the
+ * DEFAULT through a staging table (`RepairZeroKeyColumnSpec` in `@maple/domain/clickhouse`): each
+ * statement is safe to rerun after a crash at any point, and a clean run stages nothing.
+ * `sortingKey` is the full new key. Rerunning converges.
+ */
+export const addSortingColumn = (
+	table: string,
+	column: readonly [name: string, type: string, defaultExpression: string],
+	sortingKey: ReadonlyArray<string>,
+): StepOperation => ({ op: "add-sorting-column", table, column, sortingKey })
+
+/** The `add-sorting-column` operation's 0-row repair, as the self-managed apply runs it. */
+const zeroKeyRepair = (
+	operation: Extract<StepOperation, { readonly op: "add-sorting-column" }>,
+): RepairZeroKeyColumnSpec => ({
+	kind: "repair-zero-key-column",
+	table: operation.table,
+	column: operation.column[0],
+	value: Number(operation.column[2]),
+})
+
+/**
+ * Runs each `add-sorting-column` repair from the store's state now, after `stepStatements`: what it
+ * runs depends on the 0 rows and staging tables found, so it resumes from any crash point.
+ */
+const runZeroKeyRepairs = (
+	db: Pick<Chdb, "query" | "exec">,
+	operations: ReadonlyArray<StepOperation>,
+): void => {
+	const found = (sql: string) => decodeJsonObjectRows(db.query(sql)).length > 0
+	for (const operation of operations) {
+		if (operation.op !== "add-sorting-column") continue
+		const spec = zeroKeyRepair(operation)
+		const keyed = found(keyColumnProbeSql(spec, ""))
+		const ready = keyed && found(readyTableProbeSql(spec, ""))
+		const zeros = keyed && !ready && found(zeroKeyRowsProbeSql(spec, ""))
+		const planned = zeroKeyRepairStatements(spec, "", { keyed, ready, zeros })
+		for (const statement of planned.statements) db.exec(statement)
+		if (!planned.finish) continue
+		const partitions = Arr.flatMap(decodeJsonObjectRows(db.query(stagedPartitionsSql(spec, ""))), (row) =>
+			typeof row.p === "string" ? [row.p] : [],
+		)
+		for (const statement of finishZeroKeyRepairSql(spec, "", partitions)) db.exec(statement)
+	}
+}
+
 const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 	switch (operation.op) {
 		case "add-columns":
@@ -105,10 +173,28 @@ const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 			return operation.statements
 		case "modify-ttl":
 			return [`ALTER TABLE ${operation.table} MODIFY TTL ${operation.ttl}`]
+		case "add-sorting-column": {
+			const [name, type, defaultExpression] = operation.column
+			return [
+				`SYSTEM STOP MERGES ${operation.table}`,
+				`ALTER TABLE ${operation.table} ADD COLUMN IF NOT EXISTS ${name} ${type}, MODIFY ORDER BY (${Arr.join(operation.sortingKey, ", ")})`,
+				`ALTER TABLE ${operation.table} MODIFY COLUMN ${name} ${type} DEFAULT ${defaultExpression}`,
+				`SYSTEM START MERGES ${operation.table}`,
+			]
+		}
 	}
 }
 
-/** The exact statements a list of operations runs, in order. */
+/** Runs a list of operations: their statements, then any 0-row repair. */
+export const applyStepOperations = (
+	db: Pick<Chdb, "query" | "exec">,
+	operations: ReadonlyArray<StepOperation>,
+): void => {
+	for (const statement of stepStatements(operations)) db.exec(statement)
+	runZeroKeyRepairs(db, operations)
+}
+
+/** The exact statements a list of operations runs, in order (a 0-row repair runs after). */
 export const stepStatements = (operations: ReadonlyArray<StepOperation>): ReadonlyArray<string> =>
 	Arr.flatMap(operations, operationSql)
 
@@ -325,9 +411,7 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 	const run = (
 		db: Pick<Chdb, "query" | "exec">,
 		operations: ReadonlyArray<StepOperation> | undefined,
-	): void => {
-		for (const statement of stepStatements(operations ?? [])) db.exec(statement)
-	}
+	): void => applyStepOperations(db, operations ?? [])
 
 	const verifyCounts = (db: Pick<Chdb, "query" | "exec">, counts: StepCounts, state: StepState): void => {
 		const expected = decodeCountGroup(counts.group, state[counts.group])

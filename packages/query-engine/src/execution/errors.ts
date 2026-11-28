@@ -417,7 +417,7 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"THERE_IS_NO_COLUMN",
 			"NOT_FOUND_COLUMN_IN_BLOCK",
 		]),
-		// Newer ClickHouse says `Unknown expression identifier`, which the drift rule's pattern misses.
+		// Newer ClickHouse says `Unknown expression identifier`; the drift rule below matches it too.
 		pattern:
 			/Unknown (?:expression (?:or function )?)?identifier|Missing columns|There is no column|No such column/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
@@ -439,8 +439,9 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"THERE_IS_NO_COLUMN",
 			"NOT_FOUND_COLUMN_IN_BLOCK",
 		]),
+		// Untyped (Tinybird) errors reach here by message alone, newer ClickHouse's wording included.
 		pattern:
-			/Unknown (?:expression or function )?identifier|Missing columns|There is no column|No such column/i,
+			/Unknown (?:expression (?:or function )?)?identifier|Missing columns|There is no column|No such column/i,
 		make: (base) => new WarehouseSchemaDriftError(base),
 	},
 ]

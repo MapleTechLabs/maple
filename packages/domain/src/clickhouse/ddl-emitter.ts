@@ -60,6 +60,8 @@ interface ParsedDatasourceSchema {
 	readonly engine: string
 	readonly partitionKey: string
 	readonly sortingKey: string
+	/** Empty when the primary key is the sorting key. */
+	readonly primaryKey: string
 	readonly ttl: string | undefined
 	readonly indexes: ReadonlyArray<string>
 }
@@ -80,6 +82,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 	let engine = ""
 	let partitionKey = ""
 	let sortingKey = ""
+	let primaryKey = ""
 	let ttl: string | undefined
 	const indexLines: string[] = []
 
@@ -159,6 +162,9 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 				case "ENGINE_SORTING_KEY":
 					sortingKey = stripQuotes(valueRaw)
 					continue
+				case "ENGINE_PRIMARY_KEY":
+					primaryKey = stripQuotes(valueRaw)
+					continue
 				case "ENGINE_TTL":
 					ttl = stripQuotes(valueRaw)
 					continue
@@ -193,6 +199,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 		engine,
 		partitionKey,
 		sortingKey,
+		primaryKey,
 		ttl,
 		indexes: indexLines,
 	}
@@ -315,9 +322,30 @@ export interface ResourceContent {
 	readonly content: string
 }
 
+const ROW_RETENTION_PARTITION = /^\(RetentionDays, (toDate\(\w+\))\)$/
+const RETENTION_DAYS_DEFAULT = /^RetentionDays UInt16 DEFAULT (\d+)\b/
+
+/**
+ * A table partitioned by `RetentionDays` keeps one period here: self-managed inserts never stamp
+ * it (`SELF_MANAGED_INSERT_OMITTED_COLUMNS`), so every row holds the column default.
+ */
+const withSelfManagedRetention = (parsed: ParsedDatasourceSchema): ParsedDatasourceSchema => {
+	const day = Option.getOrUndefined(
+		Option.flatMapNullishOr(Str.match(ROW_RETENTION_PARTITION)(parsed.partitionKey), (m) => m[1]),
+	)
+	const days = Option.getOrUndefined(
+		Arr.findFirst(parsed.columns, (column) =>
+			Option.flatMapNullishOr(Str.match(RETENTION_DAYS_DEFAULT)(Str.trim(column)), (m) => m[1]),
+		),
+	)
+	return day === undefined || days === undefined
+		? parsed
+		: { ...parsed, partitionKey: day, ttl: `${day} + INTERVAL ${days} DAY` }
+}
+
 export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOptions): string => {
 	const opts = resolve(options)
-	const parsed = parseDatasource(datasource.content)
+	const parsed = withSelfManagedRetention(parseDatasource(datasource.content))
 
 	const ifNotExists = opts.ifNotExists ? "IF NOT EXISTS " : ""
 	const tableRef = qualified(datasource.name, opts.database)
@@ -343,6 +371,9 @@ export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOp
 
 	if (parsed.partitionKey.length > 0) {
 		lines.push(`PARTITION BY ${parsed.partitionKey}`)
+	}
+	if (parsed.primaryKey.length > 0) {
+		lines.push(`PRIMARY KEY (${parsed.primaryKey})`)
 	}
 	if (parsed.sortingKey.length > 0) {
 		lines.push(`ORDER BY (${parsed.sortingKey})`)

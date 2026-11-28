@@ -32,6 +32,7 @@ import {
 } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { SESSION_LIVE_WINDOW_SECONDS, type SessionTag } from "@maple/domain/query-engine"
+import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { inTraces, orgIdParam, utcSecondsParam, utcTraceWindow } from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
@@ -921,6 +922,11 @@ export interface SessionReplayEventsOpts {
 	limit?: number
 	/** Page within the range, for the public cursor-paginated surface. */
 	offset?: number
+	/**
+	 * Read each row's period as the column default instead of `RetentionDays`: for a self-managed
+	 * cluster below migration 0075, which lacks the column and never stamps it.
+	 */
+	unstampedPeriods?: boolean
 }
 
 export interface SessionReplayEventsOutput {
@@ -932,6 +938,8 @@ export interface SessionReplayEventsOutput {
 	/** The rrweb event array for this chunk, serialized as a JSON string. */
 	readonly events: string
 	readonly isCheckpoint: number
+	/** The row's stamped period: names the R2 key prefix a blob-backed chunk sits under. */
+	readonly retentionDays: number
 }
 
 export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
@@ -944,6 +952,9 @@ export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
 			byteSize: $.ByteSize,
 			events: $.Events,
 			isCheckpoint: $.IsCheckpoint,
+			retentionDays: opts.unstampedPeriods
+				? CH.rawExpr(`toUInt16(${DEFAULT_RETENTION_DAYS.sessions})`, T.uint16)
+				: $.RetentionDays,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

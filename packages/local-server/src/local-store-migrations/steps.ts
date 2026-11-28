@@ -14,6 +14,7 @@ import {
 import {
 	addColumns,
 	addIndex,
+	addSortingColumn,
 	backfill,
 	dropColumns,
 	dropTables,
@@ -45,6 +46,43 @@ const ERROR_RETENTION = {
 	sourceRetentionDays: 90,
 	targetRetentionDays: 90,
 } as const
+
+/** v68 -> v69: the span projections that copy their span's RetentionDays (trace_index apart, it sorts by it), and the views that fill them and product_events. */
+const RETENTION_STORAGE_SPAN_PROJECTIONS = [
+	"service_map_spans",
+	"service_map_children",
+	"service_overview_spans",
+	"trace_list_mv",
+	"ai_trace_index",
+	"ai_crawler_requests",
+	"scanner_requests",
+] as const
+const RETENTION_STORAGE_VIEWS = [
+	"service_map_spans_mv",
+	"service_map_children_mv",
+	"service_overview_spans_mv",
+	"trace_list_mv_mv",
+	"trace_index_mv",
+	"ai_trace_index_mv",
+	"ai_crawler_requests_mv",
+	"scanner_requests_mv",
+	"product_events_mv",
+	"product_events_traces_mv",
+	"trace_facets_hourly_mv",
+] as const
+
+/** trace_facets_hourly's dimensions: its primary key, and its sorting key before RetentionDays. */
+const TRACE_FACETS_HOURLY_DIMENSIONS = [
+	"OrgId",
+	"Hour",
+	"ServiceName",
+	"SpanName",
+	"HttpMethod",
+	"HttpStatusCode",
+	"DeploymentEnv",
+	"ServiceNamespace",
+	"HasError",
+] as const
 
 const TRACES_UNDER_REPLACED_VIEWS: StateDispositionEntry = {
 	name: "traces",
@@ -2356,6 +2394,71 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				preservationInterval: "evaluation retention horizon",
 				sourceRetentionDays: 30,
 				targetRetentionDays: 90,
+			},
+		],
+	},
+	{
+		// Metadata-only: a local store never stamps these columns, so every row reads its default
+		// and each table keeps one period under its unchanged TTL. The views are recreated by the
+		// bootstrap; nothing is backfilled.
+		slug: "retention-storage",
+		description:
+			"Add RetentionDays to the span projections and product_events, EventsRetentionDays to traces and session_events, and recreate their views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			...Arr.map(RETENTION_STORAGE_SPAN_PROJECTIONS, (table) =>
+				addColumns(table, [["RetentionDays", "UInt16 DEFAULT 30"]]),
+			),
+			// Aggregating: a plain column must be in the sorting key, so it joins it last.
+			addSortingColumn(
+				"trace_index",
+				["RetentionDays", "UInt16", "30"],
+				["OrgId", "TraceId", "ServiceName", "Bucket", "RetentionDays"],
+			),
+			// The facet rollup keeps one row per period, so its counts expire with their spans.
+			addSortingColumn(
+				"trace_facets_hourly",
+				["RetentionDays", "UInt16", "30"],
+				[...TRACE_FACETS_HOURLY_DIMENSIONS, "RetentionDays"],
+			),
+			modifyTtl("trace_facets_hourly", "toDate(Hour) + toIntervalDay(least(RetentionDays, 30))"),
+			addColumns("product_events", [["RetentionDays", "UInt16 DEFAULT 365"]]),
+			addColumns("traces", [["EventsRetentionDays", "UInt16 DEFAULT 365"]]),
+			addColumns("session_events", [["EventsRetentionDays", "UInt16 DEFAULT 365"]]),
+			dropViews(...RETENTION_STORAGE_VIEWS),
+		],
+		plan: [
+			[
+				"add-retention-storage-columns",
+				"Add RetentionDays to eight span projections, trace_facets_hourly and product_events, and EventsRetentionDays to traces and session_events",
+			],
+			[
+				"recreate-retention-storage-views",
+				"Recreate the eleven views that fill them so new rows carry the columns",
+			],
+		],
+		verifies: "Verify the v69 physical schema and retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "traces and session_events",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"One column is added as a metadata-only default; no part is rewritten and the row counts are verified unchanged.",
+			},
+			{
+				name: "span projections and product_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"One column is added as a metadata-only default and every existing row keeps its TTL; only the view definitions change.",
+			},
+			{
+				name: "trace_facets_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"RetentionDays joins the sorting key as a metadata-only default of 30; its TTL reads the column, capped at 30 days, so every existing row keeps its 30-day TTL.",
 			},
 		],
 	},

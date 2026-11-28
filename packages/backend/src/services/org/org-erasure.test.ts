@@ -21,9 +21,10 @@ import {
 	MAX_WAREHOUSE_JOBS,
 	purgeConversationRows,
 	queueOrgErasures,
-	replayPrefix,
+	replayPrefixes,
 	runOrgErasures,
 } from "./org-erasure"
+import { RETENTION_PERIODS } from "@maple/domain/retention"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -167,12 +168,19 @@ describe("queueOrgErasures and purgeConversationRows", () => {
 					),
 					[1, 1, 1],
 				)
+				// The legacy prefix and one per retention period.
 				assert.deepStrictEqual(
-					Arr.map(
-						Arr.filter(rows, (row) => row.kind === "replay_blobs"),
-						(row) => row.target,
+					Arr.sort(
+						Arr.map(
+							Arr.filter(rows, (row) => row.kind === "replay_blobs"),
+							(row) => row.target,
+						),
+						Order.String,
 					),
-					[`v1/${ORG_A}/`],
+					Arr.sort(
+						[`v1/${ORG_A}/`, ...Arr.map(RETENTION_PERIODS, (days) => `r${days}/v1/${ORG_A}/`)],
+						Order.String,
+					),
 				)
 				// The rows naming them are gone with the queuing; another org's stay.
 				const left = (orgId: OrgId) =>
@@ -206,12 +214,12 @@ describe("runOrgErasures", () => {
 				),
 			)
 			assert.isTrue(Arr.every(sessions.erased, (input) => input.orgId === ORG_A))
-			// Two full pages, then the empty listing that says the prefix is clear.
-			assert.deepStrictEqual(bucket.prefixes, [
-				replayPrefix(ORG_A),
-				replayPrefix(ORG_A),
-				replayPrefix(ORG_A),
-			])
+			// Every prefix listed until empty: two full pages, then one empty listing per prefix.
+			assert.deepStrictEqual(
+				Arr.sort(Arr.dedupe(bucket.prefixes), Order.String),
+				Arr.sort(replayPrefixes(ORG_A), Order.String),
+			)
+			assert.strictEqual(bucket.prefixes.length, replayPrefixes(ORG_A).length + 2)
 			assert.deepStrictEqual(yield* nonWarehouse, [])
 		}).pipe(Effect.provide([testDb.layer, sessions.layer, bucket.layer]))
 	})
@@ -280,7 +288,8 @@ describe("runOrgErasures", () => {
 
 			yield* runOrgErasures
 			assert.deepStrictEqual(yield* nonWarehouse, [])
-			assert.strictEqual(bucket.prefixes.length, 26)
+			// 25 full pages, then one empty listing per prefix.
+			assert.strictEqual(bucket.prefixes.length, 25 + replayPrefixes(ORG_A).length)
 		}).pipe(Effect.provide([testDb.layer, sessions.layer, bucket.layer]))
 	})
 
