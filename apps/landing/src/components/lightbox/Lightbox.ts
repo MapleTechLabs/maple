@@ -315,16 +315,23 @@ const AwaitClosed = Command.define("AwaitLightboxClosed", {
 /** Fetches and decodes a full-size file off screen; the slide swaps it in once it can paint. */
 const DecodeFull = Command.define("DecodeLightboxFull", {
 	args: { src: Schema.String },
-	messages: [Message.DecodedFull],
+	messages: [Message.DecodedFull, Message.CompletedSideEffect],
 	execute: ({ src }) =>
 		Effect.promise(() => {
 			const full = new Image()
 			full.src = src
-			// A failed decode still swaps: the slide's own request then shows whatever there is.
+			// A file that fails to decode would only replace a working preview with a broken image.
 			return typeof full.decode === "function"
-				? full.decode().catch(() => undefined)
-				: Promise.resolve()
-		}).pipe(Effect.as(Message.DecodedFull({ src }))),
+				? full.decode().then(
+						() => true,
+						() => false,
+					)
+				: Promise.resolve(true)
+		}).pipe(
+			Effect.map((isDecoded) =>
+				isDecoded ? Message.DecodedFull({ src }) : Message.CompletedSideEffect(),
+			),
+		),
 })
 
 /** Keeps the open slide's thumbnail in view as the gallery moves. */

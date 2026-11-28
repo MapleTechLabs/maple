@@ -200,6 +200,7 @@ describe("Lightbox island", () => {
 
 	it("opens a plate outside an article alone, from its full-size source", async () => {
 		await mount()
+		vi.spyOn(HTMLImageElement.prototype, "decode").mockResolvedValue(undefined)
 		plate("hero").click()
 		await vi.waitFor(() => expect(dialog()?.getAttribute("aria-label")).toBe("Enlarged screenshot"))
 		await vi.waitFor(() => expect(shown()).toEqual(["/shots/hero@2x.webp"]))
@@ -236,6 +237,17 @@ describe("Lightbox island", () => {
 		release()
 		await vi.waitFor(() => expect(shown()[0]).toBe("/shots/wall-0.webp"))
 		expect(slide.hasAttribute("srcset")).toBe(false)
+	})
+
+	it("keeps the preview when the full-size file fails to decode", async () => {
+		await mount()
+		vi.spyOn(HTMLImageElement.prototype, "decode").mockRejectedValue(
+			new DOMException("broken", "EncodingError"),
+		)
+		plate("hero").click()
+		await vi.waitFor(() => expect(dialogs()).toHaveLength(1))
+		await pause(200)
+		expect(shown()).toEqual(["/shots/hero.webp"])
 	})
 
 	it("opens without the morph when the plate has not loaded, and still returns focus", async () => {
