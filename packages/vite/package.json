@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/vite",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Vite plugin for Maple: gives each built JS file a debug id, keeps source maps out of the deployed output and uploads them, so error stacks in Maple show your original source.",
 	"keywords": [
 		"maple",
