@@ -1143,34 +1143,6 @@ export const makeGetVerifiedPrimaryEmail = makeUserEmailLookup(
 	extractVerifiedPrimaryEmail,
 )
 
-export const makeGetCustomerData = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY">) => {
-	const api = clerkModeApi(env)
-	if (api === undefined) {
-		return Effect.fn("AuthService.getCustomerData")(function* (_tenant: TenantContext) {
-			return { email: null as string | null, orgName: null as string | null }
-		})
-	}
-
-	return Effect.fn("AuthService.getCustomerData")(function* (tenant: TenantContext) {
-		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "tenant.userId": tenant.userId })
-		const [user, org] = yield* Effect.all(
-			[
-				api.run(Clerk.getUser({ user_id: tenant.userId })).pipe(Effect.option),
-				api.run(Clerk.getOrganization({ organization_id: tenant.orgId })).pipe(Effect.option),
-			],
-			{ concurrency: "unbounded" },
-		)
-
-		return {
-			email: Option.match(user, { onNone: () => null as string | null, onSome: extractPrimaryEmail }),
-			orgName: Option.match(org, {
-				onNone: () => null as string | null,
-				onSome: (o) => o.name,
-			}),
-		}
-	})
-}
-
 export {
 	type ClerkApi,
 	type ClerkApiServices,

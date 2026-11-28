@@ -8,7 +8,6 @@ import {
 	UnauthorizedError,
 } from "@maple/domain/http"
 import {
-	makeGetCustomerData,
 	makeGetUserEmail,
 	makeGetVerifiedPrimaryEmail,
 	makeLoginSelfHosted,
@@ -55,9 +54,6 @@ export interface AuthServiceApi {
 	readonly getUserEmail: (userId: string) => Effect.Effect<string | null>
 	/** Null outside Clerk mode, on a failed lookup, or when the primary address is unverified. */
 	readonly getVerifiedPrimaryEmail: (userId: string) => Effect.Effect<string | null>
-	readonly getCustomerData: (
-		tenant: TenantContext,
-	) => Effect.Effect<{ email: string | null; orgName: string | null }>
 }
 
 export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
@@ -80,7 +76,6 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
 			const refreshSelfHostedSession = makeRefreshSelfHostedSession(env)
 			const getUserEmail = makeGetUserEmail(env)
 			const getVerifiedPrimaryEmail = makeGetVerifiedPrimaryEmail(env)
-			const getCustomerData = makeGetCustomerData(env)
 
 			return {
 				resolveTenant,
@@ -89,7 +84,6 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
 				refreshSelfHostedSession,
 				getUserEmail,
 				getVerifiedPrimaryEmail,
-				getCustomerData,
 			} satisfies AuthServiceApi
 		}),
 	},

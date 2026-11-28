@@ -62,6 +62,7 @@ import { ProductEventsService } from "@maple/backend/services/product-events/Pro
 import * as Policy from "@maple/domain/policy"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
@@ -146,6 +147,11 @@ const orgUsageTotals = (orgId: OrgId, spend: DailySpendResponse) =>
 		productEvents: Arr.reduce(spend.days, 0, (sum, day) => sum + (day.productEvents ?? 0)),
 	})
 
+// Only the email: the rest of a customer read is decoded where it is used.
+const decodeCustomerEmail = Schema.decodeUnknownOption(
+	Schema.Struct({ email: Schema.optionalKey(Schema.NullOr(Schema.String)) }),
+)
+
 export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing", (handlers) =>
 	Effect.gen(function* () {
 		// Shared by every caller of the org, so never filed under a caller's cache partition.
@@ -156,6 +162,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 		const stripe = yield* StripeClient
 		const productEvents = yield* ProductEventsService
 		const organizations = yield* OrganizationService
+		const auth = yield* AuthService
 		const billingCustomers = yield* BillingCustomerResolver
 		const billingOrgs = yield* BillingOrgService
 
@@ -177,33 +184,52 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 				return { customerId, ...cached }
 			})
 
+		// The acting member's verified email, for a customer that has none. Only Stripe
+		// Checkout fills one in, so a no-card trial otherwise never gets an email. Never
+		// replaces an existing email, and an unreadable customer counts as having one.
+		const missingEmailFor = (customerId: BillingCustomerId, userId: string) =>
+			Effect.gen(function* () {
+				const { result } = yield* readCustomerCached(edgeCache, autumn, customerId)
+				if (result.statusCode !== 200) return undefined
+				const current = decodeCustomerEmail(result.response).pipe(
+					Option.flatMap((customer) => Option.fromNullishOr(customer.email)),
+					Option.filter((email) => email.length > 0),
+				)
+				if (Option.isSome(current)) return undefined
+				return (yield* auth.getVerifiedPrimaryEmail(userId)) ?? undefined
+			})
+
 		// Autumn names an unnamed customer after whoever pays at checkout, so the org's
-		// billing showed up under a person. Stamp the org name on first; best-effort,
-		// a naming hiccup must never block a checkout or the portal.
-		const nameCustomerAfterOrg = (orgId: OrgId, customerId: BillingCustomerId) =>
-			organizations.retrieve(orgId).pipe(
-				Effect.flatMap((org) =>
-					org.name
-						? autumn.updateCustomerName(customerId, org.name).pipe(
-								// No customer yet (a 404 from the update): create it already named,
-								// or attach would create it unnamed.
-								Effect.filterOrElse(
-									(result) => result.statusCode !== 404,
-									() =>
-										autumn.getOrCreateCustomer(customerId, {
-											expand: [],
-											customerData: { name: org.name },
-										}),
-								),
-								Effect.flatMap(ensureOk),
-							)
-						: Effect.void,
-				),
-				// Runs ahead of the Subscribe click's checkout, where a stall reads as a failed payment.
-				Effect.timeout("3 seconds"),
-				Effect.catch((error) => Effect.logWarning("Failed to name Autumn customer after org", error)),
-				Effect.withSpan("HttpBilling.nameCustomerAfterOrg"),
-			)
+		// billing showed up under a person. Stamp the org name (and an email, above) on
+		// first; best-effort, a hiccup here must never block a checkout or the portal.
+		const identifyCustomer = Effect.fn("HttpBilling.identifyCustomer")(
+			function* (orgId: OrgId, userId: string, customerId: BillingCustomerId) {
+				const [org, email] = yield* Effect.all(
+					[organizations.retrieve(orgId), missingEmailFor(customerId, userId)],
+					{ concurrency: "unbounded" },
+				)
+				const identity = {
+					...(org.name ? { name: org.name } : undefined),
+					...(email !== undefined ? { email } : undefined),
+				}
+				yield* Effect.annotateCurrentSpan({ "maple.billing.customer_email_set": email !== undefined })
+				if (identity.name === undefined && identity.email === undefined) return
+				const updated = yield* autumn.updateCustomerIdentity(customerId, identity)
+				// No customer yet (a 404 from the update): create it already identified,
+				// or attach would create it bare.
+				const result =
+					updated.statusCode === 404
+						? yield* autumn.getOrCreateCustomer(customerId, {
+								expand: [],
+								customerData: identity,
+							})
+						: updated
+				yield* ensureOk(result)
+			},
+			// Runs ahead of the Subscribe click's checkout, where a stall reads as a failed payment.
+			Effect.timeout("3 seconds"),
+			Effect.catch((error) => Effect.logWarning("Failed to identify Autumn customer", error)),
+		)
 
 		// The trial an attach carries (`trialDays`; `undefined` keeps the plan's own), or `isHeld`
 		// for a trial already running (a double click). The no-card trial is once per org, read
@@ -480,13 +506,13 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 								}),
 						)
 						// `/v1/billing.attach` carries no identity fields in Autumn 2.3.0, so
-						// the org name goes on through `nameCustomerAfterOrg` beforehand.
+						// the org name and email go on through `identifyCustomer` beforehand.
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,
 							"maple.billing.plan_id": payload.planId,
 						})
 						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
-						yield* nameCustomerAfterOrg(tenant.orgId, customerId)
+						yield* identifyCustomer(tenant.orgId, tenant.userId, customerId)
 						const { isHeld, trialDays } = yield* trialTermsFor(customerId, payload.planId)
 						yield* Effect.annotateCurrentSpan({
 							"maple.billing.trial_days": trialDays === undefined ? "plan" : String(trialDays),
@@ -583,7 +609,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 								}),
 						)
 						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
-						yield* nameCustomerAfterOrg(tenant.orgId, customerId)
+						yield* identifyCustomer(tenant.orgId, tenant.userId, customerId)
 						const result = yield* autumn.openCustomerPortal(customerId, {
 							returnUrl: payload.returnUrl,
 						})
