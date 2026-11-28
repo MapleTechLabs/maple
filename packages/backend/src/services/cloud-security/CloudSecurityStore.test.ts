@@ -1,13 +1,14 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, ConfigProvider, Effect, Layer, Option, Order, Result, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
+import { AwsAccountId, AwsRegion, GcpLocation, GcpProjectId, OrgId, UserId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AwsConnectionService } from "../integrations/AwsConnectionService"
+import { GcpConnectorService } from "../integrations/GcpConnectorService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws } from "../integrations/aws/fake-aws"
-import { type CloudFindingWrite, CloudSecurityStore } from "./CloudSecurityStore"
+import { type AwsFindingWrite, type CloudFindingWrite, CloudSecurityStore } from "./CloudSecurityStore"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -24,6 +25,7 @@ const config = {
 	MAPLE_INGEST_PUBLIC_URL: "https://ingest.test/",
 	MAPLE_API_BASE_URL: "https://api.maple.test/",
 	MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey,
+	MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: "collector@maple-prod.iam.gserviceaccount.com",
 }
 
 const orgId = Schema.decodeSync(OrgId)("org_sec")
@@ -38,6 +40,7 @@ const makeWorld = () => {
 	const layer = Layer.mergeAll(
 		CloudSecurityStore.layer,
 		Layer.effect(AwsConnectionService, AwsConnectionService.make),
+		Layer.effect(GcpConnectorService, GcpConnectorService.make),
 	).pipe(
 		Layer.provide(OrganizationFeatureFlagsService.allEnabled),
 		Layer.provide(testDb.layer),
@@ -58,13 +61,14 @@ const connect = (org: OrgId, account: string) =>
 
 const finding = (
 	connection: {
-		readonly id: CloudFindingWrite["connectionId"]
-		readonly accountId: CloudFindingWrite["accountId"]
+		readonly id: AwsFindingWrite["connectionId"]
+		readonly accountId: AwsFindingWrite["accountId"]
 	},
 	org: OrgId,
-	overrides: Partial<CloudFindingWrite> = {},
-): CloudFindingWrite => ({
+	overrides: Partial<AwsFindingWrite> = {},
+): AwsFindingWrite => ({
 	orgId: org,
+	provider: "aws" as const,
 	connectionId: connection.id,
 	accountId: connection.accountId,
 	region,
@@ -119,7 +123,13 @@ describe("CloudSecurityStore", () => {
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
 			const connection = yield* connect(orgId, "111111111111")
-			const base = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			const base = {
+				orgId,
+				provider: "aws" as const,
+				connectionId: connection.id,
+				region,
+				source: "guardduty" as const,
+			}
 			yield* store.recordServiceState({
 				...base,
 				state: "enabled",
@@ -209,6 +219,7 @@ describe("CloudSecurityStore", () => {
 			yield* store.upsertFindings([finding(connection, orgId)], 1)
 			yield* store.recordServiceState({
 				orgId,
+				provider: "aws" as const,
 				connectionId: connection.id,
 				region,
 				source: "guardduty",
@@ -224,6 +235,74 @@ describe("CloudSecurityStore", () => {
 				queryRows(world.testDb, "SELECT 1 FROM cloud_security_findings"),
 			)
 			assert.strictEqual(rows.length, 0)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("drops a GCP connector's findings and states with the connector, and keeps AWS rows", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const gcp = yield* GcpConnectorService
+			const aws = yield* connect(orgId, "111111111111")
+			const project = Schema.decodeSync(GcpProjectId)("acme-prod")
+			const connector = yield* gcp.create(orgId, userId, {
+				scopeType: "project",
+				scopeId: project,
+				projectId: project,
+				logsEnabled: true,
+				metricsEnabled: false,
+			})
+			const location = Schema.decodeSync(GcpLocation)("global")
+			const scc: CloudFindingWrite = {
+				...finding(aws, orgId),
+				provider: "gcp",
+				connectionId: connector.id,
+				accountId: project,
+				region: location,
+				source: "security_command_center",
+				findingId: "organizations/1/sources/2/locations/global/findings/abc",
+			}
+			yield* store.upsertFindings([finding(aws, orgId), scc], 1)
+			yield* store.recordServiceState({
+				orgId,
+				provider: "gcp",
+				connectionId: connector.id,
+				region: location,
+				source: "security_command_center",
+				state: "enabled",
+				cursorAt: null,
+				windowMs: null,
+				lastError: null,
+				checkedAt: 1,
+			})
+			const gcpOnly = yield* store.listFindings(
+				orgId,
+				{ status: "active", providers: ["gcp"] },
+				{ limit: 10, offset: 0 },
+			)
+			assert.deepStrictEqual(
+				Arr.map(gcpOnly.rows, (row) => [row.provider, row.source]),
+				[["gcp", "security_command_center"]],
+			)
+			// Switching findings off clears them: nothing would close them any more.
+			yield* gcp.update(orgId, connector.id, { securityEnabled: true })
+			yield* store.upsertFindings([scc], 2)
+			yield* gcp.update(orgId, connector.id, { securityEnabled: false })
+			assert.deepStrictEqual(yield* store.serviceStates(orgId, connector.id), [])
+			assert.deepStrictEqual(
+				Arr.map(
+					(yield* store.listFindings(orgId, { status: "active" }, { limit: 10, offset: 0 })).rows,
+					(row) => row.provider,
+				),
+				["aws"],
+			)
+			yield* store.upsertFindings([scc], 3)
+			yield* gcp.delete(orgId, connector.id)
+			assert.deepStrictEqual(yield* store.serviceStates(orgId, connector.id), [])
+			const rows = yield* Effect.promise(() =>
+				queryRows<{ provider: string }>(world.testDb, "SELECT provider FROM cloud_security_findings"),
+			)
+			assert.deepStrictEqual(rows, [{ provider: "aws" }])
 		}).pipe(Effect.provide(world.layer))
 	})
 
@@ -272,7 +351,7 @@ describe("CloudSecurityStore", () => {
 			const seen = yield* Effect.forEach([0, 1, 2, 3], (offset) =>
 				store
 					.listFindings(orgId, { status: "active" }, { limit: 1, offset })
-					.pipe(Effect.map((page) => page.rows[0]?.source)),
+					.pipe(Effect.map((page): string => page.rows[0]?.source ?? "none")),
 			)
 			assert.deepStrictEqual(Arr.sort(seen, Order.String), Arr.sort(sources, Order.String))
 		}).pipe(Effect.provide(world.layer))
@@ -382,6 +461,7 @@ describe("CloudSecurityStore", () => {
 				securityhub: 0,
 				inspector: 1,
 				access_analyzer: 0,
+				security_command_center: 0,
 			})
 		}).pipe(Effect.provide(world.layer))
 	})
@@ -393,9 +473,10 @@ describe("CloudSecurityStore", () => {
 			const first = yield* connect(orgId, "111111111111")
 			const second = yield* connect(orgId, "333333333333")
 			const theirs = yield* connect(otherOrgId, "222222222222")
-			const state = (org: OrgId, connectionId: CloudFindingWrite["connectionId"]) =>
+			const state = (org: OrgId, connectionId: AwsFindingWrite["connectionId"]) =>
 				store.recordServiceState({
 					orgId: org,
+					provider: "aws" as const,
 					connectionId,
 					region,
 					source: "guardduty",
@@ -430,6 +511,7 @@ describe("CloudSecurityStore", () => {
 			// A service found off still counts: the poller reads the region.
 			yield* store.recordServiceState({
 				orgId,
+				provider: "aws" as const,
 				connectionId: first.id,
 				region,
 				source: "securityhub",
@@ -459,7 +541,13 @@ describe("CloudSecurityStore", () => {
 				],
 				1,
 			)
-			const feed = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			const feed = {
+				orgId,
+				provider: "aws" as const,
+				connectionId: connection.id,
+				region,
+				source: "guardduty" as const,
+			}
 			assert.strictEqual(yield* store.resolve(feed, { except: ["open-1"] }, 9), 1)
 			const rows = yield* Effect.promise(() =>
 				queryRows<{ finding_id: string; status: string }>(
@@ -479,7 +567,13 @@ describe("CloudSecurityStore", () => {
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
 			const connection = yield* connect(orgId, "111111111111")
-			const feed = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			const feed = {
+				orgId,
+				provider: "aws" as const,
+				connectionId: connection.id,
+				region,
+				source: "guardduty" as const,
+			}
 			yield* store.upsertFindings([finding(connection, orgId, { findingId: "gone" })], 1)
 			yield* store.upsertFindings([finding(connection, orgId, { findingId: "other" })], 2)
 			yield* store.resolve(feed, { only: ["gone"] }, 3)
@@ -496,7 +590,13 @@ describe("CloudSecurityStore", () => {
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
 			const connection = yield* connect(orgId, "111111111111")
-			const feed = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			const feed = {
+				orgId,
+				provider: "aws" as const,
+				connectionId: connection.id,
+				region,
+				source: "guardduty" as const,
+			}
 			yield* store.upsertFindings([finding(connection, orgId, { findingId: "old" })], 1)
 			// The read started at 10; an event stored "pushed" at 12, after the listing passed it.
 			yield* store.upsertFindings([finding(connection, orgId, { findingId: "pushed" })], 12)
@@ -577,6 +677,7 @@ describe("CloudSecurityStore", () => {
 			const connection = yield* connect(orgId, "111111111111")
 			yield* store.recordServiceState({
 				orgId,
+				provider: "aws" as const,
 				connectionId: connection.id,
 				region,
 				source: "inspector",

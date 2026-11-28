@@ -27,19 +27,30 @@ type Staged = Readonly<{
 	connectors: ReadonlyArray<V2GcpConnector>
 	configure: ConfigureModel
 	pinnedScripts: Model["pinnedScripts"]
+	/** False stages a deployment that cannot read metrics or security findings. */
+	metricsAvailable?: boolean
 }>
 
 /** The wizard each state mounts: a connection's Data step, or a run fixture. */
 const staged = (nowMs: number, state: LabState): Staged => {
 	const fixtures = fixturesAt(nowMs)
 	switch (state) {
-		case "configure": {
-			const connector = fixtures.configured
+		case "configure":
+		case "configure-security":
+		case "configure-no-metrics": {
+			const metricsAvailable = state !== "configure-no-metrics"
+			const connector =
+				state === "configure-security"
+					? fixtures.configuredSecurity
+					: metricsAvailable
+						? fixtures.configured
+						: { ...fixtures.configured, metrics_enabled: false, applied_metrics_enabled: false }
 			const target = { _tag: "Connection", id: connector.id, stage: "choose" } as const
 			return {
 				connectors: [connector],
-				configure: initConfigure(target, [connector], true),
+				configure: initConfigure(target, [connector], metricsAvailable),
 				pinnedScripts: null,
+				metricsAvailable,
 			}
 		}
 		case "method":
@@ -90,14 +101,16 @@ const METHOD_APPLY_STATES: ReadonlyArray<LabState> = [
 	"alchemy",
 	"alchemy-org",
 	"method-confirmed",
+	"manual-security",
+	"manual-security-only",
 ]
 const isMethodApplyState = (state: LabState): state is MethodApplyState => METHOD_APPLY_STATES.includes(state)
 
 /** `show(next)`: the state's dialog, remounted from its first step and open. */
 const show = (model: Model, state: LabState): Return => {
-	const { connectors, configure, pinnedScripts } = staged(model.nowMs, state)
+	const { connectors, configure, pinnedScripts, metricsAvailable } = staged(model.nowMs, state)
 	const shown = Dialog.open(configure.dialog)
-	const hub = hubOf(model.nowMs, connectors)
+	const hub = hubOf(model.nowMs, connectors, metricsAvailable)
 	return {
 		model: {
 			...model,

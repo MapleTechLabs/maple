@@ -1,7 +1,7 @@
 import {
 	GCP_PUSH_SUBSCRIPTION,
 	GCP_READER_PROJECT_ROLE,
-	GCP_READER_SCOPE_ROLES,
+	GCP_SECURITY_SCOPE_ROLE,
 	gcpConnectorResourceNames,
 	gcpServiceAccountEmail,
 	type GcpSetupPlan,
@@ -39,6 +39,7 @@ const ROLE_NAMES = new Map([
 	["roles/monitoring.viewer", "Monitoring Viewer"],
 	["roles/cloudasset.viewer", "Cloud Asset Viewer"],
 	["roles/serviceusage.serviceUsageConsumer", "Service Usage Consumer"],
+	[GCP_SECURITY_SCOPE_ROLE, "Security Center Findings Viewer"],
 ])
 const roleName = (role: string) => ROLE_NAMES.get(role) ?? role
 
@@ -65,9 +66,13 @@ const onScope = (where: string, scope: Scope) =>
 		? `In ${where},`
 		: `In ${where}, pick the ${scope.scopeType} ${scope.scopeId} in the resource picker, and`
 
+/** Whether the plan's reader reads metrics, not only security findings. */
+const readsMetrics = (plan: GcpSetupPlan): boolean =>
+	plan.reader !== null && Arr.some(plan.reader.scopeRoles, (role) => role === "roles/monitoring.viewer")
+
 /** The console steps that create what `plan` describes, in the order Google needs them. */
 export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep> {
-	const { logs, reader } = plan
+	const { logs, reader, security } = plan
 	const host = plan.projectId
 	const steps: Array<GcpManualStep> = [
 		{
@@ -78,12 +83,30 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			fields: [field("APIs", plan.apis)],
 			notes: [
 				"pubsub.googleapis.com is the Cloud Pub/Sub API, not Pub/Sub Lite.",
-				...(reader === null
+				...(!readsMetrics(plan)
 					? []
 					: ["Cloud Monitoring only answers for a project with billing linked."]),
 			],
 		},
 	]
+	const pushAccountStep = (pushServiceAccountId: string): GcpManualStep => ({
+		title: "Create the push service account",
+		summary: pushServiceAccountId,
+		intro: "In IAM & Admin › Service accounts, click Create service account, fill in the name, then replace the ID the console fills in, and click Create and close. Then open the account, its Principals with access tab, and click Grant access.",
+		consoleUrl: hostPage("iam-admin/serviceaccounts", plan),
+		fields: [
+			field("Service account name", "Maple push identity"),
+			field("Service account ID", pushServiceAccountId),
+			field("Description", "Signs Pub/Sub push requests to Maple. Holds no roles."),
+			field("Grant access to", "service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com"),
+			field("Role", "Service Account Token Creator", false),
+		],
+		notes: [
+			"In New principals, type gcp-sa-pubsub and pick “Cloud Pub/Sub Service Account for Project …”: that fills in PROJECT_NUMBER.",
+			"The role picker starts on Service Account Admin: replace it with Service Account Token Creator.",
+			"Only needed where the Pub/Sub service agent was created before April 8, 2021; harmless elsewhere. Google lists the grant only with Include Google-provided role grants ticked.",
+		],
+	})
 	if (logs !== null) {
 		const topicPath = `projects/${host}/topics/${logs.topic}`
 		steps.push(
@@ -95,24 +118,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 				fields: [field("Topic ID", logs.topic), field("Add a default subscription", "Off", false)],
 				notes: ["The default subscription is on by default: left on, it keeps a copy of every log."],
 			},
-			{
-				title: "Create the push service account",
-				summary: logs.pushServiceAccountId,
-				intro: "In IAM & Admin › Service accounts, click Create service account, fill in the name, then replace the ID the console fills in, and click Create and close. Then open the account, its Principals with access tab, and click Grant access.",
-				consoleUrl: hostPage("iam-admin/serviceaccounts", plan),
-				fields: [
-					field("Service account name", "Maple log push identity"),
-					field("Service account ID", logs.pushServiceAccountId),
-					field("Description", "Signs Pub/Sub push requests to Maple. Holds no roles."),
-					field("Grant access to", "service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com"),
-					field("Role", "Service Account Token Creator", false),
-				],
-				notes: [
-					"In New principals, type gcp-sa-pubsub and pick “Cloud Pub/Sub Service Account for Project …”: that fills in PROJECT_NUMBER.",
-					"The role picker starts on Service Account Admin: replace it with Service Account Token Creator.",
-					"Only needed where the Pub/Sub service agent was created before April 8, 2021; harmless elsewhere. Google lists the grant only with Include Google-provided role grants ticked.",
-				],
-			},
+			pushAccountStep(logs.pushServiceAccountId),
 			{
 				title: "Create the push subscription",
 				summary: logs.subscription,
@@ -211,7 +217,12 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 				intro: "In IAM & Admin › Service accounts, click Create service account, fill in the name, replace the ID the console fills in, and click Create and close. It gets no key.",
 				consoleUrl: hostPage("iam-admin/serviceaccounts", plan),
 				fields: [
-					field("Service account name", "Maple metrics and resource reader"),
+					field(
+						"Service account name",
+						readsMetrics(plan)
+							? "Maple metrics and resource reader"
+							: "Maple security findings reader",
+					),
 					field("Service account ID", reader.serviceAccountId),
 				],
 				notes: [],
@@ -233,7 +244,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			plan.scopeType === "project"
 				? {
 						title: "Grant the read-only roles",
-						summary: `${GCP_READER_SCOPE_ROLES.length + 1} roles`,
+						summary: `${reader.scopeRoles.length + 1} roles`,
 						intro: `${onScope("IAM & Admin › IAM", plan)} click Grant access, paste the account as a new principal and add the roles, each after the first with Add another role.`,
 						consoleUrl: scopePage("iam-admin/iam", plan),
 						fields: [
@@ -241,7 +252,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 							field(
 								"Roles",
 								Arr.join(
-									Arr.map([...GCP_READER_SCOPE_ROLES, GCP_READER_PROJECT_ROLE], roleName),
+									Arr.map([...reader.scopeRoles, GCP_READER_PROJECT_ROLE], roleName),
 									", ",
 								),
 								false,
@@ -251,12 +262,12 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 					}
 				: {
 						title: `Grant the read-only roles on the ${plan.scopeType}`,
-						summary: `${GCP_READER_SCOPE_ROLES.length} roles`,
+						summary: `${reader.scopeRoles.length} ${reader.scopeRoles.length === 1 ? "role" : "roles"}`,
 						intro: `${onScope("IAM & Admin › IAM", plan)} click Grant access, paste the account as a new principal and add the roles, each after the first with Add another role.`,
 						consoleUrl: scopePage("iam-admin/iam", plan),
 						fields: [
 							field("Principal", reader.serviceAccountEmail),
-							field("Roles", Arr.join(Arr.map(GCP_READER_SCOPE_ROLES, roleName), ", "), false),
+							field("Roles", Arr.join(Arr.map(reader.scopeRoles, roleName), ", "), false),
 						],
 						notes: [`Granted on project ${host} instead, Maple would read only that project.`],
 					},
@@ -275,6 +286,68 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 							notes: [],
 						},
 					]),
+		)
+	}
+	if (security !== null) {
+		const topicPath = `projects/${host}/topics/${security.topic}`
+		steps.push(
+			{
+				title: "Create the findings Pub/Sub topic",
+				summary: security.topic,
+				intro: "In Pub/Sub › Topics, click Create topic and click Create.",
+				consoleUrl: hostPage("cloudpubsub/topic/list", plan),
+				fields: [
+					field("Topic ID", security.topic),
+					field("Add a default subscription", "Off", false),
+				],
+				notes: [
+					"The default subscription is on by default: left on, it keeps a copy of every finding.",
+				],
+			},
+			// Logs already made the push account; findings sign as the same one.
+			...(logs === null ? [pushAccountStep(security.pushServiceAccountId)] : []),
+			{
+				title: "Create the findings push subscription",
+				summary: security.subscription,
+				intro: "In Pub/Sub › Subscriptions, click Create subscription, set these, and click Create.",
+				consoleUrl: hostPage("cloudpubsub/subscription/list", plan),
+				fields: [
+					field("Subscription ID", security.subscription),
+					field("Pub/Sub topic", topicPath),
+					field("Delivery type", "Push", false),
+					field("Endpoint URL", security.pushEndpoint),
+					field("Enable authentication", "On", false),
+					field("Service account", security.pushServiceAccountEmail),
+					field("Audience (marked optional)", security.pushEndpoint),
+					field("Enable payload unwrapping", "On, Write metadata off", false),
+					field(
+						"Retry policy",
+						`Retry after exponential backoff delay, ${GCP_PUSH_SUBSCRIPTION.minRetryDelaySeconds} to ${GCP_PUSH_SUBSCRIPTION.maxRetryDelaySeconds} seconds`,
+						false,
+					),
+					field("Expiry period", "Never expire", false),
+				],
+				notes: [
+					"Without payload unwrapping Maple can't read what Pub/Sub sends, and drops it.",
+					"The expiry period defaults to 31 days: an idle subscription would be deleted.",
+				],
+			},
+			{
+				title: `Send findings to the topic${plan.scopeType === "project" ? "" : ` from the ${plan.scopeType}`}`,
+				summary: security.notificationConfig,
+				intro: `${onScope("Security Command Center › Settings › Continuous exports", plan)} click Create Pub/Sub export, set these, and click Save.`,
+				consoleUrl: scopePage("security/command-center/config/continuous-exports", plan),
+				fields: [
+					field("Continuous export name", security.notificationConfig),
+					field("Description", "Sends Security Command Center findings to Maple."),
+					field("Topic", topicPath),
+					field("Findings query", security.filter),
+				],
+				notes: [
+					"Security Command Center must be activated for the scope first; on a project the Standard tier is enough.",
+					"Creating the export lets Security Command Center's own service agent publish to the topic.",
+				],
+			},
 		)
 	}
 	return steps
@@ -300,6 +373,8 @@ export function gcpRemovalList(
 	const readerEmail = gcpServiceAccountEmail(names.serviceAccountId, host)
 	const listed = (enabled: boolean, applied: boolean | null) =>
 		(which === "all" || !enabled) && applied !== false
+	// No run reports on security findings: only a disconnect of a connection that has them lists them.
+	const security = which === "all" && connector.security_enabled
 	return Arr.map(
 		[
 			...(listed(connector.logs_enabled, connector.applied_logs_enabled)
@@ -326,7 +401,28 @@ export function gcpRemovalList(
 						},
 					]
 				: []),
-			...(listed(connector.metrics_enabled, connector.applied_metrics_enabled)
+			...(security
+				? [
+						{
+							what: `Security Command Center continuous export on the ${connector.scope_type}`,
+							name: names.notificationConfig,
+							consoleUrl: scopePage("security/command-center/config/continuous-exports", scope),
+						},
+						{
+							what: "Findings Pub/Sub subscription",
+							name: names.securitySubscription,
+							consoleUrl: hostPage("cloudpubsub/subscription/list", scope),
+						},
+						{
+							what: "Findings Pub/Sub topic: type delete to confirm",
+							name: names.securityTopic,
+							consoleUrl: hostPage("cloudpubsub/topic/list", scope),
+						},
+					]
+				: []),
+			// Security findings read through the same account: it stays while they are on.
+			...(listed(connector.metrics_enabled, connector.applied_metrics_enabled) &&
+			(which === "all" || !connector.security_enabled)
 				? [
 						{
 							what: `The read-only account's roles on the ${connector.scope_type}${connector.scope_type === "project" ? "" : ` and ${host}`}: Remove access`,
@@ -346,7 +442,11 @@ export function gcpRemovalList(
 			confirmed:
 				item.name === readerEmail
 					? connector.applied_metrics_enabled === true
-					: connector.applied_logs_enabled === true,
+					: item.name === names.notificationConfig ||
+						  item.name === names.securitySubscription ||
+						  item.name === names.securityTopic
+						? false
+						: connector.applied_logs_enabled === true,
 		}),
 	)
 }
@@ -392,13 +492,21 @@ export function gcpAgentPrompt({
 			: [
 					`gcloud iam service-accounts get-iam-policy ${plan.reader.serviceAccountEmail} --project=${host} --format="value(bindings.members)"`,
 				]),
+		...(plan.security === null
+			? []
+			: [
+					`gcloud scc notifications describe ${plan.security.notificationConfig} --${plan.scopeType}=${plan.scopeId} --location=global --format="value(pubsubTopic,streamingConfig.filter)"`,
+				]),
 	]
 	const finish = Arr.filter(
 		[
 			plan.logs === null ? null : "the first log reaches Maple within a few minutes",
-			plan.reader === null
+			!readsMetrics(plan)
 				? null
 				: "Maple's first metrics read confirms read-only access within 5 minutes",
+			plan.security === null
+				? null
+				: "security findings show in Maple's Security Center, Cloud tab, after the next check",
 			removing ? "to click I've removed them in Maple's Google Cloud dialog" : null,
 		],
 		(part) => part !== null,

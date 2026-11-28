@@ -63,6 +63,10 @@ const CONFIRMED_BY = {
 		done: "Confirmed: metrics are read",
 		waiting: "Confirmed by the first metrics read, within 5 minutes",
 	},
+	security: {
+		done: "Confirmed: findings are read",
+		waiting: "Confirmed by the first findings check",
+	},
 } as const
 
 /** A row per capability set up or removed, ticked as the script reports or, without it, as data arrives. */
@@ -80,8 +84,15 @@ export const runStatus = (
 	const rows = Arr.flatMap(CAPABILITY_IDS, (capability) => {
 		const { title, flag, run } = CAPABILITIES[capability]
 		const wanted = connector[flag]
+		// No run reports on security findings on its own: a run reported since the step opened stands in.
 		const applied =
-			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
+			capability === "logs"
+				? connector.applied_logs_enabled
+				: capability === "metrics"
+					? connector.applied_metrics_enabled
+					: reported && byScript
+						? wanted
+						: null
 		if (!wanted && applied !== true) return []
 		const confirmed = applied === wanted
 		const state: RowState =

@@ -245,7 +245,7 @@ const featureNote = (state: LogState | MetricsState): FeatureNote | undefined =>
 	return undefined
 }
 
-/** Logs and metrics as switches: a flip opens Edit data with it drafted, where it is saved and applied. */
+/** Logs, metrics and security findings as switches: a flip opens Edit data with it drafted, where it is saved and applied. */
 const connectionFeatures = (
 	h: H,
 	model: Model,
@@ -259,7 +259,9 @@ const connectionFeatures = (
 		className: "border-t border-border-subtle",
 		rows: Arr.map(CAPABILITY_IDS, (capability) => {
 			const { spec, flag } = CAPABILITIES[capability]
-			const note = featureNote(capability === "logs" ? log : metrics)
+			// No run or read reports on security findings, so its switch carries no note.
+			const note =
+				capability === "security" ? undefined : featureNote(capability === "logs" ? log : metrics)
 			return {
 				spec,
 				isChecked: connector[flag],
@@ -395,10 +397,14 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 			: null
 	const collects = Arr.join(
 		Arr.filter(
-			[connector.logs_enabled ? "Logs" : null, connector.metrics_enabled ? "metrics" : null],
+			[
+				connector.logs_enabled ? "Logs" : null,
+				connector.metrics_enabled ? "metrics" : null,
+				connector.security_enabled ? "security findings" : null,
+			],
 			(part) => part !== null,
 		),
-		" and ",
+		", ",
 	)
 	const name = hstack(h, { gap: "2.5", shrink: true }, [
 		heading(

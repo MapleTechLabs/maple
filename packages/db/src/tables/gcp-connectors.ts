@@ -29,6 +29,8 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 		projectId: PG.column(PG.brand(PG.text, GcpProjectId), { name: "project_id" }),
 		logsEnabled: PG.column(PG.bool, { name: "logs_enabled", default: true }),
 		metricsEnabled: PG.column(PG.bool, { name: "metrics_enabled", default: false }),
+		// Security Command Center findings, read by the same reader account and pushed to the API.
+		securityEnabled: PG.column(PG.bool, { name: "security_enabled", default: false }),
 		secretCiphertext: PG.column(PG.text, { name: "secret_ciphertext" }),
 		secretIv: PG.column(PG.text, { name: "secret_iv" }),
 		secretTag: PG.column(PG.text, { name: "secret_tag" }),
@@ -65,6 +67,8 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 		PG.index("gcp_connectors_source_idx", ["sourceId"]),
 		PG.uniqueIndex("gcp_connectors_org_scope_idx", ["orgId", "scopeType", "scopeId"]),
 		PG.uniqueIndex("gcp_connectors_secret_hash_unique", ["secretHash"]),
+		// The target of org-pinned foreign keys: a row naming a connector must be of its org.
+		PG.uniqueIndex("gcp_connectors_org_id_idx", ["orgId", "id"]),
 	],
 	foreignKeys: [
 		PG.foreignKey({

@@ -1,7 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { hashIngestKey } from "../../platform/credential-tokens"
-import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
+import {
+	CloudSecurityFindings,
+	CloudSecurityServiceStates,
+	GcpConnectors,
+	GcpResources,
+	type GcpConnectorRow,
+} from "@maple/db/tables"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
 	GCP_RESOURCES_LIMIT,
@@ -33,6 +39,7 @@ import { gcpSetupPlan } from "@maple/domain/gcp"
 import { renderGcpAlchemy } from "./gcp/alchemy"
 import { gcpLogFilter, renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
 import { renderGcpTerraform } from "./gcp/terraform"
+import { gcpSecurityPushEndpoint } from "./gcp/security-push"
 import {
 	deleteSourcesOf,
 	createIntegrationSource,
@@ -50,6 +57,8 @@ export interface GcpConnector {
 	readonly logsEnabled: boolean
 	/** Covers metrics and resource collection. */
 	readonly metricsEnabled: boolean
+	/** Security Command Center findings into the Security Center. */
+	readonly securityEnabled: boolean
 	readonly createdAt: number
 	/** Last log push the ingest gateway accepted from this connector. Null until the first one. */
 	readonly lastLogReceivedAt: number | null
@@ -68,7 +77,7 @@ export interface GcpConnector {
 
 export type CreateGcpConnectorInput = Pick<
 	GcpConnector,
-	"scopeType" | "scopeId" | "projectId" | "logsEnabled" | "metricsEnabled"
+	"scopeType" | "scopeId" | "projectId" | "logsEnabled" | "metricsEnabled" | "securityEnabled"
 >
 
 type GcpCapabilityError = GcpMetricsUnavailableError | IntegrationsValidationError
@@ -112,7 +121,11 @@ export interface GcpConnectorServiceApi {
 	readonly update: (
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
-		patch: { readonly logsEnabled?: boolean | undefined; readonly metricsEnabled?: boolean | undefined },
+		patch: {
+			readonly logsEnabled?: boolean | undefined
+			readonly metricsEnabled?: boolean | undefined
+			readonly securityEnabled?: boolean | undefined
+		},
 	) => Effect.Effect<
 		GcpConnector,
 		IntegrationsNotFoundError | GcpCapabilityError | IntegrationsPersistenceError
@@ -127,6 +140,8 @@ export interface GcpConnectorServiceApi {
 			readonly cleanupScript: string
 			/** What a setup without the script needs beyond the connector: no secret in either. */
 			readonly pushEndpoint: string
+			/** Where SCC notifications are pushed: the findings subscription's endpoint and audience. */
+			readonly securityPushEndpoint: string
 			readonly logFilter: string
 			/** Null on a deployment without a Google identity. */
 			readonly mapleServiceAccountEmail: string | null
@@ -170,6 +185,7 @@ const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConne
 	projectId: row.projectId,
 	logsEnabled: row.logsEnabled,
 	metricsEnabled: row.metricsEnabled,
+	securityEnabled: row.securityEnabled,
 	createdAt: row.createdAt,
 	lastLogReceivedAt: row.lastReceivedAt,
 	lastLogError: row.lastError,
@@ -205,18 +221,25 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
 			const capabilityError = (
-				flags: { readonly logsEnabled: boolean; readonly metricsEnabled: boolean },
-				turningMetricsOn: boolean,
+				flags: {
+					readonly logsEnabled: boolean
+					readonly metricsEnabled: boolean
+					readonly securityEnabled: boolean
+				},
+				turningOn: { readonly metrics: boolean; readonly security: boolean },
 			): GcpCapabilityError | undefined => {
-				if (!flags.logsEnabled && !flags.metricsEnabled) {
+				if (!flags.logsEnabled && !flags.metricsEnabled && !flags.securityEnabled) {
 					return new IntegrationsValidationError({
 						message:
-							"At least one of logs_enabled and metrics_enabled must be on. Delete the connector to disconnect.",
+							"At least one of logs_enabled, metrics_enabled and security_enabled must be on. Delete the connector to disconnect.",
 					})
 				}
-				if (turningMetricsOn && mapleServiceAccountEmail === undefined) {
+				// Both read as the connector's reader account, which needs Maple's own Google identity.
+				if ((turningOn.metrics || turningOn.security) && mapleServiceAccountEmail === undefined) {
 					return new GcpMetricsUnavailableError({
-						message: "Metrics and resource collection is not available on this Maple deployment.",
+						message: turningOn.security
+							? "Security Command Center findings are not available on this Maple deployment."
+							: "Metrics and resource collection is not available on this Maple deployment.",
 					})
 				}
 				return undefined
@@ -383,7 +406,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					"maple.gcp.scope_type": input.scopeType,
 					"maple.gcp.scope_id": input.scopeId,
 				})
-				const invalid = capabilityError(input, input.metricsEnabled)
+				const invalid = capabilityError(input, {
+					metrics: input.metricsEnabled,
+					security: input.securityEnabled,
+				})
 				if (invalid !== undefined) return yield* invalid
 				const id = GcpConnectorId.make(randomUUID())
 				const secret = `maple_gcp_${randomBytes(24).toString("base64url")}`
@@ -448,6 +474,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				patch: {
 					readonly logsEnabled?: boolean | undefined
 					readonly metricsEnabled?: boolean | undefined
+					readonly securityEnabled?: boolean | undefined
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
@@ -467,8 +494,12 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 							const flags = {
 								logsEnabled: patch.logsEnabled ?? current.logsEnabled,
 								metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
+								securityEnabled: patch.securityEnabled ?? current.securityEnabled,
 							}
-							const invalid = capabilityError(flags, patch.metricsEnabled === true)
+							const invalid = capabilityError(flags, {
+								metrics: patch.metricsEnabled === true,
+								security: patch.securityEnabled === true,
+							})
 							// Switched back on, a capability's last data and error no longer describe it. One
 							// reported removed is unknown again, so the first push or metrics read confirms it.
 							const changes = {
@@ -502,6 +533,21 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								// Metrics switched off: the last read's error no longer describes the source.
 								if (current.metricsEnabled && !flags.metricsEnabled) {
 									yield* reportPoll(db, current.sourceId, { _tag: "Ok" }, updatedAt)
+								}
+								// Security switched off: nothing reads its findings any more, so they would stay open.
+								if (current.securityEnabled && !flags.securityEnabled) {
+									yield* db.run(
+										PG.deleteFrom(CloudSecurityFindings).where(($) => [
+											$.orgId.eq(orgId),
+											$.gcpConnectorId.eq(connectorId),
+										]),
+									)
+									yield* db.run(
+										PG.deleteFrom(CloudSecurityServiceStates).where(($) => [
+											$.orgId.eq(orgId),
+											$.gcpConnectorId.eq(connectorId),
+										]),
+									)
 								}
 							}
 							return { row: { ...current, ...changes }, invalid }
@@ -544,6 +590,8 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					mapleServiceAccountEmail,
 					logsEnabled: row.logsEnabled,
 					metricsEnabled: row.metricsEnabled,
+					securityEnabled: row.securityEnabled,
+					securityPushEndpoint: gcpSecurityPushEndpoint(env.MAPLE_API_BASE_URL, connectorId),
 					applicationLogs: options.applicationLogs,
 				}
 				// Without the script there is no filter to keep: a setup as code sets the recommended one.
@@ -558,6 +606,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					setupScript: yield* renderGcpSetupScript({ ...target, ...flags }),
 					cleanupScript: yield* renderGcpCleanupScript(target),
 					pushEndpoint,
+					securityPushEndpoint: flags.securityPushEndpoint,
 					logFilter,
 					mapleServiceAccountEmail: mapleServiceAccountEmail ?? null,
 					terraform: renderGcpTerraform(plan, existing),

@@ -14,6 +14,14 @@ import { agoOf, connectorOf } from "../gcp-host"
 
 export const STATES = {
 	configure: { label: "Configure", note: "An existing connection's Data step." },
+	"configure-security": {
+		label: "Configure · security",
+		note: "A connection with security findings on, next to logs and metrics.",
+	},
+	"configure-no-metrics": {
+		label: "Configure · no metrics",
+		note: "A deployment without metrics: metrics and security findings are disabled.",
+	},
 	waiting: { label: "Run · waiting", note: "Just created, nothing reported yet." },
 	reporting: { label: "Run · reporting", note: "Log forwarding reported, metrics still running." },
 	overdue: { label: "Run · overdue", note: "Six minutes without a report." },
@@ -47,10 +55,24 @@ export const STATES = {
 		label: "Manual · confirmed",
 		note: "Both confirmed: the steps stay in view for a change or a repair.",
 	},
+	"waiting-security": {
+		label: "Run · security on",
+		note: "Just created with logs, metrics and security findings, nothing reported yet.",
+	},
+	"manual-security": {
+		label: "Manual · security",
+		note: "A project with logs, metrics and security findings: the findings topic, subscription and export.",
+	},
+	"manual-security-only": {
+		label: "Manual · security only",
+		note: "An organization collecting security findings only: its own reader and push account.",
+	},
 } as const
 
 export const LAB_STATES = [
 	"configure",
+	"configure-security",
+	"configure-no-metrics",
 	"waiting",
 	"reporting",
 	"overdue",
@@ -69,12 +91,17 @@ export const LAB_STATES = [
 	"alchemy",
 	"alchemy-org",
 	"method-confirmed",
+	"waiting-security",
+	"manual-security",
+	"manual-security-only",
 ] as const satisfies ReadonlyArray<keyof typeof STATES>
 export type LabState = (typeof LAB_STATES)[number]
 export type MethodState = "method" | "method-code"
-export type MethodApplyState = Exclude<LabState, "configure" | MethodState | ScriptState>
+export type ConfigureState = "configure" | "configure-security" | "configure-no-metrics"
+export type MethodApplyState = Exclude<LabState, ConfigureState | MethodState | ScriptState>
 export type ScriptState =
 	| "waiting"
+	| "waiting-security"
 	| "reporting"
 	| "overdue"
 	| "removing"
@@ -119,6 +146,7 @@ export type ApplyFixture = Readonly<{
 
 export type Fixtures = Readonly<{
 	configured: V2GcpConnector
+	configuredSecurity: V2GcpConnector
 	apply: Readonly<Record<ScriptState, ApplyFixture>>
 	method: Readonly<Record<MethodState, Readonly<{ connector: V2GcpConnector; method: SetupMethod }>>>
 	methodApply: Readonly<Record<MethodApplyState, MethodApplyFixture>>
@@ -219,6 +247,22 @@ const methodApplyFixtures = (
 			"alchemy",
 			GCP_SETUP_FIXTURES.organizationMetrics,
 		),
+		"manual-security": fixture(
+			connector({ security_enabled: true }),
+			"manual",
+			GCP_SETUP_FIXTURES.project,
+		),
+		"manual-security-only": fixture(
+			connector({
+				...organization,
+				created_at: ago(1),
+				logs_enabled: false,
+				metrics_enabled: false,
+				security_enabled: true,
+			}),
+			"manual",
+			GCP_SETUP_FIXTURES.organizationMetrics,
+		),
 		"method-confirmed": fixture(
 			connector({
 				applied_logs_enabled: true,
@@ -242,6 +286,7 @@ export const fixturesAt = (nowMs: number): Fixtures => {
 		project_id: "acme-prod",
 		logs_enabled: true,
 		metrics_enabled: true,
+		security_enabled: false,
 		created_at: ago(1),
 		last_log_received_at: null,
 		last_log_error: null,
@@ -278,8 +323,14 @@ export const fixturesAt = (nowMs: number): Fixtures => {
 	})
 	return {
 		configured: connector({ ...receiving, setup_reported_at: ago(60 * 24) }),
+		configuredSecurity: connector({
+			...receiving,
+			security_enabled: true,
+			setup_reported_at: ago(60 * 24),
+		}),
 		apply: {
 			waiting: created({}, PLATFORM_LOGS),
+			"waiting-security": created({ security_enabled: true }, PLATFORM_LOGS),
 			reporting: created(
 				{ applied_logs_enabled: true, setup_reported_at: ago(0.3) },
 				REPLACED_PLATFORM_LOGS,

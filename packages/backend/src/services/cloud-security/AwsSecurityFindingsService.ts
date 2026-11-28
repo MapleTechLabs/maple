@@ -13,7 +13,7 @@ import {
 	awsRoleArn,
 } from "@maple/domain/aws"
 import {
-	CloudSecurityFeed,
+	AwsSecurityFeed,
 	type CloudServiceState,
 	CLOUD_SECURITY_PUSH_ALIVE_MS,
 } from "@maple/domain/cloud-security"
@@ -50,6 +50,12 @@ const CONNECTION_CONCURRENCY = 2
 /** A tick stops starting reads after this long, inside the lane's 270 s; the rest wait for the next one. */
 export const TICK_BUDGET_MS = 200 * 1000
 const FALLBACK_REGION = Schema.decodeSync(AwsRegion)("us-east-1")
+const isAwsRegion = Schema.is(AwsRegion)
+const isAwsFeed = Schema.is(AwsSecurityFeed)
+const isAwsState = <S extends { readonly region: string; readonly source: string }>(
+	state: S,
+): state is S & { readonly region: AwsRegion; readonly source: AwsSecurityFeed } =>
+	isAwsRegion(state.region) && isAwsFeed(state.source)
 
 export interface AwsSecurityPollSummary {
 	readonly connections: number
@@ -126,7 +132,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 		const pollConnection = Effect.fn("AwsSecurityFindingsService.pollConnection")(function* (
 			signerKey: AwsOidcSigner,
 			row: AwsConnectionRow,
-			feeds: ReadonlyArray<CloudSecurityFeed>,
+			feeds: ReadonlyArray<AwsSecurityFeed>,
 			deadlineMs: number,
 		) {
 			yield* Effect.annotateCurrentSpan({
@@ -140,7 +146,9 @@ export class AwsSecurityFindingsService extends Context.Service<
 			}
 			const { enabledRegions, readCloudTrail, readSource, refreshFindings } = yield* readers
 			const session = yield* sessionOf(signerKey, row)
-			const states = yield* store.serviceStates(row.orgId, row.id)
+			// The AWS connection's rows only ever hold AWS regions and feeds; the store's union says either cloud.
+			const stored = yield* store.serviceStates(row.orgId, row.id)
+			const states = Arr.filter(stored, isAwsState)
 			// A role from an old stack may not list regions: read the ones read before, or the stack's.
 			const regions = yield* enabledRegions(httpClient, session).pipe(
 				Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", (error) =>
@@ -156,9 +164,9 @@ export class AwsSecurityFindingsService extends Context.Service<
 				),
 			)
 			const now = yield* Clock.currentTimeMillis
-			const stateOf = (region: AwsRegion, source: CloudSecurityFeed) =>
+			const stateOf = (region: AwsRegion, source: AwsSecurityFeed) =>
 				Arr.findFirst(states, (state) => state.region === region && state.source === source)
-			const checkedAtOf = (region: AwsRegion, source: CloudSecurityFeed) =>
+			const checkedAtOf = (region: AwsRegion, source: AwsSecurityFeed) =>
 				Option.match(stateOf(region, source), { onNone: () => 0, onSome: (state) => state.checkedAt })
 			// Least recently read first, so a tick cut short by its budget rotates through every feed.
 			const due = Arr.sort(
@@ -181,7 +189,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 							},
 						}),
 				),
-				Order.mapInput(Order.Number, (feed: { region: AwsRegion; source: CloudSecurityFeed }) =>
+				Order.mapInput(Order.Number, (feed: { region: AwsRegion; source: AwsSecurityFeed }) =>
 					checkedAtOf(feed.region, feed.source),
 				),
 			)
@@ -220,6 +228,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 							Effect.flatMap(Clock.currentTimeMillis, (checkedAt) =>
 								store.recordServiceState({
 									orgId: row.orgId,
+									provider: "aws",
 									connectionId: row.id,
 									region,
 									source,
@@ -237,13 +246,20 @@ export class AwsSecurityFindingsService extends Context.Service<
 							yield* recordState(trail)
 							return { read: true, findings: 0, auditEvents: trail.events } satisfies FeedPoll
 						}
-						const feed = { orgId: row.orgId, connectionId: row.id, region, source }
+						const feed = {
+							orgId: row.orgId,
+							provider: "aws" as const,
+							connectionId: row.id,
+							region,
+							source,
+						}
 						const write = (findings: ReadonlyArray<FindingRead>) =>
 							Effect.flatMap(Clock.currentTimeMillis, (syncedAt) =>
 								store.upsertFindings(
 									Arr.map(findings, (finding) => ({
 										...finding,
 										orgId: row.orgId,
+										provider: "aws" as const,
 										connectionId: row.id,
 										accountId: row.accountId,
 										region,
@@ -312,7 +328,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 							: Effect.succeed(false),
 						(findings) => ({
 							row,
-							feeds: Arr.filter(CloudSecurityFeed.literals, (feed) =>
+							feeds: Arr.filter(AwsSecurityFeed.literals, (feed) =>
 								feed === "cloudtrail" ? isOn(row, "audit") : findings,
 							),
 						}),

@@ -128,6 +128,13 @@ export const GcpResourceNumber = Schema.String.check(Schema.isPattern(/^[0-9]{1,
 )
 export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
 
+/** A Google Cloud location as Security Command Center names it: `global`, or a region like `us-central1`. */
+export const GcpLocation = Schema.String.check(Schema.isPattern(/^(global|[a-z]+-[a-z]+[0-9]{1,2})$/u)).pipe(
+	Schema.brand("@maple/GcpLocation"),
+	Schema.annotate({ identifier: "@maple/GcpLocation", title: "Google Cloud Location" }),
+)
+export type GcpLocation = Schema.Schema.Type<typeof GcpLocation>
+
 export const SearchConsoleSiteId = MapleUuidId("@maple/SearchConsoleSiteId", "Search Console Site ID")
 export type SearchConsoleSiteId = Schema.Schema.Type<typeof SearchConsoleSiteId>
 

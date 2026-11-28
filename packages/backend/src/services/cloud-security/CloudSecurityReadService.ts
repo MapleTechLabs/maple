@@ -26,6 +26,7 @@ import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
 
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { CloudSecurityStore } from "./CloudSecurityStore"
@@ -87,6 +88,7 @@ const toFinding = (
 	row: CloudSecurityFindingRow,
 	matches: ReadonlyArray<ResourceServiceMatch>,
 ): CloudFinding => ({
+	provider: row.provider,
 	connectionId: row.connectionId,
 	accountId: row.accountId,
 	region: row.region,
@@ -135,6 +137,7 @@ export class CloudSecurityReadService extends Context.Service<
 	make: Effect.gen(function* () {
 		const store = yield* CloudSecurityStore
 		const connections = yield* AwsConnectionService
+		const gcpConnectors = yield* GcpConnectorService
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const warehouse = yield* WarehouseQueryService
 
@@ -195,28 +198,59 @@ export class CloudSecurityReadService extends Context.Service<
 
 		const overview = Effect.fn("CloudSecurityReadService.overview")(function* (tenant: TenantContext) {
 			yield* requireRollout(tenant.orgId)
-			const [status, summary, states] = yield* Effect.all(
+			const [status, gcpStatus, summary, states] = yield* Effect.all(
 				[
 					connections.status(tenant.orgId),
+					gcpConnectors.status(tenant.orgId),
 					store.summary(tenant.orgId),
 					store.orgServiceStates(tenant.orgId),
 				],
 				{ concurrency: "unbounded" },
 			).pipe(Effect.mapError(toPersistenceError))
-			const accountOf = new Map(Arr.map(status.connections, (c) => [c.id, c.accountId] as const))
+			const accountOf = new Map<string, string>([
+				...Arr.map(status.connections, (c) => [c.id, c.accountId] as const),
+				...Arr.map(gcpStatus.connectors, (c) => [c.id, c.scopeId] as const),
+			])
+			// A GCP connector's access is in place once a poll could read SCC with it.
+			const sccReadable = new Set(
+				Arr.flatMap(states, (state) =>
+					state.provider === "gcp" && state.state === "enabled" ? [state.connectionId] : [],
+				),
+			)
+			const gcpConnections = Arr.map(gcpStatus.connectors, (connector) => {
+				const module: CloudSecurityConnectionModule = !connector.securityEnabled
+					? "not_requested"
+					: sccReadable.has(connector.id)
+						? "granted"
+						: "requested"
+				return {
+					provider: "gcp" as const,
+					connectionId: connector.id,
+					accountId: connector.scopeId,
+					module,
+				}
+			})
 			return {
-				connections: Arr.map(status.connections, (connection) => {
-					const module: CloudSecurityConnectionModule = !Arr.contains(
-						connection.modules,
-						"security",
-					)
-						? "not_requested"
-						: connection.grantedModules !== null &&
-							  Arr.contains(connection.grantedModules, "security")
-							? "granted"
-							: "requested"
-					return { connectionId: connection.id, accountId: connection.accountId, module }
-				}),
+				connections: Arr.appendAll(
+					Arr.map(status.connections, (connection) => {
+						const module: CloudSecurityConnectionModule = !Arr.contains(
+							connection.modules,
+							"security",
+						)
+							? "not_requested"
+							: connection.grantedModules !== null &&
+								  Arr.contains(connection.grantedModules, "security")
+								? "granted"
+								: "requested"
+						return {
+							provider: "aws" as const,
+							connectionId: connection.id,
+							accountId: connection.accountId,
+							module,
+						}
+					}),
+					gcpConnections,
+				),
 				summary,
 				// CloudTrail's state belongs to the audit log's sources, not to the findings page.
 				services: Arr.flatMap(states, (state) => {
@@ -226,6 +260,7 @@ export class CloudSecurityReadService extends Context.Service<
 						? []
 						: [
 								{
+									provider: state.provider,
 									connectionId: state.connectionId,
 									accountId,
 									region: state.region,
@@ -254,6 +289,7 @@ export class CloudSecurityReadService extends Context.Service<
 						status: request.status ?? "active",
 						severities: request.severities,
 						sources: request.sources,
+						providers: request.providers,
 						accountId: request.accountId,
 						region: request.region,
 						search: request.search,
@@ -298,6 +334,7 @@ export class CloudSecurityReadService extends Context.Service<
 		Layer.provide([
 			CloudSecurityStore.layer,
 			AwsConnectionService.layer,
+			GcpConnectorService.layer,
 			OrganizationFeatureFlagsService.layer,
 			WarehouseQueryService.layer,
 		]),

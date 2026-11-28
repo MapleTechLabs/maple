@@ -260,6 +260,7 @@ describe("gcpInfraNotice", () => {
 	const connector = (over: Partial<Parameters<typeof gcpInfraNotice>[0][number]> = {}) => ({
 		scope_type: "project" as const,
 		metrics_enabled: true,
+		security_enabled: false,
 		applied_metrics_enabled: true as boolean | null,
 		setup_reported_at: ago(60) as string | null,
 		last_metrics_received_at: ago(4) as string | null,

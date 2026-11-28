@@ -47,6 +47,7 @@ export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, b
 				: connector.applied_metrics_enabled === true
 					? `Metrics · ${removed}`
 					: null,
+			connector.security_enabled ? "Security findings" : null,
 		],
 		(label) => label !== null,
 	)

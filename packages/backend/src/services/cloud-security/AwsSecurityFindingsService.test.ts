@@ -358,6 +358,7 @@ describe("AwsSecurityFindingsService", () => {
 			yield* store.recordPush(
 				{
 					orgId,
+					provider: "aws" as const,
 					connectionId: connection.id,
 					region: Schema.decodeSync(AwsRegion)("us-east-1"),
 					source: "guardduty",
@@ -376,6 +377,7 @@ describe("AwsSecurityFindingsService", () => {
 			const usEast = Schema.decodeSync(AwsRegion)("us-east-1")
 			yield* store.recordServiceState({
 				orgId,
+				provider: "aws" as const,
 				connectionId: connection.id,
 				region: usEast,
 				source: "guardduty",
@@ -872,6 +874,7 @@ describe("AwsSecurityFindingsService", () => {
 			const store = yield* CloudSecurityStore
 			yield* store.recordServiceState({
 				orgId,
+				provider: "aws" as const,
 				connectionId: connection.id,
 				region: Schema.decodeSync(AwsRegion)("us-east-1"),
 				source: "cloudtrail",
@@ -948,6 +951,7 @@ describe("AwsSecurityFindingsService", () => {
 			const store = yield* CloudSecurityStore
 			yield* store.recordServiceState({
 				orgId,
+				provider: "aws" as const,
 				connectionId: connection.id,
 				region: Schema.decodeSync(AwsRegion)("us-east-1"),
 				source: "cloudtrail",
@@ -996,6 +1000,7 @@ describe("AwsSecurityFindingsService", () => {
 			const store = yield* CloudSecurityStore
 			yield* store.recordServiceState({
 				orgId,
+				provider: "aws" as const,
 				connectionId: connection.id,
 				region: Schema.decodeSync(AwsRegion)("us-east-1"),
 				source: "cloudtrail",

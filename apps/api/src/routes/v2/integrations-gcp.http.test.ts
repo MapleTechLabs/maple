@@ -163,6 +163,7 @@ describe("v2 gcp integration over HTTP", () => {
 			project_id: "acme-host",
 			logs_enabled: true,
 			metrics_enabled: true,
+			security_enabled: false,
 			created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
 			last_log_received_at: null,
 			last_log_error: null,
@@ -234,6 +235,7 @@ describe("v2 gcp integration over HTTP", () => {
 			"maple_service_account_email",
 			"object",
 			"push_endpoint",
+			"security_push_endpoint",
 			"setup_script",
 			"terraform",
 		])

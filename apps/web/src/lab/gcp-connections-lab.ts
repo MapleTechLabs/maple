@@ -23,6 +23,7 @@ const baseConnector = (ago: (minutes: number) => string) => ({
 	project_id: "maple-development-project",
 	logs_enabled: true,
 	metrics_enabled: true,
+	security_enabled: false,
 	created_at: ago(90),
 	last_log_received_at: ago(1),
 	last_log_error: null,

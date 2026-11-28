@@ -10,9 +10,9 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { SecurityCloudFindingSearch, SecurityCloudSearch } from "../../../route/search"
 import { laterPagesFields } from "../../kit/infinite-pages"
 
-// `/security/cloud` and `/security/cloud/finding` as one page instance: the AWS findings list
-// under the URL's filters, and one finding's detail. Both read the overview that says whether
-// AWS is connected and which services answer.
+// `/security/cloud` and `/security/cloud/finding` as one page instance: the AWS and Google Cloud
+// findings list under the URL's filters, and one finding's detail. Both read the overview that
+// says which clouds are connected and which services answer.
 
 export type Search = SecurityCloudSearch
 export type FindingSearch = SecurityCloudFindingSearch
@@ -34,7 +34,7 @@ export const Screen = Schema.Literals(["list", "finding"])
 export type Screen = typeof Screen.Type
 
 /** The filters a select sets; the search is typed and applied on Enter. */
-export const SelectFilter = Schema.Literals(["status", "severity", "source", "account", "region"])
+export const SelectFilter = Schema.Literals(["status", "severity", "provider", "source", "account", "region"])
 export type SelectFilter = typeof SelectFilter.Type
 
 export const Model = Schema.Struct({

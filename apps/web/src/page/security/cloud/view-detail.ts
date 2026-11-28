@@ -26,12 +26,12 @@ import { AppRoute, hrefOf } from "../../../route"
 import { detailTitle } from "../../kit/detail-header"
 import { jsonBlock, prettyJson } from "../../kit/json-block"
 import { placeholderRows } from "../kit/parts"
-import { detailQueryOf, listHref, requestsLabel, sourceTitle, STATUS_LABEL } from "./derive"
+import { detailQueryOf, listHref, PROVIDER_LABEL, requestsLabel, sourceTitle, STATUS_LABEL } from "./derive"
 import { Message, type Model } from "./model"
 import { cloudSeverityBadge, externalLinkAttributes } from "./parts"
 
 // One cloud finding: what the service said, the resource, when it was seen, the services whose
-// telemetry carried the resource, and the way to it in the AWS console.
+// telemetry carried the resource, and the way to it in its cloud's console.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -108,6 +108,7 @@ const affectedServices = (h: H, detail: CloudFindingDetail, isMatched: boolean):
 
 const findingPanel = (h: H, detail: CloudFindingDetail, clock: Clock, isMatched: boolean): Html => {
 	const at = (value: number) => timestamp(h, { value, ...clock, withYear: true, className: "tabular-nums" })
+	const isGcp = detail.provider === "gcp"
 	return panel(h, { className: "p-5" }, [
 		vstack(h, { gap: "5" }, [
 			hstack(h, { gap: "4", justify: "between", align: "start", wrap: true }, [
@@ -127,7 +128,10 @@ const findingPanel = (h: H, detail: CloudFindingDetail, clock: Clock, isMatched:
 						size: "sm",
 						attributes: externalLinkAttributes(h),
 					},
-					["Open in AWS console", icon(h, "ExternalLinkIcon", { size: 12 })],
+					[
+						isGcp ? "Open in Google Cloud console" : "Open in AWS console",
+						icon(h, "ExternalLinkIcon", { size: 12 }),
+					],
 				),
 			]),
 			...(detail.description === null
@@ -144,8 +148,13 @@ const findingPanel = (h: H, detail: CloudFindingDetail, clock: Clock, isMatched:
 					: [keyValue(h, { label: "Resource name", wrap: true }, [detail.resourceName])]),
 				keyValue(h, { label: "Resource type", wrap: true, mono: true }, [detail.resourceType]),
 				keyValue(h, { label: "Finding type", wrap: true, mono: true }, [detail.type]),
-				keyValue(h, { label: "Account", wrap: true, mono: true }, [detail.accountId]),
-				keyValue(h, { label: "Region", wrap: true, mono: true }, [detail.region]),
+				keyValue(h, { label: "Cloud", wrap: true }, [PROVIDER_LABEL[detail.provider]]),
+				keyValue(h, { label: isGcp ? "Project" : "Account", wrap: true, mono: true }, [
+					detail.accountId,
+				]),
+				keyValue(h, { label: isGcp ? "Location" : "Region", wrap: true, mono: true }, [
+					detail.region,
+				]),
 				keyValue(h, { label: "Occurrences", wrap: true }, [String(detail.occurrences)]),
 				keyValue(h, { label: "First seen", wrap: true }, [at(detail.firstSeenAt)]),
 				keyValue(h, { label: "Last seen", wrap: true }, [at(detail.lastSeenAt)]),

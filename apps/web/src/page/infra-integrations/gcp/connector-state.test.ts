@@ -30,10 +30,11 @@ const NOW = Date.parse("2026-10-08T12:00:00.000Z")
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString()
 
 /** A project connection whose script ran an hour ago and that delivers both. */
-const connector = (over: Partial<Parameters<typeof gcpConnectionState>[0]> = {}) => ({
+const connector = (over: Partial<Parameters<typeof gcpDraftEffect>[0]> = {}) => ({
 	scope_type: "project" as const,
 	logs_enabled: true,
 	metrics_enabled: true,
+	security_enabled: false,
 	applied_logs_enabled: true as boolean | null,
 	applied_metrics_enabled: true as boolean | null,
 	setup_reported_at: ago(60) as string | null,
@@ -373,7 +374,7 @@ describe("gcpWorstState", () => {
 })
 
 describe("gcpScopeRoles", () => {
-	const both = { logs_enabled: true, metrics_enabled: true }
+	const both = { logs_enabled: true, metrics_enabled: true, security_enabled: false }
 
 	it("asks for nothing beyond Owner on a project", () => {
 		expect(gcpScopeRoles("project", both)).toEqual([])
@@ -384,12 +385,25 @@ describe("gcpScopeRoles", () => {
 			"Logs Configuration Writer",
 			"Organization Administrator",
 		])
-		expect(gcpScopeRoles("folder", { logs_enabled: false, metrics_enabled: true })).toEqual([
-			"Folder IAM Admin",
-		])
-		expect(gcpScopeRoles("folder", { logs_enabled: true, metrics_enabled: false })).toEqual([
-			"Logs Configuration Writer",
-		])
+		expect(
+			gcpScopeRoles("folder", { logs_enabled: false, metrics_enabled: true, security_enabled: false }),
+		).toEqual(["Folder IAM Admin"])
+		expect(
+			gcpScopeRoles("folder", { logs_enabled: true, metrics_enabled: false, security_enabled: false }),
+		).toEqual(["Logs Configuration Writer"])
+	})
+
+	it("asks for the IAM role and the notification role with security findings, once each", () => {
+		expect(
+			gcpScopeRoles("organization", {
+				logs_enabled: false,
+				metrics_enabled: true,
+				security_enabled: true,
+			}),
+		).toEqual(["Organization Administrator", "Security Center Notification Configurations Editor"])
+		expect(
+			gcpScopeRoles("folder", { logs_enabled: false, metrics_enabled: false, security_enabled: true }),
+		).toEqual(["Folder IAM Admin", "Security Center Notification Configurations Editor"])
 	})
 })
 
@@ -418,9 +432,10 @@ describe("gcpOverlapNote", () => {
 })
 
 describe("gcpCollectLock", () => {
-	const both = { logs_enabled: true, metrics_enabled: true }
-	const logsOnly = { logs_enabled: true, metrics_enabled: false }
-	const metricsOnly = { logs_enabled: false, metrics_enabled: true }
+	const both = { logs_enabled: true, metrics_enabled: true, security_enabled: false }
+	const logsOnly = { logs_enabled: true, metrics_enabled: false, security_enabled: false }
+	const metricsOnly = { logs_enabled: false, metrics_enabled: true, security_enabled: false }
+	const securityOnly = { logs_enabled: false, metrics_enabled: false, security_enabled: true }
 
 	it("leaves both free while both are on", () => {
 		expect(gcpCollectLock(both, "logs", true)).toBeNull()
@@ -443,6 +458,16 @@ describe("gcpCollectLock", () => {
 
 	it("still lets metrics be turned off on such a deployment", () => {
 		expect(gcpCollectLock(both, "metrics", false)).toBeNull()
+	})
+
+	it("locks security findings off where metrics are unavailable, as they read the same way", () => {
+		expect(gcpCollectLock(logsOnly, "security", false)).toBe("metrics-unavailable")
+		expect(gcpCollectLock(logsOnly, "security", true)).toBeNull()
+	})
+
+	it("counts security findings among what keeps a connection collecting", () => {
+		expect(gcpCollectLock(securityOnly, "security", true)).toBe("last-on")
+		expect(gcpCollectLock({ ...logsOnly, security_enabled: true }, "logs", true)).toBeNull()
 	})
 })
 
@@ -488,6 +513,12 @@ describe("gcpDraftEffect", () => {
 
 	it("resumes at once when a capability is turned back on before the script removed it", () => {
 		expect(gcpDraftEffect(connector({ logs_enabled: false }), "logs", true)).toBe("resumes-now")
+	})
+
+	it("starts security findings after the script, and stops reading them at once", () => {
+		expect(gcpDraftEffect(connector(), "security", true)).toBe("starts-after-script")
+		expect(gcpDraftEffect(connector({ security_enabled: true }), "security", true)).toBeNull()
+		expect(gcpDraftEffect(connector({ security_enabled: true }), "security", false)).toBe("stops-now")
 	})
 })
 
@@ -588,9 +619,10 @@ describe("gcpCreateRequest", () => {
 		hostProjectId: "",
 		logsEnabled: true,
 		metricsEnabled: false,
+		securityEnabled: false,
 		...over,
 	})
-	const optIns = { logs_enabled: true, metrics_enabled: false }
+	const optIns = { logs_enabled: true, metrics_enabled: false, security_enabled: false }
 	const request = (over: Partial<GcpConnectorDraft>) => Option.getOrNull(gcpCreateRequest(draft(over)))
 
 	it("sends a project as its own host project, trimmed", () => {
@@ -638,12 +670,17 @@ describe("gcpCreateRequest", () => {
 })
 
 describe("gcpCreateRequest opt-ins", () => {
-	const draft = (logsEnabled: boolean, metricsEnabled: boolean): GcpConnectorDraft => ({
+	const draft = (
+		logsEnabled: boolean,
+		metricsEnabled: boolean,
+		securityEnabled = false,
+	): GcpConnectorDraft => ({
 		scopeType: "project",
 		scopeId: "acme-prod",
 		hostProjectId: "",
 		logsEnabled,
 		metricsEnabled,
+		securityEnabled,
 	})
 
 	it("sends a metrics-only connection in one request", () => {
@@ -652,6 +689,15 @@ describe("gcpCreateRequest opt-ins", () => {
 			scope_id: "acme-prod",
 			logs_enabled: false,
 			metrics_enabled: true,
+			security_enabled: false,
+		})
+	})
+
+	it("sends a security-findings-only connection, which counts as an opt-in", () => {
+		expect(Option.getOrNull(gcpCreateRequest(draft(false, false, true)))).toMatchObject({
+			logs_enabled: false,
+			metrics_enabled: false,
+			security_enabled: true,
 		})
 	})
 

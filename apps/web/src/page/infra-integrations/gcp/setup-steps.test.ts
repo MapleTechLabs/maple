@@ -16,6 +16,7 @@ const connector = (over: Record<string, unknown> = {}) =>
 		project_id: "acme-prod",
 		logs_enabled: true,
 		metrics_enabled: true,
+		security_enabled: false,
 		created_at: "2026-10-17T12:00:00.000Z",
 		last_log_received_at: null,
 		last_log_error: null,
@@ -46,8 +47,13 @@ const plan = (of: V2GcpConnector) =>
 		mapleServiceAccountEmail: GCP_SETUP_FIXTURES.project.maple_service_account_email,
 		logsEnabled: of.logs_enabled,
 		metricsEnabled: of.metrics_enabled,
+		securityEnabled: of.security_enabled,
 		logFilter: GCP_SETUP_FIXTURES.project.log_filter,
+		securityPushEndpoint: SECURITY_PUSH,
 	})
+
+const SECURITY_PUSH =
+	"https://api.maple.dev/api/integrations/gcp/security/018f2b3c-4d5e-6f70-8192-a3b4c5d6e7f8"
 
 const titles = (of: V2GcpConnector) => Arr.map(gcpManualSteps(plan(of)), (step) => step.title)
 const values = (of: V2GcpConnector, title: string) =>
@@ -131,6 +137,47 @@ describe("gcpManualSteps", () => {
 		)
 	})
 
+	it("sends findings through their own topic, signed by the push account, after the reader can read them", () => {
+		const on = connector({ security_enabled: true })
+		expect(Arr.drop(titles(on), 10)).toEqual([
+			"Create the findings Pub/Sub topic",
+			"Create the findings push subscription",
+			"Send findings to the topic",
+		])
+		expect(values(on, "Create the findings push subscription")).toEqual(
+			expect.arrayContaining([
+				SECURITY_PUSH,
+				"maple-push-018f2b3c4d5e6f70819@acme-prod.iam.gserviceaccount.com",
+			]),
+		)
+		expect(values(on, "Grant the read-only roles")).toContain(
+			"Monitoring Viewer, Cloud Asset Viewer, Security Center Findings Viewer, Service Usage Consumer",
+		)
+		expect(values(on, "Send findings to the topic")).toContain(
+			"projects/acme-prod/topics/maple-018f2b3c4d5e6f708192a3b4-scc",
+		)
+	})
+
+	it("sets up a findings-only connection with its own reader and push account", () => {
+		const only = connector({ logs_enabled: false, metrics_enabled: false, security_enabled: true })
+		expect(titles(only)).toEqual([
+			"Enable the APIs",
+			"Create the read-only service account",
+			"Let Maple use the read-only account",
+			"Grant the read-only roles",
+			"Create the findings Pub/Sub topic",
+			"Create the push service account",
+			"Create the findings push subscription",
+			"Send findings to the topic",
+		])
+		expect(values(only, "Create the read-only service account")).toContain(
+			"Maple security findings reader",
+		)
+		expect(values(only, "Grant the read-only roles")).toContain(
+			"Security Center Findings Viewer, Service Usage Consumer",
+		)
+	})
+
 	it("opens a folder's console pages on the folder", () => {
 		const steps = gcpManualSteps(plan(connector({ ...ORGANIZATION, scope_type: "folder" })))
 		expect(
@@ -167,6 +214,24 @@ describe("gcpRemovalList", () => {
 			"maple-018f2b3c4d5e6f708192a3b4@acme-prod.iam.gserviceaccount.com",
 		])
 		expect(reader[0]?.consoleUrl).toContain("iam-admin/iam?project=acme-prod")
+	})
+
+	it("keeps the reader while security findings still read through it", () => {
+		expect(
+			gcpRemovalList(
+				connector({ metrics_enabled: false, applied_metrics_enabled: true, security_enabled: true }),
+			),
+		).toEqual([])
+	})
+
+	it("lists the findings export, subscription and topic for a disconnect with security findings", () => {
+		const names = Arr.map(
+			gcpRemovalList(connector({ security_enabled: true }), "all"),
+			(item) => item.name,
+		)
+		expect(names).toEqual(
+			expect.arrayContaining(["maple-018f2b3c4d5e6f708192a3b4", "maple-018f2b3c4d5e6f708192a3b4-scc"]),
+		)
 	})
 
 	it("lists everything not known to be gone for a disconnect", () => {

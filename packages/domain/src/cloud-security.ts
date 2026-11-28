@@ -1,9 +1,40 @@
+import {
+	AwsAccountId,
+	AwsConnectionId,
+	AwsRegion,
+	GcpConnectorId,
+	GcpLocation,
+	GcpProjectId,
+	GcpResourceNumber,
+} from "@maple/primitives"
 import { Array as Arr, Option, Schema, String as Str } from "effect"
 
-// Findings the AWS connection's `security` module pulls from the account's own security services,
-// stored per finding at its latest version. One vocabulary across the four services.
+// Findings Maple pulls from a cloud's own security services, stored per finding at its latest
+// version: the AWS connection's `security` module (four services) and the GCP connector's
+// Security Command Center. One vocabulary across them.
 
-export const CLOUD_FINDING_SOURCES = ["guardduty", "securityhub", "inspector", "access_analyzer"] as const
+export const CloudProvider = Schema.Literals(["aws", "gcp"])
+export type CloudProvider = typeof CloudProvider.Type
+
+/** An AWS connection or a GCP connector; the row's `provider` says which. */
+export const CloudConnectionId = Schema.Union([AwsConnectionId, GcpConnectorId])
+export type CloudConnectionId = typeof CloudConnectionId.Type
+/** An AWS account, or the GCP project (numeric organization, for org-level findings) a finding is in. */
+export const CloudAccountId = Schema.Union([AwsAccountId, GcpProjectId, GcpResourceNumber])
+export type CloudAccountId = typeof CloudAccountId.Type
+/** An AWS region, or a Security Command Center location (`global` for most findings). */
+export const CloudLocation = Schema.Union([AwsRegion, GcpLocation])
+export type CloudLocation = typeof CloudLocation.Type
+
+export const AWS_FINDING_SOURCES = ["guardduty", "securityhub", "inspector", "access_analyzer"] as const
+export const AwsFindingSource = Schema.Literals(AWS_FINDING_SOURCES)
+export type AwsFindingSource = typeof AwsFindingSource.Type
+
+export const GCP_FINDING_SOURCES = ["security_command_center"] as const
+export const GcpFindingSource = Schema.Literals(GCP_FINDING_SOURCES)
+export type GcpFindingSource = typeof GcpFindingSource.Type
+
+export const CLOUD_FINDING_SOURCES = [...AWS_FINDING_SOURCES, ...GCP_FINDING_SOURCES] as const
 export const CloudFindingSource = Schema.Literals(CLOUD_FINDING_SOURCES)
 export type CloudFindingSource = typeof CloudFindingSource.Type
 
@@ -11,9 +42,13 @@ export const CLOUD_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "i
 export const CloudFindingSeverity = Schema.Literals(CLOUD_FINDING_SEVERITIES)
 export type CloudFindingSeverity = typeof CloudFindingSeverity.Type
 
-/** What the poller reads per region: a findings service, or CloudTrail for the audit log. */
+/** What a poller reads per location: a findings service, or (AWS) CloudTrail for the audit log. */
 export const CloudSecurityFeed = Schema.Literals([...CLOUD_FINDING_SOURCES, "cloudtrail"])
 export type CloudSecurityFeed = typeof CloudSecurityFeed.Type
+
+/** What the AWS poller reads per region. */
+export const AwsSecurityFeed = Schema.Literals([...AWS_FINDING_SOURCES, "cloudtrail"])
+export type AwsSecurityFeed = typeof AwsSecurityFeed.Type
 
 /** A feed whose last EventBridge event is this recent counts as delivering: the poller slows down for it. */
 export const CLOUD_SECURITY_PUSH_ALIVE_MS = 7 * 24 * 60 * 60 * 1000
@@ -30,6 +65,7 @@ export const CloudServiceState = Schema.Literals(["enabled", "not_enabled", "den
 export type CloudServiceState = typeof CloudServiceState.Type
 
 interface CloudFindingSourceSpec {
+	readonly provider: CloudProvider
 	readonly title: string
 	/** What it finds, in one line for an empty state. */
 	readonly summary: string
@@ -39,24 +75,34 @@ interface CloudFindingSourceSpec {
 
 export const CLOUD_FINDING_SOURCE_SPECS = {
 	guardduty: {
+		provider: "aws",
 		title: "GuardDuty",
 		summary: "Threats: compromised credentials, crypto mining, unusual API calls and network traffic.",
 		enableUrl: "https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_settingup.html",
 	},
 	securityhub: {
+		provider: "aws",
 		title: "Security Hub",
 		summary: "Misconfigurations against the AWS Foundational Security Best Practices.",
 		enableUrl: "https://docs.aws.amazon.com/securityhub/latest/userguide/securityhub-settingup.html",
 	},
 	inspector: {
+		provider: "aws",
 		title: "Inspector",
 		summary: "Known vulnerabilities in EC2 instances, container images and Lambda functions.",
 		enableUrl: "https://docs.aws.amazon.com/inspector/latest/user/getting_started_tutorial.html",
 	},
 	access_analyzer: {
+		provider: "aws",
 		title: "IAM Access Analyzer",
 		summary: "Resources shared outside the account, and unused roles, keys and permissions.",
 		enableUrl: "https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-getting-started.html",
+	},
+	security_command_center: {
+		provider: "gcp",
+		title: "Security Command Center",
+		summary: "Threats, misconfigurations and vulnerabilities across the projects in scope.",
+		enableUrl: "https://cloud.google.com/security-command-center/docs/activate-scc-overview",
 	},
 } as const satisfies Record<CloudFindingSource, CloudFindingSourceSpec>
 
@@ -89,13 +135,25 @@ export const cloudFindingSeverityOfLabel = (label: string | undefined): CloudFin
 const consoleEquals = (field: string, value: string) =>
 	`${field}%3D%255Coperator%255C%253AEQUALS%255C%253A${encodeURIComponent(encodeURIComponent(value))}`
 
-/** The finding in the AWS console: deep links where the console takes one, the findings list otherwise. */
+/** The provider a source belongs to. */
+export const cloudFindingProvider = (source: CloudFindingSource): CloudProvider =>
+	CLOUD_FINDING_SOURCE_SPECS[source].provider
+
+/**
+ * The finding in its cloud's console: deep links where the console takes one, the findings list
+ * otherwise. For Security Command Center `accountId` is the project (or numeric organization) it is in.
+ */
 export const cloudFindingConsoleUrl = (finding: {
 	readonly source: CloudFindingSource
+	readonly accountId: string
 	readonly region: string
 	readonly findingId: string
 }): string => {
 	const { region, findingId } = finding
+	if (finding.source === "security_command_center") {
+		const scope = /^[0-9]+$/u.test(finding.accountId) ? "organizationId" : "project"
+		return `https://console.cloud.google.com/security/command-center/findings?${scope}=${encodeURIComponent(finding.accountId)}`
+	}
 	const host = Str.includes("-gov-")(region)
 		? `https://console.amazonaws-us-gov.com`
 		: Str.startsWith("cn-")(region)

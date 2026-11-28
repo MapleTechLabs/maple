@@ -55,7 +55,7 @@ export const collectFields = (
 					}
 				}),
 			}),
-			// A rule of the pair, so it stands under both and not under the one it happens to lock.
+			// A rule of the set, so it stands under all and not under the one it happens to lock.
 			...(locks.includes("last-on") ? [h.p([h.Class(SMALL)], [LOCK_NOTES["last-on"]])] : []),
 		],
 	)

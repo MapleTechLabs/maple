@@ -60,6 +60,7 @@ const GcpApi = Schema.Literals([
 	"Cloud Monitoring",
 	"Cloud Asset Inventory",
 	"BigQuery",
+	"Security Command Center",
 ])
 
 export class GcpApiError extends Schema.TaggedError<GcpApiError>()("@maple/api/integrations/GcpApiError", {
@@ -616,3 +617,31 @@ export const listSqlInstancesPage = (
 		}),
 		{ operation: "listing Cloud SQL instances" },
 	)
+
+const SCC_URL = "https://securitycenter.googleapis.com"
+/** Findings per `findings.list` page; Google's maximum is 1000. */
+export const SCC_PAGE_SIZE = 1000
+
+/** One page of findings. Each result is kept raw: the mapper decodes it, and the rest is its detail. */
+const SccFindingsPage = Schema.Struct({
+	listFindingsResults: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+	nextPageToken: Schema.optionalKey(Schema.String),
+})
+
+/**
+ * One page of the scope's findings across all its sources, at the `global` location. Plain HTTP:
+ * the SDK has no Security Command Center module. `parent` is `projects/x`, `folders/n` or
+ * `organizations/n`, from the connector, never from a caller.
+ */
+export const listSccFindingsPage = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	parent: string,
+	filter: string,
+	pageToken: string | undefined,
+) =>
+	google(httpClient, "Security Command Center", SCC_URL, asReader(reader)).json(SccFindingsPage, {
+		path: `/v2/${parent}/sources/-/locations/global/findings`,
+		query: { pageSize: SCC_PAGE_SIZE, filter, pageToken },
+		operation: "listing findings",
+	})

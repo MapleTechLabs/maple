@@ -1197,6 +1197,8 @@ export type SecurityAuditLogSearch = typeof SecurityAuditLogSearch.Type
 export const SecurityCloudSearch = Schema.Struct({
 	status: StringParam,
 	severity: StringParam,
+	/** `aws` or `gcp`. */
+	provider: StringParam,
 	source: StringParam,
 	account: StringParam,
 	region: StringParam,

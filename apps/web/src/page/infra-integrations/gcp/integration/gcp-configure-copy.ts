@@ -41,7 +41,7 @@ export const SCOPES = {
 export const SCOPE_TYPES: ReadonlyArray<GcpScopeType> = ["project", "folder", "organization"]
 
 export const LOCK_NOTES = {
-	"last-on": "A connection collects at least one of the two. To stop collecting, disconnect.",
+	"last-on": "A connection collects at least one of these. To stop collecting, disconnect.",
 	"metrics-unavailable": "Not available on this Maple deployment.",
 } as const satisfies { readonly [Lock in GcpCollectLock]: string }
 
@@ -53,11 +53,23 @@ export const FILTER_MODES = [
 	{ value: "set", label: "Replace filter", hint: "Sets the filter below" },
 ] as const
 
-export const CAPABILITY_IDS: ReadonlyArray<Capability> = ["logs", "metrics"]
+export const CAPABILITY_IDS: ReadonlyArray<Capability> = ["logs", "metrics", "security"]
 
 type Acting = "stops-now" | "resumes-now"
 
 const [GCP_LOGS, GCP_METRICS] = INTEGRATION_FEATURES.gcp
+
+/** Security Command Center findings: not in the catalog's feature list, so described here. */
+const GCP_SECURITY: IntegrationFeatureSpec<"security"> = {
+	id: "security",
+	title: "Security findings",
+	summary:
+		"Security Command Center findings for the scope, sent to Maple as they happen. Listed in Security, Cloud.",
+	signal: "events",
+	defaultEnabled: false,
+	countsTowardIngest: false,
+	apply: "setupUpdate",
+}
 
 export const CAPABILITIES = {
 	logs: {
@@ -103,12 +115,37 @@ export const CAPABILITIES = {
 			"resumes-now": "Nothing to apply: the read-only service account is still there.",
 		},
 	},
+	security: {
+		spec: GCP_SECURITY,
+		title: GCP_SECURITY.title,
+		flag: "security_enabled",
+		run: {
+			on: "Findings viewer role and Security Command Center notifications",
+			off: "Removes the notifications and the findings viewer role",
+		},
+		effects: {
+			"starts-after-script": "Starts once it's set up in Google Cloud",
+			"resumes-now": "Read again from the next check",
+			"stops-now": "Maple stops reading findings when you save",
+			"removed-by-script":
+				"Its notifications keep being sent until the change is applied in Google Cloud",
+		},
+		now: {
+			"stops-now": "Stops reading this connection's security findings from the next check.",
+			"resumes-now": "Reads this connection's security findings again from the next check.",
+		},
+		later: {
+			"stops-now":
+				"Keeps the notification config, its Pub/Sub topic and the findings viewer role until the change is applied in Google Cloud.",
+			"resumes-now": "Nothing to apply: the notification config is still there.",
+		},
+	},
 } as const satisfies {
 	readonly [Key in Capability]: {
 		/** The feature as the catalog describes it; `title` is its name in sentences. */
 		readonly spec: IntegrationFeatureSpec<Key>
 		readonly title: string
-		readonly flag: "logs_enabled" | "metrics_enabled"
+		readonly flag: "logs_enabled" | "metrics_enabled" | "security_enabled"
 		/** What the script sets up for it, or removes, in the run step's status. */
 		readonly run: { readonly on: string; readonly off: string }
 		readonly effects: { readonly [Effect in GcpDraftEffect]: string }

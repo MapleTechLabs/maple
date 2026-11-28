@@ -57,6 +57,7 @@ const projectScope = (id: string, flags?: Partial<CreateGcpConnectorInput>): Cre
 	projectId: project(id),
 	logsEnabled: true,
 	metricsEnabled: false,
+	securityEnabled: false,
 	...flags,
 })
 
@@ -66,6 +67,7 @@ const organizationScope: CreateGcpConnectorInput = {
 	projectId: project("acme-host"),
 	logsEnabled: true,
 	metricsEnabled: true,
+	securityEnabled: false,
 }
 
 const scriptOptions = { applicationLogs: null }
@@ -201,6 +203,11 @@ describe("GcpConnectorService", () => {
 				gcp.create(orgId, userId, projectScope("acme-prod", { metricsEnabled: true })),
 			)
 			assert.strictEqual(metrics._tag, "@maple/http/errors/GcpMetricsUnavailableError")
+			// Findings are read by the same reader account, so they need Maple's identity too.
+			const security = yield* Effect.flip(
+				gcp.create(orgId, userId, projectScope("acme-prod", { securityEnabled: true })),
+			)
+			assert.strictEqual(security._tag, "@maple/http/errors/GcpMetricsUnavailableError")
 
 			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
 			const turnOn = yield* Effect.flip(gcp.update(orgId, connector.id, { metricsEnabled: true }))
@@ -241,6 +248,16 @@ describe("GcpConnectorService", () => {
 			})
 			assert.deepStrictEqual(logsOnly, { ...connector, metricsEnabled: false })
 			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [logsOnly])
+
+			// Security findings alone are a capability of their own.
+			const securityOnly = yield* gcp.update(orgId, connector.id, {
+				logsEnabled: false,
+				securityEnabled: true,
+			})
+			assert.deepStrictEqual(
+				[securityOnly.logsEnabled, securityOnly.metricsEnabled, securityOnly.securityEnabled],
+				[false, false, true],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 

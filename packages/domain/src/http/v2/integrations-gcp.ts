@@ -38,6 +38,7 @@ const connectorExample = {
 	project_id: "acme-observability",
 	logs_enabled: true,
 	metrics_enabled: true,
+	security_enabled: true,
 	created_at: "2026-10-01T12:00:00.000Z",
 	last_log_received_at: "2026-10-08T09:12:00.000Z",
 	last_log_error: null,
@@ -76,6 +77,11 @@ export const V2GcpConnector = Schema.Struct({
 	metrics_enabled: Schema.Boolean.annotate({
 		description:
 			"Whether the setup script lets Maple read Cloud Monitoring metrics and the Cloud Asset resource inventory.",
+		examples: [true],
+	}),
+	security_enabled: Schema.Boolean.annotate({
+		description:
+			"Whether Maple reads Security Command Center findings for the scope, and the setup sends new ones to Maple as they happen. Needs `metrics_available`.",
 		examples: [true],
 	}),
 	created_at: Timestamp.annotate({ description: "When the connector was created." }),
@@ -159,6 +165,11 @@ const metricsEnabledField = Schema.optionalKey(Schema.Boolean).annotate({
 		"Let Maple read metrics and the resource inventory. Rejected when the status reports `metrics_available: false`.",
 	examples: [false],
 })
+const securityEnabledField = Schema.optionalKey(Schema.Boolean).annotate({
+	description:
+		"Let Maple read Security Command Center findings, and have the setup push new ones to Maple. Rejected when the status reports `metrics_available: false`.",
+	examples: [false],
+})
 
 export const V2GcpCreateConnectorRequest = Schema.Union([
 	Schema.Struct({
@@ -169,6 +180,7 @@ export const V2GcpCreateConnectorRequest = Schema.Union([
 		}),
 		logs_enabled: logsEnabledField,
 		metrics_enabled: metricsEnabledField,
+		security_enabled: securityEnabledField,
 	})
 		.check(
 			// Returns the message: a filter's `description` is not what surfaces on failure.
@@ -189,12 +201,13 @@ export const V2GcpCreateConnectorRequest = Schema.Union([
 		}),
 		logs_enabled: logsEnabledField,
 		metrics_enabled: metricsEnabledField,
+		security_enabled: securityEnabledField,
 	}).annotate({ identifier: "GcpCreateAggregatedConnector", title: "Folder or organization connector" }),
 ]).annotate({
 	identifier: "GcpCreateConnectorRequest",
 	title: "Google Cloud connector create request",
 	description:
-		"What to connect, discriminated on `scope_type`. `logs_enabled` defaults to `true` and `metrics_enabled` to `false`; at least one must be on.",
+		"What to connect, discriminated on `scope_type`. `logs_enabled` defaults to `true`, `metrics_enabled` and `security_enabled` to `false`; at least one must be on.",
 	examples: [
 		wireExample({ scope_type: "project", scope_id: "acme-prod" }),
 		wireExample({
@@ -210,6 +223,7 @@ export type V2GcpCreateConnectorRequest = Schema.Schema.Type<typeof V2GcpCreateC
 export const V2GcpUpdateConnectorRequest = Schema.Struct({
 	logs_enabled: logsEnabledField,
 	metrics_enabled: metricsEnabledField,
+	security_enabled: securityEnabledField,
 }).annotate({
 	identifier: "GcpUpdateConnectorRequest",
 	title: "Google Cloud connector update request",
@@ -260,6 +274,13 @@ export const V2GcpSetupScripts = Schema.Struct({
 			"For a setup in the console: the push subscription's endpoint and token audience. It carries no secret: Pub/Sub signs each push as the connector's push service account.",
 		examples: ["https://ingest.maple.dev/v1/logpush/gcp/018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8"],
 	}),
+	security_push_endpoint: Schema.String.annotate({
+		description:
+			"For a setup in the console: the Security Command Center findings subscription's endpoint and token audience. It carries no secret: Pub/Sub signs each push as the connector's push service account.",
+		examples: [
+			"https://api.maple.dev/api/integrations/gcp/security/018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+		],
+	}),
 	log_filter: Schema.String.annotate({
 		description:
 			"For a setup in the console or as code: the log sink's filter for `application_logs`. Omitted, it is the recommended filter: without the script there is no filter to keep.",
@@ -290,6 +311,8 @@ export const V2GcpSetupScripts = Schema.Struct({
 			setup_script: SCRIPT_EXAMPLE,
 			cleanup_script: SCRIPT_EXAMPLE,
 			push_endpoint: "https://ingest.maple.dev/v1/logpush/gcp/018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+			security_push_endpoint:
+				"https://api.maple.dev/api/integrations/gcp/security/018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
 			log_filter: 'NOT log_id("cloudaudit.googleapis.com/data_access") AND …',
 			maple_service_account_email: "collector@maple-prod.iam.gserviceaccount.com",
 			terraform: TERRAFORM_EXAMPLE,

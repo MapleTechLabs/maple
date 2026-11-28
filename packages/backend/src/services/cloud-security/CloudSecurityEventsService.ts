@@ -192,6 +192,7 @@ export class CloudSecurityEventsService extends Context.Service<
 				Arr.map(findings, (finding) => ({
 					...finding,
 					orgId,
+					provider: "aws" as const,
 					connectionId,
 					accountId,
 					region,
@@ -199,7 +200,7 @@ export class CloudSecurityEventsService extends Context.Service<
 				})),
 				syncedAt,
 			)
-			yield* store.recordPush({ orgId, connectionId, region, source }, syncedAt)
+			yield* store.recordPush({ orgId, provider: "aws", connectionId, region, source }, syncedAt)
 			return {
 				outcome: "stored",
 				reason: null,

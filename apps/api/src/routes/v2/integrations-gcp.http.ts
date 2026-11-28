@@ -27,6 +27,7 @@ const toV2Connector = (connector: GcpConnector): V2GcpConnector => ({
 	project_id: connector.projectId,
 	logs_enabled: connector.logsEnabled,
 	metrics_enabled: connector.metricsEnabled,
+	security_enabled: connector.securityEnabled,
 	created_at: isoTimestamp(connector.createdAt),
 	last_log_received_at: isoTimestampOrNull(connector.lastLogReceivedAt),
 	last_log_error: connector.lastLogError,
@@ -45,6 +46,7 @@ const auditMetadata = (connector: GcpConnector) => ({
 	project_id: connector.projectId,
 	logs_enabled: connector.logsEnabled,
 	metrics_enabled: connector.metricsEnabled,
+	security_enabled: connector.securityEnabled,
 })
 
 export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIntegration", (handlers) =>
@@ -76,6 +78,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 						projectId: payload.scope_type === "project" ? payload.scope_id : payload.project_id,
 						logsEnabled: payload.logs_enabled ?? true,
 						metricsEnabled: payload.metrics_enabled ?? false,
+						securityEnabled: payload.security_enabled ?? false,
 					})
 					yield* recordHttpAudit("gcp_connector.created", {
 						resourceId: connector.id,
@@ -93,6 +96,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 					const connector = yield* gcp.update(tenant.orgId, params.id, {
 						logsEnabled: payload.logs_enabled,
 						metricsEnabled: payload.metrics_enabled,
+						securityEnabled: payload.security_enabled,
 					})
 					yield* recordHttpAudit("gcp_connector.updated", {
 						resourceId: connector.id,
@@ -117,6 +121,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 						setup_script: scripts.setupScript,
 						cleanup_script: scripts.cleanupScript,
 						push_endpoint: scripts.pushEndpoint,
+						security_push_endpoint: scripts.securityPushEndpoint,
 						log_filter: scripts.logFilter,
 						maple_service_account_email: scripts.mapleServiceAccountEmail,
 						terraform: scripts.terraform,

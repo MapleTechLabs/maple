@@ -1,9 +1,10 @@
 import type {
+	AwsFindingSource,
 	CloudFindingSeverity,
 	CloudFindingSource,
 	CloudFindingStatus,
-	CloudSecurityFeed,
 	CloudServiceState,
+	GcpFindingSource,
 } from "@maple/domain/cloud-security"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
 import {
@@ -12,22 +13,61 @@ import {
 	type CloudSecurityServiceStateRow,
 	CloudSecurityServiceStates,
 } from "@maple/db/tables"
-import type { AwsAccountId, AwsConnectionId, AwsRegion, OrgId } from "@maple/primitives"
+import type {
+	AwsAccountId,
+	AwsConnectionId,
+	AwsRegion,
+	GcpConnectorId,
+	GcpLocation,
+	GcpProjectId,
+	GcpResourceNumber,
+	OrgId,
+} from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Context, Effect, Layer, Option, Record as Rec, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
-// The AWS `security` module's findings at their latest version, and the per-region service states
-// the poller keeps its cursors in. Every read and write is pinned to one org.
+// Cloud findings at their latest version (the AWS `security` module's and the GCP connector's
+// Security Command Center's), and the per-location service states the pollers keep their cursors
+// in. Every read and write is pinned to one org.
+
+/** Which connection a row belongs to. The provider decides which ids, accounts and locations fit. */
+export type CloudConnectionRef =
+	| { readonly provider: "aws"; readonly connectionId: AwsConnectionId }
+	| { readonly provider: "gcp"; readonly connectionId: GcpConnectorId }
+export type CloudConnectionId = CloudConnectionRef["connectionId"]
+
+/** One feed's place: an AWS service in a region, or SCC at a location. */
+export type CloudFeedPlace =
+	| {
+			readonly provider: "aws"
+			readonly connectionId: AwsConnectionId
+			readonly region: AwsRegion
+			readonly source: AwsFindingSource
+	  }
+	| {
+			readonly provider: "gcp"
+			readonly connectionId: GcpConnectorId
+			readonly region: GcpLocation
+			readonly source: GcpFindingSource
+	  }
+
+/** The account a finding is in: an AWS account, or the GCP project (organization, for org-level findings). */
+type CloudFindingOwner =
+	| (Extract<CloudFeedPlace, { provider: "aws" }> & { readonly accountId: AwsAccountId })
+	| (Extract<CloudFeedPlace, { provider: "gcp" }> & {
+			readonly accountId: GcpProjectId | GcpResourceNumber
+	  })
 
 /** A finding as a poll read it, before it is stamped with the sync time. */
-export interface CloudFindingWrite {
-	readonly orgId: OrgId
-	readonly connectionId: AwsConnectionId
-	readonly accountId: AwsAccountId
-	readonly region: AwsRegion
-	readonly source: CloudFindingSource
+export type CloudFindingWrite = CloudFindingOwner & CloudFindingBody & { readonly orgId: OrgId }
+
+/** An AWS connection's finding: what the AWS poller and the EventBridge receiver write. */
+export type AwsFindingWrite = Extract<CloudFindingWrite, { readonly provider: "aws" }>
+
+/** What a finding says, whichever cloud reported it. */
+export interface CloudFindingBody {
 	readonly findingId: string
 	readonly type: string
 	readonly title: string
@@ -46,19 +86,22 @@ export interface CloudFindingWrite {
 	readonly detail: Record<string, unknown> | null
 }
 
-/** One service in one region of one connection. */
-export interface CloudFeedRef {
-	readonly orgId: OrgId
-	readonly connectionId: AwsConnectionId
-	readonly region: AwsRegion
-	readonly source: CloudFindingSource
-}
+/** One service in one location of one connection. */
+export type CloudFeedRef = CloudFeedPlace & { readonly orgId: OrgId }
 
-export interface CloudServiceStateWrite {
-	readonly orgId: OrgId
-	readonly connectionId: AwsConnectionId
-	readonly region: AwsRegion
-	readonly source: CloudSecurityFeed
+/** A feed's state: a findings feed, or (AWS only) CloudTrail. */
+export type CloudServiceStateWrite = (
+	| CloudFeedPlace
+	| {
+			readonly provider: "aws"
+			readonly connectionId: AwsConnectionId
+			readonly region: AwsRegion
+			readonly source: "cloudtrail"
+	  }
+) &
+	CloudServiceStateBody & { readonly orgId: OrgId }
+
+export interface CloudServiceStateBody {
 	readonly state: CloudServiceState
 	/** Moves the cursor; null keeps the stored one (a failed or empty poll). */
 	readonly cursorAt: number | null
@@ -73,8 +116,9 @@ export interface CloudFindingFilters {
 	readonly status: CloudFindingStatus
 	readonly severities?: ReadonlyArray<CloudFindingSeverity> | undefined
 	readonly sources?: ReadonlyArray<CloudFindingSource> | undefined
-	readonly accountId?: AwsAccountId | undefined
-	readonly region?: AwsRegion | undefined
+	readonly providers?: ReadonlyArray<CloudFindingProvider> | undefined
+	readonly accountId?: CloudFindingRow["accountId"] | undefined
+	readonly region?: CloudFindingRow["region"] | undefined
 	/** Matched case-insensitively against the title, type and resource id. */
 	readonly search?: string | undefined
 }
@@ -84,13 +128,32 @@ export interface CloudFindingPage {
 	readonly offset: number
 }
 
+type CloudFindingRow = CloudSecurityFindingRow
+type CloudFindingProvider = CloudConnectionRef["provider"]
+
 /** The primary key of one finding inside an org. */
 export interface CloudFindingKey {
-	readonly connectionId: AwsConnectionId
-	readonly region: AwsRegion
+	readonly connectionId: CloudConnectionId
+	readonly region: CloudFindingRow["region"]
 	readonly source: CloudFindingSource
 	readonly findingId: string
 }
+
+/** The owner columns a row carries: its connection id, and the same id in its provider's FK column. */
+const ownerColumns = (owner: CloudConnectionRef) =>
+	owner.provider === "aws"
+		? {
+				provider: owner.provider,
+				connectionId: owner.connectionId,
+				awsConnectionId: owner.connectionId,
+				gcpConnectorId: null,
+			}
+		: {
+				provider: owner.provider,
+				connectionId: owner.connectionId,
+				awsConnectionId: null,
+				gcpConnectorId: owner.connectionId,
+			}
 
 /** Active findings counted by severity and by source. */
 export interface CloudFindingSummary {
@@ -131,13 +194,13 @@ export interface CloudSecurityStoreApi {
 	readonly recordPush: (feed: CloudFeedRef, at: number) => Effect.Effect<void, IntegrationsPersistenceError>
 	readonly serviceStates: (
 		orgId: OrgId,
-		connectionId: AwsConnectionId,
+		connectionId: CloudConnectionId,
 	) => Effect.Effect<ReadonlyArray<CloudSecurityServiceStateRow>, IntegrationsPersistenceError>
 	/** Whether the poller has read this region of the connection, so it reconciles what is stored there. */
 	readonly knowsRegion: (
 		orgId: OrgId,
-		connectionId: AwsConnectionId,
-		region: AwsRegion,
+		connectionId: CloudConnectionId,
+		region: CloudFindingRow["region"],
 	) => Effect.Effect<boolean, IntegrationsPersistenceError>
 	/** Severity first, then the newest sighting. Reads one row past the page to tell if more follow. */
 	readonly listFindings: (
@@ -281,6 +344,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 										// A closed finding without a close time closed now, as far as Maple knows.
 										Arr.map(chunk, (row) => ({
 											...row,
+											...ownerColumns(row),
 											closedAt:
 												row.closedAt ?? (row.status === "active" ? null : syncedAt),
 											syncedAt,
@@ -291,6 +355,9 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 										// Every column from the new version but closed_at: the first time Maple saw the
 										// finding close stands while it stays closed, and the caller's (null) applies on reopen.
 										set: ($, excluded) => ({
+											// Repairs a row an older writer stored without its owner column.
+											awsConnectionId: excluded.awsConnectionId,
+											gcpConnectorId: excluded.gcpConnectorId,
 											accountId: excluded.accountId,
 											type: excluded.type,
 											title: excluded.title,
@@ -334,7 +401,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 						PG.insertInto(CloudSecurityServiceStates)
 							.values({
 								orgId: state.orgId,
-								connectionId: state.connectionId,
+								...ownerColumns(state),
 								region: state.region,
 								source: state.source,
 								...values,
@@ -367,7 +434,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 
 			const serviceStates = Effect.fn("CloudSecurityStore.serviceStates")(function* (
 				orgId: OrgId,
-				connectionId: AwsConnectionId,
+				connectionId: CloudConnectionId,
 			) {
 				return yield* dbExecute((db) =>
 					db.run(
@@ -380,8 +447,8 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 
 			const knowsRegion = Effect.fn("CloudSecurityStore.knowsRegion")(function* (
 				orgId: OrgId,
-				connectionId: AwsConnectionId,
-				region: AwsRegion,
+				connectionId: CloudConnectionId,
+				region: CloudFindingRow["region"],
 			) {
 				const rows = yield* dbExecute((db) =>
 					db.run(
@@ -497,6 +564,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				const pattern = search === "" ? undefined : `%${PG.escapeLike(search)}%`
 				const severities = filters.severities ?? []
 				const sources = filters.sources ?? []
+				const providers = filters.providers ?? []
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(CloudSecurityFindings)
@@ -508,6 +576,9 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 									? $.severity.in_(...severities)
 									: undefined,
 								Arr.isReadonlyArrayNonEmpty(sources) ? $.source.in_(...sources) : undefined,
+								Arr.isReadonlyArrayNonEmpty(providers)
+									? $.provider.in_(...providers)
+									: undefined,
 								filters.accountId === undefined
 									? undefined
 									: $.accountId.eq(filters.accountId),
@@ -578,7 +649,13 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 					),
 				)
 				const bySeverity = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
-				const bySource = { guardduty: 0, securityhub: 0, inspector: 0, access_analyzer: 0 }
+				const bySource = {
+					guardduty: 0,
+					securityhub: 0,
+					inspector: 0,
+					access_analyzer: 0,
+					security_command_center: 0,
+				}
 				const total = Arr.reduce(groups, 0, (sum, group) => {
 					const findings = Number(group.findings)
 					bySeverity[group.severity] += findings

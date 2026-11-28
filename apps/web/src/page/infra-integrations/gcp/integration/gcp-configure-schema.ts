@@ -9,7 +9,11 @@ import * as Select from "@maple/views/ui/select"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { ConfigureTarget } from "./gcp-schema"
 
-export const GcpFlags = Schema.Struct({ logs_enabled: Schema.Boolean, metrics_enabled: Schema.Boolean })
+export const GcpFlags = Schema.Struct({
+	logs_enabled: Schema.Boolean,
+	metrics_enabled: Schema.Boolean,
+	security_enabled: Schema.Boolean,
+})
 export type GcpFlags = typeof GcpFlags.Type
 
 /** `GcpLogFilterDraft`: null is a choice not made. */
@@ -31,7 +35,7 @@ export type ApplyOpened = typeof ApplyOpened.Type
 export const SetupMethod = Schema.Literals(["script", "manual", "terraform", "alchemy"])
 export type SetupMethod = typeof SetupMethod.Type
 
-export const Capability = Schema.Literals(["logs", "metrics"])
+export const Capability = Schema.Literals(["logs", "metrics", "security"])
 export type Capability = typeof Capability.Type
 
 export const ConfigureModel = Schema.Struct({
