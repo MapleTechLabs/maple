@@ -6,7 +6,6 @@ import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/d
 import * as Policy from "@maple/domain/policy"
 import {
 	extractVerifiedPrimaryEmail,
-	makeGetCustomerData,
 	makeLoginSelfHosted,
 	makeRefreshSelfHostedSession,
 	makeResolveClerkUser,
@@ -649,24 +648,6 @@ describe("makeResolveMcpTenant", () => {
 				permissions: Policy.grantsOf([asRoleName("org:admin")]),
 				authMode: "clerk",
 			})
-		}),
-	)
-})
-
-describe("makeGetCustomerData", () => {
-	it.effect("returns null identity outside Clerk mode (no enrichment, no regression)", () =>
-		Effect.gen(function* () {
-			const getCustomerData = makeGetCustomerData(baseEnv)
-
-			const result = yield* getCustomerData({
-				orgId: asOrgId("default"),
-				userId: asUserId("root"),
-				roles: [asRoleName("root")],
-				permissions: Policy.grantsOf([asRoleName("root")]),
-				authMode: "self_hosted",
-			})
-
-			assert.deepStrictEqual(result, { email: null, orgName: null })
 		}),
 	)
 })

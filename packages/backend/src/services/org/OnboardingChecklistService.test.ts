@@ -198,7 +198,7 @@ const stubs = (world: World) =>
 						: { statusCode: world.redeemStatus, response: { message: "autumn down" } }
 				}),
 			updateCustomerBillingControls: die,
-			updateCustomerName: die,
+			updateCustomerIdentity: die,
 		}),
 	)
 

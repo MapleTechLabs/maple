@@ -50,8 +50,8 @@ export interface AutumnResult {
 export type AutumnTransportFailure = BillingUpstreamError | BillingNotConfiguredError
 
 /**
- * Identity fields Autumn accepts on `customers.get_or_create`. Only that route
- * takes them — see the note on `attach`.
+ * Identity fields Autumn accepts on `customers.get_or_create`. `attach` takes
+ * none (see the note there); `customers.update` takes them for an existing customer.
  */
 export interface AutumnCustomerData {
 	readonly name?: string | null
@@ -361,7 +361,17 @@ export interface AutumnClientApi {
 		customerId: BillingCustomerId,
 		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
-	readonly updateCustomerName: (customerId: BillingCustomerId, name: string) => AutumnCall
+	/** Sets only the fields given; Autumn leaves the others as they are. */
+	readonly updateCustomerIdentity: (
+		customerId: BillingCustomerId,
+		identity: AutumnCustomerIdentity,
+	) => AutumnCall
+}
+
+/** The identity fields Maple stamps on an existing customer through `customers.update`. */
+export interface AutumnCustomerIdentity {
+	readonly name?: string
+	readonly email?: string
 }
 
 const customerDataFields = (data: AutumnCustomerData | undefined): Record<string, unknown> =>
@@ -544,8 +554,12 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 				updateCustomerBillingControls: (customerId, controls) =>
 					callUpdateBillingControls(httpClient, secretKey, apiUrl, customerId, controls),
 
-				updateCustomerName: (customerId, name) =>
-					call("updateCustomer", { customer_id: customerId, name }),
+				updateCustomerIdentity: (customerId, { name, email }) =>
+					call("updateCustomer", {
+						customer_id: customerId,
+						...(name !== undefined ? { name } : undefined),
+						...(email !== undefined ? { email } : undefined),
+					}),
 			} satisfies AutumnClientApi
 		}),
 	},

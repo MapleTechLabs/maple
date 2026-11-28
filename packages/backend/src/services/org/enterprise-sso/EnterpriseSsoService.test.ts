@@ -307,7 +307,7 @@ const autumnStub = (entitled: boolean | "sso-only") =>
 		applyReward: die,
 		cancelPlans: die,
 		updateCustomerBillingControls: die,
-		updateCustomerName: die,
+		updateCustomerIdentity: die,
 	})
 
 const config = ConfigProvider.layer(
