@@ -3,7 +3,7 @@ import type { GcpLogRuntime } from "@maple/primitives"
 import { gcpCollectLock, gcpLogFilterChoice, gcpScriptNeeded } from "../connector-state"
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import { Option, Array as Arr } from "effect"
+import { Option, Array as Arr, Struct } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
@@ -367,12 +367,10 @@ export const confirmedSave = (model: Card, env: Env): Return => {
 	if (configure === null || connector === undefined || configure.isSaving) return { model }
 	const draft = configure.chooseFlags
 	const { changed } = chooseChanges(connector, draft)
-	const payload =
-		changed.length === 2
-			? draft
-			: changed[0] === "logs"
-				? { logs_enabled: draft.logs_enabled }
-				: { metrics_enabled: draft.metrics_enabled }
+	const payload = Struct.pick(
+		draft,
+		Arr.map(changed, (capability) => CAPABILITIES[capability].flag),
+	)
 	return {
 		model: withConfigure(withCard(model, { pendingWrite: "update" }), () => ({ isSaving: true })),
 		commands: [UpdateConnector({ opens: model.configureOpens, id: connector.id, payload, flags: draft })],
@@ -464,9 +462,13 @@ export const statusArrived = (model: Card, env: Env): Card => {
 	const listed =
 		target?._tag === "Connection" && Arr.some(connectorsIn(env.status), (entry) => entry.id === target.id)
 	if (listed) return withConfigure(model, () => ({ asked: null }))
-	// The flow starts with metrics on; a deployment without them turns the switch back off.
-	return target?._tag === "New" && configure?.newFlags.metrics_enabled === true && !metricsIn(env.status)
-		? withConfigure(model, () => ({ newFlags: { logs_enabled: true, metrics_enabled: false } }))
+	// The flow starts with metrics on; a deployment without them turns that switch and security back off.
+	return target?._tag === "New" &&
+		(configure?.newFlags.metrics_enabled === true || configure?.newFlags.security_enabled === true) &&
+		!metricsIn(env.status)
+		? withConfigure(model, () => ({
+				newFlags: { logs_enabled: true, metrics_enabled: false, security_enabled: false },
+			}))
 		: model
 }
 
@@ -520,10 +522,13 @@ export const isAwaitingRun = (model: Card, slot: Env["status"], nowMs: number): 
 	const connector = configureConnector(connectorsIn(slot), configure)
 	if (connector === undefined) return false
 	if (configure.method === "script") return !runConfirmed(connector, configure.opened, nowMs)
-	// Until each capability's first data, or its removal, is confirmed.
-	return Arr.some(CAPABILITY_IDS, (capability) => {
-		const applied =
-			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
-		return connector[CAPABILITIES[capability].flag] ? applied !== true : applied === true
-	})
+	// Until each capability's first data, or its removal, is confirmed. No run reports on security.
+	return Arr.some(
+		Arr.filter(CAPABILITY_IDS, (capability) => capability !== "security"),
+		(capability) => {
+			const applied =
+				capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
+			return connector[CAPABILITIES[capability].flag] ? applied !== true : applied === true
+		},
+	)
 }

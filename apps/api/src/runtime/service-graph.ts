@@ -157,6 +157,7 @@ import { CloudSecurityReadService } from "@maple/backend/services/cloud-security
 import { SecurityAuditAccess } from "@maple/backend/services/security-audit/SecurityAuditAccess"
 import { CloudSecurityEventsService } from "@maple/backend/services/cloud-security/CloudSecurityEventsService"
 import { AwsEventsRateLimiter } from "@maple/backend/services/cloud-security/AwsEventsRateLimiter"
+import { GcpSecurityEventsService } from "@maple/backend/services/cloud-security/GcpSecurityEventsService"
 import { AuditDetectionsService } from "@maple/backend/services/audit-trail/AuditDetectionsService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -289,6 +290,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SecurityAuditAccess.layer,
 	CloudSecurityEventsService.layer,
 	AwsEventsRateLimiter.layer,
+	GcpSecurityEventsService.layer,
 	AuditDetectionsService.layer,
 	IntegrationInventoryService.layer,
 	WarehouseQueryService.layer,

@@ -74,10 +74,20 @@ import {
 import { emptyExposureOf, exposureOf, runtimesOf } from "../security-telemetry-fixture"
 import {
 	allClearOverview,
+	awsWithGcpRequestedOverview,
 	CLOUD_DETAIL_SEARCH,
 	cloudFindingDetailOf,
 	cloudFindingsOf,
 	failingOverview,
+	GCP_DETAIL_SEARCH,
+	gcpDeniedOverview,
+	gcpFindingDetailOf,
+	gcpFindingsOf,
+	gcpModuleOverview,
+	gcpNotActivatedOverview,
+	gcpOnlyOverview,
+	mixedFindingsOf,
+	mixedOverview,
 	moduleOverview,
 	noCloudFindings,
 	noConnectionOverview,
@@ -157,6 +167,14 @@ export const SCENARIOS = [
 	"cloud-failing",
 	"cloud-detail",
 	"cloud-error",
+	"cloud-mixed",
+	"cloud-gcp-only",
+	"cloud-gcp-not-requested",
+	"cloud-gcp-requested",
+	"cloud-gcp-requested-with-aws",
+	"cloud-gcp-not-activated",
+	"cloud-gcp-denied",
+	"cloud-gcp-detail",
 ] as const
 export const Scenario = Schema.Literals(SCENARIOS)
 export type Scenario = typeof Scenario.Type
@@ -623,6 +641,38 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 						C.CompletedFetchFinding({
 							key: model.detail.key ?? "",
 							result: Result.succeed(cloudFindingDetailOf(nowMs)),
+						}),
+				]),
+			}
+		case "cloud-mixed":
+			return { _tag: "Cloud", step: cloudList(nowMs, mixedOverview(nowMs), mixedFindingsOf(nowMs)) }
+		case "cloud-gcp-only":
+			return { _tag: "Cloud", step: cloudList(nowMs, gcpOnlyOverview(nowMs), gcpFindingsOf(nowMs)) }
+		case "cloud-gcp-not-requested":
+			return {
+				_tag: "Cloud",
+				step: cloudList(nowMs, gcpModuleOverview("not_requested"), noCloudFindings),
+			}
+		case "cloud-gcp-requested":
+			return { _tag: "Cloud", step: cloudList(nowMs, gcpModuleOverview("requested"), noCloudFindings) }
+		case "cloud-gcp-requested-with-aws":
+			return {
+				_tag: "Cloud",
+				step: cloudList(nowMs, awsWithGcpRequestedOverview(nowMs), cloudFindingsOf(nowMs)),
+			}
+		case "cloud-gcp-not-activated":
+			return { _tag: "Cloud", step: cloudList(nowMs, gcpNotActivatedOverview(nowMs), noCloudFindings) }
+		case "cloud-gcp-denied":
+			return { _tag: "Cloud", step: cloudList(nowMs, gcpDeniedOverview(nowMs), noCloudFindings) }
+		case "cloud-gcp-detail":
+			return {
+				_tag: "Cloud",
+				step: cloud(AppRoute.SecurityCloudFinding({ search: GCP_DETAIL_SEARCH }), nowMs, [
+					cloudOverview(gcpOnlyOverview(nowMs)),
+					(model) =>
+						C.CompletedFetchFinding({
+							key: model.detail.key ?? "",
+							result: Result.succeed(gcpFindingDetailOf(nowMs)),
 						}),
 				]),
 			}

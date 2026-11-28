@@ -53,4 +53,14 @@ describe("gcp connect lab", () => {
 		const reopened = update(closed, Message.ClickedReopen()).model
 		expect(reopened.hub.gcpCard.configure?.opened?.rerun).toBe(false)
 	})
+
+	test("the security states stage security findings, and a deployment without metrics", () => {
+		const security = pick(opened(), "configure-security")
+		expect(security.hub.gcpCard.configure?.chooseFlags.security_enabled).toBe(true)
+		const noMetrics = pick(opened(), "configure-no-metrics")
+		const status = noMetrics.hub.statuses.gcp.data
+		expect(AsyncData.isSuccess(status) && status.data.metrics_available).toBe(false)
+		const manual = pick(opened(), "manual-security-only")
+		expect(manual.hub.gcpCard.configure?.method).toBe("manual")
+	})
 })

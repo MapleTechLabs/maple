@@ -186,7 +186,7 @@ const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
 const DESCRIPTION = {
 	code: "Deep code audits of your connected repositories. Findings are visible to roles that open the Security Center.",
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
-	cloud: "GuardDuty, Security Hub, Inspector and Access Analyzer findings from your AWS accounts, matched to the services they affect.",
+	cloud: "Findings from AWS security services and Google Cloud Security Command Center, matched to the services they affect.",
 	devices: "Failing policies and vulnerable software from your device management tools, synced every hour.",
 	runtimes:
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",

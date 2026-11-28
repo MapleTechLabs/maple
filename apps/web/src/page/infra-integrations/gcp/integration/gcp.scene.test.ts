@@ -23,10 +23,14 @@ const publicId = encodePublicId(PublicIdPrefixes.gcpConnector, "00000000-0000-40
 
 const view = withViewInputs(pageView, { context })()
 
-const status = (applied: boolean | null, over: Readonly<Record<string, unknown>> = {}) =>
+const status = (
+	applied: boolean | null,
+	over: Readonly<Record<string, unknown>> = {},
+	metricsAvailable = true,
+) =>
 	Schema.decodeSync(V2GcpIntegration)({
 		object: "gcp_integration",
-		metrics_available: true,
+		metrics_available: metricsAvailable,
 		connectors: [
 			{
 				id: publicId,
@@ -36,6 +40,7 @@ const status = (applied: boolean | null, over: Readonly<Record<string, unknown>>
 				project_id: "acme-prod",
 				logs_enabled: true,
 				metrics_enabled: true,
+				security_enabled: false,
 				created_at: "2026-09-01T00:00:00.000Z",
 				last_log_received_at: null,
 				last_log_error: null,
@@ -51,11 +56,17 @@ const status = (applied: boolean | null, over: Readonly<Record<string, unknown>>
 		],
 	})
 
-const loaded = (applied: boolean | null, over: Readonly<Record<string, unknown>> = {}): Model => {
+const loaded = (
+	applied: boolean | null,
+	over: Readonly<Record<string, unknown>> = {},
+	metricsAvailable = true,
+): Model => {
 	const start = init({ search: { integration: "gcp" } }, context).model
 	const key = start.statuses.gcp.key ?? ""
-	return pageUpdate(start, Message.CompletedLoadGcp({ key, result: Result.succeed(status(applied, over)) }))
-		.model
+	return pageUpdate(
+		start,
+		Message.CompletedLoadGcp({ key, result: Result.succeed(status(applied, over, metricsAvailable)) }),
+	).model
 }
 
 const connectorId = (model: Model) => {
@@ -158,6 +169,7 @@ describe("google cloud card", () => {
 			expect(opened.model.gcpCard.configure?.chooseFlags).toEqual({
 				logs_enabled: true,
 				metrics_enabled: false,
+				security_enabled: false,
 			})
 			// Metrics set up in Google Cloud stop at once in Maple, so the save asks first.
 			const asked = pageUpdate(opened.model, gcpMsg(GcpMessage.ClickedGcpChooseApply()))
@@ -165,6 +177,34 @@ describe("google cloud card", () => {
 			expect(Arr.map(saved.commands ?? [], ({ name, args }) => [name, args])).toEqual([
 				["UpdateGcpConnector", expect.objectContaining({ id, payload: { metrics_enabled: false } })],
 			])
+		})
+
+		test("the security findings switch sends only that capability", () => {
+			const model = loaded(true)
+			const id = connectorId(model)
+			if (id === undefined) throw new Error("no connector")
+			const opened = pageUpdate(
+				model,
+				gcpMsg(GcpMessage.ToggledGcpFeature({ id, capability: "security" })),
+			)
+			const saved = pageUpdate(opened.model, gcpMsg(GcpMessage.ClickedGcpChooseApply()))
+			expect(Arr.map(saved.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+				["UpdateGcpConnector", expect.objectContaining({ id, payload: { security_enabled: true } })],
+			])
+		})
+
+		test("security findings cannot be switched on where the deployment cannot read metrics", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded(true, { metrics_enabled: false, applied_metrics_enabled: false }, false)),
+				expectView(role("switch", { name: "Security findings" })).toBeDisabled(),
+				expectView(role("switch", { name: "Metrics and resources" })).toBeDisabled(),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded(true)),
+				expectView(role("switch", { name: "Security findings" })).toBeEnabled(),
+			)
 		})
 
 		test("the last capability on cannot be switched off", () => {

@@ -37,6 +37,7 @@ const status = (connected: boolean, overrides: Readonly<Record<string, unknown>>
 						project_id: "acme-prod",
 						logs_enabled: true,
 						metrics_enabled: true,
+						security_enabled: false,
 						created_at: iso(NOW - 86_400_000),
 						last_log_received_at: iso(NOW - 60_000),
 						last_log_error: null,

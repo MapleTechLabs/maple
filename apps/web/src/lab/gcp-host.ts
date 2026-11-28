@@ -51,7 +51,11 @@ export const agoOf =
 		new Date(nowMs - minutes * 60_000).toISOString()
 
 /** The page's Model with the Google Cloud status loaded, never requested. */
-export const hubOf = (nowMs: number, connectors: ReadonlyArray<V2GcpConnector>): IntegrationsModel => {
+export const hubOf = (
+	nowMs: number,
+	connectors: ReadonlyArray<V2GcpConnector>,
+	metricsAvailable = true,
+): IntegrationsModel => {
 	const hub = Integrations.init({ search: {} }, LAB_CONTEXT).model
 	return {
 		...hub,
@@ -61,7 +65,7 @@ export const hubOf = (nowMs: number, connectors: ReadonlyArray<V2GcpConnector>):
 			gcp: {
 				key: null,
 				data: AsyncData.Success({
-					data: { object: "gcp_integration", metrics_available: true, connectors },
+					data: { object: "gcp_integration", metrics_available: metricsAvailable, connectors },
 				}),
 			},
 		},

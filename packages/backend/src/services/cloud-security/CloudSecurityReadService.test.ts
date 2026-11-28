@@ -8,7 +8,7 @@ import {
 	type OrganizationFeatureFlags,
 } from "@maple/domain/organization-feature-flags"
 import { RoleName, type TenantContext, WarehouseUpstreamError } from "@maple/domain/http"
-import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
+import { AwsAccountId, AwsRegion, GcpLocation, GcpProjectId, OrgId, UserId } from "@maple/primitives"
 import { CH } from "@maple/query-engine"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { Env } from "@maple/backend/platform/Env"
@@ -17,6 +17,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AwsConnectionService } from "../integrations/AwsConnectionService"
+import { GcpConnectorService } from "../integrations/GcpConnectorService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws } from "../integrations/aws/fake-aws"
 import { affectedServicesOf, CloudSecurityReadService } from "./CloudSecurityReadService"
 import { type AwsFindingWrite, CloudSecurityStore } from "./CloudSecurityStore"
@@ -101,6 +102,7 @@ const makeWorld = (flags: OrganizationFeatureFlags, warehouse: Warehouse = "answ
 			Layer.mergeAll(
 				CloudSecurityStore.layer,
 				Layer.effect(AwsConnectionService, AwsConnectionService.make),
+				Layer.effect(GcpConnectorService, GcpConnectorService.make),
 			),
 		),
 		Layer.provide(Layer.succeed(WarehouseQueryService, warehouseStub)),
@@ -361,6 +363,48 @@ describe("CloudSecurityReadService", () => {
 			}).pipe(Effect.provide(world.layer))
 		},
 	)
+
+	it.effect("lists GCP connectors: requested until a findings read gets through, then granted", () => {
+		const world = makeWorld(ENABLED_ORGANIZATION_FEATURE_FLAGS)
+		return Effect.gen(function* () {
+			const reads = yield* CloudSecurityReadService
+			const store = yield* CloudSecurityStore
+			const gcp = yield* GcpConnectorService
+			const project = Schema.decodeSync(GcpProjectId)("acme-prod")
+			const connector = yield* gcp.create(orgId, userId, {
+				scopeType: "project",
+				scopeId: project,
+				projectId: project,
+				logsEnabled: true,
+				metricsEnabled: false,
+				securityEnabled: false,
+			})
+			const modules = Effect.map(reads.overview(tenant), (overview) =>
+				Arr.map(overview.connections, (c) => [c.provider, c.module]),
+			)
+			assert.deepStrictEqual(yield* modules, [["gcp", "not_requested"]])
+			yield* Effect.promise(() =>
+				world.testDb.pglite.query(`UPDATE gcp_connectors SET security_enabled = true`),
+			)
+			const state = (value: "denied" | "enabled") =>
+				store.recordServiceState({
+					orgId,
+					provider: "gcp",
+					connectionId: connector.id,
+					region: Schema.decodeSync(GcpLocation)("global"),
+					source: "security_command_center",
+					state: value,
+					cursorAt: null,
+					windowMs: null,
+					lastError: null,
+					checkedAt: 7,
+				})
+			yield* state("denied")
+			assert.deepStrictEqual(yield* modules, [["gcp", "requested"]])
+			yield* state("enabled")
+			assert.deepStrictEqual(yield* modules, [["gcp", "granted"]])
+		}).pipe(Effect.provide(world.layer))
+	})
 
 	it.effect("answers not found for a finding outside the org's store", () => {
 		const world = makeWorld(ENABLED_ORGANIZATION_FEATURE_FLAGS)

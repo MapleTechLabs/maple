@@ -519,6 +519,7 @@ describe("provider modules", () => {
 			project_id: `acme-${id}`,
 			logs_enabled: true,
 			metrics_enabled: false,
+			security_enabled: false,
 			created_at: "2026-09-01T00:00:00.000Z",
 			last_log_received_at: "2026-10-01T11:58:00.000Z",
 			last_log_error: null,

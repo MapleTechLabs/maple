@@ -32,6 +32,7 @@ const connector = (fields: Readonly<Record<string, unknown>> = {}) => ({
 	project_id: "acme-shop-prod",
 	logs_enabled: true,
 	metrics_enabled: true,
+	security_enabled: false,
 	created_at: "2026-09-01T00:00:00.000Z",
 	last_log_received_at: null,
 	last_log_error: null,
@@ -47,6 +48,7 @@ const connector = (fields: Readonly<Record<string, unknown>> = {}) => ({
 
 const SETUP_FIELDS = {
 	push_endpoint: "https://ingest.maple.dev/v1/logpush/gcp/x",
+	security_push_endpoint: "https://api.maple.dev/api/integrations/gcp/security/x",
 	log_filter: "severity>=DEFAULT",
 	maple_service_account_email: "collector@maple-prod.iam.gserviceaccount.com",
 	terraform: "# maple.tf",
@@ -177,7 +179,32 @@ describe("google cloud connect flow: a new connection", () => {
 				),
 			}),
 		).model
-		expect(configureOf(unavailable).newFlags).toEqual({ logs_enabled: true, metrics_enabled: false })
+		expect(configureOf(unavailable).newFlags).toEqual({
+			logs_enabled: true,
+			metrics_enabled: false,
+			security_enabled: false,
+		})
+		// Security findings read as metrics do: the switch stays off on such a deployment.
+		const toggled = step(unavailable, gcpMsg(GcpMessage.ToggledGcpCollect({ capability: "security" })))
+		expect(configureOf(toggled.model).newFlags.security_enabled).toBe(false)
+	})
+
+	test("security findings switched on go out with the create", () => {
+		const sent = step(
+			run(loaded([]), [
+				...typed("scopeId", "acme-prod"),
+				gcpMsg(GcpMessage.ToggledGcpCollect({ capability: "security" })),
+			]),
+			gcpMsg(GcpMessage.SubmittedGcpCreate()),
+		)
+		expect(Arr.map(sent.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+			[
+				"CreateGcpConnector",
+				expect.objectContaining({
+					request: expect.objectContaining({ scope_id: "acme-prod", security_enabled: true }),
+				}),
+			],
+		])
 	})
 })
 
@@ -193,6 +220,40 @@ const configured = () =>
 	).model
 
 const metricsOff = () => run(configured(), [gcpMsg(GcpMessage.ToggledGcpCollect({ capability: "metrics" }))])
+
+describe("google cloud wizard: security findings", () => {
+	test("switched on, nothing acts in Maple yet: saving sends only that flag, without asking", () => {
+		const on = run(configured(), [gcpMsg(GcpMessage.ToggledGcpCollect({ capability: "security" }))])
+		expect(configureOf(on).chooseFlags.security_enabled).toBe(true)
+		const saved = step(on, gcpMsg(GcpMessage.ClickedGcpChooseApply()))
+		expect(configureOf(saved.model).confirm.isOpen).toBe(false)
+		expect(Arr.map(saved.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+			["UpdateGcpConnector", expect.objectContaining({ payload: { security_enabled: true } })],
+		])
+	})
+
+	test("switched off, reading stops at once, so the save asks first", () => {
+		const configuredOn = step(
+			loaded([connector({ security_enabled: true })]),
+			gcpMsg(
+				GcpMessage.GotGcpMenuMessage({
+					id: Schema.decodeUnknownSync(V2GcpConnector)(connector()).id,
+					message: Menu.Message.ClickedItem({
+						index: 0,
+						item: { kind: "Item", value: "configure" },
+					}),
+				}),
+			),
+		).model
+		const off = run(configuredOn, [gcpMsg(GcpMessage.ToggledGcpCollect({ capability: "security" }))])
+		const asked = step(off, gcpMsg(GcpMessage.ClickedGcpChooseApply()))
+		expect(configureOf(asked.model).confirm.isOpen).toBe(true)
+		const sent = step(asked.model, gcpMsg(GcpMessage.ConfirmedGcpSave()))
+		expect(Arr.map(sent.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+			["UpdateGcpConnector", expect.objectContaining({ payload: { security_enabled: false } })],
+		])
+	})
+})
 
 describe("google cloud wizard: a connection", () => {
 	test("Configure opens the data step; unchanged, Continue and the Method step rerun with the sink's filter kept", () => {
@@ -223,7 +284,7 @@ describe("google cloud wizard: a connection", () => {
 			gcpMsg(GcpMessage.ConfirmedGcpSave()),
 		])
 		const id = Schema.decodeUnknownSync(V2GcpConnector)(connector()).id
-		const flags = { logs_enabled: true, metrics_enabled: false }
+		const flags = { logs_enabled: true, metrics_enabled: false, security_enabled: false }
 		const saved = step(
 			sent,
 			gcpMsg(GcpMessage.CompletedGcpUpdate({ opens: 1, id, flags, failure: null })),
@@ -251,7 +312,7 @@ describe("google cloud wizard: a connection", () => {
 				GcpMessage.CompletedGcpUpdate({
 					opens: 1,
 					id,
-					flags: { logs_enabled: true, metrics_enabled: false },
+					flags: { logs_enabled: true, metrics_enabled: false, security_enabled: false },
 					failure: toLoadFailure("nope"),
 				}),
 			),

@@ -4,6 +4,7 @@ import {
 	GCP_READER_SCOPE_ROLES,
 	type GcpSetupPlan,
 } from "@maple/domain/gcp"
+import type { GcpScopeType } from "@maple/primitives"
 import { Array as Arr, String as Str } from "effect"
 
 /** An HCL string literal: `${` and `%{` would start a template, a newline would end the line. */
@@ -97,29 +98,6 @@ ${importBlock("google_service_account.maple_push", `projects/${host}/serviceAcco
   depends_on = [google_project_service.maple]
 }
 
-# What Pub/Sub signs its pushes as. It holds no role anywhere.
-resource "google_service_account" "maple_push" {
-  project      = local.project_id
-  account_id   = ${hcl(logs.pushServiceAccountId)}
-  display_name = "Maple log push identity"
-  description  = "Signs Pub/Sub push requests to Maple. Holds no roles."
-
-  depends_on = [google_project_service.maple]
-}
-
-data "google_project" "host" {
-  project_id = local.project_id
-}
-
-# Pub/Sub's service agent mints the push tokens: needed in projects created before April 2021.
-resource "google_service_account_iam_member" "maple_push_token_creator" {
-  service_account_id = google_service_account.maple_push.name
-  role               = "roles/iam.serviceAccountTokenCreator"
-  member             = "serviceAccount:service-\${data.google_project.host.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-
-  depends_on = [google_pubsub_topic.maple]
-}
-
 # One LogEntry per request, unwrapped. A day of retention bounds a replay; it never expires idle.
 resource "google_pubsub_subscription" "maple" {
   project                    = local.project_id
@@ -183,6 +161,125 @@ resource "google_pubsub_topic_iam_member" "maple_sink_publisher" {
 `
 }
 
+// One push identity signs both subscriptions: declared once when either is on.
+const pushIdentitySection = (plan: GcpSetupPlan, pushServiceAccountId: string) => {
+	const topics = [
+		...(plan.logs === null ? [] : ["google_pubsub_topic.maple"]),
+		...(plan.security === null ? [] : ["google_pubsub_topic.maple_security"]),
+	]
+	return `
+# ---- Push identity ----
+# What Pub/Sub signs its pushes to Maple as. It holds no role anywhere.
+resource "google_service_account" "maple_push" {
+  project      = local.project_id
+  account_id   = ${hcl(pushServiceAccountId)}
+  display_name = ${plan.logs === null ? '"Maple push identity"' : '"Maple log push identity"'}
+  description  = "Signs Pub/Sub push requests to Maple. Holds no roles."
+
+  depends_on = [google_project_service.maple]
+}
+
+data "google_project" "host" {
+  project_id = local.project_id
+}
+
+# Pub/Sub's service agent mints the push tokens: needed in projects created before April 2021.
+# Google creates the agent with a first topic, so the grant waits for one.
+resource "google_service_account_iam_member" "maple_push_token_creator" {
+  service_account_id = google_service_account.maple_push.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:service-\${data.google_project.host.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  depends_on = [${Arr.join(topics, ", ")}]
+}
+`
+}
+
+// Per scope: the notification config resource, its scope argument and value, its import ID prefix.
+const NOTIFICATION_CONFIGS = {
+	project: ["google_scc_v2_project_notification_config", "project", "local.project_id", "projects"],
+	folder: ["google_scc_v2_folder_notification_config", "folder", "local.folder_id", "folders"],
+	organization: [
+		"google_scc_v2_organization_notification_config",
+		"organization",
+		"local.organization_id",
+		"organizations",
+	],
+} as const satisfies Record<GcpScopeType, readonly [string, string, string, string]>
+
+const securitySection = (plan: GcpSetupPlan, security: NonNullable<GcpSetupPlan["security"]>) => {
+	const [config, scopeArg, scopeValue, prefix] = NOTIFICATION_CONFIGS[plan.scopeType]
+	const host = plan.projectId
+	return `
+# ---- Security findings ----
+# If an earlier setup made these, uncomment to take them over.
+${importBlock("google_pubsub_topic.maple_security", `projects/${host}/topics/${security.topic}`, true)}${importBlock("google_pubsub_subscription.maple_security", `projects/${host}/subscriptions/${security.subscription}`, true)}${importBlock(`${config}.maple`, `${prefix}/${plan.scopeId}/locations/global/notificationConfigs/${security.notificationConfig}`, true)}
+resource "google_pubsub_topic" "maple_security" {
+  project = local.project_id
+  name    = ${hcl(security.topic)}
+
+  depends_on = [google_project_service.maple]
+}
+
+# One finding per request, unwrapped, signed as the push identity for Maple's address.
+resource "google_pubsub_subscription" "maple_security" {
+  project                    = local.project_id
+  name                       = ${hcl(security.subscription)}
+  topic                      = google_pubsub_topic.maple_security.id
+  ack_deadline_seconds       = ${GCP_PUSH_SUBSCRIPTION.ackDeadlineSeconds}
+  message_retention_duration = "${GCP_PUSH_SUBSCRIPTION.messageRetentionSeconds}s"
+
+  expiration_policy {
+    ttl = ""
+  }
+
+  retry_policy {
+    minimum_backoff = "${GCP_PUSH_SUBSCRIPTION.minRetryDelaySeconds}s"
+    maximum_backoff = "${GCP_PUSH_SUBSCRIPTION.maxRetryDelaySeconds}s"
+  }
+
+  push_config {
+    push_endpoint = local.security_push_endpoint
+
+    no_wrapper {
+      write_metadata = false
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.maple_push.email
+      audience              = local.security_push_endpoint
+    }
+  }
+
+  depends_on = [google_service_account_iam_member.maple_push_token_creator]
+}
+
+# Security Command Center sends each finding written or changed on the ${plan.scopeType} to the topic.
+# Creating it grants its own service agent the right to publish there. Destroyed before the
+# subscription, so nothing publishes into a topic that is gone.
+resource "${config}" "maple" {
+${attributes([
+	["config_id", hcl(security.notificationConfig)],
+	[scopeArg, scopeValue],
+	["location", '"global"'],
+	["description", '"Sends Security Command Center findings to Maple."'],
+	["pubsub_topic", "google_pubsub_topic.maple_security.id"],
+])}
+  streaming_config {
+    filter = local.security_filter
+  }
+
+  depends_on = [google_pubsub_subscription.maple_security]
+}
+`
+}
+
+// The account reads metrics, findings, or both: named for what it does, as the setup script does.
+const readerDisplayName = (reader: NonNullable<GcpSetupPlan["reader"]>) =>
+	Arr.some(GCP_READER_SCOPE_ROLES, (role) => Arr.contains(reader.scopeRoles, role))
+		? '"Maple metrics and resource reader"'
+		: '"Maple security findings reader"'
+
 const readerSection = (
 	plan: GcpSetupPlan,
 	reader: NonNullable<GcpSetupPlan["reader"]>,
@@ -190,7 +287,7 @@ const readerSection = (
 ) => {
 	const [, member, scopeArg, scopeValue] = SCOPES[plan.scopeType]
 	return `
-# ---- Metrics and resources ----
+# ---- Read-only access: metrics and resources, security findings ----
 # A read-only account Maple reads as through short-lived tokens. No key is created.
 ${
 	existing
@@ -202,7 +299,7 @@ ${importBlock("google_service_account.maple_reader", `projects/${plan.projectId}
 }resource "google_service_account" "maple_reader" {
   project      = local.project_id
   account_id   = ${hcl(reader.serviceAccountId)}
-  display_name = "Maple metrics and resource reader"
+  display_name = ${readerDisplayName(reader)}
 
   depends_on = [google_project_service.maple]
 }
@@ -213,9 +310,9 @@ resource "google_service_account_iam_member" "maple_reader_token_creator" {
   member             = "serviceAccount:\${local.maple_service_account}"
 }
 
-# The narrowest predefined roles for Maple's reads, on the ${plan.scopeType}. Cloud Asset Viewer can also read IAM policies.
+# The narrowest predefined roles for Maple's reads, on the ${plan.scopeType}.${Arr.contains(reader.scopeRoles, "roles/cloudasset.viewer") ? " Cloud Asset Viewer can also read IAM policies." : ""}
 resource "${member}" "maple_reader" {
-  for_each = toset(${hclList(GCP_READER_SCOPE_ROLES)})
+  for_each = toset(${hclList(reader.scopeRoles)})
 
 ${attributes([
 	[scopeArg, plan.scopeType === "folder" ? `"folders/\${local.folder_id}"` : scopeValue],
@@ -234,7 +331,8 @@ resource "google_project_iam_member" "maple_reader_quota" {
 
 /** A self-contained Terraform file for the connection: every resource inline, readable before it is applied. */
 export const renderGcpTerraform = (plan: GcpSetupPlan, existing: GcpExisting): string => {
-	const { logs, reader } = plan
+	const { logs, reader, security } = plan
+	const pushServiceAccountId = logs?.pushServiceAccountId ?? security?.pushServiceAccountId
 	const locals: ReadonlyArray<readonly [string, string]> = [
 		["project_id", hcl(plan.projectId)],
 		...(plan.scopeType === "folder" ? [["folder_id", hcl(plan.scopeId)] as const] : []),
@@ -248,11 +346,18 @@ export const renderGcpTerraform = (plan: GcpSetupPlan, existing: GcpExisting): s
 		...(reader === null
 			? []
 			: [["maple_service_account", hcl(reader.mapleServiceAccountEmail)] as const]),
+		...(security === null
+			? []
+			: [
+					["security_push_endpoint", hcl(security.pushEndpoint)] as const,
+					["security_filter", hcl(security.filter)] as const,
+				]),
 	]
 	return `# Maple connection for Google Cloud ${plan.scopeType} ${plan.scopeId}
 #   Log forwarding:        ${logs === null ? "off" : "on"}
-#   Metrics and resources: ${reader === null ? "off" : "on"}
-# This configuration carries no secret${logs === null ? "." : `: Pub/Sub signs each push as ${logs.pushServiceAccountId},\n# and Maple checks the signature.`} Put it in a root module of its own: names follow the
+#   Metrics and resources: ${reader !== null && Arr.some(GCP_READER_SCOPE_ROLES, (role) => Arr.contains(reader.scopeRoles, role)) ? "on" : "off"}
+#   Security findings:     ${security === null ? "off" : "on"}
+# This configuration carries no secret${pushServiceAccountId === undefined ? "." : `: Pub/Sub signs each push as ${pushServiceAccountId},\n# and Maple checks the signature.`} Put it in a root module of its own: names follow the
 # connection, and imports only work in a root module.
 # Details: https://maple.dev/docs/integrations/gcp-infrastructure-as-code
 
@@ -261,9 +366,9 @@ terraform {
 
   # Drop this block where your configuration declares these providers already.
   required_providers {
-    google = {
+${security === null ? "" : "    # 5.42 brought the last of the SCC v2 notification config resources, the folder's.\n"}    google = {
       source  = "hashicorp/google"
-      version = ">= 5.0, < 8.0"
+      version = "${security === null ? ">= 5.0" : ">= 5.42"}, < 8.0"
     }${
 		logs === null
 			? ""
@@ -287,5 +392,5 @@ resource "google_project_service" "maple" {
   service            = each.value
   disable_on_destroy = false
 }
-${logs === null ? "" : logsSection(plan, logs, existing.logs)}${reader === null ? "" : readerSection(plan, reader, existing.reader)}`
+${logs === null ? "" : logsSection(plan, logs, existing.logs)}${pushServiceAccountId === undefined ? "" : pushIdentitySection(plan, pushServiceAccountId)}${security === null ? "" : securitySection(plan, security)}${reader === null ? "" : readerSection(plan, reader, existing.reader)}`
 }

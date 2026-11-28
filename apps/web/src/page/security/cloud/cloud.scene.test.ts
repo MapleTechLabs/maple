@@ -7,7 +7,17 @@ import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	allClearOverview,
+	awsWithGcpRequestedOverview,
 	firstReadPendingOverview,
+	GCP_DETAIL_SEARCH,
+	gcpDeniedOverview,
+	gcpFindingDetailOf,
+	gcpFindingsOf,
+	gcpModuleOverview,
+	gcpNotActivatedOverview,
+	gcpOnlyOverview,
+	mixedFindingsOf,
+	mixedOverview,
 	CLOUD_DETAIL_SEARCH,
 	cloudFindingDetailOf,
 	cloudFindingsOf,
@@ -74,16 +84,134 @@ describe("security cloud findings", () => {
 		expect(names(back.commands)).toEqual(["SecurityApiCloudFirstPage"])
 	})
 
-	test("an org without AWS is pointed at connecting it with the security module", () => {
+	test("an org with no cloud is pointed at connecting AWS or Google Cloud", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(listed(noConnectionOverview)),
-			expectView(text("Connect AWS to see its security findings")).toExist(),
+			expectView(text("Connect a cloud to see its security findings")).toExist(),
 			expectView(role("link", { name: "Connect AWS" })).toHaveAttr(
 				"href",
 				hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } })),
 			),
+			expectView(role("link", { name: "Connect Google Cloud" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } })),
+			),
 			expectView(role("table", { name: "Cloud findings" })).toBeAbsent(),
+		)
+	})
+
+	test("an org with only Google Cloud is told to turn on Security findings, or to run its setup again", () => {
+		const connector = hrefOf(AppRoute.Integrations({ search: { integration: "gcp" } }))
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(gcpModuleOverview("not_requested"))),
+			expectView(text("Turn on Security findings for Google Cloud")).toExist(),
+			expectView(role("link", { name: "Open the Google Cloud connector" })).toHaveAttr(
+				"href",
+				connector,
+			),
+			expectView(text("Connect a cloud to see its security findings")).toBeAbsent(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(gcpModuleOverview("requested"))),
+			expectView(text("Run the Google Cloud setup again to finish")).toExist(),
+			expectView(role("link", { name: "Get the updated setup" })).toHaveAttr("href", connector),
+		)
+	})
+
+	test("AWS findings still list while the Google Cloud connector waits for its setup", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(awsWithGcpRequestedOverview(NOW), cloudFindingsOf(NOW))),
+			expectView(role("table", { name: "Cloud findings" })).toExist(),
+			expectView(text("Run the Google Cloud setup again to read its findings")).toExist(),
+		)
+	})
+
+	test("findings from both clouds list together, each with its cloud", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(mixedOverview(NOW), mixedFindingsOf(NOW))),
+			expectView(role("link", { name: "Public bucket ACL" })).toExist(),
+			expectView(
+				role("link", { name: "S3 general purpose buckets should block public access" }),
+			).toExist(),
+			expectView(text("acme-prod · global")).toExist(),
+			expectView(text("123456789012 · us-east-1")).toExist(),
+			expectView(role("combobox", { name: "Cloud" })).toExist(),
+		)
+	})
+
+	test("the cloud filter sends providers, and narrows the sources offered", () => {
+		const model = listed(mixedOverview(NOW), mixedFindingsOf(NOW))
+		const picked = pageUpdate(model, Message.ChangedFilter({ filter: "provider", value: "gcp" }))
+		expect(picked.outMessage).toMatchObject({ url: hrefOf(listRoute({ provider: "gcp" })) })
+		expect(listRequestOf({ provider: "gcp" })).toEqual({ providers: ["gcp"] })
+		expect(listRequestOf({ provider: "azure" })).toEqual({})
+		// A Google Cloud location and project id are filters the request keeps.
+		expect(listRequestOf({ region: "global", account: "acme-prod" })).toEqual({
+			region: "global",
+			accountId: "acme-prod",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(mixedOverview(NOW), mixedFindingsOf(NOW), { provider: "gcp" })),
+			expectView(role("option", { name: "Security Command Center" })).toExist(),
+			expectView(role("option", { name: "GuardDuty" })).toBeAbsent(),
+		)
+	})
+
+	test("one cloud connected offers no cloud filter", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(gcpOnlyOverview(NOW), gcpFindingsOf(NOW))),
+			expectView(role("combobox", { name: "Cloud" })).toBeAbsent(),
+			expectView(text("Live: findings arrive as Google Cloud reports them.")).toExist(),
+		)
+	})
+
+	test("Security Command Center not activated or refused says so for the scope", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(gcpNotActivatedOverview(NOW))),
+			expectView(text("Security Command Center is not activated for acme-prod")).toExist(),
+			expectView(role("link", { name: "Activate Security Command Center" })).toHaveAttr(
+				"href",
+				CLOUD_FINDING_SOURCE_SPECS.security_command_center.enableUrl,
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(gcpDeniedOverview(NOW))),
+			expectView(text("The connector may not read Security Command Center for acme-prod")).toExist(),
+			expectView(role("link", { name: "Run the Google Cloud setup again" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.Integrations({ search: { integration: "gcp" } })),
+			),
+		)
+	})
+
+	test("a Google Cloud finding opens in the Google Cloud console", () => {
+		const detail = gcpFindingDetailOf(NOW)
+		const model = answered(AppRoute.SecurityCloudFinding({ search: GCP_DETAIL_SEARCH }), [
+			overviewIs(gcpOnlyOverview(NOW)),
+			(current) =>
+				Message.CompletedFetchFinding({
+					key: current.detail.key ?? "",
+					result: Result.succeed(detail),
+				}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("link", { name: /Open in Google Cloud console/ })).toHaveAttr(
+				"href",
+				detail.finding.consoleUrl,
+			),
+			expectView(role("link", { name: /Open in AWS console/ })).toBeAbsent(),
+			expectView(text("Project")).toExist(),
 		)
 	})
 

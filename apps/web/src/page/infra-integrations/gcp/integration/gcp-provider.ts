@@ -197,6 +197,9 @@ export const GCP: ProviderModule<Status, GcpCardModel, GcpMessage> = {
 								Arr.some(connectors, (connector) => connector.metrics_enabled)
 									? "Metrics and resources"
 									: null,
+								Arr.some(connectors, (connector) => connector.security_enabled)
+									? "Security findings"
+									: null,
 							],
 							(part) => part !== null,
 						),

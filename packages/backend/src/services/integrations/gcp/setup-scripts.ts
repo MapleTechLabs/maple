@@ -3,6 +3,9 @@ import {
 	GCP_METRIC_APIS,
 	GCP_READER_PROJECT_ROLE,
 	GCP_READER_SCOPE_ROLES,
+	GCP_SECURITY_APIS,
+	GCP_SECURITY_NOTIFICATION_FILTER,
+	GCP_SECURITY_SCOPE_ROLE,
 	gcpConnectorResourceNames,
 } from "@maple/domain/gcp"
 import {
@@ -128,6 +131,11 @@ SUBSCRIPTION=${sh(names.subscription)}
 SINK=${sh(names.sink)}
 SERVICE_ACCOUNT=${sh(names.serviceAccountId)}
 SERVICE_ACCOUNT_EMAIL="$SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"
+SECURITY_TOPIC=${sh(names.securityTopic)}
+SECURITY_SUBSCRIPTION=${sh(names.securitySubscription)}
+NOTIFICATION_CONFIG=${sh(names.notificationConfig)}
+PUSH_SERVICE_ACCOUNT=${sh(names.pushServiceAccountId)}
+PUSH_SERVICE_ACCOUNT_EMAIL="$PUSH_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"
 ${Arr.join(
 	Arr.map(more, (line) => `${line}\n`),
 	"",
@@ -136,6 +144,7 @@ SCOPE="${target.scopeType} $SCOPE_ID"
 OWNER="Owner on project $PROJECT_ID"
 SINK_ROLE="Logs Configuration Writer on $SCOPE"
 IAM_ROLE="${SCOPES[target.scopeType].iamRole} on $SCOPE"
+SCC_ROLE="Security Center Notification Configurations Editor on $SCOPE"
 `
 }
 
@@ -276,8 +285,25 @@ remove() {
   REMOVED=1
 }
 
+# account_remains <what it is> <gcloud iam service-accounts list ...>: looked up in the list. For
+# 30 days after a service account is deleted, describing it answers PERMISSION_DENIED even to an
+# Owner, which would read as "may still be there" on every re-run. A list that fails is read like a
+# failed describe.
+account_remains() {
+  local what="$1" output
+  shift
+  if output="$("$@" 2>/dev/null)"; then
+    [ -n "$output" ]
+    return
+  fi
+  output="$("$@" 2>&1 || true)"
+  case "$output" in *"has not been used"* | *"is disabled"*) api_off "$what"; return 1 ;; esac
+  stop "Couldn't check whether $what still exists." "$(fix "$output" "$OWNER")" "$output"
+}
+
 # unbind <role that allows it> <gcloud ... remove-iam-policy-binding ...>: a binding that is
-# already gone is fine.
+# already gone is fine. UNBOUND says whether one was there.
+UNBOUND=0
 unbind() {
   local role="$1" output tries=0
   shift
@@ -289,6 +315,7 @@ unbind() {
     fi
     sleep 3
   done
+  UNBOUND=1
 }
 `
 
@@ -450,47 +477,65 @@ const permissionChecks = (
 	scopeType: GcpScopeType,
 	logs: boolean,
 	metrics: boolean,
+	security: boolean,
 ): AccessChecks["permissions"] => {
-	if (!logs && !metrics) return []
+	if (!logs && !metrics && !security) return []
 	const scope = SCOPES[scopeType]
 	const administrator = "or have an administrator run this script."
-	const host = [
+	const reader = metrics || security
+	const pubsub = [
+		"pubsub.topics.get",
+		"pubsub.topics.create",
+		"pubsub.topics.attachSubscription",
+		"pubsub.topics.setIamPolicy",
+		"pubsub.subscriptions.get",
+		"pubsub.subscriptions.create",
+		"pubsub.subscriptions.update",
+	]
+	const host = dedupe([
 		"resourcemanager.projects.getIamPolicy",
 		"resourcemanager.projects.setIamPolicy",
 		// The gets: a resource the caller may not look at is taken for missing and created again,
 		// which Google refuses as a duplicate.
-		...(logs
-			? [
-					"pubsub.topics.get",
-					"pubsub.topics.create",
-					"pubsub.topics.attachSubscription",
-					"pubsub.topics.setIamPolicy",
-					"pubsub.topics.publish",
-					"pubsub.subscriptions.get",
-					"pubsub.subscriptions.create",
-					"pubsub.subscriptions.update",
-				]
-			: []),
-		...(metrics
+		...(logs ? [...pubsub, "pubsub.topics.publish"] : []),
+		...(security ? pubsub : []),
+		...(reader
 			? ["iam.serviceAccounts.get", "iam.serviceAccounts.create", "iam.serviceAccounts.setIamPolicy"]
 			: []),
-	]
+		// A subscription that signs as the push service account needs its caller to act as it.
+		...(security ? ["iam.serviceAccounts.actAs"] : []),
+	])
 	const sink = logs ? ["logging.sinks.get", "logging.sinks.create", "logging.sinks.update"] : []
+	const notifications = security
+		? [
+				"securitycenter.notificationconfig.get",
+				"securitycenter.notificationconfig.create",
+				"securitycenter.notificationconfig.update",
+			]
+		: []
 	const askHost = `Ask for Owner there, ${administrator}`
 	if (scopeType === "project") {
-		return [["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, [...host, ...sink]]]
+		return [
+			["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, [...host, ...sink, ...notifications]],
+		]
 	}
-	const roles = [...(logs ? ["Logs Configuration Writer"] : []), ...(metrics ? [scope.iamRole] : [])]
+	const roles = [
+		...(logs ? ["Logs Configuration Writer"] : []),
+		...(reader ? [scope.iamRole] : []),
+		...(security ? ["Security Center Notification Configurations Editor"] : []),
+	]
 	return [
 		["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, host],
 		[
 			`${scopeType}s/$SCOPE_ID`,
 			"$SCOPE",
 			`Ask for ${Arr.join(roles, " and ")} there, ${administrator} If the ID looks wrong, check it with: ${scope.list}`,
-			[...sink, ...(metrics ? [`resourcemanager.${scopeType}s.setIamPolicy`] : [])],
+			[...sink, ...notifications, ...(reader ? [`resourcemanager.${scopeType}s.setIamPolicy`] : [])],
 		],
 	]
 }
+
+const dedupe = (values: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(values)]
 
 // Setup only: granting to a service account Google may not have published yet, its own for the
 // log sink or the reader this script creates.
@@ -507,7 +552,7 @@ grant() {
     tries=$((tries + 1))
     conflict "$output" || case "$output" in
       *"does not exist"* | *NOT_FOUND*) ;;
-      *PERMISSION_DENIED*) { [ "$ACCOUNT_CREATED" = 1 ] && [ "$3" = service-accounts ]; } || tries=20 ;;
+      *PERMISSION_DENIED*) { [ "$ACCOUNT_CREATED$PUSH_ACCOUNT_CREATED" != 00 ] && [ "$3" = service-accounts ]; } || tries=20 ;;
       *) tries=20 ;;
     esac
     if [ "$tries" -ge 20 ]; then stop "$failed" "$(fix "$output" "$role")" "$output"; fi
@@ -519,6 +564,10 @@ grant() {
   done
 }
 `
+
+// How a push subscription delivers: GCP_PUSH_SUBSCRIPTION, as gcloud's flags.
+const DELIVERY_FLAGS = `  --ack-deadline=30 --message-retention-duration=1d --expiration-period=never
+  --min-retry-delay=10s --max-retry-delay=600s`
 
 const logsSetup = (scopeType: GcpScopeType): string => `
 # ---- Log forwarding: on ----
@@ -541,8 +590,7 @@ fi
 SUBSCRIPTION_FLAGS=(
   --project="$PROJECT_ID"
   --push-endpoint="$PUSH_ENDPOINT" --push-no-wrapper
-  --ack-deadline=30 --message-retention-duration=1d --expiration-period=never
-  --min-retry-delay=10s --max-retry-delay=600s
+${DELIVERY_FLAGS}
 )
 # A subscription outlives a deleted topic, and one that was detached stays detached: neither gets
 # a message again, and its topic can't be changed. Such a subscription is made anew.
@@ -626,6 +674,9 @@ ${notifies ? `notify "Maple notified" '"logs":false'\n` : ""}`
 
 const serviceAccountMember = '--member="serviceAccount:$SERVICE_ACCOUNT_EMAIL"'
 
+const METRICS_READER_NAME = "Maple metrics and resource reader"
+const SECURITY_READER_NAME = "Maple security findings reader"
+
 const metricsSetup = (scopeType: GcpScopeType): string => `
 # ---- Metrics and resources: on ----
 section "Metrics and resources"
@@ -647,7 +698,7 @@ if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --projec
 else
   run "Read-only service account created" "Couldn't create the service account." "$OWNER" \\
     gcloud iam service-accounts create "$SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
-    --display-name="Maple metrics and resource reader"
+    --display-name="${METRICS_READER_NAME}"
   ACCOUNT_CREATED=1
 fi
 
@@ -674,32 +725,38 @@ grant "Couldn't let Maple use the service account." "$OWNER" \\
   --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator \\
   --condition=None
 ok "Maple allowed to read as that account"
-notify "Maple notified" '"metrics":true'
 `
 
-const metricsRemoval = (scopeType: GcpScopeType, notifies: boolean): string => `
-# ---- Metrics and resources: off. Remove what an earlier run created. ----
-section "Metrics and resources"
-# Looked up in the list: for 30 days after a service account is deleted, describing it answers
-# PERMISSION_DENIED even to an Owner, which would read as "may still be there" on every re-run.
-# A list that fails is read like a failed describe.
-account_remains() {
-  local output
-  if output="$("$@" 2>/dev/null)"; then
-    [ -n "$output" ]
-    return
-  fi
-  output="$("$@" 2>&1 || true)"
-  case "$output" in *"has not been used"* | *"is disabled"*) api_off "the read-only service account"; return 1 ;; esac
-  stop "Couldn't check whether the read-only service account still exists." "$(fix "$output" "$OWNER")" "$output"
-}
-if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
-  --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
-  # Role bindings first: once the account is deleted they can no longer be removed by name.
-  for ROLE in ${Arr.join(GCP_READER_SCOPE_ROLES, " ")}; do
+const ACCOUNT_LIST = `gcloud iam service-accounts list --project="$PROJECT_ID" \\
+  --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'`
+
+const unbindScopeRoles = (scopeType: GcpScopeType, roles: ReadonlyArray<string>) =>
+	`for ROLE in ${Arr.join(roles, " ")}; do
     unbind "$IAM_ROLE" ${SCOPES[scopeType].gcloud} remove-iam-policy-binding "$SCOPE_ID" \\
       ${serviceAccountMember} --role="$ROLE" --all
-  done
+  done`
+
+/** `keepAccount`: security findings still read through the account, so only the metrics roles go. */
+const metricsRemoval = (scopeType: GcpScopeType, keepAccount: boolean): string => `
+# ---- Metrics and resources: off. Remove what an earlier run created. ----
+section "Metrics and resources"
+${
+	keepAccount
+		? `# The read-only service account stays: Security Command Center findings are read through it.
+UNBOUND=0
+if account_remains "the read-only service account" ${ACCOUNT_LIST}; then
+  ${unbindScopeRoles(scopeType, GCP_READER_SCOPE_ROLES)}
+fi
+if [ "$UNBOUND" = 1 ]; then
+  ok "Metrics roles removed"
+  REMOVED=1
+else
+  ok "Nothing left to remove"
+fi
+`
+		: `if account_remains "the read-only service account" ${ACCOUNT_LIST}; then
+  # Role bindings first: once the account is deleted they can no longer be removed by name.
+  ${unbindScopeRoles(scopeType, [...GCP_READER_SCOPE_ROLES, GCP_SECURITY_SCOPE_ROLE])}
   unbind "$OWNER" gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
     ${serviceAccountMember} --role=${GCP_READER_PROJECT_ROLE} --all
   ok "Read-only roles removed"
@@ -708,7 +765,190 @@ if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
 else
   ok "Nothing left to remove"
 fi
-${notifies ? `notify "Maple notified" '"metrics":false'\n` : ""}`
+`
+}`
+
+// Security Command Center takes the scope as --organization, --folder or --project, like a sink.
+// Without data residency the only location is global.
+const sccParent = (scopeType: GcpScopeType) => `${SCOPES[scopeType].sink} --location=global`
+
+/** `readerHere`: metrics are off, so this section makes the read-only account Maple reads as. */
+const securitySetup = (scopeType: GcpScopeType, readerHere: boolean): string => `
+# ---- Security findings: on ----
+section "Security findings"
+
+# APIs in ${hostProject(scopeType)}:
+#   securitycenter.googleapis.com  Security Command Center, to read findings and send each new one
+#   pubsub.googleapis.com          carries the findings to Maple
+#   iam.googleapis.com, iamcredentials.googleapis.com  the service accounts below; no key is created
+#   cloudresourcemanager.googleapis.com  what gcloud grants the roles below through
+apis "Security Command Center, Pub/Sub, IAM, IAM Credentials, Cloud Resource Manager" \\
+  ${Arr.join(GCP_SECURITY_APIS, " ")}
+${
+	readerHere
+		? `
+if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
+  ok "Read-only service account already exists"
+else
+  run "Read-only service account created" "Couldn't create the service account." "$OWNER" \\
+    gcloud iam service-accounts create "$SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
+    --display-name="${SECURITY_READER_NAME}"
+  ACCOUNT_CREATED=1
+fi
+`
+		: ""
+}
+# roles/securitycenter.findingsViewer on the ${scopeType}: reads findings, changes nothing.
+grant "Couldn't grant the findings role." "$IAM_ROLE" \\
+  ${SCOPES[scopeType].gcloud} add-iam-policy-binding "$SCOPE_ID" \\
+  ${serviceAccountMember} --role=${GCP_SECURITY_SCOPE_ROLE} --condition=None
+${
+	readerHere
+		? `grant "Couldn't grant the read-only roles." "$OWNER" \\
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
+  ${serviceAccountMember} --role=${GCP_READER_PROJECT_ROLE} --condition=None
+ok "Read-only roles granted (Security Center Findings Viewer, Service Usage Consumer)"
+grant "Couldn't let Maple use the service account." "$OWNER" \\
+  gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
+  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator \\
+  --condition=None
+ok "Maple allowed to read as that account"
+`
+		: `ok "Read-only role granted (Security Center Findings Viewer)"
+`
+}
+# Made first: Google creates the Pub/Sub service agent the grant below names with a first topic.
+if exists gcloud pubsub topics describe "$SECURITY_TOPIC" --project="$PROJECT_ID"; then
+  ok "Findings topic already exists"
+else
+  run "Findings topic created" "Couldn't create the findings topic." "$OWNER" \\
+    gcloud pubsub topics create "$SECURITY_TOPIC" --project="$PROJECT_ID"
+fi
+
+# What Pub/Sub signs each push to Maple as, so the address carries no secret. It holds no role.
+if exists gcloud iam service-accounts describe "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
+  ok "Push service account already exists"
+else
+  run "Push service account created" "Couldn't create the push service account." "$OWNER" \\
+    gcloud iam service-accounts create "$PUSH_SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
+    --display-name="Maple push identity" --description="Signs Pub/Sub push requests to Maple. Holds no roles."
+  PUSH_ACCOUNT_CREATED=1
+fi
+# Pub/Sub's service agent mints the push tokens. Google names it by the project's number.
+if ! PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null)" ||
+  [ -z "$PROJECT_NUMBER" ]; then
+  PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" 2>&1 || true)"
+  stop "Couldn't read the number of project $PROJECT_ID." "$(fix "$PROJECT_NUMBER" "$OWNER")" "$PROJECT_NUMBER"
+fi
+grant "Couldn't let Pub/Sub sign as the push service account." "$OWNER" \\
+  gcloud iam service-accounts add-iam-policy-binding "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
+  --member="serviceAccount:service-$PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com" \\
+  --role=roles/iam.serviceAccountTokenCreator --condition=None
+ok "Pub/Sub allowed to sign as that account"
+
+# One finding per request, unwrapped, with a token Google signs as the push service account for
+# Maple's address. A subscription cut off from its topic is made anew, as for logs.
+SECURITY_SUBSCRIPTION_FLAGS=(
+  --project="$PROJECT_ID"
+  --push-endpoint="$SECURITY_PUSH_ENDPOINT" --push-no-wrapper
+  --push-auth-service-account="$PUSH_SERVICE_ACCOUNT_EMAIL" --push-auth-token-audience="$SECURITY_PUSH_ENDPOINT"
+${DELIVERY_FLAGS}
+)
+security_subscribed() {
+  gcloud pubsub subscriptions describe "$SECURITY_SUBSCRIPTION" --project="$PROJECT_ID" --format="value($1)" 2>/dev/null || true
+}
+SECURITY_SUBSCRIBED="$(security_subscribed topic)"
+if [ -n "$SECURITY_SUBSCRIBED" ] &&
+  { [ "$SECURITY_SUBSCRIBED" != "projects/$PROJECT_ID/topics/$SECURITY_TOPIC" ] || [ "$(security_subscribed detached)" = True ]; }; then
+  run "Findings subscription cut off from the topic deleted" "Couldn't delete the findings subscription." "$OWNER" \\
+    gcloud pubsub subscriptions delete "$SECURITY_SUBSCRIPTION" --project="$PROJECT_ID" --quiet
+  SECURITY_SUBSCRIBED=""
+fi
+if [ -n "$SECURITY_SUBSCRIBED" ]; then
+  run "Findings subscription up to date" "Couldn't update the findings subscription." "$OWNER" \\
+    gcloud pubsub subscriptions update "$SECURITY_SUBSCRIPTION" "\${SECURITY_SUBSCRIPTION_FLAGS[@]}"
+else
+  run "Findings subscription created" "Couldn't create the findings subscription." "$OWNER" \\
+    gcloud pubsub subscriptions create "$SECURITY_SUBSCRIPTION" --topic="$SECURITY_TOPIC" "\${SECURITY_SUBSCRIPTION_FLAGS[@]}"
+fi
+
+# Security Command Center sends each finding written or changed on the ${scopeType} to the topic.
+# Creating the notification lets its own service agent publish there.
+NOTIFICATION_FLAGS=(
+  ${sccParent(scopeType)}
+  --pubsub-topic="projects/$PROJECT_ID/topics/$SECURITY_TOPIC" --filter="$SECURITY_FILTER"
+  --description="Sends Security Command Center findings to Maple."
+)
+if exists gcloud scc notifications describe "$NOTIFICATION_CONFIG" ${sccParent(scopeType)}; then
+  run "Findings notification up to date" "Couldn't update the findings notification." "$SCC_ROLE" \\
+    gcloud scc notifications update "$NOTIFICATION_CONFIG" "\${NOTIFICATION_FLAGS[@]}"
+else
+  run "Findings notification created" "Couldn't create the findings notification." "$SCC_ROLE" \\
+    gcloud scc notifications create "$NOTIFICATION_CONFIG" "\${NOTIFICATION_FLAGS[@]}"
+  CONFIG_CREATED=1
+fi
+`
+
+/**
+ * `unbindReader`: the read-only account stays for metrics, so only its findings role goes.
+ * `removePushAccount`: no log subscription signs as the push service account either.
+ */
+const securityRemoval = (
+	scopeType: GcpScopeType,
+	options: { readonly unbindReader: boolean; readonly removePushAccount: boolean },
+): string => `
+# ---- Security findings: off. Remove what an earlier run created. ----
+# Setup makes the topic and subscription before the notification, so without either there is no
+# notification of Maple's to look for: a run that never had findings on needs no Security Command
+# Center rights. Otherwise the notification goes first, so nothing publishes into a gone topic.
+section "Security findings"
+REMOVED_BEFORE="$REMOVED"
+REMOVED=0
+SECURITY_LEFT=""
+if remains "the findings subscription" "$OWNER" gcloud pubsub subscriptions describe "$SECURITY_SUBSCRIPTION" --project="$PROJECT_ID"; then
+  SECURITY_LEFT="$SECURITY_LEFT subscription"
+fi
+if remains "the findings topic" "$OWNER" gcloud pubsub topics describe "$SECURITY_TOPIC" --project="$PROJECT_ID"; then
+  SECURITY_LEFT="$SECURITY_LEFT topic"
+fi
+if [ -n "$SECURITY_LEFT" ] &&
+  remains "the findings notification" "$SCC_ROLE" gcloud scc notifications describe "$NOTIFICATION_CONFIG" ${sccParent(scopeType)}; then
+  remove "Findings notification deleted" "Couldn't delete the findings notification." "$SCC_ROLE" \\
+    gcloud scc notifications delete "$NOTIFICATION_CONFIG" ${sccParent(scopeType)} --quiet
+fi
+case "$SECURITY_LEFT" in *subscription*)
+  remove "Findings subscription deleted" "Couldn't delete the findings subscription." "$OWNER" \\
+    gcloud pubsub subscriptions delete "$SECURITY_SUBSCRIPTION" --project="$PROJECT_ID" --quiet ;;
+esac
+case "$SECURITY_LEFT" in *topic*)
+  remove "Findings topic deleted" "Couldn't delete the findings topic." "$OWNER" \\
+    gcloud pubsub topics delete "$SECURITY_TOPIC" --project="$PROJECT_ID" --quiet ;;
+esac
+${
+	options.removePushAccount
+		? `if account_remains "the push service account" gcloud iam service-accounts list --project="$PROJECT_ID" \\
+  --filter="email=$PUSH_SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
+  remove "Push service account deleted" "Couldn't delete the push service account." "$OWNER" \\
+    gcloud iam service-accounts delete "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
+fi
+`
+		: ""
+}${
+	options.unbindReader
+		? `UNBOUND=0
+if account_remains "the read-only service account" ${ACCOUNT_LIST}; then
+  unbind "$IAM_ROLE" ${SCOPES[scopeType].gcloud} remove-iam-policy-binding "$SCOPE_ID" \\
+    ${serviceAccountMember} --role=${GCP_SECURITY_SCOPE_ROLE} --all
+fi
+if [ "$UNBOUND" = 1 ]; then
+  ok "Findings role removed"
+  REMOVED=1
+fi
+`
+		: ""
+}[ "$REMOVED" = 1 ] || ok "Nothing left to remove"
+[ "$REMOVED_BEFORE" = 0 ] || REMOVED=1
+`
 
 export interface GcpSetupScriptInput extends GcpScriptTarget {
 	/** The ingest gateway's receiver URL for this connector, including its secret. */
@@ -717,6 +957,10 @@ export interface GcpSetupScriptInput extends GcpScriptTarget {
 	readonly mapleServiceAccountEmail: string | undefined
 	readonly logsEnabled: boolean
 	readonly metricsEnabled: boolean
+	/** Security Command Center findings, read through the same service account as metrics. */
+	readonly securityEnabled: boolean
+	/** The API's receiver for findings: no secret, Pub/Sub signs each push instead. */
+	readonly securityPushEndpoint: string
 	/** Null: an existing sink keeps its filter, a new one forwards no application output. */
 	readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null
 }
@@ -724,7 +968,8 @@ export interface GcpSetupScriptInput extends GcpScriptTarget {
 /**
  * The script an administrator pastes into Cloud Shell. Logs: a Log Router sink on the scope into
  * a Pub/Sub topic whose push subscription delivers each LogEntry to Maple. Metrics and resources:
- * a read-only service account Maple may impersonate. The script converges: what the connector has
+ * a read-only service account Maple may impersonate. Security findings: that account reads them, and
+ * a Security Command Center notification pushes each one to Maple. The script converges: what the connector has
  * enabled is created or updated, what it has not is removed, so a re-run applies an opt-out. Each
  * section ends by telling Maple what it applied.
  */
@@ -734,14 +979,16 @@ export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 	const leftOut = Arr.map(leftOutRuntimes(applicationLogs), (runtime) => APPLICATION_LOGS[runtime].name)
 	// On for the connector while this deployment has lost its Google identity: nothing is set up
 	// and, above all, nothing a customer set up earlier is removed.
-	const metrics = !input.metricsEnabled
-		? "off"
-		: input.mapleServiceAccountEmail === undefined
-			? "lost"
-			: "on"
+	const switched = (enabled: boolean) =>
+		!enabled ? "off" : input.mapleServiceAccountEmail === undefined ? "lost" : "on"
+	const metrics = switched(input.metricsEnabled)
+	const security = switched(input.securityEnabled)
 	const state = (on: boolean) => (on ? "on" : "off, removing")
-	const metricsState =
-		metrics === "lost" ? "not available on this Maple deployment, left as is" : state(metrics === "on")
+	const LOST = "not available on this Maple deployment, left as is"
+	const metricsState = metrics === "lost" ? LOST : state(metrics === "on")
+	const securityState = security === "lost" ? LOST : state(security === "on")
+	// Metrics and security findings read through one account: it goes once neither is enabled.
+	const readerKept = input.metricsEnabled || input.securityEnabled
 	return forPaste(
 		"Google Cloud",
 		"MAPLE_SETUP_SCRIPT",
@@ -749,6 +996,7 @@ export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 # Maple setup for Google Cloud ${scopeType} ${input.scopeId}
 #   Log forwarding:        ${logs ? "on" : "off"}
 #   Metrics and resources: ${metrics === "lost" ? metricsState : metrics}
+#   Security findings:     ${security === "lost" ? securityState : security}
 # Safe to run again: it sets up what is on and removes what is off.
 # Keep it private: PUSH_ENDPOINT contains this connection's secret.
 set -euo pipefail
@@ -780,12 +1028,20 @@ LOG_FILTER=${sh(gcpLogFilter(applicationLogs))}
 		: ""
 }${variables(input, [
 			`PUSH_ENDPOINT=${sh(input.pushEndpoint)}`,
-			...(input.mapleServiceAccountEmail === undefined || metrics !== "on"
+			...(input.mapleServiceAccountEmail === undefined || (metrics !== "on" && security !== "on")
 				? []
 				: [`MAPLE_SERVICE_ACCOUNT=${sh(input.mapleServiceAccountEmail)}`]),
+			...(security === "on"
+				? [
+						`SECURITY_PUSH_ENDPOINT=${sh(input.securityPushEndpoint)}`,
+						`SECURITY_FILTER=${sh(GCP_SECURITY_NOTIFICATION_FILTER)}`,
+					]
+				: []),
 		])}SINK_CREATED=0
 FILTER_REPLACED=0
 ACCOUNT_CREATED=0
+PUSH_ACCOUNT_CREATED=0
+CONFIG_CREATED=0
 REMOVED=0
 ${output(
 	"Setup did not finish. Nothing needs undoing: fix this and paste the script again.",
@@ -820,25 +1076,50 @@ apis() {
   fi
   ok "APIs enabled ($names)"
 }
-${logs || metrics === "on" ? GRANT : ""}${logs && metrics === "on" ? "" : REMOVAL_HELPERS}
+${logs || metrics === "on" || security === "on" ? GRANT : ""}${
+			logs && metrics !== "off" && security !== "off" ? "" : REMOVAL_HELPERS
+		}
 printf 'Maple setup for %s\\n' "$SCOPE"
-printf '  Log forwarding          %s\\n  Metrics and resources   %s\\n' ${sh(state(logs))} ${sh(metricsState)}
+printf '  Log forwarding          %s\\n  Metrics and resources   %s\\n  Security findings       %s\\n' \\
+  ${sh(state(logs))} ${sh(metricsState)} ${sh(securityState)}
 ${access(scopeType, {
-	apis: [...new Set([...(logs ? GCP_LOG_APIS : []), ...(metrics === "on" ? GCP_METRIC_APIS : [])])],
+	apis: [
+		...new Set([
+			...(logs ? GCP_LOG_APIS : []),
+			...(metrics === "on" ? GCP_METRIC_APIS : []),
+			...(security === "on" ? GCP_SECURITY_APIS : []),
+		]),
+	],
 	sink: logs ? SCOPES[scopeType].sink : undefined,
-	scopeMustOpen: metrics === "on",
+	scopeMustOpen: metrics === "on" || security === "on",
 	billing: metrics === "on",
-	permissions: permissionChecks(scopeType, logs, metrics === "on"),
+	permissions: permissionChecks(scopeType, logs, metrics === "on", security === "on"),
 })}${logs ? logsSetup(scopeType) : logsRemoval(scopeType, true)}${
 			metrics === "on"
 				? metricsSetup(scopeType)
 				: metrics === "off"
-					? metricsRemoval(scopeType, true)
+					? metricsRemoval(scopeType, readerKept)
 					: ""
+		}${
+			security === "on"
+				? securitySetup(scopeType, metrics !== "on")
+				: security === "off"
+					? securityRemoval(scopeType, {
+							// Metrics off deletes the account, findings role and all; lost leaves it alone.
+							unbindReader: metrics === "on",
+							removePushAccount: !logs,
+						})
+					: ""
+		}${
+			// One report for the read-only account's two uses. A report naming security alone would
+			// carry neither key the ingest gateway reads, and be stored as a log line.
+			metrics === "lost"
+				? ""
+				: `notify "Maple notified" '"metrics":${metrics === "on"}${security === "lost" ? "" : `,"security":${security === "on"}`}'\n`
 		}
-if [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED$FILTER_REPLACED" = 0000 ]; then
+if [ "$SINK_CREATED$ACCOUNT_CREATED$CONFIG_CREATED$REMOVED$FILTER_REPLACED" = 00000 ]; then
   printf '\\nDone. Everything is in place.\\n'
-elif [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED" = 000 ]; then
+elif [ "$SINK_CREATED$ACCOUNT_CREATED$CONFIG_CREATED$REMOVED" = 0000 ]; then
   printf '\\nDone. The log sink has the filter of this script. Everything else is in place.\\n'
 elif [ "$REMOVED" = 1 ]; then
   printf '\\nDone. Google Cloud matches your Maple switches.\\n'
@@ -850,8 +1131,15 @@ if [ "$SINK_CREATED" = 1 ]; then
   printf '  Logs:    a new sink can take about 10 minutes to start forwarding. What is logged before\\n'
   printf '           it does is not forwarded later.\\n'
 fi
-if [ "$ACCOUNT_CREATED" = 1 ]; then printf '  Metrics: the first read lands within about 10 minutes.\\n'; fi
-`,
+${
+	metrics === "on"
+		? `if [ "$ACCOUNT_CREATED" = 1 ]; then printf '  Metrics: the first read lands within about 10 minutes.\\n'; fi\n`
+		: ""
+}${
+			security === "on"
+				? `if [ "$CONFIG_CREATED" = 1 ]; then printf '  Findings: each one reaches Maple as Security Command Center writes or changes it.\\n'; fi\n`
+				: ""
+		}`,
 	)
 }
 
@@ -879,12 +1167,12 @@ ${output(
 	"Cleanup interrupted. Paste the script again: it continues where it stopped.",
 )}${REMOVAL_HELPERS}
 printf 'Maple cleanup for %s\\n' "$SCOPE"
-${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${metricsRemoval(input.scopeType, false)}${
+${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${securityRemoval(input.scopeType, { unbindReader: false, removePushAccount: true })}${metricsRemoval(input.scopeType, false)}${
 			input.pushEndpoint === undefined
 				? ""
 				: `
 # Tells Maple the cleanup ran. Maple refuses this once the connection is deleted, which is fine.
-${POST_REPORT} --data "$(report '"logs":false,"metrics":false')" "$PUSH_ENDPOINT" >/dev/null 2>&1 || true
+${POST_REPORT} --data "$(report '"logs":false,"metrics":false,"security":false')" "$PUSH_ENDPOINT" >/dev/null 2>&1 || true
 `
 		}
 if [ "$UNCHECKED" = 1 ]; then

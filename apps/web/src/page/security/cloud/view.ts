@@ -3,6 +3,9 @@ import {
 	CLOUD_FINDING_SOURCES,
 	type CloudFindingSeverity,
 	CloudFindingStatus,
+	type CloudProvider,
+	CloudProvider as CloudProviderSchema,
+	cloudFindingProvider,
 } from "@maple/domain/cloud-security"
 import type { CloudFinding } from "@maple/domain/http"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -18,7 +21,8 @@ import { listFooter } from "@maple/views/ui/list-footer"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { panel } from "@maple/views/ui/panel"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
-import { vstack } from "@maple/views/ui/stack"
+import { icon } from "@maple/views/ui/icon"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
@@ -35,15 +39,19 @@ import {
 	findingHref,
 	findingsOf,
 	isFiltered,
+	isReady,
 	isTelemetryMatched,
 	listHref,
 	nextOffsetOf,
 	overviewOf,
+	PROVIDER_LABEL,
+	providersOf,
 	regionsOf,
 	resourceLabel,
 	SEVERITY_LABEL,
 	serviceNoticesOf,
 	setupOf,
+	sourcesFor,
 	sourceTitle,
 	STATUS_LABEL,
 	deliveryOf,
@@ -51,8 +59,9 @@ import {
 import { Message, type Model, type Overview, type SelectFilter } from "./model"
 import { cloudSeverityBadge } from "./parts"
 import { detailBody } from "./view-detail"
-import { allClear, awaitingFirstRead, serviceNotices, setupState } from "./view-setup"
+import { allClear, awaitingFirstRead, pendingSetupNotices, serviceNotices, setupState } from "./view-setup"
 import { panelToolbar } from "../../kit/panel-toolbar"
+import { providerBrand } from "../../kit/providers"
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -123,13 +132,29 @@ const toolbar = (h: H, model: Model, overview: Overview): Html =>
 			"All severities",
 			Arr.map(CLOUD_FINDING_SEVERITIES, (severity) => [severity, SEVERITY_LABEL[severity]] as const),
 		),
+		// Offered once two clouds are connected, or while the URL already filters by one.
+		...(providersOf(overview).length > 1 || model.search.provider !== undefined
+			? [
+					filterSelect(
+						h,
+						"provider",
+						"Cloud",
+						model.search.provider,
+						"All clouds",
+						Arr.map(
+							CloudProviderSchema.literals,
+							(provider) => [provider, PROVIDER_LABEL[provider]] as const,
+						),
+					),
+				]
+			: []),
 		filterSelect(
 			h,
 			"source",
 			"Source",
 			model.search.source,
 			"All sources",
-			Arr.map(CLOUD_FINDING_SOURCES, (source) => [source, sourceTitle(source)] as const),
+			Arr.map(sourcesFor(model.search.provider), (source) => [source, sourceTitle(source)] as const),
 		),
 		...(accountsOf(overview).length > 1
 			? [
@@ -146,9 +171,9 @@ const toolbar = (h: H, model: Model, overview: Overview): Html =>
 		filterSelect(
 			h,
 			"region",
-			"Region",
+			"Location",
 			model.search.region,
-			"All regions",
+			"All locations",
 			Arr.map(regionsOf(overview), (region) => [region, region] as const),
 		),
 		compactSearchInput(h, {
@@ -195,6 +220,15 @@ const severityRail = (h: H, model: Model, overview: Overview): Html =>
 			})
 		}),
 	)
+
+/** The cloud's mark and name, small, for a row. */
+const providerLabel = (h: H, provider: CloudProvider): Html => {
+	const brand = providerBrand(provider)
+	return hstack(h, { gap: "1", align: "center" }, [
+		icon(h, brand.icon, { size: 12, className: brand.iconClassName ?? "" }),
+		typography(h, { size: "xs" }, [PROVIDER_LABEL[provider]]),
+	])
+}
 
 const affectedCell = (h: H, finding: CloudFinding, isMatched: boolean): Html => {
 	const summary = affectedSummary(finding)
@@ -259,8 +293,10 @@ const findingRow = (h: H, finding: CloudFinding, clock: Clock, isMatched: boolea
 				h,
 				[
 					vstack(h, {}, [
-						typography(h, { size: "xs", mono: true }, [finding.region]),
-						typography(h, { size: "2xs", tone: "muted", mono: true }, [finding.accountId]),
+						providerLabel(h, finding.provider),
+						typography(h, { size: "2xs", tone: "muted", mono: true }, [
+							`${finding.accountId} · ${finding.region}`,
+						]),
 					]),
 				],
 				ROOMY_COLUMN,
@@ -296,7 +332,7 @@ const findingsTable = (h: H, findings: ReadonlyArray<CloudFinding>, clock: Clock
 				tableHead(h, ["Finding"]),
 				tableHead(h, ["Resource"], WIDE_COLUMN),
 				tableHead(h, ["Affected services"], WIDE_COLUMN),
-				tableHead(h, ["Account / region"], ROOMY_COLUMN),
+				tableHead(h, ["Cloud / location"], ROOMY_COLUMN),
 				tableHead(h, ["Source"], ROOMY_COLUMN),
 				tableHead(h, ["Last seen"], WIDE_COLUMN),
 			]),
@@ -330,11 +366,17 @@ const listBody = (h: H, model: Model, overview: Overview, clock: Clock): Html =>
 					onClear: Message.ClickedClearFilters(),
 					className: "py-8",
 				})
-			if (findings.length === 0)
+			if (findings.length === 0) {
+				const setup = setupOf(overview)
 				return allClear(
 					h,
 					Arr.some(serviceNoticesOf(overview), (notice) => notice.state !== "not_enabled"),
+					Arr.filter(
+						CLOUD_FINDING_SOURCES,
+						(source) => setup[cloudFindingProvider(source)] === "Ready",
+					),
 				)
+			}
 			const canExtend = Keyed.canExtend(model.firstPage)
 			const footer = listFooter(h, {
 				shown: findings.length,
@@ -370,9 +412,10 @@ const listBody = (h: H, model: Model, overview: Overview, clock: Clock): Html =>
 
 const listScreen = (h: H, model: Model, overview: Overview, clock: Clock): ReadonlyArray<Html> => {
 	const setup = setupOf(overview)
-	if (setup !== "Ready") return [setupState(h, setup)]
+	if (!isReady(setup)) return [setupState(h, setup)]
 	const notices = serviceNotices(h, serviceNoticesOf(overview))
 	return [
+		...pendingSetupNotices(h, setup),
 		...(notices === null ? [] : [notices]),
 		severityRail(h, model, overview),
 		panel(h, { className: "overflow-hidden" }, [
@@ -386,12 +429,17 @@ const listScreen = (h: H, model: Model, overview: Overview, clock: Clock): Reado
 /** How findings reach Maple, under the list: live for the services whose events arrive, polled otherwise. */
 const deliveryNote = (h: H, delivery: ReturnType<typeof deliveryOf>): ReadonlyArray<Html> => {
 	if (delivery === null) return []
+	const clouds = Arr.join(
+		Arr.map(delivery.providers, (provider) => PROVIDER_LABEL[provider]),
+		" or ",
+	)
+	const hasAws = Arr.contains(delivery.providers, "aws")
 	const text =
 		delivery.live.length === 0
-			? "Checked every five minutes, and live once AWS sends a finding event. A connection set up before live updates needs its AWS setup script run again."
+			? `Checked every five minutes, and live once ${clouds} sends a finding event.${hasAws ? " A connection set up before live updates needs its AWS setup script run again." : ""}`
 			: delivery.allLive
-				? "Live: findings arrive as AWS reports them."
-				: `Live for ${Arr.join(Arr.map(delivery.live, sourceTitle), ", ")}: their findings arrive as AWS reports them. The other enabled services are checked every five minutes.`
+				? `Live: findings arrive as ${clouds} reports them.`
+				: `Live for ${Arr.join(Arr.map(delivery.live, sourceTitle), ", ")}: their findings arrive as they are reported. The other enabled services are checked every five minutes.`
 	return [typography(h, { size: "xs", tone: "muted", as: "p" }, [text])]
 }
 

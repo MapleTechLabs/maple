@@ -13,7 +13,7 @@ import type { ConfigureModel } from "./gcp-configure-schema"
 import type { Model } from "../../../integrations/model"
 import { configureConnector } from "./update-gcp-configure"
 import { gcpConnectors } from "./update-gcp"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // Google Cloud's place in the connect flow: a scope by ID, what to collect, then the setup in
 // Google Cloud. The connection is created at the end of Choose data, so Go live has its setup.
@@ -26,13 +26,21 @@ export const flowConnector = (model: Model): V2GcpConnector | null => {
 		: (configureConnector(gcpConnectors(model), configure) ?? null)
 }
 
-/** What a connection collects, in a few words: "Logs + metrics". */
-export const collectsLabel = (flags: Pick<V2GcpConnector, "logs_enabled" | "metrics_enabled">): string =>
-	flags.logs_enabled && flags.metrics_enabled
-		? "Logs + metrics"
-		: flags.logs_enabled
-			? "Logs only"
-			: "Metrics only"
+/** What a connection collects, in a few words: "Logs + metrics", "Logs + metrics + security findings". */
+export const collectsLabel = (
+	flags: Pick<V2GcpConnector, "logs_enabled" | "metrics_enabled" | "security_enabled">,
+): string => {
+	const parts = Arr.filter(
+		[
+			flags.logs_enabled ? "logs" : null,
+			flags.metrics_enabled ? "metrics" : null,
+			flags.security_enabled ? "security findings" : null,
+		],
+		(part) => part !== null,
+	)
+	const label = parts.length === 1 ? `${parts[0] ?? ""} only` : Arr.join(parts, " + ")
+	return Str.capitalize(label)
+}
 
 export type ScopeCheck = "empty" | "bad-id" | "bad-host" | "ready"
 

@@ -254,7 +254,9 @@ export const methodSetup = (
 					mapleServiceAccountEmail: setup.maple_service_account_email ?? undefined,
 					logsEnabled: connector.logs_enabled,
 					metricsEnabled: connector.metrics_enabled,
+					securityEnabled: connector.security_enabled,
 					logFilter: setup.log_filter,
+					securityPushEndpoint: setup.security_push_endpoint,
 				})
 	return configure.method === "manual"
 		? manualBody(h, model, configure, connector, { plan, failure })

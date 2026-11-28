@@ -624,6 +624,7 @@ describe("integration sources", () => {
 					project_id: "acme-prod",
 					logs_enabled: true,
 					metrics_enabled: true,
+					security_enabled: false,
 					created_at: "2026-09-01T00:00:00.000Z",
 					last_log_received_at: null,
 					last_log_error: null,

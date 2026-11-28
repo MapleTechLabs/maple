@@ -17,6 +17,7 @@ export const newDraft = (configure: ConfigureModel) => ({
 	hostProjectId: configure.hostProjectId.value,
 	logsEnabled: configure.newFlags.logs_enabled,
 	metricsEnabled: configure.newFlags.metrics_enabled,
+	securityEnabled: configure.newFlags.security_enabled,
 })
 
 /** Decoded with the API's own schema, so a rejected ID is caught before the request. */

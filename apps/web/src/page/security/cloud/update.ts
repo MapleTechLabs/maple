@@ -102,6 +102,7 @@ const navigate = (model: Model, search: Search): Return => ({
 const FILTER_KEY = {
 	status: "status",
 	severity: "severity",
+	provider: "provider",
 	source: "source",
 	account: "account",
 	region: "region",

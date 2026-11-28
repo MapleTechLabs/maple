@@ -25,6 +25,7 @@ export const initConfirm = (): Dialog.Model => Dialog.init("gcp-configure-confir
 export const flagsOf = (connector: V2GcpConnector): GcpFlags => ({
 	logs_enabled: connector.logs_enabled,
 	metrics_enabled: connector.metrics_enabled,
+	security_enabled: connector.security_enabled,
 })
 
 /** `opened` is filled once the wizard has a connector. */
@@ -48,11 +49,11 @@ export const initConfigure = (
 		scopeGroup: ToggleGroup.init({ label: "What should Maple watch?", values: ["project"] }),
 		scopeId: Field.init(),
 		hostProjectId: Field.init(),
-		newFlags: { logs_enabled: true, metrics_enabled: metricsAvailable },
+		newFlags: { logs_enabled: true, metrics_enabled: metricsAvailable, security_enabled: false },
 		createError: null,
 		isCreating: false,
 		chooseFlags: Option.match(connector, {
-			onNone: () => ({ logs_enabled: true, metrics_enabled: false }),
+			onNone: () => ({ logs_enabled: true, metrics_enabled: false, security_enabled: false }),
 			onSome: flagsOf,
 		}),
 		asked: null,

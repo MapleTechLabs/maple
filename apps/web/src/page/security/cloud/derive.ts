@@ -1,31 +1,54 @@
 import {
 	CLOUD_FINDING_SOURCE_SPECS,
 	CLOUD_SECURITY_PUSH_ALIVE_MS,
+	CLOUD_FINDING_SOURCES,
+	CloudAccountId,
 	CloudFindingSeverity,
 	CloudFindingSource,
 	CloudFindingStatus,
+	CloudLocation,
+	CloudProvider,
+	cloudFindingProvider,
 } from "@maple/domain/cloud-security"
 import { formatNumber } from "@maple/ui/lib/format"
 import {
 	type CloudFinding,
 	CloudFindingDetailQuery,
 	type CloudFindingsListRequest,
+	type CloudSecurityConnectionModule,
 	type CloudSecurityServiceStatus,
 } from "@maple/domain/http"
-import { AwsAccountId, AwsRegion } from "@maple/primitives"
 import { Array as Arr, Option, Order, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
 import type { FindingSearch, Model, Overview, Search } from "./model"
 
-// Pure readings of the Cloud tab: the URL's filters as a request, where the AWS setup stands, and
-// the words each row shows.
+// Pure readings of the Cloud tab: the URL's filters as a request, where each cloud's setup stands,
+// and the words each row shows.
 
 const isStatus = Schema.is(CloudFindingStatus)
 const isSeverity = Schema.is(CloudFindingSeverity)
 const isSource = Schema.is(CloudFindingSource)
-const isAccount = Schema.is(AwsAccountId)
-const isRegion = Schema.is(AwsRegion)
+const isProvider = Schema.is(CloudProvider)
+const isAccount = Schema.is(CloudAccountId)
+const isRegion = Schema.is(CloudLocation)
+
+export const PROVIDER_LABEL = {
+	aws: "AWS",
+	gcp: "Google Cloud",
+} satisfies Record<CloudProvider, string>
+
+/** The sources the source filter offers: the chosen cloud's, or every one. */
+export const sourcesFor = (provider: string | undefined): ReadonlyArray<CloudFindingSource> =>
+	isProvider(provider)
+		? Arr.filter(CLOUD_FINDING_SOURCES, (source) => cloudFindingProvider(source) === provider)
+		: CLOUD_FINDING_SOURCES
+
+/** The clouds the org has connected, in a fixed order. */
+export const providersOf = (overview: Overview): ReadonlyArray<CloudProvider> =>
+	Arr.filter(CloudProvider.literals, (provider) =>
+		Arr.some(overview.connections, (connection) => connection.provider === provider),
+	)
 
 export const SEVERITY_LABEL = {
 	critical: "Critical",
@@ -53,6 +76,7 @@ export const listRequestOf = (search: Search): CloudFindingsListRequest => {
 	return {
 		...(isStatus(search.status) ? { status: search.status } : undefined),
 		...(isSeverity(search.severity) ? { severities: [search.severity] } : undefined),
+		...(isProvider(search.provider) ? { providers: [search.provider] } : undefined),
 		...(isSource(search.source) ? { sources: [search.source] } : undefined),
 		...(isAccount(search.account) ? { accountId: search.account } : undefined),
 		...(isRegion(search.region) ? { region: search.region } : undefined),
@@ -90,31 +114,52 @@ export const listHref = (search: Search = {}): string => hrefOf(AppRoute.Securit
 export const isFiltered = (search: Search): boolean =>
 	search.status !== undefined ||
 	search.severity !== undefined ||
+	search.provider !== undefined ||
 	search.source !== undefined ||
 	search.account !== undefined ||
 	search.region !== undefined ||
 	search.q !== undefined
 
 /**
- * Where the org's AWS security module stands. `NoConnection`: AWS is not connected.
- * `NotRequested`: no connection asks for the module. `AwaitingGrant`: one asks, but no deployed
- * stack grants it yet. `Ready`: a role grants it.
+ * Where one cloud's security collection stands across its connections. `NotRequested`: none asks
+ * for it. `AwaitingGrant`: one asks, but no deployed stack (AWS) or setup run (Google Cloud) grants
+ * it yet. `Ready`: one grants it.
  */
-export type Setup = "NoConnection" | "NotRequested" | "AwaitingGrant" | "Ready"
+export type ProviderSetup = "NotRequested" | "AwaitingGrant" | "Ready"
+
+/** Each connected cloud's setup; a cloud that is not connected is absent. */
+export type Setup = Readonly<Partial<Record<CloudProvider, ProviderSetup>>>
+
+const providerSetupOf = (modules: ReadonlyArray<CloudSecurityConnectionModule>): ProviderSetup =>
+	Arr.contains(modules, "granted")
+		? "Ready"
+		: Arr.contains(modules, "requested")
+			? "AwaitingGrant"
+			: "NotRequested"
 
 export const setupOf = (overview: Overview): Setup => {
-	const modules = Arr.map(overview.connections, (connection) => connection.module)
-	if (modules.length === 0) return "NoConnection"
-	if (Arr.contains(modules, "granted")) return "Ready"
-	if (Arr.contains(modules, "requested")) return "AwaitingGrant"
-	return "NotRequested"
+	const of = (provider: CloudProvider) => {
+		const modules = Arr.map(
+			Arr.filter(overview.connections, (connection) => connection.provider === provider),
+			(connection) => connection.module,
+		)
+		return modules.length === 0 ? {} : { [provider]: providerSetupOf(modules) }
+	}
+	return { ...of("aws"), ...of("gcp") }
 }
 
-/** One service in one state across regions: the empty state's sentence for it. */
+/** Whether any cloud's findings can be listed. */
+export const isReady = (setup: Setup): boolean => setup.aws === "Ready" || setup.gcp === "Ready"
+
+/**
+ * One service in one state across places: the empty state's sentence for it. The places are AWS
+ * regions, or for Security Command Center the scopes (projects, folders, organizations) it covers.
+ */
 export interface ServiceNotice {
+	readonly provider: CloudProvider
 	readonly source: CloudFindingSource
 	readonly state: "not_enabled" | "denied" | "failing"
-	readonly regions: ReadonlyArray<string>
+	readonly places: ReadonlyArray<string>
 	/** The newest error the service reported, for `denied` and `failing`. */
 	readonly lastError: string | null
 }
@@ -131,10 +176,13 @@ export const serviceNoticesOf = (overview: Overview): ReadonlyArray<ServiceNotic
 		if (service.state === "enabled") return acc
 		const key = `${service.state}:${service.source}`
 		const seen = acc.get(key)
+		// Security Command Center answers once per scope, at `global`: the scope is the place.
+		const place = service.provider === "gcp" ? service.accountId : service.region
 		return acc.set(key, {
+			provider: service.provider,
 			source: service.source,
 			state: service.state,
-			regions: Arr.sort(Arr.dedupe([...(seen?.regions ?? []), service.region]), Order.String),
+			places: Arr.sort(Arr.dedupe([...(seen?.places ?? []), place]), Order.String),
 			lastError: seen?.lastError ?? service.lastError,
 		})
 	})
@@ -148,15 +196,22 @@ export const serviceNoticesOf = (overview: Overview): ReadonlyArray<ServiceNotic
 }
 
 /**
- * Which enabled services' findings arrive as events (EventBridge, from the setup script), within the
- * poller's window. Null before any service is read.
+ * Which enabled services' findings arrive as events (EventBridge or Pub/Sub, from the setup), within
+ * the poller's window, and the clouds the enabled services are in. Null before any service is read.
  */
 export const deliveryOf = (
 	overview: Overview,
 	nowMs: number,
-): { readonly live: ReadonlyArray<CloudFindingSource>; readonly allLive: boolean } | null => {
+): {
+	readonly live: ReadonlyArray<CloudFindingSource>
+	readonly allLive: boolean
+	readonly providers: ReadonlyArray<CloudProvider>
+} | null => {
 	const enabled = Arr.filter(overview.services, (service) => service.state === "enabled")
 	if (enabled.length === 0) return null
+	const providers = Arr.filter(CloudProvider.literals, (provider) =>
+		Arr.some(enabled, (service) => service.provider === provider),
+	)
 	const sourcesOf = (services: typeof enabled) =>
 		Arr.sort(Arr.dedupe(Arr.map(services, (service) => service.source)), Order.String)
 	// The poller's own window: a feed whose events stopped is polled every five minutes again.
@@ -167,10 +222,10 @@ export const deliveryOf = (
 				service.pushedAt !== null && nowMs - service.pushedAt <= CLOUD_SECURITY_PUSH_ALIVE_MS,
 		),
 	)
-	return { live, allLive: live.length === sourcesOf(enabled).length }
+	return { live, allLive: live.length === sourcesOf(enabled).length, providers }
 }
 
-/** The accounts and regions the filters offer: every connected account, every region polled. */
+/** The accounts and locations the filters offer: every connected account or scope, every place polled. */
 export const accountsOf = (overview: Overview): ReadonlyArray<string> =>
 	Arr.sort(Arr.dedupe(Arr.map(overview.connections, (connection) => connection.accountId)), Order.String)
 

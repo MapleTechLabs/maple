@@ -25,6 +25,7 @@ const config = {
 	MAPLE_INGEST_PUBLIC_URL: "https://ingest.test/",
 	MAPLE_API_BASE_URL: "https://api.maple.test/",
 	MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey,
+	MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: "collector@maple-prod.iam.gserviceaccount.com",
 }
 
 const orgId = Schema.decodeSync(OrgId)("org_sec")
@@ -283,6 +284,19 @@ describe("CloudSecurityStore", () => {
 				Arr.map(gcpOnly.rows, (row) => [row.provider, row.source]),
 				[["gcp", "security_command_center"]],
 			)
+			// Switching findings off clears them: nothing would close them any more.
+			yield* gcp.update(orgId, connector.id, { securityEnabled: true })
+			yield* store.upsertFindings([scc], 2)
+			yield* gcp.update(orgId, connector.id, { securityEnabled: false })
+			assert.deepStrictEqual(yield* store.serviceStates(orgId, connector.id), [])
+			assert.deepStrictEqual(
+				Arr.map(
+					(yield* store.listFindings(orgId, { status: "active" }, { limit: 10, offset: 0 })).rows,
+					(row) => row.provider,
+				),
+				["aws"],
+			)
+			yield* store.upsertFindings([scc], 3)
 			yield* gcp.delete(orgId, connector.id)
 			assert.deepStrictEqual(yield* store.serviceStates(orgId, connector.id), [])
 			const rows = yield* Effect.promise(() =>

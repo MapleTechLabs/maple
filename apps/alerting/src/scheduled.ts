@@ -46,6 +46,7 @@ import { SearchConsoleImportService } from "@maple/backend/services/integrations
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { CostSyncService } from "@maple/backend/services/cost/CostSyncService"
 import { AwsSecurityFindingsService } from "@maple/backend/services/cloud-security/AwsSecurityFindingsService"
+import { GcpSecurityFindingsService } from "@maple/backend/services/cloud-security/GcpSecurityFindingsService"
 import { FleetAuditService } from "@maple/backend/services/integrations/FleetAuditService"
 import { FleetFindingsService } from "@maple/backend/services/integrations/FleetFindingsService"
 import { SecretResealService } from "@maple/backend/services/secrets/SecretResealService"
@@ -169,6 +170,7 @@ export const layerTick = (
 		AwsConnectionService.layer,
 		CostSyncService.layer,
 		AwsSecurityFindingsService.layer,
+		GcpSecurityFindingsService.layer,
 		FleetAuditService.layer,
 		FleetFindingsService.layer,
 		SecretResealService.layer,
@@ -519,6 +521,20 @@ const costSyncTick = makeTick(
 			: undefined,
 )
 
+const gcpSecurityTick = makeTick(
+	GcpSecurityFindingsService.use((security) => security.pollAll),
+	"gcp_security",
+	(result) =>
+		result.connectors > 0
+			? {
+					connectors: result.connectors,
+					failedConnectors: result.failedConnectors,
+					findings: result.findings,
+					resolved: result.resolved,
+				}
+			: undefined,
+)
+
 const awsSecurityTick = makeTick(
 	AwsSecurityFindingsService.use((security) => security.pollAll),
 	"aws_security",
@@ -735,6 +751,7 @@ const scheduledTicks = {
 	anomaly: anomalyTick,
 	awsConnections: awsConnectionsTick,
 	awsSecurity: awsSecurityTick,
+	gcpSecurity: gcpSecurityTick,
 	cloudflareAnalytics: cloudflareAnalyticsTick,
 	costSync: costSyncTick,
 	digest: digestTick,
@@ -808,6 +825,7 @@ const LANE_TICKS = {
 	first_data: ["firstData"],
 	cost_sync: ["costSync"],
 	aws_security: ["awsSecurity"],
+	gcp_security: ["gcpSecurity"],
 	fleet: ["fleet"],
 	fleet_findings: ["fleetFindings"],
 	vercel: ["vercel"],

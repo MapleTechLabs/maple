@@ -523,6 +523,7 @@ describe("projects", () => {
 			scope_type,
 			scope_id,
 			metrics_enabled: true,
+			security_enabled: false,
 			last_metrics_received_at: new Date(NOW - minutesAgo * 60_000).toISOString(),
 			last_metrics_error: null,
 			discovered_project_count: 0,

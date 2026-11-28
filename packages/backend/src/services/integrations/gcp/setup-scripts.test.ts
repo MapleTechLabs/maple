@@ -24,6 +24,9 @@ const MAPLE_ACCOUNT = "collector@maple-prod.iam.gserviceaccount.com"
 const PUSH_ENDPOINT = `https://ingest.test/v1/logpush/gcp/${connectorId}?secret=${SECRET}`
 const MAPLE_URL = "https://app.maple.test/integrations?integration=gcp"
 const DEFAULT_LOG_FILTER = gcpLogFilter([])
+const SECURITY_PUSH_ENDPOINT = `https://api.maple.test/api/integrations/gcp/security/${connectorId}`
+const SECURITY_NAME = `${NAME}-scc`
+const PUSH_ACCOUNT = "maple-push-018f2b3c4d5e4f70819@acme-host.iam.gserviceaccount.com"
 
 const target = (scopeType: GcpScriptTarget["scopeType"]): GcpScriptTarget => ({
 	connectorId,
@@ -69,13 +72,15 @@ const scopeTypes = ["project", "folder", "organization"] as const
 
 const setupInput = (
 	scope: keyof typeof SCOPES,
-	capabilities: { logs: boolean; metrics: boolean },
+	capabilities: { logs: boolean; metrics: boolean; security?: boolean },
 ): GcpSetupScriptInput => ({
 	...SCOPES[scope].target,
 	pushEndpoint: PUSH_ENDPOINT,
 	mapleServiceAccountEmail: MAPLE_ACCOUNT,
 	logsEnabled: capabilities.logs,
 	metricsEnabled: capabilities.metrics,
+	securityEnabled: capabilities.security ?? false,
+	securityPushEndpoint: SECURITY_PUSH_ENDPOINT,
 	applicationLogs: null,
 })
 
@@ -118,6 +123,7 @@ case "$*" in
   "config get-value account") echo "$GCLOUD_ACCOUNT" ;;
   "config get-value auth/impersonate_service_account") echo "$GCLOUD_IMPERSONATE" ;;
   "auth print-access-token") echo "ya29.token" ;;
+  "projects describe"*"projectNumber"*) echo 424242 ;;
   "projects describe"*) echo "Acme Production" ;;
   "organizations describe"* | "resource-manager folders describe"*) echo "acme.com" ;;
   "billing projects describe"*) echo "$GCLOUD_BILLING" ;;
@@ -132,7 +138,7 @@ case "$*" in
     esac ;;
   *"subscriptions describe"*"--format=value(topic)")
     case "$GCLOUD_DESCRIBE" in
-      found) echo "\${GCLOUD_TOPIC:-projects/acme-host/topics/${NAME}}" ;;
+      found) echo "\${GCLOUD_TOPIC:-projects/acme-host/topics/$4}" ;;
       missing) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
       denied) denied ;;
       api_off) api_off ;;
@@ -341,16 +347,60 @@ const logsRemovalCommands = (scope: Scope) => [
 ]
 
 const ACCOUNT_LOOKUP = `iam service-accounts list --project=acme-host --filter=email=${ACCOUNT} --format=value(email)`
+const PUSH_ACCOUNT_LOOKUP = `iam service-accounts list --project=acme-host --filter=email=${PUSH_ACCOUNT} --format=value(email)`
 
-/** A command that only looks: a describe, or the service account list. */
-const isLookup = (command: string) => Str.includes(" describe ")(command) || command === ACCOUNT_LOOKUP
+/** A command that only looks: a describe, or a service account list. */
+const isLookup = (command: string) =>
+	Str.includes(" describe ")(command) || command === ACCOUNT_LOOKUP || command === PUSH_ACCOUNT_LOOKUP
+
+const unbindScope = (scope: Scope, role: string) =>
+	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=${role} --all`
 
 const metricsRemovalCommands = (scope: Scope) => [
 	ACCOUNT_LOOKUP,
-	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --all`,
-	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --all`,
+	unbindScope(scope, "roles/monitoring.viewer"),
+	unbindScope(scope, "roles/cloudasset.viewer"),
+	unbindScope(scope, "roles/securitycenter.findingsViewer"),
 	`projects remove-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --all`,
 	`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+]
+
+// The two lookups every run with findings off makes: without either, nothing else is looked for.
+const SECURITY_LOOKUPS = [
+	`pubsub subscriptions describe ${SECURITY_NAME} --project=acme-host`,
+	`pubsub topics describe ${SECURITY_NAME} --project=acme-host`,
+]
+
+const securityRemovalCommands = (scope: Scope, also: { pushAccount: boolean; findingsRole: boolean }) => [
+	...SECURITY_LOOKUPS,
+	`scc notifications describe ${NAME} ${scope.sink} --location=global`,
+	`scc notifications delete ${NAME} ${scope.sink} --location=global --quiet`,
+	`pubsub subscriptions delete ${SECURITY_NAME} --project=acme-host --quiet`,
+	`pubsub topics delete ${SECURITY_NAME} --project=acme-host --quiet`,
+	...(also.pushAccount
+		? [PUSH_ACCOUNT_LOOKUP, `iam service-accounts delete ${PUSH_ACCOUNT} --project=acme-host --quiet`]
+		: []),
+	...(also.findingsRole ? [ACCOUNT_LOOKUP, unbindScope(scope, "roles/securitycenter.findingsViewer")] : []),
+]
+
+const PUBSUB_AGENT = "serviceAccount:service-424242@gcp-sa-pubsub.iam.gserviceaccount.com"
+const SECURITY_FILTER = 'state="ACTIVE" OR state="INACTIVE"'
+
+/** The findings setup after the read-only account exists: its role, the pipeline, the notification. */
+const securitySetupCommands = (scope: Scope) => [
+	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/securitycenter.findingsViewer --condition=None`,
+]
+
+const securityPipelineCommands = (scope: Scope) => [
+	`pubsub topics describe ${SECURITY_NAME} --project=acme-host`,
+	`pubsub topics create ${SECURITY_NAME} --project=acme-host`,
+	`iam service-accounts describe ${PUSH_ACCOUNT} --project=acme-host`,
+	`iam service-accounts create maple-push-018f2b3c4d5e4f70819 --project=acme-host --display-name=Maple push identity --description=Signs Pub/Sub push requests to Maple. Holds no roles.`,
+	`iam service-accounts add-iam-policy-binding ${PUSH_ACCOUNT} --project=acme-host --member=${PUBSUB_AGENT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
+	`pubsub subscriptions describe ${SECURITY_NAME} --project=acme-host --format=value(topic)`,
+	`pubsub subscriptions create ${SECURITY_NAME} --topic=${SECURITY_NAME} --project=acme-host --push-endpoint=${SECURITY_PUSH_ENDPOINT} --push-no-wrapper --push-auth-service-account=${PUSH_ACCOUNT} --push-auth-token-audience=${SECURITY_PUSH_ENDPOINT} --ack-deadline=30 --message-retention-duration=1d --expiration-period=never --min-retry-delay=10s --max-retry-delay=600s`,
+	`scc notifications describe ${NAME} ${scope.sink} --location=global`,
+	`scc notifications create ${NAME} ${scope.sink} --location=global --pubsub-topic=projects/acme-host/topics/${SECURITY_NAME} --filter=${SECURITY_FILTER} --description=Sends Security Command Center findings to Maple.`,
 ]
 
 const UNFINISHED = "\nSetup did not finish. Nothing needs undoing: fix this and paste the script again.\n"
@@ -368,7 +418,10 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 		expect(commands).toEqual([
 			...logsSetupCommands(scope),
 			...metricsSetupCommands(scope),
-			publish('"metrics":true'),
+			...SECURITY_LOOKUPS,
+			// Findings are off: the read-only account is asked about to drop their role, and is new.
+			ACCOUNT_LOOKUP,
+			publish('"metrics":true,"security":false'),
 		])
 		expect(access).toEqual([
 			'version --format=value("Google Cloud SDK")',
@@ -385,6 +438,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 		expect(stdout).toBe(`Maple setup for ${scopeType} ${scope.id}
   Log forwarding          on
   Metrics and resources   on
+  Security findings       off, removing
 
 Checking access
   ✓ Signed in as jane@acme.com
@@ -407,6 +461,9 @@ Metrics and resources
   ✓ Read-only service account created
   ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+
+Security findings
+  ✓ Nothing left to remove
   ✓ Maple notified
 
 Done. Google Cloud is set up for Maple.
@@ -437,16 +494,24 @@ Done. Google Cloud is set up for Maple.
 		expect(commands).toContainEqual(
 			expect.stringMatching(/^pubsub subscriptions update .*--push-no-wrapper/),
 		)
-		expect(commands.slice(-metricsRemovalCommands(scope).length - 1)).toEqual([
+		const removals = [
 			...metricsRemovalCommands(scope),
-			publish('"metrics":false'),
-		])
+			// The push service account stays: a log subscription made as code signs as it.
+			...securityRemovalCommands(scope, { pushAccount: false, findingsRole: false }),
+			publish('"metrics":false,"security":false'),
+		]
+		expect(commands.slice(-removals.length)).toEqual(removals)
 		// Billing only matters to Cloud Monitoring.
 		expect(access).not.toContainEqual(expect.stringContaining("billing"))
 		expect(stdout).toContain(`
 Metrics and resources
   ✓ Read-only roles removed
   ✓ Read-only service account deleted
+
+Security findings
+  ✓ Findings notification deleted
+  ✓ Findings subscription deleted
+  ✓ Findings topic deleted
   ✓ Maple notified
 
 Done. Google Cloud matches your Maple switches.
@@ -467,8 +532,12 @@ Done. Google Cloud matches your Maple switches.
 		)
 		expect(Arr.filter(curl, (call) => Str.startsWith(PUSH_ENDPOINT)(call))).toEqual([
 			expect.stringMatching(Str.slice(1)(REPORT('"logs":false').source)),
-			expect.stringMatching(Str.slice(1)(REPORT('"metrics":true').source)),
+			expect.stringMatching(Str.slice(1)(REPORT('"metrics":true,"security":false').source)),
 		])
+		// Without logs nothing signs as the push service account, and the reader keeps metrics only.
+		expect(
+			commands.slice(-securityRemovalCommands(scope, { pushAccount: true, findingsRole: true }).length),
+		).toEqual(securityRemovalCommands(scope, { pushAccount: true, findingsRole: true }))
 		expect(stdout).toContain(`  Log forwarding          off, removing
   Metrics and resources   on
 `)
@@ -486,9 +555,15 @@ Log forwarding
 		const script = cleanup(scope, PUSH_ENDPOINT)
 		const existing = run(script, { describe: "found" })
 		expect(existing.status).toBe(0)
-		expect(existing.commands).toEqual([...logsRemovalCommands(scope), ...metricsRemovalCommands(scope)])
+		expect(existing.commands).toEqual([
+			...logsRemovalCommands(scope),
+			...securityRemovalCommands(scope, { pushAccount: true, findingsRole: false }),
+			...metricsRemovalCommands(scope),
+		])
 		expect(existing.curl).toEqual([
-			expect.stringMatching(Str.slice(1)(REPORT('"logs":false,"metrics":false').source)),
+			expect.stringMatching(
+				Str.slice(1)(REPORT('"logs":false,"metrics":false,"security":false').source),
+			),
 		])
 		expect(existing.stdout).toBe(`Maple cleanup for ${scopeType} ${scope.id}
 
@@ -501,6 +576,12 @@ Log forwarding
   … waiting a minute for Google to stop routing to the topic
   ✓ Push subscription deleted
   ✓ Topic deleted
+
+Security findings
+  ✓ Findings notification deleted
+  ✓ Findings subscription deleted
+  ✓ Findings topic deleted
+  ✓ Push service account deleted
 
 Metrics and resources
   ✓ Read-only roles removed
@@ -515,7 +596,113 @@ Done. Everything the setup script created is gone.
 		const fresh = run(script)
 		expect(fresh.status).toBe(0)
 		expect(Arr.every(fresh.commands, isLookup)).toBe(true)
-		expect(Option.getOrThrow(Str.match(/ {2}✓ Nothing left to remove/g)(fresh.stdout))).toHaveLength(2)
+		// Without its topic or subscription, the notification is not looked for.
+		expect(fresh.commands).not.toContainEqual(expect.stringContaining("scc notifications"))
+		expect(Option.getOrThrow(Str.match(/ {2}✓ Nothing left to remove/g)(fresh.stdout))).toHaveLength(3)
+	})
+
+	it("sets up security findings alone from nothing: a reader, a signed push subscription, a notification", () => {
+		const script = setup(setupInput(scopeType, { logs: false, metrics: false, security: true }))
+		expect(script).toContain("#   Security findings:     on\n")
+		// The findings endpoint carries no secret: Pub/Sub signs each push instead.
+		expect(script).toContain(`SECURITY_PUSH_ENDPOINT='${SECURITY_PUSH_ENDPOINT}'`)
+		const { status, stdout, stderr, commands, access, curl } = run(script)
+		expect(status).toBe(0)
+		expect(stderr).toBe("")
+		expect(commands.slice(-(securityPipelineCommands(scope).length + 6))).toEqual([
+			"services enable securitycenter.googleapis.com pubsub.googleapis.com iam.googleapis.com iamcredentials.googleapis.com --project=acme-host",
+			`iam service-accounts describe ${ACCOUNT} --project=acme-host`,
+			`iam service-accounts create ${NAME} --project=acme-host --display-name=Maple security findings reader`,
+			...securitySetupCommands(scope),
+			`projects add-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --condition=None`,
+			`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
+			...securityPipelineCommands(scope),
+		])
+		// The metrics roles are not granted, and the reader is not removed with metrics off.
+		expect(commands).not.toContainEqual(expect.stringContaining("roles/monitoring.viewer --condition"))
+		expect(commands).not.toContainEqual(expect.stringContaining(`service-accounts delete ${ACCOUNT}`))
+		// Granting on the scope needs it open; findings need no billing.
+		expect(access).toEqual(expect.arrayContaining([...scope.open]))
+		expect(access).not.toContainEqual(expect.stringContaining("billing"))
+		expect(Arr.filter(curl, (call) => Str.startsWith(PUSH_ENDPOINT)(call))).toEqual([
+			expect.stringMatching(Str.slice(1)(REPORT('"logs":false').source)),
+			expect.stringMatching(Str.slice(1)(REPORT('"metrics":false,"security":true').source)),
+		])
+		expect(stdout).toContain(`  Log forwarding          off, removing
+  Metrics and resources   off, removing
+  Security findings       on
+`)
+		expect(stdout).toContain(`
+Security findings
+  ✓ APIs enabled (Security Command Center, Pub/Sub, IAM, IAM Credentials, Cloud Resource Manager)
+  ✓ Read-only service account created
+  ✓ Read-only roles granted (Security Center Findings Viewer, Service Usage Consumer)
+  ✓ Maple allowed to read as that account
+  ✓ Findings topic created
+  ✓ Push service account created
+  ✓ Pub/Sub allowed to sign as that account
+  ✓ Findings subscription created
+  ✓ Findings notification created
+  ✓ Maple notified
+
+Done. Google Cloud is set up for Maple.
+  Maple confirms it within a minute: ${MAPLE_URL}
+  Findings: each one reaches Maple as Security Command Center writes or changes it.
+`)
+	})
+
+	it("with metrics and findings on, grants the findings role to the metrics reader", () => {
+		const { status, stdout, commands } = run(
+			setup(setupInput(scopeType, { logs: true, metrics: true, security: true })),
+		)
+		expect(status).toBe(0)
+		const reader = metricsSetupCommands(scope)
+		const start = commands.indexOf(reader[0] ?? "")
+		expect(commands.slice(start)).toEqual([
+			...reader,
+			"services enable securitycenter.googleapis.com pubsub.googleapis.com iam.googleapis.com iamcredentials.googleapis.com --project=acme-host",
+			...securitySetupCommands(scope),
+			...securityPipelineCommands(scope),
+			publish('"metrics":true,"security":true'),
+		])
+		// One reader for both: it is created once.
+		expect(
+			Arr.filter(commands, (command) =>
+				Str.startsWith(`iam service-accounts create ${NAME} `)(command),
+			),
+		).toHaveLength(1)
+		expect(stdout).toContain(`
+Security findings
+  ✓ APIs enabled (Security Command Center, Pub/Sub, IAM, IAM Credentials, Cloud Resource Manager)
+  ✓ Read-only role granted (Security Center Findings Viewer)
+  ✓ Findings topic created
+`)
+	})
+
+	it("with metrics switched off and findings on, keeps the reader and drops only the metrics roles", () => {
+		const { status, stdout, commands } = run(
+			setup(setupInput(scopeType, { logs: false, metrics: false, security: true })),
+			{ describe: "found" },
+		)
+		expect(status).toBe(0)
+		const start = commands.indexOf(ACCOUNT_LOOKUP)
+		expect(commands.slice(start, start + 3)).toEqual([
+			ACCOUNT_LOOKUP,
+			unbindScope(scope, "roles/monitoring.viewer"),
+			unbindScope(scope, "roles/cloudasset.viewer"),
+		])
+		expect(commands).not.toContainEqual(
+			expect.stringContaining("serviceusage.serviceUsageConsumer --all"),
+		)
+		expect(commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
+		expect(commands).toContain(
+			`scc notifications update ${NAME} ${scope.sink} --location=global --pubsub-topic=projects/acme-host/topics/${SECURITY_NAME} --filter=${SECURITY_FILTER} --description=Sends Security Command Center findings to Maple.`,
+		)
+		expect(stdout).toContain(`
+Metrics and resources
+  ✓ Metrics roles removed
+`)
+		expect(stdout).toContain("  ✓ Findings notification up to date\n")
 	})
 })
 
@@ -592,7 +779,7 @@ describe("the text that is copied", () => {
 describe("renderGcpSetupScript", () => {
 	it("reads a re-run as already in place and keeps the sink's filter", () => {
 		const { status, stdout, commands } = run(
-			setup(setupInput("project", { logs: true, metrics: true })),
+			setup(setupInput("project", { logs: true, metrics: true, security: true })),
 			{
 				describe: "found",
 			},
@@ -615,6 +802,15 @@ Metrics and resources
   ✓ Read-only service account already exists
   ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+
+Security findings
+  ✓ APIs enabled (Security Command Center, Pub/Sub, IAM, IAM Credentials, Cloud Resource Manager)
+  ✓ Read-only role granted (Security Center Findings Viewer)
+  ✓ Findings topic already exists
+  ✓ Push service account already exists
+  ✓ Pub/Sub allowed to sign as that account
+  ✓ Findings subscription up to date
+  ✓ Findings notification up to date
   ✓ Maple notified
 
 Done. Everything is in place.
@@ -1102,7 +1298,9 @@ esac
 
 		// A binding that could not be removed keeps the account, so a later run can still name it.
 		const denied = run(script, { describe: "found", unbind: "denied" })
-		expect(denied.commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
+		expect(denied.commands).not.toContain(
+			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+		)
 		expect(denied.status).toBe(1)
 		expect(denied.stdout).toContain(`  ✗ Couldn't remove the read-only roles.`)
 		expect(denied.stdout).toContain(
@@ -1121,7 +1319,9 @@ esac
 			fail: "remove-iam-policy-binding",
 			answer: "ERROR: (gcloud) NOT_FOUND: Requested entity was not found.",
 		})
-		expect(unknown.commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
+		expect(unknown.commands).not.toContain(
+			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+		)
 		expect(unknown.status).toBe(1)
 	})
 
@@ -1143,9 +1343,12 @@ esac
 		expect(removal.status).toBe(1)
 
 		// Setting up still works: a failed look falls through to the create, which reports for itself.
-		const created = run(setup(setupInput("organization", { logs: true, metrics: true })), {
-			describe: "denied",
-		})
+		const created = run(
+			setup(setupInput("organization", { logs: true, metrics: true, security: true })),
+			{
+				describe: "denied",
+			},
+		)
 		expect(created.status).toBe(0)
 	})
 
@@ -1169,7 +1372,7 @@ esac
 		const { status, stdout, commands } = run(cleanup(SCOPES.project), { gcloud: hostOff })
 		expect(status).toBe(0)
 		expect(Arr.every(commands, isLookup)).toBe(true)
-		expect(Option.getOrThrow(Str.match(/ {2}✓ Nothing left to remove/g)(stdout))).toHaveLength(2)
+		expect(Option.getOrThrow(Str.match(/ {2}✓ Nothing left to remove/g)(stdout))).toHaveLength(3)
 	})
 
 	it("finishes when the service account was deleted by an earlier run", () => {
@@ -1183,7 +1386,11 @@ esac
 			gcloud: FAKE_GCLOUD_ACCOUNT_DELETED,
 		})
 		expect(metricsOff.status).toBe(0)
-		expect(metricsOff.commands.slice(-2)).toEqual([ACCOUNT_LOOKUP, publish('"metrics":false')])
+		expect(metricsOff.commands.slice(-4)).toEqual([
+			ACCOUNT_LOOKUP,
+			...SECURITY_LOOKUPS,
+			publish('"metrics":false,"security":false'),
+		])
 	})
 
 	it("creates the service account again after an earlier run deleted it", () => {
@@ -1191,10 +1398,11 @@ esac
 			gcloud: FAKE_GCLOUD_ACCOUNT_DELETED,
 		})
 		expect(status).toBe(0)
-		// The new account has none of the deleted one's roles: all four grants are made again.
-		expect(commands.slice(-metricsSetupCommands(SCOPES.folder).length)).toEqual(
-			metricsSetupCommands(SCOPES.folder),
-		)
+		// The new account has none of the deleted one's roles: all four grants are made again. After
+		// them come the lookups of the findings setup, which is off.
+		const setupCommands = metricsSetupCommands(SCOPES.folder)
+		const start = commands.indexOf(setupCommands[0] ?? "")
+		expect(commands.slice(start, start + setupCommands.length)).toEqual(setupCommands)
 	})
 
 	it("makes the push subscription anew when its topic was deleted or it was detached", () => {
@@ -1203,11 +1411,20 @@ esac
 			`pubsub subscriptions delete ${NAME} --project=acme-host --quiet`,
 			expect.stringMatching(`^pubsub subscriptions create ${NAME} --topic=${NAME} `),
 		]
-		for (const env of [{ GCLOUD_TOPIC: "_deleted-topic_" }, { GCLOUD_DETACHED: "True" }]) {
+		const envs: ReadonlyArray<Readonly<Record<string, string>>> = [
+			{ GCLOUD_TOPIC: "_deleted-topic_" },
+			{ GCLOUD_DETACHED: "True" },
+		]
+		for (const env of envs) {
 			const { status, stdout, commands } = run(script, { describe: "found", env })
 			expect(status).toBe(0)
 			expect(
-				Arr.filter(commands, (command) => Str.startsWith("pubsub subscriptions ")(command)),
+				Arr.filter(
+					commands,
+					(command) =>
+						Str.startsWith("pubsub subscriptions ")(command) &&
+						!Str.includes(SECURITY_NAME)(command),
+				),
 			).toEqual([
 				`pubsub subscriptions describe ${NAME} --project=acme-host --format=value(topic)`,
 				...(env.GCLOUD_DETACHED === undefined
@@ -1222,7 +1439,9 @@ esac
 
 		// One still on the topic is updated in place.
 		const attached = run(script, { describe: "found" })
-		expect(attached.commands).not.toContainEqual(expect.stringContaining("subscriptions delete"))
+		expect(attached.commands).not.toContain(
+			`pubsub subscriptions delete ${NAME} --project=acme-host --quiet`,
+		)
 	})
 
 	it("tries an IAM change again when it raced another change to the same policy", () => {
@@ -1337,6 +1556,61 @@ esac
 		)
 	})
 
+	it("leaves the findings pipeline alone when it cannot remove the notification that feeds it", () => {
+		const { status, stdout, commands } = run(cleanup(SCOPES.organization), {
+			describe: "found",
+			fail: "scc notifications delete",
+		})
+		expect(status).toBe(1)
+		expect(commands).not.toContainEqual(expect.stringContaining(`delete ${SECURITY_NAME}`))
+		expect(stdout).toContain("  ✗ Couldn't delete the findings notification.")
+		expect(stdout).toContain(
+			"What to do: jane@acme.com needs Security Center Notification Configurations Editor on organization 123456789012.",
+		)
+	})
+
+	it("asks for the right to create the notification before the first change", () => {
+		const { status, stdout, commands } = run(
+			setup(setupInput("folder", { logs: false, metrics: false, security: true })),
+			{ lacking: "securitycenter.notificationconfig.create" },
+		)
+		expect(status).toBe(1)
+		expect(commands).toEqual([])
+		expect(stdout).toContain(
+			"  ✗ jane@acme.com is missing permissions on folder 123456789012: securitycenter.notificationconfig.create.",
+		)
+		expect(stdout).toContain(
+			"What to do: Ask for Folder IAM Admin and Security Center Notification Configurations Editor there",
+		)
+	})
+
+	it("leaves findings alone when the deployment has lost its Google identity", () => {
+		const script = setup({
+			...setupInput("project", { logs: true, metrics: false, security: true }),
+			mapleServiceAccountEmail: undefined,
+		})
+		expect(script).toContain(
+			"#   Security findings:     not available on this Maple deployment, left as is\n",
+		)
+		const { status, commands } = run(script, { describe: "found" })
+		expect(status).toBe(0)
+		expect(commands).not.toContainEqual(expect.stringContaining("scc notifications"))
+		expect(commands).not.toContainEqual(expect.stringContaining(SECURITY_NAME))
+	})
+
+	it("hands gcloud the findings filter and endpoint as one argument each", () => {
+		const { args } = run(
+			setup(setupInput("organization", { logs: false, metrics: false, security: true })),
+		)
+		expect(args).toEqual(
+			expect.arrayContaining([
+				`--filter=${SECURITY_FILTER}`,
+				`--push-auth-token-audience=${SECURITY_PUSH_ENDPOINT}`,
+				`--pubsub-topic=projects/acme-host/topics/${SECURITY_NAME}`,
+			]),
+		)
+	})
+
 	it("passes interpolated values to gcloud verbatim, whatever they contain", () => {
 		const hostile = `x'; touch pwned; echo '$(touch pwned)`
 		const { dir, status, commands } = run(
@@ -1347,7 +1621,7 @@ esac
 			}),
 		)
 		expect(status).toBe(0)
-		expect(commands.at(-1)).toContain(`--member=serviceAccount:${hostile} `)
+		expect(commands).toContainEqual(expect.stringContaining(`--member=serviceAccount:${hostile} `))
 		expect(existsSync(join(dir, "pwned"))).toBe(false)
 	})
 })

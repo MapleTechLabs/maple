@@ -40,6 +40,7 @@ const connector = (fields: Readonly<Record<string, unknown>> = {}) =>
 		project_id: "acme-prod",
 		logs_enabled: true,
 		metrics_enabled: true,
+		security_enabled: false,
 		created_at: "2026-10-24T11:59:00.000Z",
 		last_log_received_at: null,
 		last_log_error: null,

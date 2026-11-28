@@ -312,11 +312,20 @@ export function gcpRunAsked(connector: ConnectorFields, nowMs: number): Readonly
 	return asked
 }
 
-export type GcpFlags = Pick<V2GcpConnector, "logs_enabled" | "metrics_enabled">
+export type GcpFlags = Pick<V2GcpConnector, "logs_enabled" | "metrics_enabled" | "security_enabled">
 
-export type GcpCapability = "logs" | "metrics"
+export type GcpCapability = "logs" | "metrics" | "security"
 
-/** Why a capability cannot be changed: it is the last one on, or the deployment cannot read metrics. */
+const FLAG_OF = {
+	logs: "logs_enabled",
+	metrics: "metrics_enabled",
+	security: "security_enabled",
+} as const satisfies Record<GcpCapability, keyof GcpFlags>
+
+/**
+ * Why a capability cannot be changed: it is the last one on, or the deployment cannot read
+ * through a service account of its own, which metrics and security findings both need.
+ */
 export type GcpCollectLock = "last-on" | "metrics-unavailable"
 
 /** The API refuses both of these, so the configuration disables the choice and says why. */
@@ -325,10 +334,13 @@ export function gcpCollectLock(
 	capability: GcpCapability,
 	metricsAvailable: boolean,
 ): GcpCollectLock | null {
-	const on = capability === "logs" ? flags.logs_enabled : flags.metrics_enabled
-	const otherOn = capability === "logs" ? flags.metrics_enabled : flags.logs_enabled
-	if (on) return otherOn ? null : "last-on"
-	return capability === "metrics" && !metricsAvailable ? "metrics-unavailable" : null
+	const on = flags[FLAG_OF[capability]]
+	const othersOn = Arr.some(
+		Arr.filter(["logs", "metrics", "security"] as const, (other) => other !== capability),
+		(other) => flags[FLAG_OF[other]],
+	)
+	if (on) return othersOn ? null : "last-on"
+	return capability !== "logs" && !metricsAvailable ? "metrics-unavailable" : null
 }
 
 /**
@@ -339,10 +351,16 @@ export function gcpCollectLock(
 export type GcpDraftEffect = "starts-after-script" | "resumes-now" | "stops-now" | "removed-by-script"
 
 export function gcpDraftEffect(
-	connector: ConnectorFields,
+	connector: ConnectorFields & Pick<V2GcpConnector, "security_enabled">,
 	capability: GcpCapability,
 	draft: boolean,
 ): GcpDraftEffect | null {
+	// No run reports on security findings: what is on stands for what was set up.
+	if (capability === "security") {
+		const wanted = connector.security_enabled
+		if (draft) return wanted ? null : "starts-after-script"
+		return wanted ? "stops-now" : null
+	}
 	const logs = capability === "logs"
 	const wanted = logs ? connector.logs_enabled : connector.metrics_enabled
 	const applied = logs ? connector.applied_logs_enabled : connector.applied_metrics_enabled
@@ -392,11 +410,12 @@ export const gcpScopeRoles = (scopeType: GcpScopeType, flags: GcpFlags): Readonl
 		: Arr.filter(
 				[
 					flags.logs_enabled ? "Logs Configuration Writer" : null,
-					flags.metrics_enabled
+					flags.metrics_enabled || flags.security_enabled
 						? scopeType === "folder"
 							? "Folder IAM Admin"
 							: "Organization Administrator"
 						: null,
+					flags.security_enabled ? "Security Center Notification Configurations Editor" : null,
 				],
 				(role) => role !== null,
 			)
@@ -428,17 +447,22 @@ export interface GcpConnectorDraft {
 	readonly hostProjectId: string
 	readonly logsEnabled: boolean
 	readonly metricsEnabled: boolean
+	readonly securityEnabled: boolean
 }
 
 const decodeCreateRequest = Schema.decodeUnknownOption(V2GcpCreateConnectorRequest)
 
 /**
  * The create request for a draft, decoded with the API's own schema; none while a field is wrong.
- * The schema allows both opt-ins off and the API then refuses, so that case is none here too.
+ * The schema allows every opt-in off and the API then refuses, so that case is none here too.
  */
 export const gcpCreateRequest = (draft: GcpConnectorDraft): Option.Option<V2GcpCreateConnectorRequest> => {
-	if (!draft.logsEnabled && !draft.metricsEnabled) return Option.none()
-	const optIns = { logs_enabled: draft.logsEnabled, metrics_enabled: draft.metricsEnabled }
+	if (!draft.logsEnabled && !draft.metricsEnabled && !draft.securityEnabled) return Option.none()
+	const optIns = {
+		logs_enabled: draft.logsEnabled,
+		metrics_enabled: draft.metricsEnabled,
+		security_enabled: draft.securityEnabled,
+	}
 	return decodeCreateRequest(
 		draft.scopeType === "project"
 			? { scope_type: "project", scope_id: Str.trim(draft.scopeId), ...optIns }
