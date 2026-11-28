@@ -3,6 +3,7 @@ import * as CH from "@maple-dev/effect-orm/clickhouse"
 import { OrgId, type SloLatencyThresholdMs, SpanId, TraceId } from "@maple/primitives"
 import { DEFAULT_RETENTION_DAYS, type RetentionSignal } from "../retention"
 import {
+	EVENTS_RETENTION_COLUMN_FORWARD,
 	PRODUCT_EVENTS_FORWARD_QUERY,
 	RETENTION_COLUMN_FORWARD,
 	RETENTION_REPARTITION_FORWARD,
@@ -269,6 +270,7 @@ export const traces = defineDatasource("traces", {
 		// The `*AttributeItems` search arrays are ClickHouse-only: see
 		// `clickhouse/clickhouse-only-columns.ts`.
 	},
+	...EVENTS_RETENTION_COLUMN_FORWARD,
 	indexes: [
 		{
 			name: "idx_trace_id",
@@ -3049,6 +3051,7 @@ export const sessionEvents = defineDatasource("session_events", {
 		RetentionDays: retentionDaysColumn("sessions"),
 		EventsRetentionDays: eventsRetentionDaysColumn(),
 	},
+	...EVENTS_RETENTION_COLUMN_FORWARD,
 	engine: engine.mergeTree({
 		...rowRetentionStorage("Timestamp"),
 		sortingKey: ["OrgId", "SessionId", "Timestamp", "Seq"],
