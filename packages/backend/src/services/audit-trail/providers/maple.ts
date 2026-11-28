@@ -20,6 +20,7 @@ const CATEGORY_BY_RESOURCE = {
 	alert_maintenance_window: "configuration",
 	anomaly_incident: "resource",
 	anomaly_settings: "configuration",
+	retention: "configuration",
 	// The only `api` action is a request refused for a scope or role the credential lacks.
 	api: "permission",
 	api_key: "credential",

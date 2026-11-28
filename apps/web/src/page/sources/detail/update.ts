@@ -1,6 +1,7 @@
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { V2Source } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
+import type { RetentionSignal } from "@maple/domain/retention"
 import { Option, Result, String as Str, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -41,6 +42,7 @@ import * as Integrations from "../../integrations/embed"
 import {
 	DeleteSource,
 	FetchSourceList,
+	FetchSourceRetention,
 	FetchSourceUsage,
 	PauseSource,
 	ReadSourceClock,
@@ -48,10 +50,20 @@ import {
 	ResumeSource,
 	RollSourceToken,
 	SaveSource,
+	SaveSourceRetention,
 } from "./command"
+import { parsePeriod } from "../../kit/retention"
+import {
+	changedRetentionSignals,
+	INHERIT,
+	initRetention,
+	resetRetention,
+	retentionPatch,
+	storedSet,
+} from "./retention"
 import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { Message } from "./message"
-import { canManage, type Model, type SettingsForm } from "./model"
+import { canManage, canManageRetention, type Model, type SettingsForm } from "./model"
 
 type Return = PageReturn<Model, Message>
 type SourceRoute = Extract<AppRoute, { readonly _tag: "Source" }>
@@ -112,6 +124,11 @@ export const isSettingsDirty = (form: SettingsForm): boolean => {
 	)
 }
 
+/** Anything on the Settings tab to save: the source's form or its retention. */
+export const isTabDirty = (model: Model): boolean =>
+	(model.settings !== null && isSettingsDirty(model.settings)) ||
+	changedRetentionSignals(model.retention, model.sourceId).length > 0
+
 /** The tabs this viewer gets: Settings only changes the source, so it needs `sources:manage`. */
 export const shownTabsOf = (model: Model, source: V2Source): ReadonlyArray<SourceTab> =>
 	canManage(model) ? tabsOf(source) : Arr.filter(tabsOf(source), (tab) => tab !== "settings")
@@ -138,7 +155,18 @@ const withSourceTab = (model: Model, source: V2Source, context: PageContext): Mo
 			: model.settings !== null && model.settings.builtFrom === source.updated_at
 				? model.settings
 				: settingsOf(source, context),
+	retention: model.tab !== "settings" ? null : model.retention,
 })
+
+/** Settings reads the retention policy as it mounts, once the viewer may open it. */
+const loadRetention = (model: Model): Return =>
+	model.tab !== "settings" || model.retention !== null || model.settings === null || !canManage(model)
+		? { model }
+		: { model: { ...model, retention: initRetention() }, commands: [FetchSourceRetention()] }
+
+/** The open tab's reads: the overview's usage, Settings' retention. */
+const loadTab = (model: Model, context: PageContext): Return =>
+	andThen(loadUsage(model, context), loadRetention)
 
 const andThen = (first: Return, next: (model: Model) => Return): Return => {
 	const second = next(first.model)
@@ -223,6 +251,7 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 		themeColors: null,
 		setup: null,
 		settings: null,
+		retention: null,
 		connection: null,
 	}
 	const runtime = LoadChartRuntime()
@@ -241,9 +270,15 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 /** A tab link keeps the instance: the overview reads its usage again when it shows. */
 export const routeChanged = (model: Model, route: SourceRoute, context: PageContext): Return =>
 	andThen(
-		loadUsage(
+		loadTab(
 			withTabState(
-				{ ...model, tab: route.search.tab ?? "overview", setup: null, settings: null },
+				{
+					...model,
+					tab: route.search.tab ?? "overview",
+					setup: null,
+					settings: null,
+					retention: null,
+				},
 				context,
 			),
 			context,
@@ -315,27 +350,72 @@ const withSource = (model: Model, run: (id: NonNullable<Model["sourceId"]>) => R
 const withSettings = (model: Model, write: (form: SettingsForm) => SettingsForm): Model =>
 	model.settings === null ? model : { ...model, settings: write(model.settings) }
 
-/** The settings form's save: basics for the default source and integrations, rules for token sources. */
+/**
+ * The settings form's save: basics for the default source and integrations, rules for token
+ * sources, and the retention PATCH when a period changed. Each request answers on its own.
+ */
 const save = (model: Model): Return => {
 	const source = sourceOf(model)
 	const form = model.settings
-	if (Option.isNone(source) || form === null || form.isSaving) return { model }
+	const retention = model.retention
+	if (Option.isNone(source) || form === null || form.isSaving || retention?.isSaving === true)
+		return { model }
 	const outcome = Rules.rulesOutcome(form.rules)
 	const name = Str.trim(form.name)
 	const isToken = hasToken(source.value)
 	if (name.length === 0 || (isToken && !outcome.valid)) return { model }
 	const description = Str.trim(form.description)
 	const basics = { name, description: description.length > 0 ? description : null }
+	const id = source.value.id
+	const sendRetention =
+		retention !== null && canManageRetention(model) && changedRetentionSignals(retention, id).length > 0
+	// A save with nothing changed still sends the source, as the form always has.
+	const sendSource = isSettingsDirty(form) || !sendRetention
 	return {
-		model: withSettings(model, (current) => ({ ...current, isSaving: true })),
+		model: {
+			...withSettings(model, (current) => ({ ...current, isSaving: sendSource })),
+			retention:
+				retention === null
+					? null
+					: {
+							...retention,
+							isSaving: sendRetention,
+							savedWithSource: sendSource,
+							savedAlongside: false,
+						},
+		},
 		commands: [
-			SaveSource({
-				id: source.value.id,
-				payload: isToken ? { ...basics, ...outcome.payload } : basics,
-				expiry: isToken ? form.rules.expiry : null,
-			}),
+			...(sendSource
+				? [
+						SaveSource({
+							id,
+							payload: isToken ? { ...basics, ...outcome.payload } : basics,
+							expiry: isToken ? form.rules.expiry : null,
+						}),
+					]
+				: []),
+			...(sendRetention && retention !== null
+				? [SaveSourceRetention({ id, payload: retentionPatch(retention, id) })]
+				: []),
 		],
 	}
+}
+
+/** A row's pick: "inherit" follows the organization, anything else must be a period. */
+const changedPeriod = (model: Model, signal: RetentionSignal, value: string): Return => {
+	const retention = model.retention
+	if (retention === null || retention.draft === null || retention.isSaving || !canManageRetention(model))
+		return { model }
+	const draft = retention.draft
+	const next = value === INHERIT ? Option.some(null) : parsePeriod(value)
+	return Option.match(next, {
+		onNone: () => ({ model }),
+		onSome: (days) => ({
+			model: { ...model, retention: { ...retention, draft: { ...draft, [signal]: days } } },
+			// The sentence under the row dates from now, never from a clock read long ago.
+			commands: [ReadSourceClock()],
+		}),
+	})
 }
 
 /** Google Cloud's integration page keeps a removed connection's cleanup script. */
@@ -472,10 +552,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		// A member sent to Settings lands on the overview, which reads its usage then.
-		CompletedReadGrants: ({ grants }) => loadUsage(withTabState({ ...model, grants }, context), context),
+		CompletedReadGrants: ({ grants }) => loadTab(withTabState({ ...model, grants }, context), context),
 		CompletedFetchList: ({ key, result }) =>
 			andThen(
-				loadUsage(
+				loadTab(
 					withTabState({ ...model, list: Keyed.accept(model.list, key, result) }, context),
 					context,
 				),
@@ -616,14 +696,94 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		SubmittedSettings: () => save(model),
 		ClickedDiscardSettings: () =>
-			model.settings === null || model.settings.isSaving
+			model.settings === null || model.settings.isSaving || model.retention?.isSaving === true
 				? { model }
 				: Option.match(sourceOf(model), {
 						onNone: () => ({ model }),
-						onSome: (source) => ({ model: { ...model, settings: settingsOf(source, context) } }),
+						onSome: (source) => ({
+							model: {
+								...model,
+								settings: settingsOf(source, context),
+								retention:
+									model.retention === null
+										? null
+										: resetRetention(model.retention, source.id),
+							},
+						}),
 					}),
-		CompletedSave: ({ result }) =>
-			settled(
+		CompletedFetchRetention: ({ result }) => {
+			const retention = model.retention
+			if (retention === null || model.sourceId === null) return { model }
+			const sourceId = model.sourceId
+			const policy = AsyncData.settle(retention.policy, result)
+			// An untouched section follows what is stored; edits survive a refetch.
+			const isDirty = changedRetentionSignals(retention, sourceId).length > 0
+			const stored = Option.getOrNull(
+				Option.map(AsyncData.getData(policy), (data) => storedSet(data, sourceId)),
+			)
+			return {
+				model: {
+					...model,
+					retention: { ...retention, policy, draft: isDirty ? retention.draft : stored },
+				},
+			}
+		},
+		ClickedRetryRetention: () => {
+			const retention = model.retention
+			if (retention === null) return { model }
+			// Loaded data stays while it refetches, so the draft is still compared against it.
+			const policy = Option.getOrElse(
+				AsyncData.revalidateOrLoad(retention.policy),
+				() => retention.policy,
+			)
+			return {
+				model: { ...model, retention: { ...retention, policy } },
+				commands: [FetchSourceRetention()],
+			}
+		},
+		ChangedRetentionPeriod: ({ signal, value }) => changedPeriod(model, signal, value),
+		CompletedSaveRetention: ({ result }) => {
+			const retention = model.retention
+			if (retention === null || model.sourceId === null) return { model }
+			const sourceId = model.sourceId
+			return Result.match(result, {
+				onSuccess: (policy) => {
+					const saved: Return = {
+						model: {
+							...model,
+							retention: {
+								...retention,
+								isSaving: false,
+								policy: AsyncData.Success({ data: policy }),
+								draft: storedSet(policy, sourceId),
+								savedAlongside:
+									retention.savedWithSource && model.settings?.isSaving === true,
+							},
+						},
+					}
+					// A save that sent the source too toasts once, from the source's answer. A source
+					// that already failed reset `savedWithSource`, so this save toasts on its own.
+					return retention.savedWithSource
+						? saved
+						: { ...saved, outMessage: toast("success", "Retention saved") }
+				},
+				onFailure: (failure) => ({
+					model: { ...model, retention: { ...retention, isSaving: false } },
+					outMessage: failureToast("Couldn't save retention", failure),
+				}),
+			})
+		},
+		CompletedSave: ({ result }) => {
+			const retention = model.retention
+			const retentionSaved = retention?.savedAlongside === true
+			// Retention still in flight toasts its own answer once the source has failed.
+			const retentionAfter =
+				retention === null
+					? null
+					: Result.isFailure(result) && retention.isSaving
+						? { ...retention, savedWithSource: false, savedAlongside: false }
+						: { ...retention, savedAlongside: false }
+			const step = settled(
 				// Rebuilt from the saved source, so the form is clean before the list reload lands.
 				Result.match(result, {
 					onFailure: () => withSettings(model, (form) => ({ ...form, isSaving: false })),
@@ -634,9 +794,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				result,
 				{
 					success: "Source saved. Changes reach the gateway within a minute.",
-					error: "Couldn't save source",
+					error: retentionSaved
+						? "Couldn't save source. Retention was saved."
+						: "Couldn't save source",
 				},
-			),
+			)
+			return { ...step, model: { ...step.model, retention: retentionAfter } }
+		},
 		GotTokenCopyMessage: ({ message: inner }) => {
 			const next = CopyButton.update(model.tokenCopy, inner)
 			// Only the current copy toasts.

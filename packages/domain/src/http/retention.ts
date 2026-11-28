@@ -30,3 +30,17 @@ export class RetentionInvalidError extends HttpTaggedError<RetentionInvalidError
 		exposure: "public_message",
 	},
 ) {}
+
+/** A retention write for an organization whose own ClickHouse keeps its retention. */
+export class RetentionOwnWarehouseError extends HttpTaggedError<RetentionOwnWarehouseError>()(
+	"@maple/http/retention/RetentionOwnWarehouseError",
+	{ message: Schema.String },
+	{
+		status: 409,
+		code: "retention_own_warehouse",
+		title: "Retention is set in your own ClickHouse",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}

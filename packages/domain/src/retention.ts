@@ -10,6 +10,17 @@ export type RetentionSignal = SourceSignal
 
 export const RETENTION_SIGNALS: ReadonlyArray<RetentionSignal> = SourceSignal.literals
 
+/** Signals whose period can be changed. Session replays and product events keep their default for now. */
+export const ADJUSTABLE_RETENTION_SIGNALS: ReadonlyArray<RetentionSignal> = [
+	"traces",
+	"logs",
+	"metrics",
+	"profiles",
+]
+
+export const isAdjustableRetentionSignal = (signal: RetentionSignal): boolean =>
+	ADJUSTABLE_RETENTION_SIGNALS.includes(signal)
+
 /**
  * The periods a signal can be kept for. Rows are stored under the same period, so what is
  * set, what is billed and when rows are deleted always agree.

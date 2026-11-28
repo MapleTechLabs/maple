@@ -15,6 +15,7 @@ import { Message as DataPlatformMessage } from "./data-platform/model"
 import { Message as DataSourcesMessage } from "./data-sources/model"
 import { Message as AuditLogMessage } from "./audit-log/model"
 import { Message as AutomationMessage } from "./automation/model"
+import { Message as RetentionMessage } from "./retention/model"
 import * as Ingestion from "./ingestion/message"
 import * as Keys from "./keys/message"
 import * as Mcp from "./mcp/message"
@@ -41,6 +42,7 @@ export const Message = defineMessageUnion({
 	GotDataSourcesMessage: { message: DataSourcesMessage },
 	GotAuditLogMessage: { message: AuditLogMessage },
 	GotAutomationMessage: { message: AutomationMessage },
+	GotRetentionMessage: { message: RetentionMessage },
 	/** The `api_keys` shape (Keys and the audit log's actor names), for the org it was read for. */
 	UpdatedApiKeys: { orgId: Schema.String, rows: Schema.Array(ApiKeyRowSchema) },
 	/** The `api_keys` shape gave up (or timed out) before its first answer. */

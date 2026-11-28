@@ -124,6 +124,7 @@ import { IngestAttributeMappingService } from "@maple/backend/services/org/Inges
 import { SourceMapService } from "@maple/backend/services/sourcemaps/SourceMapService"
 import { StackSymbolicator } from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { RetentionService } from "@maple/backend/services/retention/RetentionService"
 import { IngestRulePreviewService } from "@maple/backend/services/org/IngestRulePreviewService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { OnboardingAgentRunService } from "@maple/backend/services/onboarding/OnboardingAgentRunService"
@@ -249,6 +250,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	// Needs the `SourceMapBucket` port, which only the deployed Worker binds.
 	SourceMapService.layer,
 	IngestRuleService.layer,
+	RetentionService.layer,
 	IngestRulePreviewService.layer,
 	AutumnClient.layer,
 	StripeClient.layer,

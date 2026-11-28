@@ -3,7 +3,7 @@ import { Array as Arr, Deferred, Effect, Fiber, Layer, Result, Schema } from "ef
 import { TestClock } from "effect/testing"
 import { OrgId, SourceId, UserId } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
-import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
+import { DEFAULT_RETENTION_DAYS, RETENTION_SIGNALS } from "@maple/domain/retention"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -31,6 +31,7 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const ORG = Schema.decodeSync(OrgId)("org_retention")
 const OTHER_ORG = Schema.decodeSync(OrgId)("org_elsewhere")
 const ANA = Schema.decodeSync(UserId)("user_ana")
+const BEN = Schema.decodeSync(UserId)("user_ben")
 const decodeSourceId = Schema.decodeSync(SourceId)
 
 const withDb = <A, E>(run: (db: TestDb) => Effect.Effect<A, E, RetentionService>) => {
@@ -194,6 +195,25 @@ describe("RetentionService", () => {
 		),
 	)
 
+	it.effect("two concurrent edits of different signals both land, each with what it changed from", () =>
+		withDb(() =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const [traces, logs] = yield* Effect.all(
+					[
+						retention.updateOrganization(ORG, ANA, (current) => ({ ...current, traces: 7 })),
+						retention.updateOrganization(ORG, ANA, (current) => ({ ...current, logs: 90 })),
+					],
+					{ concurrency: 2 },
+				)
+				const policy = yield* retention.get(ORG)
+				assert.deepStrictEqual(policy.overrides, { traces: 7, logs: 90 })
+				// Whichever ran second saw the first one's write.
+				assert.isTrue(traces.before.logs === 90 || logs.before.traces === 7)
+			}),
+		),
+	)
+
 	it.effect("refuses a period that cannot be stored, as a bad request and without writing", () =>
 		withDb((db) =>
 			Effect.gen(function* () {
@@ -202,7 +222,10 @@ describe("RetentionService", () => {
 				yield* retention.setOrganization(ORG, ANA, { logs: 730 })
 				const offTheList = yield* Effect.result(retention.setOrganization(ORG, ANA, { logs: 45 }))
 				const fraction = yield* Effect.result(retention.setSource(ORG, ANA, debug, { traces: 1.5 }))
-				for (const refused of [offTheList, fraction]) {
+				// Session replays and product events keep their default for now.
+				const replays = yield* Effect.result(retention.setOrganization(ORG, ANA, { sessions: 90 }))
+				const events = yield* Effect.result(retention.setSource(ORG, ANA, debug, { events: 730 }))
+				for (const refused of [offTheList, fraction, replays, events]) {
 					assert.isTrue(Result.isFailure(refused))
 					if (Result.isFailure(refused)) {
 						assert.strictEqual(
@@ -214,6 +237,37 @@ describe("RetentionService", () => {
 				const policy = yield* retention.get(ORG)
 				assert.deepStrictEqual(policy.overrides, { logs: 730 })
 				assert.deepStrictEqual(policy.sources, [])
+			}),
+		),
+	)
+
+	it.effect("a write that changes nothing leaves the stored row and who changed it alone", () =>
+		withDb((db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				yield* retention.setOrganization(ORG, ANA, { traces: 60 })
+				const updatedBy = () =>
+					Effect.promise(() =>
+						db.pglite.query<{ updated_by: string }>(
+							"SELECT updated_by FROM org_retention_policies WHERE org_id = $1",
+							[ORG],
+						),
+					).pipe(Effect.map((rows) => Arr.map(rows.rows, (row) => row.updated_by)))
+				const written = yield* retention.updateOrganization(ORG, BEN, (current) => ({ ...current }))
+				assert.strictEqual(written.changed, false)
+				assert.deepStrictEqual(written.policy.overrides, { traces: 60 })
+				assert.deepStrictEqual(yield* updatedBy(), [ANA])
+			}),
+		),
+	)
+
+	it.effect("a write that sets nothing on an untouched organization leaves it unbounded", () =>
+		withDb(() =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const written = yield* retention.updateOrganization(ORG, ANA, () => ({}))
+				assert.strictEqual(written.changed, false)
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), DEFAULT_READ_HORIZON)
 			}),
 		),
 	)
@@ -263,11 +317,11 @@ describe("RetentionService.readHorizon", () => {
 				assert.deepStrictEqual((yield* retention.get(ORG)).overrides, { traces: 60 })
 				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
 					days: { ...DEFAULT_RETENTION_DAYS, traces: 60 },
-					configured: ["traces"],
+					configured: RETENTION_SIGNALS,
 				})
 				assert.deepStrictEqual(yield* retention.readHorizon(OTHER_ORG), {
 					days: { ...DEFAULT_RETENTION_DAYS, metrics: 730 },
-					configured: ["metrics"],
+					configured: RETENTION_SIGNALS,
 				})
 			}),
 		),
@@ -282,7 +336,7 @@ describe("RetentionService.readHorizon", () => {
 		),
 	)
 
-	it.effect("names the signals the organization or one of its sources set, and no others", () =>
+	it.effect("bounds every signal once the organization or a source set any period", () =>
 		withDb((db) =>
 			Effect.gen(function* () {
 				const retention = yield* RetentionService
@@ -292,9 +346,38 @@ describe("RetentionService.readHorizon", () => {
 				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
 					// A source that keeps profiles for less does not pull the read in.
 					days: { ...DEFAULT_RETENTION_DAYS, logs: 7, traces: 90 },
-					configured: ["traces", "logs", "profiles"],
+					configured: RETENTION_SIGNALS,
 				})
 				assert.deepStrictEqual(yield* retention.readHorizon(OTHER_ORG), DEFAULT_READ_HORIZON)
+			}),
+		),
+	)
+
+	it.effect("an organization period returned to the default still bounds reads at the default", () =>
+		withDb(() =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				yield* retention.setOrganization(ORG, ANA, { logs: 90 })
+				yield* retention.setOrganization(ORG, ANA, {})
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
+					days: DEFAULT_RETENTION_DAYS,
+					configured: RETENTION_SIGNALS,
+				})
+			}),
+		),
+	)
+
+	it.effect("a source that inherits again leaves reads bounded at the organization's periods", () =>
+		withDb((db) =>
+			Effect.gen(function* () {
+				const retention = yield* RetentionService
+				const debug = yield* source(db, ORG, "nodejs")
+				yield* retention.setSource(ORG, ANA, debug, { logs: 180 })
+				yield* retention.setSource(ORG, ANA, debug, {})
+				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
+					days: DEFAULT_RETENTION_DAYS,
+					configured: RETENTION_SIGNALS,
+				})
 			}),
 		),
 	)
@@ -325,7 +408,7 @@ describe("RetentionService.readHorizon", () => {
 				yield* TestClock.adjust(READ_HORIZON_TTL_MS)
 				assert.deepStrictEqual(yield* retention.readHorizon(ORG), {
 					days: { ...DEFAULT_RETENTION_DAYS, traces: 7 },
-					configured: ["traces"],
+					configured: RETENTION_SIGNALS,
 				})
 			}),
 		),
@@ -338,7 +421,7 @@ describe("RetentionService.readHorizon", () => {
 				yield* retention.readHorizon(ORG)
 				yield* retention.setOrganization(ORG, ANA, { traces: 7 })
 				const reads = database.calls
-				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, ["traces"])
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, RETENTION_SIGNALS)
 				assert.strictEqual(database.calls, reads)
 			}),
 		),
@@ -529,7 +612,7 @@ describe("RetentionService.readHorizon", () => {
 				// No read came before the write, so the isolate holds nothing else yet.
 				yield* retention.setOrganization(ORG, ANA, { traces: 7 })
 				database.down = true
-				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, ["traces"])
+				assert.deepStrictEqual((yield* retention.readHorizon(ORG)).configured, RETENTION_SIGNALS)
 				assert.deepStrictEqual(yield* retention.readHorizon(OTHER_ORG), DEFAULT_READ_HORIZON)
 			}),
 		),
@@ -558,7 +641,7 @@ describe("RetentionService.readHorizon", () => {
 				// The read starts after the write, and still must not take the older snapshot over it.
 				yield* TestClock.adjust(1)
 				const horizon = yield* retention.readHorizon(ORG)
-				assert.deepStrictEqual(horizon.configured, ["traces"])
+				assert.deepStrictEqual(horizon.configured, RETENTION_SIGNALS)
 				assert.strictEqual(horizon.days.traces, 7)
 			}),
 		),

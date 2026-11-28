@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { Array as Arr, Option, Record as Rec } from "effect"
 import { tinybirdProjectManifest } from "@maple/domain/generated/tinybird-project-manifest"
-import { DEFAULT_RETENTION_DAYS, RETENTION_SIGNAL_DATASOURCES } from "@maple/domain/retention"
+import {
+	DEFAULT_RETENTION_DAYS,
+	RETENTION_SIGNAL_DATASOURCES,
+	RETENTION_SIGNALS,
+} from "@maple/domain/retention"
 import { DEFAULT_READ_HORIZON } from "@maple/backend/services/retention/RetentionService"
 import { listTrustedReadDatasourceNames } from "@maple/backend/services/warehouse/warehouse-catalog"
 import {
@@ -53,11 +57,22 @@ describe("read horizon tables", () => {
 })
 
 describe("readBoundsOf", () => {
-	it("bounds nothing for an organization that set nothing", () => {
+	it("bounds nothing for an organization that never set retention", () => {
 		expect(boundsOf(DEFAULT_READ_HORIZON)).toEqual(Option.some({}))
 	})
 
-	it("bounds the raw tables of a signal that was set, and no other signal's", () => {
+	it("bounds every raw table at its signal's horizon once the organization has a policy", () => {
+		const bounds = Option.getOrThrow(
+			boundsOf({ days: DEFAULT_RETENTION_DAYS, configured: RETENTION_SIGNALS }),
+		)
+		expect([bounds.logs, bounds.metrics_sum, bounds.profiles]).toEqual([
+			{ column: "TimestampTime", days: DEFAULT_RETENTION_DAYS.logs },
+			{ column: "TimeUnix", days: DEFAULT_RETENTION_DAYS.metrics },
+			{ column: "Timestamp", days: DEFAULT_RETENTION_DAYS.profiles },
+		])
+	})
+
+	it("bounds the raw tables of a bounded signal, and no other signal's", () => {
 		expect(
 			boundsOf({ days: { ...DEFAULT_RETENTION_DAYS, logs: 7, metrics: 400 }, configured: ["logs"] }),
 		).toEqual(Option.some({ logs: { column: "TimestampTime", days: 7 } }))

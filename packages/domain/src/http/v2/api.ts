@@ -31,6 +31,7 @@ import { V2McpConnectionsApiGroup } from "./mcp-connections"
 import { V2OnboardingChecklistApiGroup } from "./onboarding-checklist"
 import { V2OnboardingAgentRunApiGroup } from "./onboarding-agent-run"
 import { V2OrganizationApiGroup } from "./organization"
+import { V2RetentionApiGroup } from "./retention"
 import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
@@ -134,6 +135,7 @@ const v2Groups = HttpApi.make("MapleApiV2")
 	.add(V2InvestigationsApiGroup)
 	.add(V2AnomaliesApiGroup)
 	.add(V2OrganizationApiGroup)
+	.add(V2RetentionApiGroup)
 	.add(V2OnboardingChecklistApiGroup)
 	.add(V2OnboardingAgentRunApiGroup)
 	.add(V2SupportChannelApiGroup)

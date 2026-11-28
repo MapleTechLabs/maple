@@ -1,5 +1,6 @@
 import { ChartEnvMessages } from "@maple/views/charts/chart-env"
-import { V2Source, V2SourceUsage, V2SourceWithSecret } from "@maple/domain/http/v2"
+import { V2RetentionPolicy, V2Source, V2SourceUsage, V2SourceWithSecret } from "@maple/domain/http/v2"
+import { RetentionSignal } from "@maple/domain/retention"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -43,5 +44,10 @@ export const Message = defineMessageUnion({
 	ClickedDiscardSettings: {},
 	CompletedSave: { result: Schema.Result(V2Source, LoadFailure) },
 	GotConnectionMessage: { message: IntegrationMessage },
+	CompletedFetchRetention: { result: Schema.Result(V2RetentionPolicy, LoadFailure) },
+	ClickedRetryRetention: {},
+	/** A row's select: a period, or "inherit" to follow the organization. */
+	ChangedRetentionPeriod: { signal: RetentionSignal, value: Schema.String },
+	CompletedSaveRetention: { result: Schema.Result(V2RetentionPolicy, LoadFailure) },
 })
 export type Message = typeof Message.Type

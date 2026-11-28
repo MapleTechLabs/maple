@@ -34,6 +34,7 @@ import * as DataPlatformView from "./data-platform/view"
 import * as DataSourcesView from "./data-sources/view"
 import * as AuditLogView from "./audit-log/view"
 import * as AutomationView from "./automation/view"
+import * as RetentionView from "./retention/view"
 import * as SetupHealthView from "./setup-health/view"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -108,6 +109,19 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: AiView.view,
 					toParentMessage: (message) => Message.GotAiMessage({ message }),
 					viewInputs: { grants: visibilityOf(model).grants },
+				}),
+			]
+		case "Retention":
+			return [
+				h.submodel({
+					slotId: "settings-retention",
+					model: tab.model,
+					view: RetentionView.view,
+					toParentMessage: (message) => Message.GotRetentionMessage({ message }),
+					viewInputs: {
+						timeZone: inputs.context.timeZone,
+						canOpenDataPlatform: visibilityOf(model).canAccessDataPlatform,
+					},
 				}),
 			]
 		case "Automation":
@@ -274,6 +288,7 @@ const ROLE_GATED_TABS: ReadonlySet<SettingsTab> = new Set([
 	"billing",
 	"keys",
 	"automation",
+	"retention",
 	"sso",
 ])
 

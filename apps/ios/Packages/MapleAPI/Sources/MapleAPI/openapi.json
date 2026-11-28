@@ -15840,6 +15840,10 @@
       "name": "Organization"
     },
     {
+      "description": "How long Maple keeps traces, logs, metrics, session replays, product events and profiles, for the organization and per source.",
+      "name": "Retention"
+    },
+    {
       "description": "Activation steps a new org completes to earn a credit, and the claim that applies it.",
       "name": "Onboarding Checklist"
     },

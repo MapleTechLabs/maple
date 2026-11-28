@@ -450,6 +450,15 @@ export const permissions = {
 		sensitive: true,
 		readsNoTelemetry: true,
 	},
+	// Retention changes what the org is billed for storage and when its data is deleted.
+	"retention:manage": {
+		code: 53,
+		group: "organization",
+		label: "Manage retention",
+		description: "Set how long each signal is kept, for the organization and per source.",
+		action: "change how long data is kept",
+		sensitive: true,
+	},
 	// SCIM maps IdP groups to roles, Admin included, so it stays with Admin like members:manage.
 	"sso:manage": {
 		code: 33,
