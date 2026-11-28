@@ -416,6 +416,13 @@ static STORAGE_LEDGER_DROPPED_ROWS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new
         .build()
 });
 
+static STORAGE_LEDGER_UNCONFIRMED_ROWS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("storage_ledger_unconfirmed_rows_total")
+        .with_description("Storage ledger rows whose write may have committed, so they were not retried")
+        .build()
+});
+
 static AUTUMN_PENDING_GB: LazyLock<Gauge<f64>> = LazyLock::new(|| {
     METER
         .f64_gauge("autumn_track_pending_gb")
@@ -1215,6 +1222,11 @@ pub fn autumn_entitlement_decision(source: &'static str) {
 /// Storage ledger rows dropped unwritten: the store failed long enough to pass the pending cap.
 pub fn storage_ledger_dropped_rows(rows: u64) {
     STORAGE_LEDGER_DROPPED_ROWS_TOTAL.add(rows, &[]);
+}
+
+/// Storage ledger rows logged and not retried: the write may have committed, so its bytes are unconfirmed.
+pub fn storage_ledger_unconfirmed_rows(rows: u64) {
+    STORAGE_LEDGER_UNCONFIRMED_ROWS_TOTAL.add(rows, &[]);
 }
 
 /// Unflushed Autumn usage currently held in memory, in GB.

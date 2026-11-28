@@ -224,6 +224,7 @@ impl StorageLedgerSink {
 /// Rows of a write that may have committed, one per line at error level so a missing one can be
 /// added by hand. Billing them twice would be worse than checking them.
 fn log_unconfirmed(rows: &[StorageLedgerRow], write_error: &str) {
+    metrics::storage_ledger_unconfirmed_rows(u64::try_from(rows.len()).unwrap_or(u64::MAX));
     error!(
         error = %write_error,
         rows = rows.len(),
