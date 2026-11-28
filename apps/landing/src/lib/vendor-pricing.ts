@@ -1,4 +1,6 @@
 import { Array as Arr, String as Str } from "effect"
+import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
+import { DATA_RATES, DAYS_PER_MONTH, INCLUDED_STORAGE_GB_MONTHS } from "@maple/domain/storage-pricing"
 /**
  * Vendor price models: the arithmetic behind the pricing calculator and the
  * server-rendered receipts on `/compare/*`.
@@ -662,8 +664,9 @@ export const estimateVendor = (vendor: Vendor, values: Record<string, number>): 
 /** What Maple charges for the same workload, converted into decoded OTLP volume. */
 export const estimateMaple = (vendor: Vendor, values: Record<string, number>): Estimate => {
 	// Maple Startup (autumn.config.ts): $39/mo with 100 GB included per signal
-	// (logs, traces, metrics) and $0.30/GB overage billed per signal; the
-	// allowances are not a fungible 300 GB pool. Maple meters decoded OTLP
+	// (logs, traces, metrics) and $0.15/GB overage billed per signal; the
+	// allowances are not a fungible 300 GB pool. Stored GB past what the included
+	// GB needs at the default retention is $0.15 per GB-month, priced at the default retention. Maple meters decoded OTLP
 	// payload bytes; where a competitor bills in counts instead of volume, the
 	// branch converts using a per-item byte estimate documented at that branch.
 	const baseCost = 39
@@ -714,14 +717,36 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 	}
 
 	const overageGB = Math.max(0, logsGB - 100) + Math.max(0, tracesGB - 100) + Math.max(0, metricsGB - 100)
-	const overage = overageGB * 0.3
+	const overage = overageGB * DATA_RATES.ingestPerGb
+	// A month's ingest, kept its default period, is that many months of it stored. Each signal
+	// includes its own GB-months; only what is stored past them is billed.
+	const storedPastIncluded = (gb: number, days: number, signal: "logs" | "traces" | "metrics") =>
+		Math.max(0, (gb * days) / DAYS_PER_MONTH - INCLUDED_STORAGE_GB_MONTHS[signal])
+	const storedGB =
+		storedPastIncluded(logsGB, DEFAULT_RETENTION_DAYS.logs, "logs") +
+		storedPastIncluded(tracesGB, DEFAULT_RETENTION_DAYS.traces, "traces") +
+		storedPastIncluded(metricsGB, DEFAULT_RETENTION_DAYS.metrics, "metrics")
+	const storage = storedGB * DATA_RATES.storagePerGbMonth
 
 	return {
-		total: baseCost + overage,
+		total: baseCost + overage + storage,
 		breakdown: [
-			{ label: "Startup plan", value: baseCost, detail: "100 GB per signal included" },
+			{
+				label: "Startup plan",
+				value: baseCost,
+				detail: "100 GB per signal, kept for its default retention",
+			},
 			...(overage > 0
-				? [{ label: "Overage", value: overage, detail: `${Math.round(overageGB)} GB over × $0.30` }]
+				? [{ label: "Overage", value: overage, detail: `${Math.round(overageGB)} GB over × $0.15` }]
+				: []),
+			...(storage > 0
+				? [
+						{
+							label: "Storage",
+							value: storage,
+							detail: `${Math.round(storedGB)} GB-month past what's included × $0.15`,
+						},
+					]
 				: []),
 			{ label: "Team seats", value: 0, detail: "No per-seat fees" },
 		],
@@ -742,7 +767,7 @@ export const vendorCaveat = {
 	dash0: "Dash0 bills per data point, ingestion plus storage at the default retention. The Maple estimate converts at 1 KB per span or log record and 0.1 KB per metric data point; your ratio depends on attribute sizes.",
 	openobserve:
 		"OpenObserve is modeled at its headline $0.50/GB, which already includes the 30% annual-commitment discount. Query fees and retention beyond 30 days are not modeled, which favors OpenObserve.",
-	axiom: "Axiom is modeled on Axiom Cloud's rate card: $25 a month, data loading at $0.12/GB beyond 1 TB free, query compute at $0.20/GB-hour beyond 100 GB-hours free, and storage at $0.03/GB a month beyond 100 GB at Axiom's documented 95% compression and one month of retention. Pre-purchase credit discounts and the SSO, Directory Sync, RBAC and audit log add-ons are not modeled. Maple has no query or storage meter, so its estimate is ingest only.",
+	axiom: "Axiom is modeled on Axiom Cloud's rate card: $25 a month, data loading at $0.12/GB beyond 1 TB free, query compute at $0.20/GB-hour beyond 100 GB-hours free, and storage at $0.03/GB a month beyond 100 GB at Axiom's documented 95% compression and one month of retention. Pre-purchase credit discounts and the SSO, Directory Sync, RBAC and audit log add-ons are not modeled. Maple has no query meter; its storage is priced at the default retention.",
 	signoz: "SigNoz is modeled on the Teams plan at default retention: logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at one month, and the $49 base fee with $49 of usage included. Longer retention raises both rates and is not modeled, which favors SigNoz. The Maple estimate converts metric samples at 0.1 KB per data point.",
 	"better-stack":
 		"Better Stack is modeled on pay-as-you-go in its Europe region, its cheapest: logs and traces at $0.10/GB ingested plus $0.05/GB a month retained for 30 days, metrics at $0.50/GB a month retained, less the free tier. US rates are 50% higher and not modeled, which favors Better Stack. Bundles, query boost, Responder licenses for on-call and uptime, and the SSO and audit log add-ons are not modeled. Better Stack meters metrics by uncompressed stored size, mapped one to one onto Maple's decoded OTLP bytes.",
@@ -751,4 +776,4 @@ export const vendorCaveat = {
 } satisfies Record<Vendor, string>
 
 export const MAPLE_PRICING_NOTE =
-	"Maple pricing based on the Startup plan ($39/mo with 100 GB included per signal (logs, traces, metrics), then $0.30/GB, billed per signal), metered on uncompressed (decoded OTLP) bytes."
+	"Maple pricing based on the Startup plan ($39/mo with 100 GB included per signal (logs, traces, metrics), then $0.15/GB, billed per signal), with storage at the default retention (30 days for logs and traces, 90 for metrics) included and $0.15 per GB-month stored past it, metered on uncompressed (decoded OTLP) bytes."

@@ -15,6 +15,8 @@
  */
 import { PRICING_CARD_FEATURE_IDS, TRIAL_PLAN_ID, isAdvertisedPricingFeature } from "@maple/domain/billing"
 import * as m from "../paraglide/messages.js"
+import { DEFAULT_RETENTION_DAYS } from "@maple/domain/retention"
+import { DATA_RATES, STORAGE_FEATURE_IDS, StorageSignal } from "@maple/domain/storage-pricing"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
@@ -84,6 +86,17 @@ export interface Allotment {
 	 * million. The rate is the price of one such block.
 	 */
 	rateUnits: number
+	/**
+	 * A GB signal's retention, priced apart from ingestion: its included volume is kept `days`
+	 * days at no charge, and storage past that is `rate` per GB per month.
+	 */
+	retention?: Retention | undefined
+}
+
+export interface Retention {
+	days: number
+	/** Per GB per month, past what the included volume needs for `days`; undefined when the plan has no price for it. */
+	rate: number | undefined
 }
 
 export interface Offer {
@@ -133,7 +146,6 @@ const dataFeatureLabels = (): Record<string, string> => ({
  * checklist, since a checklist implies some rows might have been withheld.
  */
 export const platformFeatures = (): string[] => [
-	m.pricing_30day_retention(),
 	m.pricing_private_channel(),
 	m.pricing_unlimited_dashboards(),
 	m.pricing_advanced_alerting(),
@@ -227,6 +239,7 @@ export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => 
 				const billingUnits = Math.max(1, item.price?.billing_units ?? 1)
 				const rateUnits = unit === "events" ? EVENTS_QUOTE_UNITS : billingUnits
 				const amount = item.price?.amount
+				const retention = retentionOf(featureId, product.items)
 				return {
 					featureId,
 					label: labels[featureId] ?? item.feature?.name ?? featureId,
@@ -235,6 +248,7 @@ export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => 
 					unlimited: item.unlimited === true,
 					rate: amount == null ? undefined : (amount / billingUnits) * rateUnits,
 					rateUnits,
+					retention,
 				}
 			},
 		).sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
@@ -245,6 +259,78 @@ export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => 
 	}
 }
 
+const isStorageSignal = Schema.is(StorageSignal)
+
+/**
+ * A GB signal's retention: its default period, and the rate of the signal's own storage
+ * feature. Autumn bills storage per 0.01 GB-month, so the rate is not floored to one unit.
+ * Undefined for a signal with no retention period (sessions, events, AI usage).
+ */
+const retentionOf = (
+	featureId: string,
+	items: ReadonlyArray<typeof PlanItem.Type>,
+): Retention | undefined => {
+	if (!isStorageSignal(featureId)) return undefined
+	const storage = Arr.findFirst(items, (item) => item.feature_id === STORAGE_FEATURE_IDS[featureId])
+	const rate = Option.flatMap(storage, (item) => {
+		const amount = item.price?.amount
+		const billingUnits = item.price?.billing_units ?? 1
+		return amount == null || billingUnits <= 0 ? Option.none() : Option.some(amount / billingUnits)
+	})
+	return { days: DEFAULT_RETENTION_DAYS[featureId], rate: Option.getOrUndefined(rate) }
+}
+
+/** The mirror's retention for a GB signal: its default period at the storage rate. */
+const mirrorRetention = (featureId: "logs" | "traces" | "metrics"): Retention => ({
+	days: DEFAULT_RETENTION_DAYS[featureId],
+	rate: DATA_RATES.storagePerGbMonth,
+})
+
+/** GB signals with the same allowance, period and rates: one column of the table, one cell of the strip. */
+export interface TelemetryGroup {
+	key: string
+	label: string
+	/** How many signals share these terms ("100 GB each"). */
+	size: number
+	included: string
+	days: number
+	ingestion: number | undefined
+	retention: number | undefined
+}
+
+export const telemetryGroups = (offer: Offer): ReadonlyArray<TelemetryGroup> =>
+	Arr.flatMap(
+		Object.values(
+			Arr.groupBy(
+				Arr.filter(offer.allotments, (a) => a.unit === "gb" && a.retention !== undefined),
+				(a) => [a.included, a.rate, a.retention?.days, a.retention?.rate].join(":"),
+			),
+		),
+		(group) => {
+			const first = group[0]
+			if (first.retention === undefined) return []
+			const labels = Arr.map(group, (a) => a.label)
+			return [
+				{
+					key: first.featureId,
+					label:
+						labels.length === 2
+							? m.pricing_signal_pair({ a: labels[0] ?? "", b: labels[1] ?? "" })
+							: Arr.join(labels, ", "),
+					size: group.length,
+					included: volume(first, first.included),
+					days: first.retention.days,
+					ingestion: first.rate,
+					retention: first.retention.rate,
+				},
+			]
+		},
+	)
+
+/** Everything metered that is not a GB signal with a retention period: sessions, events. */
+export const otherAllotments = (offer: Offer): ReadonlyArray<Allotment> =>
+	Arr.filter(offer.allotments, (a) => !(a.unit === "gb" && a.retention !== undefined))
+
 const fallbackOffer = (labels: Record<string, string>): Offer => ({
 	name: "Startup",
 	price: 39,
@@ -252,22 +338,32 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 	hasTrial: true,
 	trialDuration: 14,
 	allotments: [
-		{ featureId: "logs", label: labels.logs, unit: "gb", included: 100, rate: 0.3, rateUnits: 1 },
+		{
+			featureId: "logs",
+			label: labels.logs,
+			unit: "gb",
+			included: 100,
+			rate: 0.15,
+			rateUnits: 1,
+			retention: mirrorRetention("logs"),
+		},
 		{
 			featureId: "traces",
 			label: labels.traces,
 			unit: "gb",
 			included: 100,
-			rate: 0.3,
+			rate: 0.15,
 			rateUnits: 1,
+			retention: mirrorRetention("traces"),
 		},
 		{
 			featureId: "metrics",
 			label: labels.metrics,
 			unit: "gb",
 			included: 100,
-			rate: 0.3,
+			rate: 0.15,
 			rateUnits: 1,
+			retention: mirrorRetention("metrics"),
 		},
 		{
 			featureId: "browser_sessions",
@@ -285,14 +381,6 @@ const fallbackOffer = (labels: Record<string, string>): Offer => ({
 			included: 1_000_000,
 			rate: 5,
 			rateUnits: EVENTS_QUOTE_UNITS,
-		},
-		{
-			featureId: "ai_credits",
-			label: labels.ai_credits,
-			unit: "usd",
-			included: 1,
-			rate: 1,
-			rateUnits: 1,
 		},
 	],
 	ctaLabel: m.pricing_start_trial({ duration: "14" }),
@@ -321,6 +409,9 @@ export const rateBlock = (a: Allotment) => count(a.rateUnits)
 
 export const volume = (a: Allotment, n: number) =>
 	a.unlimited ? m.pricing_unlimited() : a.unit === "gb" ? `${n} GB` : a.unit === "usd" ? money(n) : count(n)
+
+/** "kept 30 days": how long a GB signal's included volume is retained at no charge. */
+export const retainedFor = (retention: Retention) => m.pricing_retained_days({ days: String(retention.days) })
 
 /**
  * AI usage has no flat rate: a credit is a dollar of model spend, priced per

@@ -5,6 +5,7 @@ import {
 	CookielessVisits,
 	CloudflareLogpushConnectors,
 	GcpConnectors,
+	IngestStorageLedger,
 	OrgBillingLinks,
 	OrgClickHouseSettings,
 	OrgIngestAttributeMappings,
@@ -64,6 +65,8 @@ export const INGEST_GATEWAY_GRANTS: ReadonlyArray<{
 	{ table: AwsConnections, privileges: ["SELECT", "UPDATE"] },
 	// The hourly upsert (`ON CONFLICT ... DO UPDATE` reads the row it adds to). No serial column.
 	{ table: OrgIngestRuleStats, privileges: ["SELECT", "INSERT", "UPDATE"] },
+	// The same upsert for the bytes each day keeps, which storage is billed from.
+	{ table: IngestStorageLedger, privileges: ["SELECT", "INSERT", "UPDATE"] },
 	// Cookieless visitors: the gateway mints the day's salt, claims visits, and deletes both once stale.
 	{ table: CookielessSalts, privileges: ["SELECT", "INSERT", "DELETE"] },
 	{ table: CookielessVisits, privileges: ["SELECT", "INSERT", "UPDATE", "DELETE"] },

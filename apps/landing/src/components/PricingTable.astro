@@ -23,6 +23,8 @@ import LedgerHead from "./home/LedgerHead.astro";
 import {
     getOffer,
     isUsageCredit,
+    otherAllotments,
+    telemetryGroups,
     money,
     platformFeatures,
     rateBlock,
@@ -37,47 +39,36 @@ import {
 const offer = await getOffer()
 const PLATFORM_FEATURES = platformFeatures()
 
-// Each row states its own rate, in its own unit. A shared summary line below the
-// list read as detached from the rows it described, and it can't carry two units
-// without becoming a sentence.
-//
-// The amount comes back as its own piece rather than baked into the sentence:
-// this is a mono column, so "$0.30" (5 glyphs) and "$0.002" (6) push their
-// trailing "/ unit" one character apart and the rows read as misaligned. The
-// template gives the amount a fixed `ch` slot instead. Splitting on a sentinel
-// keeps every locale's own word order intact: ja renders "超過分 {rate} / セッション".
-// Events are quoted per block ("then $0.05 / 1,000 events"): the per-event rate
-// is a fraction of a cent and would render as "$0.000".
-const RATE_SLOT = "\u0000"
-const rowRate = (a: Allotment) => {
-    // Unlimited beta rows have no overage: the cell carries the beta note in
-    // "then" position; the (empty) amount slot trails it harmlessly.
-    if (a.unlimited) return { before: m.pricing_free_beta(), amount: "", after: "" }
-    if (isUsageCredit(a)) return { before: m.pricing_rate_ai_usage(), amount: "", after: "" }
-    if (a.rate === undefined) return undefined
-    const rendered =
-        a.unit === "gb"
-            ? m.pricing_rate_gb({ rate: RATE_SLOT })
-            : a.unit === "sessions"
-              ? m.pricing_rate_session({ rate: RATE_SLOT })
-              : m.pricing_rate_events({ rate: RATE_SLOT, block: rateBlock(a) })
-    const [before, after = ""] = rendered.split(RATE_SLOT)
-    return { before, amount: rateLabel(a.rate), after }
-}
-
-// Widest amount in the list, so every row's unit starts on the same axis.
-const rateSlotCh = Math.max(
-    ...offer.allotments.map((a) => (a.rate === undefined || isUsageCredit(a) ? 0 : rateLabel(a.rate).length)),
-    1,
-)
-
-/** Everything a meter row renders, resolved once. */
-const meterRows = offer.allotments.map((a) => ({
-    featureId: a.featureId,
-    label: a.label,
-    included: volume(a, a.included),
-    rate: rowRate(a),
+// Telemetry is one small table, as Better Stack prices it: a column per group of signals that
+// share terms (logs and traces, then metrics) and a row each for what is included, ingestion and
+// retention. Everything else metered sits on the same columns under it.
+const telemetryColumns = telemetryGroups(offer).map((g) => ({
+    key: g.key,
+    label: g.label,
+    included:
+        g.size > 1
+            ? m.pricing_included_each_kept({ amount: g.included, days: String(g.days) })
+            : m.pricing_included_kept({ amount: g.included, days: String(g.days) }),
+    ingestion: g.ingestion === undefined ? undefined : rateLabel(g.ingestion),
+    retention: g.retention === undefined ? undefined : rateLabel(g.retention),
 }))
+
+/** Sessions and events: what is included and what each costs past it. */
+const otherMeters = otherAllotments(offer).map((a) => ({
+        featureId: a.featureId,
+        label: a.label,
+        included: volume(a, a.included),
+        past: a.unlimited
+            ? { note: m.pricing_free_beta() }
+            : isUsageCredit(a)
+              ? { note: m.pricing_ai_billed() }
+              : a.rate === undefined
+                ? undefined
+                : {
+                      amount: rateLabel(a.rate),
+                      unit: a.unit === "sessions" ? "/ session" : `/ ${rateBlock(a)} events`,
+                  },
+    }))
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 // `variant` is explicit rather than inferred from whether copy props are set:
@@ -182,25 +173,104 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                         {m.pricing_included_monthly()}
                     </span>
 
-                    {/* One grid for the whole list, not one per row: the included and
-                        rate columns have to line up down the list, and per-row grids
-                        size their own columns independently. Column spacing is cell
-                        padding rather than gap-x, so the row hairline stays continuous
-                        instead of breaking into three segments. */}
-                    <div class="mt-4 grid grid-cols-[1fr_auto] items-center sm:grid-cols-[1fr_auto_auto]">
-                        {meterRows.map((a) => (
-                            <>
-                                <div class="flex items-center gap-2.5 pb-1 pt-3 sm:border-b sm:border-border/60 sm:py-3 sm:pr-4">
-                                    {a.featureId === "logs" && (
-                                        <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M8 18H16"/><path d="M8 14L11 14"/><path d="M12 4V10H8"/><path d="M4 20L4 10"/><path d="M20 20L20 4"/><path d="M12 2L18 2"/><path d="M6 22L18 22"/><path d="M6 8H6.01"/><path d="M8 6H8.01"/><path d="M10 4H10.01"/></svg>
-                                    )}
-                                    {a.featureId === "traces" && (
-                                        <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M6 18.01L6 18"/><path d="M18 7.01001L18 7.00001"/><path d="M8 20.01L8 20"/><path d="M2 16L4 16"/><path d="M14 9L16 9"/><path d="M20 5L22 5"/><path d="M10 16L10 18"/><path d="M12 11L12 14"/></svg>
-                                    )}
-                                    {a.featureId === "metrics" && (
-                                        <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M2 15.01V15"/><path d="M4 13.01V13"/><path d="M6 11.01V11"/><path d="M8 9.01V9"/><path d="M10 11.01V11"/><path d="M12 13.01V13"/><path d="M14 15.01V15"/><path d="M16 13.01V13"/><path d="M18 11.01V11"/><path d="M20 9.01V9"/><path d="M22 7.01V7"/></svg>
-                                    )}
-                                    {a.featureId === "browser_sessions" && (
+                    {/* From sm: one table, a column per group of signals that share terms. */}
+                    <table class="mt-5 hidden w-full table-fixed border-collapse text-[12.5px] sm:table">
+                        <colgroup>
+                            <col class="w-[26%]" />
+                            {telemetryColumns.map(() => <col />)}
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th></th>
+                                {telemetryColumns.map((c) => (
+                                    <th class="pb-2.5 pr-4 text-left text-[10px] font-normal uppercase tracking-[0.16em] text-fg-muted">{c.label}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="border-t border-border/60 py-3 pr-4 align-top text-fg-muted">{m.pricing_col_included()}</td>
+                                {telemetryColumns.map((c) => <td class="border-t border-border/60 py-3 pr-4 align-top text-fg">{c.included}</td>)}
+                            </tr>
+                            <tr>
+                                <td class="border-t border-border/60 py-3 pr-4 align-top text-fg-muted">{m.pricing_row_ingestion()}</td>
+                                {telemetryColumns.map((c) => (
+                                    <td class="border-t border-border/60 py-3 pr-4 align-top whitespace-nowrap font-mono tabular-nums">
+                                        {c.ingestion !== undefined && (
+                                            <>
+                                                <span class="text-fg">{c.ingestion}</span>{" "}
+                                                <span class="text-fg-muted">{m.pricing_unit_per_gb()}</span>
+                                            </>
+                                        )}
+                                    </td>
+                                ))}
+                            </tr>
+                            <tr>
+                                <td class="border-t border-border/60 py-3 pr-4 align-top text-fg-muted">{m.pricing_row_retention()}</td>
+                                {telemetryColumns.map((c) => (
+                                    <td class="border-t border-border/60 py-3 pr-4 align-top whitespace-nowrap font-mono tabular-nums">
+                                        {c.retention !== undefined && (
+                                            <>
+                                                <span class="text-fg">{c.retention}</span>{" "}
+                                                <span class="text-fg-muted">{m.pricing_unit_per_gb_month()}</span>
+                                            </>
+                                        )}
+                                    </td>
+                                ))}
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    {/* Below sm: each group is its own short list, the table's rows as labels. */}
+                    <div class="mt-5 space-y-5 sm:hidden">
+                        {telemetryColumns.map((c) => (
+                            <div>
+                                <p class="text-[10px] uppercase tracking-[0.16em] text-fg-muted">{c.label}</p>
+                                <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12.5px]">
+                                    <dt class="text-fg-muted">{m.pricing_col_included()}</dt>
+                                    <dd class="text-fg">{c.included}</dd>
+                                    <dt class="text-fg-muted">{m.pricing_row_ingestion()}</dt>
+                                    <dd class="font-mono tabular-nums text-fg">
+                                        {c.ingestion !== undefined && (
+                                            <>
+                                                {c.ingestion} <span class="text-fg-muted">{m.pricing_unit_per_gb()}</span>
+                                            </>
+                                        )}
+                                    </dd>
+                                    <dt class="text-fg-muted">{m.pricing_row_retention()}</dt>
+                                    <dd class="whitespace-nowrap font-mono tabular-nums text-fg">
+                                        {c.retention !== undefined && (
+                                            <>
+                                                {c.retention} <span class="text-fg-muted">{m.pricing_unit_per_gb_month()}</span>
+                                            </>
+                                        )}
+                                    </dd>
+                                </dl>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Everything else metered, on the table's columns: included under the first group, the
+                        price past it under the second. */}
+                    <table class="mt-8 hidden w-full table-fixed border-collapse text-[12.5px] sm:table">
+                        <colgroup>
+                            <col class="w-[26%]" />
+                            <col />
+                            <col />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th class="pb-2.5 pr-4 text-left text-[10px] font-normal uppercase tracking-[0.16em] text-fg-muted" colspan="3">
+                                    {m.pricing_also_metered()}
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {otherMeters.map((a) => (
+                                <tr>
+                                    <td class="border-t border-border/60 py-3 pr-4 align-top">
+                                        <span class="flex items-center gap-2.5">
+                                            {a.featureId === "browser_sessions" && (
                                         <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M4 6L4 6.01"/><path d="M6 4L6 4.01"/><path d="M20.01 6L20 6"/><path d="M18.01 4L18 4"/><path d="M20.01 18L20 18"/><path d="M18.01 20L18 20"/><path d="M6.01001 20L6.00001 20"/><path d="M4.01001 18L4.00001 18"/><path d="M2 8L2 16"/><path d="M22 14L22 16"/><path d="M8 2L16 2"/><path d="M8 22L16 22"/><path d="M22 8V4"/><path d="M17 12.01V12"/><path d="M14 10H15"/><path d="M14 14H15"/><path d="M12 8H9L9 16L12 16"/></svg>
                                     )}
                                     {a.featureId === "product_events" && (
@@ -209,29 +279,44 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     {a.featureId === "ai_credits" && (
                                         <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M17 7V7.01"/><path d="M13 7V7.01"/><path d="M13 11V11.01"/><path d="M17 11V11.01"/><path d="M15 13V17"/><path d="M15 1V5"/><path d="M11.005 8.995L9.005 8.995"/><path d="M21.005 8.995L19.005 8.995"/><path d="M9.01001 17L9.00001 17"/><path d="M3.01001 6L3.00001 6"/><path d="M5.01001 17L5.00001 17"/><path d="M7 13L7 15"/><path d="M7 19L7 21"/></svg>
                                     )}
-                                    <span class="text-[12.5px] text-fg">{a.label}</span>
+                                            <span class="text-fg">{a.label}</span>
+                                        </span>
+                                    </td>
+                                    <td class="border-t border-border/60 py-3 pr-4 align-top font-mono tabular-nums text-fg">
+                                        {m.pricing_rate_included({ amount: a.included })}
+                                    </td>
+                                    <td class="border-t border-border/60 py-3 pr-4 align-top font-mono tabular-nums">
+                                        {a.past !== undefined && "note" in a.past ? (
+                                            <span class="font-sans text-fg-muted">{a.past.note}</span>
+                                        ) : a.past !== undefined ? (
+                                            <>
+                                                <span class="text-fg-muted">{m.pricing_then()}</span>{" "}
+                                                <span class="text-fg">{a.past.amount}</span>{" "}
+                                                <span class="text-fg-muted">{a.past.unit}</span>
+                                            </>
+                                        ) : null}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    <div class="mt-8 sm:hidden">
+                        <p class="text-[10px] uppercase tracking-[0.16em] text-fg-muted">{m.pricing_also_metered()}</p>
+                        {otherMeters.map((a) => (
+                            <div class="mt-3 border-t border-border/60 pt-3 text-[12.5px]">
+                                <div class="flex items-baseline justify-between gap-4">
+                                    <span class="text-fg">{a.label}</span>
+                                    <span class="font-mono tabular-nums text-fg">{m.pricing_rate_included({ amount: a.included })}</span>
                                 </div>
-                                <div class="whitespace-nowrap pb-1 pt-3 text-right font-mono text-[12.5px] tabular-nums text-fg sm:border-b sm:border-border/60 sm:py-3">
-                                    {a.included}
+                                <div class="mt-1 font-mono tabular-nums text-fg-muted">
+                                    {a.past !== undefined && "note" in a.past ? (
+                                        <span class="font-sans">{a.past.note}</span>
+                                    ) : a.past !== undefined ? (
+                                        <>{m.pricing_then()} <span class="text-fg">{a.past.amount}</span> {a.past.unit}</>
+                                    ) : null}
                                 </div>
-                                {/* Below sm the rate drops to its own full-width line:
-                                    three columns squeezed the label column hard enough
-                                    to wrap "Browser Sessions" (and worse in ja/ko).
-                                    From sm it's a real column, left-aligned so every
-                                    "then" starts on the same axis: right-aligning left
-                                    it ragged. */}
-                                <div class="col-span-2 whitespace-nowrap border-b border-border/60 pb-3 text-right font-mono text-[11px] tabular-nums text-fg-muted sm:col-span-1 sm:py-3 sm:pl-6 sm:text-left sm:text-[11.5px]">
-                                    {a.rate && (
-                                        <>
-                                            {a.rate.before}
-                                            <span class="inline-block text-right" style={`min-width:${rateSlotCh}ch`}>
-                                                {a.rate.amount}
-                                            </span>
-                                            {a.rate.after}
-                                        </>
-                                    )}
-                                </div>
-                            </>
+                            </div>
                         ))}
                     </div>
 

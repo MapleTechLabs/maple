@@ -4,13 +4,24 @@
  * chat-platform bot. The source names the surface inside the idempotency key,
  * so two surfaces that legitimately key on the same id can never collide, and a
  * retry of any of them bills once. Infallible by type, because every caller
- * reaches it from a place where a failure must not propagate.
+ * reaches it from a place where a failure must not propagate; storage metering
+ * uses {@link trackFeatureUsageOrFail}, which fails, to retry an unbilled day.
  *
  * Two meters run side by side while AI credits roll out: {@link trackAiCredits}
  * charges dollars per model through Autumn's AI credit system, and
  * {@link trackTokenUsage} keeps the legacy raw token counts for comparison.
  */
-import { Config, Duration, Effect, Option, Redacted, Array as Arr, String as Str } from "effect"
+import {
+	Cause,
+	Config,
+	Duration,
+	Effect,
+	Option,
+	Redacted,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { AI_CREDITS_FEATURE_ID, type AiCreditSource, aiCreditsUsd } from "@maple/domain/billing"
 import type { BillingCustomerId } from "@maple/domain/http"
@@ -108,7 +119,18 @@ const resolveTracker = Effect.fn("AutumnTracker.resolveTracker")(function* (orgI
 	}
 })
 
-const postUsage = (
+/** Autumn did not accept a track call: a non-2xx answer, a timeout or a transport failure. */
+export class AutumnTrackError extends Schema.TaggedError<AutumnTrackError>()(
+	"@maple/billing/AutumnTrackError",
+	{
+		message: Schema.String,
+		feature: Schema.String,
+		status: Schema.optionalKey(Schema.Number),
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
+
+const sendUsage = (
 	client: HttpClient.HttpClient,
 	tracker: { readonly apiUrl: string; readonly secretKey: Redacted.Redacted },
 	request: UsageRequest,
@@ -123,11 +145,28 @@ const postUsage = (
 			),
 		)
 		.pipe(
+			Effect.timeout(TRACK_TIMEOUT),
+			Effect.catchCause((cause) =>
+				Effect.logWarning("autumn track error", cause).pipe(
+					Effect.annotateLogs({ path: request.path, feature: request.label }),
+					Effect.andThen(
+						Effect.fail(
+							new AutumnTrackError({
+								message: "Autumn track call failed",
+								feature: request.label,
+								cause: Cause.squash(cause),
+							}),
+						),
+					),
+				),
+			),
 			Effect.flatMap((response) =>
 				// 409 is Autumn refusing a key it already counted: the retry this key exists for.
 				(response.status >= 200 && response.status < 300) || response.status === 409
 					? Effect.void
 					: response.text.pipe(
+							// The body read gets the same ceiling: a stalled error body must not hold the caller.
+							Effect.timeout(TRACK_TIMEOUT),
 							Effect.orElseSucceed(() => ""),
 							Effect.flatMap((body) =>
 								Effect.logWarning("autumn track failed").pipe(
@@ -139,13 +178,16 @@ const postUsage = (
 									}),
 								),
 							),
+							Effect.andThen(
+								Effect.fail(
+									new AutumnTrackError({
+										message: `Autumn answered ${response.status}`,
+										feature: request.label,
+										status: response.status,
+									}),
+								),
+							),
 						),
-			),
-			Effect.timeout(TRACK_TIMEOUT),
-			Effect.catchCause((cause) =>
-				Effect.logWarning("autumn track error", cause).pipe(
-					Effect.annotateLogs({ path: request.path, feature: request.label }),
-				),
 			),
 			// Named like `autumn-http.ts`'s span so every Autumn call reads as one dependency.
 			Effect.withSpan("autumn.request", {
@@ -153,6 +195,16 @@ const postUsage = (
 				attributes: { "maple.autumn.route": request.path, "peer.service": "autumn" },
 			}),
 		)
+
+/** {@link sendUsage} with its failure already logged and dropped. */
+const postUsage = (
+	client: HttpClient.HttpClient,
+	tracker: { readonly apiUrl: string; readonly secretKey: Redacted.Redacted },
+	request: UsageRequest,
+) =>
+	sendUsage(client, tracker, request).pipe(
+		Effect.catchTag("@maple/billing/AutumnTrackError", () => Effect.void),
+	)
 
 const postAll = (customerId: BillingCustomerId, requests: ReadonlyArray<UsageRequest>) =>
 	Effect.gen(function* () {
@@ -350,4 +402,33 @@ export const trackFeatureUsage = Effect.fn("AutumnTracker.trackFeatureUsage")(fu
 			body: { customer_id: customerId, feature_id: featureId, value, idempotency_key: idempotencyKey },
 		},
 	])
+})
+
+/** What a {@link trackFeatureUsageOrFail} call came to: Autumn took it, or nothing was sent. */
+export type TrackOutcome = "accepted" | "unmetered"
+const ACCEPTED: TrackOutcome = "accepted"
+const UNMETERED: TrackOutcome = "unmetered"
+
+/**
+ * {@link trackFeatureUsage} that fails when Autumn does not accept the call, for a caller that
+ * records what was billed and retries the rest. `"unmetered"` when no call was made (no secret key,
+ * or the default org), so the caller must not record it as billed.
+ */
+export const trackFeatureUsageOrFail = Effect.fn("AutumnTracker.trackFeatureUsageOrFail")(function* ({
+	customerId,
+	featureId,
+	value,
+	idempotencyKey,
+}: TrackFeatureUsageOptions) {
+	if (value === 0) return ACCEPTED
+	const tracker = yield* resolveTracker(customerId)
+	if (tracker === undefined) return UNMETERED
+	const client = yield* HttpClient.HttpClient
+	yield* sendUsage(client, tracker, {
+		path: AUTUMN_TRACK_PATH,
+		label: featureId,
+		idempotencyKey,
+		body: { customer_id: customerId, feature_id: featureId, value, idempotency_key: idempotencyKey },
+	})
+	return ACCEPTED
 })

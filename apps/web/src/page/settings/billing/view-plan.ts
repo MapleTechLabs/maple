@@ -1,3 +1,4 @@
+import { isStorageFeatureId as isStorageFeature } from "@maple/domain/storage-pricing"
 import { isPricingCardFeature } from "@maple/domain/billing"
 import type { CatalogPlan } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
@@ -168,7 +169,11 @@ const includedRun = (plan: CatalogPlan): string =>
 					? `${amount} GB ${item.featureId}`
 					: `${amount} ${featureUnit(item.featureId)}`,
 			]
-		}),
+		}).concat(
+			Arr.some(plan.items, (item) => isStorageFeature(item.featureId))
+				? ["storage for the default retention"]
+				: [],
+		),
 		" · ",
 	)
 
@@ -202,7 +207,7 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 								/\s+/g,
 								" ",
 							)(
-								`${formatCount(Number(feature.included))} ${featureUnit(feature.featureId) === "GB" ? "GB" : ""} ${Str.toLowerCase(feature.label)}`,
+								`${formatCount(Number(feature.included))} ${featureUnit(feature.featureId) === "GB" || featureUnit(feature.featureId) === "GB-month" ? featureUnit(feature.featureId) : ""} ${Str.toLowerCase(feature.label)}`,
 							),
 		),
 		" · ",
@@ -309,7 +314,7 @@ const offerPanel = (
 					]),
 					h.p(
 						[h.Class("mt-3 text-2xs leading-relaxed text-muted-foreground")],
-						["Everything in Maple. Pay per GB past what's included."],
+						["Everything in Maple. Pay per GB past what's included, and per GB-month stored."],
 					),
 				],
 			),

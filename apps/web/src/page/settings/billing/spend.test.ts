@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { isStorageFeatureId } from "@maple/domain/storage-pricing"
 import {
 	AiCreditDay,
 	AiCreditUsageResponse,
@@ -25,7 +26,7 @@ import {
 	rateCaption,
 	usageMeter,
 } from "./spend"
-import { maximumInvoiceCents, uncappedFeatures } from "./controls"
+import { billsStorage, maximumInvoiceCents, uncappedFeatures } from "./controls"
 import { Array as Arr, Option, Record as Rec } from "effect"
 
 // Mock builders construct only the consumed subset of each domain schema.
@@ -53,6 +54,11 @@ const startupPlan = startupPlanWith([
 	item("traces", 100, 0.3),
 	item("metrics", 100, 0.3),
 	item("profiles", 10, 0.6),
+	// Storage per GB-month, billed per 0.01 GB-month, each signal with its own allowance.
+	item("storage_traces", 100, 0.0015, 0.01),
+	item("storage_logs", 100, 0.0015, 0.01),
+	item("storage_metrics", 300, 0.0015, 0.01),
+	item("storage_profiles", 10, 0.0015, 0.01),
 	item("browser_sessions", 5_000, 0.002),
 	// Billed per 1,000 events: `amount` is the price of one billing block.
 	item("product_events", 1_000_000, 0.005, 1_000),
@@ -366,6 +372,10 @@ describe("buildSpendModel", () => {
 			traces: "$0.30/GB",
 			metrics: "Rate unavailable",
 			profiles: "$0.60/GB",
+			storage_traces: "$0.15/GB-month",
+			storage_logs: "$0.15/GB-month",
+			storage_metrics: "$0.15/GB-month",
+			storage_profiles: "$0.15/GB-month",
 			browser_sessions: "$0.002/session",
 			product_events: "Included",
 			ai_credits: "$1/credit",
@@ -383,6 +393,10 @@ describe("buildSpendModel", () => {
 			traces: "$0.30/GB",
 			metrics: "$0.30/GB",
 			profiles: "$0.60/GB",
+			storage_traces: "$0.15/GB-month",
+			storage_logs: "$0.15/GB-month",
+			storage_metrics: "$0.15/GB-month",
+			storage_profiles: "$0.15/GB-month",
 			browser_sessions: "$0.002/session",
 			product_events: "$5/1M events",
 			ai_credits: "$1/credit",
@@ -392,6 +406,7 @@ describe("buildSpendModel", () => {
 		expect(featureUnit("browser_sessions")).toBe("sessions")
 		expect(featureUnit("logs")).toBe("GB")
 		expect(featureUnit("profiles")).toBe("GB")
+		expect(featureUnit("storage_metrics")).toBe("GB-month")
 	})
 
 	it("falls back to the calendar month with no active subscription", () => {
@@ -746,7 +761,7 @@ describe("AI credits", () => {
 		browser_sessions: { granted: 5_000 },
 		product_events: { granted: 1_000_000 },
 	}
-	const withAi = (aiUsed: number, overageCaps: Record<string, number> = {}) => {
+	const withAi = (aiUsed: number, overageCaps: Record<string, number> = {}, plan = startupPlan) => {
 		const result = buildSpendModel({
 			customer: buildCustomer({
 				balances: {
@@ -755,7 +770,7 @@ describe("AI credits", () => {
 				},
 				overageCaps,
 			}),
-			plans: [startupPlan],
+			plans: [plan],
 			usage: usageOf({ ai_credits: aiUsed }),
 			nowMs: NOW,
 		})
@@ -788,13 +803,41 @@ describe("AI credits", () => {
 		expect(Arr.map(uncappedFeatures(uncapped, undefined), (feature) => feature.featureId)).toContain(
 			"ai_credits",
 		)
-		const capped = withAi(0, { ...dataCaps, ai_credits: 25 })
+		// Storage has no cap, so this plan leaves it out to read the caps' ceiling.
+		const withoutStorage = startupPlanWith(
+			Arr.filter(startupPlan.items, (planItem) => !isStorageFeatureId(planItem.featureId)),
+		)
+		const capped = withAi(0, { ...dataCaps, ai_credits: 25 }, withoutStorage)
 		const customer = buildCustomer({
 			balances: { ...dataBalances, ai_credits: { granted: 1, overageAllowed: true } },
 			overageCaps: { ...dataCaps, ai_credits: 25 },
 		})
 		// $39 base, 300 GB at $0.30, 10 GB of profiles at $0.60, 1,000 sessions at $0.002, and $25 of AI credits.
 		expect(maximumInvoiceCents(capped, customer)).toBe(3_900 + 9_000 + 600 + 200 + 2_500)
+	})
+
+	it("leaves the maximum invoice unbounded while storage past its allowance is billed", () => {
+		const caps = {
+			logs: 100,
+			traces: 100,
+			metrics: 100,
+			profiles: 10,
+			browser_sessions: 1_000,
+			product_events: 0,
+			ai_credits: 25,
+		}
+		const customer = buildCustomer({
+			balances: { ...dataBalances, ai_credits: { granted: 1, overageAllowed: true } },
+			overageCaps: caps,
+		})
+		expect(maximumInvoiceCents(withAi(0, caps), customer)).toBeNull()
+		// So the figure names storage as the reason, not an item it cannot price.
+		expect(uncappedFeatures(withAi(0, caps), customer)).toEqual([])
+		expect(billsStorage(withAi(0, caps))).toBe(true)
+		const withoutStorage = startupPlanWith(
+			Arr.filter(startupPlan.items, (planItem) => !isStorageFeatureId(planItem.featureId)),
+		)
+		expect(billsStorage(withAi(0, caps, withoutStorage))).toBe(false)
 	})
 
 	it("draws the AI band from the daily AI spend, accruing only past the included credits", () => {

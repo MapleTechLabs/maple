@@ -172,7 +172,44 @@ describe("pricing offer", () => {
 			"metrics",
 			"browser_sessions",
 			"product_events",
-			"ai_credits",
+		])
+	})
+
+	it("prices each GB signal's retention apart from its ingestion, from that signal's storage feature", () => {
+		const storageItem = (featureId: string, included: number) => ({
+			feature_id: featureId,
+			included,
+			unlimited: false,
+			pooled: false,
+			reset: null,
+			price: {
+				amount: 0.0015,
+				interval: "month",
+				billing_units: 0.01,
+				billing_method: "usage_based",
+				max_purchase: null,
+			},
+		})
+		const [startup, ...rest] = recorded.list
+		const withStorage = {
+			list: [
+				{
+					...startup,
+					items: [
+						storageItem("storage_logs", 100),
+						...startup.items,
+						storageItem("storage_metrics", 300),
+					],
+				},
+				...rest,
+			],
+		}
+		const offer = resolveOffer(Option.some(Schema.decodeSync(PlansListResponse)(withStorage)))
+		expect(offer.allotments.map((a) => [a.featureId, a.retention])).toEqual([
+			// Logs have a storage feature on this plan; traces do not, so their retention has no rate.
+			["logs", { days: 30, rate: 0.15 }],
+			["traces", { days: 30, rate: undefined }],
+			["product_events", undefined],
 		])
 	})
 

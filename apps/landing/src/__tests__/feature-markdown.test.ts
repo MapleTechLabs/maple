@@ -31,14 +31,16 @@ describe("feature page markdown twins", () => {
 
 	it("quotes the per-GB rate on a metered feature and the retention period", async () => {
 		const text = await renderFeature("log-management")
-		expect(text).toContain("Logs: 100 GB included, then $0.30 / GB")
+		expect(text).toContain(
+			"Logs: 100 GB included, kept 30 days, then $0.15 / GB, and $0.15 / GB-month stored",
+		)
 		expect(text).toMatch(/- \*\*retention\*\*: Log lines 30 days/)
 		expect(text).toContain("](https://maple.dev/docs/explore/logs.md)")
 	})
 
 	it("bills code review against AI usage", async () => {
 		const text = await renderFeature("github")
-		expect(text).toMatch(/- \*\*billed as\*\*: AI usage: \$1 included, then billed per model/)
+		expect(text).toMatch(/- \*\*billed as\*\*: AI usage, billed per model by tokens used/)
 	})
 
 	it("says an unmetered feature has no separate charge", async () => {

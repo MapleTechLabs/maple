@@ -19,6 +19,7 @@ import {
 import { spendLimitFor } from "./controls"
 import { sentenceCasePlanName } from "../../kit/billing/plans"
 import { formatQuoteUnits, quoteUnits } from "../../kit/billing/usage"
+import { isStorageFeatureId as isStorageFeature } from "@maple/domain/storage-pricing"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 /**
@@ -37,6 +38,10 @@ export const SPEND_FEATURES = [
 	"traces",
 	"metrics",
 	"profiles",
+	"storage_traces",
+	"storage_logs",
+	"storage_metrics",
+	"storage_profiles",
 	"browser_sessions",
 	"product_events",
 	"ai_credits",
@@ -48,6 +53,10 @@ export const FEATURE_LABELS: Record<SpendFeatureId, string> = {
 	traces: "Traces",
 	metrics: "Metrics",
 	profiles: "Profiles",
+	storage_traces: "Trace storage",
+	storage_logs: "Log storage",
+	storage_metrics: "Metric storage",
+	storage_profiles: "Profile storage",
 	browser_sessions: "Browser sessions",
 	product_events: "Product events",
 	ai_credits: "AI credits",
@@ -70,6 +79,11 @@ export const FEATURE_COLORS: Record<SpendFeatureId, string> = {
 	metrics: "#9085e9",
 	// Rust: a flame-graph hue darker than amber and the lime of AI credits, so deutan CVD keeps them apart.
 	profiles: "#a3542f",
+	// Storage is one slate for every signal: it stacks as one band, apart from the ingest hues.
+	storage_traces: "#7d8590",
+	storage_logs: "#7d8590",
+	storage_metrics: "#7d8590",
+	storage_profiles: "#7d8590",
 	browser_sessions: "#d55181",
 	product_events: "light-dark(var(--chart-5), var(--chart-4))",
 	// Lime: lighter than the traces green, so the two stay apart under deutan CVD.
@@ -88,8 +102,12 @@ type CountFeatureId = keyof typeof COUNT_UNITS
 const isCountFeature = (featureId: string): featureId is CountFeatureId => featureId in COUNT_UNITS
 const countUnitOf = (featureId: string) => (isCountFeature(featureId) ? COUNT_UNITS[featureId] : undefined)
 
-/** `browser_sessions` is metered per session, `product_events` per event, `ai_credits` per credit; the rest per GB. */
-export const featureUnit = (featureId: string): "GB" | "sessions" | "events" | "credits" => {
+/**
+ * `browser_sessions` is metered per session, `product_events` per event, `ai_credits` per credit,
+ * storage per GB-month; the rest per GB.
+ */
+export const featureUnit = (featureId: string): "GB" | "GB-month" | "sessions" | "events" | "credits" => {
+	if (isStorageFeature(featureId)) return "GB-month"
 	const unit = countUnitOf(featureId)
 	return unit === undefined ? "GB" : `${unit}s`
 }
@@ -102,6 +120,7 @@ export const featureUnit = (featureId: string): "GB" | "sessions" | "events" | "
  */
 export const formatRateLabel = (feature: FeatureSpend): string | null => {
 	if (feature.ratePerUnit === null) return null
+	if (isStorageFeature(feature.featureId)) return `$${feature.ratePerUnit.toFixed(2)}/GB-month`
 	const unit = countUnitOf(feature.featureId)
 	if (unit === undefined) return `$${feature.ratePerUnit.toFixed(2)}/GB`
 	const block = quoteUnits(feature.featureId, feature.billingUnits)
@@ -453,6 +472,10 @@ export interface CumulativePoint {
 	readonly traces: number | null
 	readonly metrics: number | null
 	readonly profiles: number | null
+	readonly storage_traces: number | null
+	readonly storage_logs: number | null
+	readonly storage_metrics: number | null
+	readonly storage_profiles: number | null
 	readonly browser_sessions: number | null
 	readonly product_events: number | null
 	readonly ai_credits: number | null
@@ -503,11 +526,19 @@ export function buildCumulativeSeries({
 	const baseDollars = model.baseCents / 100
 	const aiCreditsByDate = new Map(Arr.map(aiDaily?.days ?? [], (day) => [day.date, day.credits] as const))
 
+	const todayDayMs = Math.floor(model.cycle.nowMs / DAY_MS) * DAY_MS
+	const storedDay = (day: DailySpendResponse["days"][number]) =>
+		Date.parse(`${day.date}T00:00:00Z`) > todayDayMs ? 0 : 1
 	const volumes = {
 		logs: (day) => day.logsGB,
 		traces: (day) => day.tracesGB,
 		metrics: (day) => day.metricsGB,
 		profiles: (day) => day.profilesGB ?? 0,
+		// Storage has no daily volume in the warehouse: a flat shape, scaled to the metered total.
+		storage_traces: storedDay,
+		storage_logs: storedDay,
+		storage_metrics: storedDay,
+		storage_profiles: storedDay,
 		browser_sessions: (day) => day.browserSessions,
 		product_events: (day) => day.productEvents ?? 0,
 		ai_credits: (day) => aiCreditsByDate.get(day.date) ?? 0,
@@ -538,6 +569,10 @@ export function buildCumulativeSeries({
 		traces: 0,
 		metrics: 0,
 		profiles: 0,
+		storage_traces: 0,
+		storage_logs: 0,
+		storage_metrics: 0,
+		storage_profiles: 0,
 		browser_sessions: 0,
 		product_events: 0,
 		ai_credits: 0,
@@ -579,6 +614,10 @@ export function buildCumulativeSeries({
 			traces: future ? null : accrued.traces,
 			metrics: future ? null : accrued.metrics,
 			profiles: future ? null : accrued.profiles,
+			storage_traces: future ? null : accrued.storage_traces,
+			storage_logs: future ? null : accrued.storage_logs,
+			storage_metrics: future ? null : accrued.storage_metrics,
+			storage_profiles: future ? null : accrued.storage_profiles,
 			browser_sessions: future ? null : accrued.browser_sessions,
 			product_events: future ? null : accrued.product_events,
 			ai_credits: future ? null : accrued.ai_credits,

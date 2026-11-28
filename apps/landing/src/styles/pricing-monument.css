@@ -73,7 +73,7 @@
 }
 .pricing-rates__grid {
 	display: grid;
-	grid-template-columns: repeat(6, minmax(0, 1fr));
+	grid-template-columns: repeat(4, minmax(0, 1fr));
 	margin-top: 18px;
 	border-block: 1px solid var(--border);
 	background: var(--background);
@@ -88,6 +88,7 @@
 .pricing-rates__cell:last-child {
 	border-right: 0;
 }
+/* Price and unit on one line: four cells leave room for "$0.002 / session". */
 .pricing-rates__amount {
 	display: flex;
 	flex-wrap: wrap;

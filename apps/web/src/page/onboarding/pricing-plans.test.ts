@@ -20,11 +20,13 @@ describe("getFeatureRows", () => {
 				item("logs", 100),
 				item("ai_input_tokens", 0),
 				item("some_future_feature", 5),
+				item("traces", 100),
+				// Billed, but off the public price list.
 				item("ai_credits", 1),
 			],
 		})
 
-		expect(Arr.map(getFeatureRows(plan), (row) => row.featureId)).toEqual(["logs", "ai_credits"])
+		expect(Arr.map(getFeatureRows(plan), (row) => row.featureId)).toEqual(["logs", "traces"])
 	})
 
 	it("leaves profiles off the plan cards until they are advertised", () => {

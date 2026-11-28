@@ -119,6 +119,7 @@ const gatewayStatements = [
 	"UPDATE gcp_connectors SET last_error = 'x', updated_at = now() WHERE id = 'x'",
 	"UPDATE aws_connections SET stream_last_error = 'x' WHERE id = 'x'",
 	"INSERT INTO org_ingest_rule_stats (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values) VALUES ('o', 'r', now(), 'traces', 1, 0, 0, 0) ON CONFLICT (org_id, rule_id, bucket, signal) DO UPDATE SET matched = org_ingest_rule_stats.matched + EXCLUDED.matched",
+	"INSERT INTO ingest_storage_ledger (org_id, signal, day, retention_days, bytes) VALUES ('o', 'logs', now(), 30, 10) ON CONFLICT (org_id, signal, day, retention_days) DO UPDATE SET bytes = ingest_storage_ledger.bytes + EXCLUDED.bytes",
 	"WITH inserted AS (INSERT INTO cookieless_salts (day, salt) VALUES ('2026-11-22', 'c2FsdA==') ON CONFLICT (day) DO NOTHING RETURNING salt) SELECT salt FROM inserted UNION ALL SELECT salt FROM cookieless_salts WHERE day = '2026-11-22' LIMIT 1",
 	"DELETE FROM cookieless_salts WHERE day < '2026-11-21'",
 	"DELETE FROM cookieless_visits WHERE last_seen_at < now() - interval '1 day'",
@@ -133,6 +134,7 @@ const outsideTheGateway = [
 	"UPDATE org_retention_policies SET retention_days = '{}' WHERE org_id = 'x'",
 	"INSERT INTO sources SELECT * FROM sources WHERE false",
 	"TRUNCATE org_ingest_rule_stats",
+	"DELETE FROM ingest_storage_ledger",
 	"CREATE TABLE public.injected (id int)",
 ]
 

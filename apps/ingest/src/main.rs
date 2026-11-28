@@ -13,6 +13,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 mod autumn;
 mod rules_gateway;
 mod sources;
+mod storage_ledger;
 mod task_protection;
 
 use std::collections::{HashMap, HashSet};
@@ -122,6 +123,7 @@ use sources::{
     OverrideMode, PauseWindow, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef,
     SourceSignal, MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
 };
+use storage_ledger::{LedgerWriteError, StorageLedgerRow, StorageLedgerSink};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::Instrument;
 use tracing::{debug, error, info, warn, Span};
@@ -1135,6 +1137,9 @@ struct ClickHouseTargetResolver {
 /// How often per-rule ingest stats are written to `org_ingest_rule_stats`.
 const INGEST_RULE_STATS_FLUSH_INTERVAL: Duration = Duration::from_mins(1);
 
+/// How often the bytes each day keeps are written to `ingest_storage_ledger`.
+const STORAGE_LEDGER_FLUSH_INTERVAL: Duration = Duration::from_mins(1);
+
 /// How long a resolved ClickHouse target is reused.
 const CLICKHOUSE_TARGET_TTL: Duration = Duration::from_mins(1);
 /// How long "no ready ClickHouse target" is remembered. Matches the ingest-key
@@ -1236,6 +1241,9 @@ trait KeyStore: Send + Sync {
 
     /// Adds per-rule counts into `org_ingest_rule_stats`, one statement for all `rows`.
     async fn record_ingest_rule_stats(&self, rows: &[IngestRuleStatRow]) -> Result<(), String>;
+
+    /// Adds stored bytes into `ingest_storage_ledger`, one statement for all `rows`.
+    async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), LedgerWriteError>;
 
     async fn fetch_clickhouse_target(
         &self,
@@ -1755,6 +1763,8 @@ struct AppState {
     ingest_rule_resolver: IngestRuleResolver,
     /// Per-rule counts awaiting the next flush to `org_ingest_rule_stats`.
     ingest_rule_stats: Arc<IngestRuleStatsSink>,
+    /// Billed bytes per retention stamp awaiting the next flush to `ingest_storage_ledger`.
+    storage_ledger: Arc<StorageLedgerSink>,
     cloudflare_resolver: CloudflareConnectorResolver,
     gcp_resolver: GcpConnectorResolver,
     aws_resolver: AwsConnectionResolver,
@@ -2055,6 +2065,39 @@ impl DecodedPayload {
             Self::Metrics(request) => request
                 .resource_metrics
                 .sort_by_key(|resource| stamps.of(resource.resource.as_ref())),
+        }
+    }
+
+    /// The items of each resource with the period they are stored for, to split billed bytes by.
+    fn stamp_shares(&self, stamps: SourceStamps<'_>) -> Vec<(u16, usize)> {
+        if stamps.is_uniform() {
+            return vec![(stamps.of(None), 1)];
+        }
+        match self {
+            Self::Traces(request) => request
+                .resource_spans
+                .iter()
+                .map(|resource| {
+                    let items: usize = resource.scope_spans.iter().map(|scope| scope.spans.len()).sum();
+                    (stamps.of(resource.resource.as_ref()), items)
+                })
+                .collect(),
+            Self::Logs(request) => request
+                .resource_logs
+                .iter()
+                .map(|resource| {
+                    let items: usize = resource.scope_logs.iter().map(|scope| scope.log_records.len()).sum();
+                    (stamps.of(resource.resource.as_ref()), items)
+                })
+                .collect(),
+            Self::Metrics(request) => request
+                .resource_metrics
+                .iter()
+                .map(|resource| {
+                    let items: usize = resource.scope_metrics.iter().map(|scope| scope.metrics.len()).sum();
+                    (stamps.of(resource.resource.as_ref()), items)
+                })
+                .collect(),
         }
     }
 
@@ -3419,6 +3462,19 @@ async fn main() {
     }
     let stats_store = Arc::clone(&store);
 
+    // Storage is billed from the ledger, so it is written only where ingest is billed.
+    let storage_ledger = Arc::new(StorageLedgerSink::default());
+    let storage_ledger_enabled = autumn_tracker.is_some();
+    let (stop_ledger_flusher, ledger_flusher_stopped) = tokio::sync::watch::channel(false);
+    let ledger_flusher = storage_ledger_enabled.then(|| {
+        tokio::spawn(storage_ledger::run_ledger_flusher(
+            Arc::clone(&storage_ledger),
+            Arc::clone(&store),
+            STORAGE_LEDGER_FLUSH_INTERVAL,
+            ledger_flusher_stopped,
+        ))
+    });
+
     // Same pooled client as every other outbound call; `http_client` itself is
     // moved into the state below.
     let http_client_for_blobs = http_client.clone();
@@ -3467,6 +3523,7 @@ async fn main() {
             10_000,
         ),
         ingest_rule_stats: Arc::clone(&ingest_rule_stats),
+        storage_ledger: Arc::clone(&storage_ledger),
         cloudflare_resolver: CloudflareConnectorResolver {
             store: Arc::clone(&store),
             lookup_hmac_key: config.lookup_hmac_key.clone(),
@@ -3626,6 +3683,16 @@ async fn main() {
     // Counts since the last periodic flush; best effort like the flusher itself.
     if ingest_rules_enabled {
         ingest_rule_stats.flush(stats_store.as_ref()).await;
+    }
+    if storage_ledger_enabled {
+        // Stop the periodic flusher first: a flush in flight puts back what it could not write.
+        if stop_ledger_flusher.send(true).is_err() {
+            warn!("Storage ledger flusher had already stopped");
+        }
+        if let Some(flusher) = ledger_flusher {
+            drop(flusher.await);
+        }
+        storage_ledger.flush_final(stats_store.as_ref()).await;
     }
 
     if let Some(providers) = telemetry_providers {
@@ -4223,6 +4290,8 @@ async fn accept_grpc_decoded(
                         billable_gb(decoded_bytes as u64),
                     );
                 }
+                let shares = request_stamp_shares(resolved, &claims.named_sources, &decoded);
+                record_stored_bytes(state, resolved, signal.path(), &shares, decoded_bytes as u64);
             }
             Ok(())
         }
@@ -6223,6 +6292,15 @@ async fn handle_profiles_inner(
         if let Some(tracker) = &state.autumn_tracker {
             tracker.track(&org_id, PROFILES_FEATURE_ID, billable_gb(decoded_bytes as u64));
         }
+        let shares = [(retention_days, 1_usize)];
+        // Pinned to Maple's storage above, so recorded even for an org on its own ClickHouse.
+        record_managed_stored_bytes(
+            state,
+            &resolved_key,
+            PROFILES_FEATURE_ID,
+            &shares,
+            decoded_bytes as u64,
+        );
     }
     state.resolver.note_source_use(&resolved_key, false);
     Ok(accepted)
@@ -7562,6 +7640,9 @@ async fn handle_signal_inner(
         state
             .resolver
             .note_claimed_source_use(&claims.claimed_sources);
+        // The same bytes `handle_signal` bills, split by the period each resource is kept for.
+        let shares = request_stamp_shares(&resolved_key, &claims.named_sources, &decoded);
+        record_stored_bytes(state, &resolved_key, signal.path(), &shares, decoded_bytes as u64);
     }
 
     Ok((
@@ -7814,6 +7895,14 @@ async fn handle_cloudflare_logpush_inner(
                         billable_gb(metered_bytes as u64),
                     );
                 }
+                let shares = [(resolved_key.retention.get(RetentionSignal::Logs), 1_usize)];
+                record_stored_bytes(
+                    state,
+                    &resolved_key,
+                    Signal::Logs.path(),
+                    &shares,
+                    metered_bytes as u64,
+                );
             }
 
             Ok((
@@ -8231,6 +8320,8 @@ async fn handle_gcp_logpush_inner(
         if let Some(tracker) = &state.autumn_tracker {
             tracker.track(org_id, Signal::Logs.path(), billable_gb(metered_bytes as u64));
         }
+        let shares = [(resolved.key.retention.get(RetentionSignal::Logs), 1_usize)];
+        record_stored_bytes(state, &resolved.key, Signal::Logs.path(), &shares, metered_bytes as u64);
     }
 
     Ok((response, GcpPushOutcome::Accepted))
@@ -8582,6 +8673,8 @@ async fn store_delivery(
         if let Some(tracker) = &state.autumn_tracker {
             tracker.track(org_id, signal, billable_gb(metered_bytes as u64));
         }
+        let shares = [(key.retention.get(RetentionSignal::Metrics), 1_usize)];
+        record_stored_bytes(state, key, signal, &shares, metered_bytes as u64);
     }
     Ok(stored)
 }
@@ -10373,6 +10466,52 @@ fn named_source_stamps(
         .collect()
 }
 
+/// A request's items per storage period, as its resources are stamped.
+fn request_stamp_shares(
+    resolved_key: &ResolvedIngestKey,
+    named_sources: &[NamedSource],
+    decoded: &DecodedPayload,
+) -> Vec<(u16, usize)> {
+    let signal = decoded.retention_signal();
+    let named = named_source_stamps(resolved_key, named_sources, signal);
+    decoded.stamp_shares(SourceStamps::new(resolved_key.retention.get(signal), &named))
+}
+
+/// Adds billed bytes to the storage ledger, split over the periods they are kept for.
+/// Only billed ingest is recorded, and nothing an org's own ClickHouse stores.
+fn record_stored_bytes(
+    state: &AppState,
+    resolved_key: &ResolvedIngestKey,
+    feature_id: &'static str,
+    shares: &[(u16, usize)],
+    bytes: u64,
+) {
+    if native_destination_for(resolved_key) == ExportDestination::ClickHouse {
+        return;
+    }
+    record_managed_stored_bytes(state, resolved_key, feature_id, shares, bytes);
+}
+
+/// `record_stored_bytes` for a signal Maple stores whatever the org's routing, as profiles are.
+fn record_managed_stored_bytes(
+    state: &AppState,
+    resolved_key: &ResolvedIngestKey,
+    feature_id: &'static str,
+    shares: &[(u16, usize)],
+    bytes: u64,
+) {
+    if state.autumn_tracker.is_none() || resolved_key.org_id == SENTINEL_ORG_ID {
+        return;
+    }
+    state.storage_ledger.record_split(
+        &resolved_key.org_id,
+        feature_id,
+        shares,
+        bytes,
+        current_time_millis(),
+    );
+}
+
 /// The events period each resource of a request carries as `events_retention_days`, so
 /// the `product_events` rows views derive from its spans keep its source's period.
 fn events_stamps(resolved_key: &ResolvedIngestKey, named_sources: &[NamedSource]) -> EventsStamps {
@@ -12150,6 +12289,55 @@ impl KeyStore for PostgresKeyStore {
         Ok(())
     }
 
+    async fn record_storage_ledger(&self, rows: &[StorageLedgerRow]) -> Result<(), LedgerWriteError> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let numbers: Vec<(i64, i32, i64)> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.day_ms,
+                    i32::from(row.retention_days),
+                    i64::try_from(row.bytes).unwrap_or(i64::MAX),
+                )
+            })
+            .collect();
+        let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(rows.len() * 5);
+        for (row, (day_ms, retention_days, bytes)) in rows.iter().zip(&numbers) {
+            params.push(&row.org_id);
+            params.push(&row.signal);
+            params.push(day_ms);
+            params.push(retention_days);
+            params.push(bytes);
+        }
+        let client = self.client().await.map_err(LedgerWriteError::NotWritten)?;
+        client
+            .execute(
+                storage_ledger::storage_ledger_upsert_sql(rows.len()).as_str(),
+                &params,
+            )
+            .instrument(postgres_client_span(
+                "record_storage_ledger",
+                "INSERT",
+                "ingest_storage_ledger",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| {
+                let message = format!("postgres record_storage_ledger failed: {error}");
+                // Postgres answered with an error, so the statement rolled back; anything else
+                // (a dropped connection) may have come after it committed.
+                if error.as_db_error().is_some() {
+                    LedgerWriteError::NotWritten(message)
+                } else {
+                    LedgerWriteError::Unknown(message)
+                }
+            })?;
+        Ok(())
+    }
+
     async fn fetch_clickhouse_target(
         &self,
         org_id: &str,
@@ -12702,6 +12890,10 @@ impl KeyStore for StaticKeyStore {
     }
 
     async fn record_ingest_rule_stats(&self, _rows: &[IngestRuleStatRow]) -> Result<(), String> {
+        Ok(())
+    }
+
+    async fn record_storage_ledger(&self, _rows: &[StorageLedgerRow]) -> Result<(), LedgerWriteError> {
         Ok(())
     }
 
@@ -14391,6 +14583,12 @@ mod tests {
         ingest_rule_errors: AtomicBool,
         /// Every row `record_ingest_rule_stats` was given.
         ingest_rule_stats: std::sync::Mutex<Vec<IngestRuleStatRow>>,
+        /// Every row `record_storage_ledger` was given.
+        storage_ledger: std::sync::Mutex<Vec<StorageLedgerRow>>,
+        /// Fails `record_storage_ledger`.
+        storage_ledger_errors: AtomicBool,
+        /// Fails `record_storage_ledger` as if the connection dropped after it was sent.
+        storage_ledger_unconfirmed: AtomicBool,
     }
 
     impl FakeKeyStore {
@@ -14644,6 +14842,19 @@ mod tests {
             rows: &[IngestRuleStatRow],
         ) -> Result<(), String> {
             self.ingest_rule_stats.lock().unwrap().extend_from_slice(rows);
+            Ok(())
+        }
+        async fn record_storage_ledger(
+            &self,
+            rows: &[StorageLedgerRow],
+        ) -> Result<(), LedgerWriteError> {
+            if self.storage_ledger_errors.load(Ordering::Relaxed) {
+                return Err(LedgerWriteError::NotWritten("storage ledger store down".to_owned()));
+            }
+            if self.storage_ledger_unconfirmed.load(Ordering::Relaxed) {
+                return Err(LedgerWriteError::Unknown("connection lost after the write".to_owned()));
+            }
+            self.storage_ledger.lock().unwrap().extend_from_slice(rows);
             Ok(())
         }
         async fn fetch_clickhouse_target(
@@ -15052,6 +15263,7 @@ mod tests {
                 16,
             ),
             ingest_rule_stats: Arc::new(IngestRuleStatsSink::default()),
+            storage_ledger: Arc::new(StorageLedgerSink::default()),
             cloudflare_resolver: CloudflareConnectorResolver {
                 store: Arc::clone(&key_store),
                 lookup_hmac_key: "test-hmac-key".to_owned(),
@@ -16156,6 +16368,94 @@ mod tests {
         assert!((billed[0].1 - expected).abs() < 1e-12, "{billed:?}");
         drop(std::fs::remove_dir_all(&refused_dir));
         drop(std::fs::remove_dir_all(&resent_dir));
+    }
+
+    // The billed bytes of a stored export wait in the storage ledger under the org's period.
+    #[tokio::test]
+    async fn a_billed_profiles_export_adds_its_bytes_to_the_storage_ledger() {
+        let queue_dir = unique_main_test_dir("profiles-storage-ledger");
+        let key = "maple_sk_test_profiles_ledger";
+        let store = private_key_store(key, "org_profiles_ledger", false);
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        let (state, _rx) = with_fake_autumn(state).await;
+        send_sdk_profiles(&state, key).await.expect("the export is stored");
+        assert_eq!(
+            imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await.len(),
+            PROFILES_SDK_ROWS
+        );
+        let rows = state.storage_ledger.take();
+        assert_ne!(rows, Vec::new());
+        assert!(rows
+            .iter()
+            .all(|row| row.org_id == "org_profiles_ledger" && row.signal == PROFILES_FEATURE_ID));
+        assert!(rows.iter().map(|row| row.bytes).sum::<u64>() > 0);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Storage is billed only for what Maple stores: never the sentinel org, never an org's own
+    // ClickHouse, and nothing where ingest is not billed.
+    #[tokio::test]
+    async fn stored_bytes_skip_the_sentinel_org_and_own_clickhouse() {
+        let queue_dir = unique_main_test_dir("storage-ledger-skips");
+        let store = private_key_store("maple_sk_test_ledger_skips", "org_real", false);
+        let (state, _imports) = profiles_test_state(store, queue_dir.clone()).await;
+        let shares = [(30_u16, 1_usize)];
+        record_stored_bytes(&state, &test_key(), "logs", &shares, 10);
+        assert_eq!(state.storage_ledger.take(), Vec::new(), "ingest is not billed here");
+
+        let (state, _rx) = with_fake_autumn(state).await;
+        let sentinel = ResolvedIngestKey {
+            org_id: SENTINEL_ORG_ID.to_owned(),
+            ..test_key()
+        };
+        let own_clickhouse = ResolvedIngestKey {
+            clickhouse_ready: true,
+            ..test_key()
+        };
+        record_stored_bytes(&state, &sentinel, "logs", &shares, 10);
+        record_stored_bytes(&state, &own_clickhouse, "logs", &shares, 10);
+        assert_eq!(state.storage_ledger.take(), Vec::new());
+        record_stored_bytes(&state, &test_key(), "logs", &shares, 10);
+        let rows = state.storage_ledger.take();
+        assert_eq!(rows.len(), 1);
+        assert_eq!((rows[0].org_id.as_str(), rows[0].bytes), ("org_real", 10));
+        // Profiles stay in Maple's storage for an org on its own ClickHouse, so they are billed.
+        record_managed_stored_bytes(&state, &own_clickhouse, PROFILES_FEATURE_ID, &shares, 10);
+        assert_eq!(state.storage_ledger.take().len(), 1);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // A store that keeps failing loses nothing: the rows wait, however many flushes fail.
+    #[tokio::test]
+    async fn a_failing_store_keeps_the_storage_ledger_rows() {
+        let store = FakeKeyStore::default();
+        store.storage_ledger_errors.store(true, Ordering::Relaxed);
+        let sink = StorageLedgerSink::default();
+        sink.record("org_a", "logs", 30, 10, 1_764_072_000_000);
+        for _ in 0..40 {
+            assert_eq!(sink.flush(&store).await, 0);
+        }
+        assert_eq!(*store.storage_ledger.lock().unwrap(), Vec::new());
+
+        store.storage_ledger_errors.store(false, Ordering::Relaxed);
+        sink.flush(&store).await;
+        let written = store.storage_ledger.lock().unwrap().clone();
+        assert_eq!(written.len(), 1);
+        assert_eq!(written[0].bytes, 10);
+    }
+
+    // A write that may have committed is not retried: the upsert adds, so it could bill twice.
+    #[tokio::test]
+    async fn a_write_that_may_have_committed_is_not_retried() {
+        let store = FakeKeyStore::default();
+        store.storage_ledger_unconfirmed.store(true, Ordering::Relaxed);
+        let sink = StorageLedgerSink::default();
+        sink.record("org_a", "logs", 30, 10, 1_764_072_000_000);
+        sink.flush(&store).await;
+
+        store.storage_ledger_unconfirmed.store(false, Ordering::Relaxed);
+        sink.flush(&store).await;
+        assert_eq!(*store.storage_ledger.lock().unwrap(), Vec::new());
     }
 
     // The spec's development path and the path it moves to both take an export.
@@ -24587,6 +24887,33 @@ mod tests {
             let queue_dir = unique_main_test_dir(name);
             let (state, imports) = profiles_test_state(Arc::clone(store), queue_dir.clone()).await;
             (state, imports, queue_dir)
+        }
+
+        #[test]
+        fn billed_bytes_split_by_the_items_each_period_keeps() {
+            let resource = |source: Option<&str>, logs: usize| ResourceLogs {
+                resource: Some(Resource {
+                    attributes: source
+                        .map(|id| vec![string_attribute(SOURCE_ID_ATTRIBUTE, id)])
+                        .unwrap_or_default(),
+                    ..Resource::default()
+                }),
+                scope_logs: vec![ScopeLogs {
+                    log_records: vec![LogRecord::default(); logs],
+                    ..ScopeLogs::default()
+                }],
+                ..ResourceLogs::default()
+            };
+            let decoded = DecodedPayload::Logs(ExportLogsServiceRequest {
+                resource_logs: vec![resource(Some("src_long"), 3), resource(None, 1)],
+            });
+            let named = [("src_long".to_owned(), 90_u16)];
+            assert_eq!(
+                decoded.stamp_shares(SourceStamps::new(30, &named)),
+                vec![(90, 3), (30, 1)]
+            );
+            // One period for the whole request: no resource is read.
+            assert_eq!(decoded.stamp_shares(SourceStamps::uniform(30)), vec![(30, 1)]);
         }
 
         /// One `/v0/events` body: its datasource and rows.

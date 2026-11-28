@@ -139,7 +139,8 @@ const dash0: AlternativesPage = {
 			url: "https://maple.dev",
 			ours: true,
 			pickIf: "You want Dash0's model, source-available and self-hostable, with uptime, on-call, replay and error tracking in one app.",
-			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
+			pricing:
+				"$39/mo with 100 GB each of logs, traces and metrics, kept for their default retention, then $0.15 per GB ingested and $0.15 per GB-month stored",
 			openSource:
 				"Source-available (FSL-1.1, Apache 2.0 after two years); self-hosts for one team, without alerting, dashboards or PromQL yet",
 			keyFact: "Yes",
@@ -427,7 +428,8 @@ const datadog: AlternativesPage = {
 			url: "https://maple.dev",
 			ours: true,
 			pickIf: "You are moving to OpenTelemetry and want a per-GB bill with no host or seat fee.",
-			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
+			pricing:
+				"$39/mo with 100 GB each of logs, traces and metrics, kept for their default retention, then $0.15 per GB ingested and $0.15 per GB-month stored",
 			openSource: "Source-available (FSL-1.1, Apache 2.0 after two years)",
 			keyFact: "Yes, as one container for one team; no alerting, dashboards or PromQL yet",
 			summary:
@@ -698,7 +700,8 @@ const grafana: AlternativesPage = {
 			url: "https://maple.dev",
 			ours: true,
 			pickIf: "You want traces, logs and metrics in one store behind one query surface, with PromQL for metrics and a Grafana dashboard import.",
-			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
+			pricing:
+				"$39/mo with 100 GB each of logs, traces and metrics, kept for their default retention, then $0.15 per GB ingested and $0.15 per GB-month stored",
 			openSource: "Source-available (FSL-1.1, Apache 2.0 after two years)",
 			keyFact: "Yes, on Maple Cloud",
 			summary:
@@ -944,7 +947,8 @@ const newRelic: AlternativesPage = {
 			url: "https://maple.dev",
 			ours: true,
 			pickIf: "More than a handful of engineers need full access, and you want to stop counting seats.",
-			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
+			pricing:
+				"$39/mo with 100 GB each of logs, traces and metrics, kept for their default retention, then $0.15 per GB ingested and $0.15 per GB-month stored",
 			openSource: "Source-available (FSL-1.1, Apache 2.0 after two years)",
 			keyFact: "None",
 			summary:
@@ -1219,7 +1223,7 @@ const sentry: AlternativesPage = {
 			ours: true,
 			pickIf: "You want errors, traces, logs and session replay from OpenTelemetry in one app, priced per GB.",
 			pricing:
-				"$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB; 5,000 browser sessions included",
+				"$39/mo with 100 GB each of logs, traces and metrics, kept for their default retention, then $0.15 per GB ingested and $0.15 per GB-month stored; 5,000 browser sessions included",
 			openSource: "Source-available (FSL-1.1, Apache 2.0 after two years)",
 			keyFact: "No; OpenTelemetry SDKs",
 			summary:

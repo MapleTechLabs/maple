@@ -14,6 +14,7 @@ import {
 	money,
 	rateBlock,
 	rateLabel,
+	retainedFor,
 	volume,
 	type Allotment,
 	type Offer,
@@ -46,9 +47,34 @@ const rateText = (a: Allotment): string => {
 	return m.pricing_rate_gb({ rate })
 }
 
-/** "Traces: 100 GB included, then $0.30 / GB". */
+/** "Traces: 100 GB included, then $0.15 / GB". */
 export const meterLine = (a: Allotment): string =>
-	`${a.label}: ${m.pricing_rate_included({ amount: volume(a, a.included) })}, ${rateText(a)}`
+	Arr.join(
+		[
+			`${a.label}: ${m.pricing_rate_included({ amount: volume(a, a.included) })}`,
+			...(a.retention === undefined ? [] : [retainedFor(a.retention)]),
+			rateText(a),
+			...(a.retention?.rate === undefined
+				? []
+				: [m.pricing_rate_retention({ rate: rateLabel(a.retention.rate) })]),
+		],
+		", ",
+	)
+
+/**
+ * How a feature is billed: its meters from the offer, or for AI usage (off the public price list,
+ * still billed) a plain line, so an AI feature never reads as part of the plan.
+ */
+const billedAs = (plan: FeaturePlan, meters: ReadonlyArray<Allotment>): string => {
+	const lines = [
+		...Arr.map(meters, meterLine),
+		...(Arr.some(plan.meters, (id) => id === "ai_credits") &&
+		!Arr.some(meters, (a) => a.featureId === "ai_credits")
+			? [m.feat_plan_ai_usage()]
+			: []),
+	]
+	return lines.length > 0 ? Arr.join(lines, " · ") : m.feat_plan_no_meter()
+}
 
 export const planRows = (plan: FeaturePlan, offer: Offer): PlanRow[] => {
 	const price = `${money(offer.price)}${offer.interval ?? ""}`
@@ -65,7 +91,7 @@ export const planRows = (plan: FeaturePlan, offer: Offer): PlanRow[] => {
 		},
 		{
 			key: m.feat_plan_row_billed(),
-			value: meters.length > 0 ? Arr.join(Arr.map(meters, meterLine), " · ") : m.feat_plan_no_meter(),
+			value: billedAs(plan, meters),
 		},
 		...(plan.retention ? [{ key: m.feat_plan_row_retention(), value: plan.retention() }] : []),
 		...(plan.limit ? [{ key: m.feat_plan_row_limit(), value: plan.limit() }] : []),

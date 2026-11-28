@@ -5,10 +5,12 @@
  *   hourly    — scrape_target_checks retention (was inline on the
  *               scrape-results write path; a busy target writes ~75k
  *               rows/day, so the 10k cap binds within hours), PlanetScale
- *               event retention, and source maps unused for 90 days
+ *               event retention, source maps unused for 90 days, and
+ *               storage billing (its first hours of each UTC day)
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import type { ApiPortsLayer } from "./bindings"
 import { runEvent, settleFire } from "./events"
@@ -44,6 +46,7 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 					{ runScrapeCheckRetention },
 					{ runPlanetScaleEventRetention },
 					{ runSourceMapRetention },
+					{ runStorageMetering },
 				] = yield* Effect.all([
 					vcsSyncModule,
 					Effect.promise(
@@ -53,6 +56,7 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 						() => import("@maple/backend/services/integrations/planetscale-event-retention"),
 					),
 					Effect.promise(() => import("@maple/backend/services/sourcemaps/SourceMapService")),
+					Effect.promise(() => import("@maple/backend/services/billing/storage-metering")),
 				])
 				// The sweeps ride this one cron, sequentially: they share the tick's
 				// one Postgres socket, so running them concurrently would only queue. A failed
@@ -60,13 +64,23 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 				// The jobs talk to Postgres, and the source map sweep to its bucket from `ports`.
 				return yield* runEvent(
 					Effect.all(
-						[runScrapeCheckRetention, runPlanetScaleEventRetention, runSourceMapRetention],
+						[
+							runScrapeCheckRetention,
+							runPlanetScaleEventRetention,
+							runSourceMapRetention,
+							runStorageMetering,
+						],
 						{
 							mode: "result",
 							discard: true,
 						},
 					),
-					DatabasePgLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
+					DatabasePgLive.pipe(
+						Layer.provideMerge(vcsSyncTelemetry),
+						Layer.provideMerge(ports),
+						// Storage metering tracks to Autumn.
+						Layer.provideMerge(FetchHttpClient.layer),
+					),
 				)
 			}).pipe(settleFire(SCRAPE_RETENTION_CRON)),
 		)
