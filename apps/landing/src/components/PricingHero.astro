@@ -51,7 +51,7 @@ const rateCells: ReadonlyArray<RateCell> = [
 		key: g.key,
 		label: g.label,
 		price: g.ingestion === undefined ? "" : rateLabel(g.ingestion),
-		unit: "/ GB",
+		unit: g.ingestion === undefined ? "" : "/ GB",
 		lines: [
 			g.size > 1 ? m.pricing_includes_each({ amount: g.included }) : m.pricing_rate_included({ amount: g.included }),
 			...(g.retention === undefined
@@ -63,7 +63,7 @@ const rateCells: ReadonlyArray<RateCell> = [
 		key: a.featureId,
 		label: a.label,
 		price: a.unlimited ? m.pricing_unlimited() : a.rate === undefined ? "" : rateLabel(a.rate),
-		unit: a.unlimited ? "" : a.unit === "sessions" ? "/ session" : `/ ${rateBlock(a)} events`,
+		unit: a.unlimited || a.rate === undefined ? "" : a.unit === "sessions" ? "/ session" : `/ ${rateBlock(a)} events`,
 		lines: [a.unlimited ? m.pricing_free_beta() : m.pricing_rate_included({ amount: volume(a, a.included) })],
 	})),
 ];
