@@ -638,8 +638,11 @@ export const runPlannedStep = <A, E, R, E2, R2>(
 					Effect.andThen(cleanup("verify-default", restore.verifySql)),
 					Effect.map((response) => defaultRestored(restore, response)),
 					Effect.catchCause((cause) =>
-						Effect.logWarning("[schema-apply] could not confirm the restored DEFAULT").pipe(
-							Effect.annotateLogs({ cause: causeMessage(cause) }),
+						Effect.logError("[schema-apply] could not confirm the restored DEFAULT").pipe(
+							Effect.annotateLogs({
+								"maple.clickhouse.restore_sql": restore.sql,
+								"maple.clickhouse.restore_error": causeMessage(cause),
+							}),
 							Effect.as(false),
 						),
 					),

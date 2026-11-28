@@ -194,13 +194,15 @@ async function restoreDefault(
 	restore: RestoreDefault,
 	execute: (sql: string) => Promise<string>,
 ): Promise<boolean> {
-	const warn = (what: string) => (error: unknown) => {
+	const warn = (what: string, sql: string) => (error: unknown) => {
 		const detail = error instanceof Error ? error.message : String(error)
-		process.stderr.write(`warning: ${what} failed: ${detail}\n`)
+		process.stderr.write(`warning: ${what} failed (${sql}): ${detail}\n`)
 		return undefined
 	}
-	await execute(restore.sql).catch(warn("restoring the column DEFAULT"))
-	const response = await execute(restore.verifySql).catch(warn("reading back the column DEFAULT"))
+	await execute(restore.sql).catch(warn("restoring the key column DEFAULT", restore.sql))
+	const response = await execute(restore.verifySql).catch(
+		warn("reading back the key column DEFAULT", restore.verifySql),
+	)
 	return response !== undefined && defaultRestored(restore, response)
 }
 
