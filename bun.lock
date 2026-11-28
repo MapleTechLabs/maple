@@ -158,7 +158,7 @@
     },
     "apps/cli": {
       "name": "@maple/cli",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "bin": {
         "maple": "./src/bin.ts",
       },
@@ -609,7 +609,7 @@
     },
     "packages/alchemy-maple": {
       "name": "@maple-dev/alchemy",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "dependencies": {
         "@maple-dev/effect-sdk": "workspace:*",
       },
@@ -859,7 +859,7 @@
     },
     "packages/effect-sdk": {
       "name": "@maple-dev/effect-sdk",
-      "version": "0.16.0",
+      "version": "0.17.0",
       "devDependencies": {
         "@effect/vitest": "catalog:effect",
         "@maple/browser-session": "workspace:*",
@@ -1128,7 +1128,7 @@
     },
     "packages/vite": {
       "name": "@maple-dev/vite",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@effect/platform-node": "catalog:effect",
         "effect": "catalog:effect",
