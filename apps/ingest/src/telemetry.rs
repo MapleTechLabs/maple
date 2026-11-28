@@ -2801,6 +2801,8 @@ impl ShardedWal {
         let Some(store) = self.store.get() else {
             return 0;
         };
+        // Before the listing, so a segment it uploads is deleted when it exports.
+        store.begin_shutdown_flush();
         self.flush_segments_to(store).await
     }
 
@@ -3440,8 +3442,11 @@ fn run_segment_shipper(
                                 .iter()
                                 .position(|ship| ship.lane == lane && ship.seq == seq)
                                 .map(|index| pending.swap_remove(index));
-                            // Never uploaded, so the bucket holds nothing to delete.
-                            if waiting.is_some_and(|ship| ship.attempts == 0) {
+                            // Never uploaded, so the bucket holds nothing to delete, unless
+                            // the shutdown flush uploaded it outside the shipper.
+                            if waiting.is_some_and(|ship| ship.attempts == 0)
+                                && !store.shutdown_flush_started()
+                            {
                                 metrics::wal_ship_skipped(
                                     lane_ref.shard,
                                     lane_ref.destination.as_str(),
@@ -10777,6 +10782,10 @@ mod tests {
         cfg.wal_shards = 1;
         cfg.batch_max_wait = Duration::from_millis(1);
         cfg.wal_segment_max_bytes = 256;
+        // Room for the whole stream, so a slow runner queues instead of refusing.
+        cfg.queue_channel_capacity = 1024;
+        cfg.queue_max_bytes = 64 * 1024 * 1024;
+        cfg.org_queue_max_bytes = 64 * 1024 * 1024;
         let pipeline = TelemetryPipeline::new_with_object_store(
             cfg,
             Client::builder()
@@ -10820,6 +10829,37 @@ mod tests {
             segment_requests_of_a_healthy_stream(Duration::from_millis(1500)).await;
         assert!(sealed >= 20, "the stream sealed segments: {sealed}");
         assert_eq!(requests, Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn a_segment_the_shutdown_flush_uploads_is_deleted_when_it_exports_inside_the_grace() {
+        // The flush uploads outside the shipper, which still holds the segment in
+        // its grace. Skipping the delete on export left the object for the next
+        // boot to replay as duplicate rows.
+        let queue_dir = unique_test_dir("wal-ship-grace-flush");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store_with_grace(&endpoint, Duration::from_secs(30));
+        let owner = store.owner().to_owned();
+        wal.attach_object_store(&store);
+
+        let frame = wal_test_frame(200);
+        let (seq, _, end) = wal.append(0, &frame).await.expect("append");
+        assert_eq!(wal.flush_to_object_store().await, end, "the tail ships");
+        let key = format!("wal/v1/segments/{owner}/shard-000-tinybird/{seq:012}.seg");
+        assert!(bucket.get(&key).is_some());
+
+        wal.mark_exported(0, SegmentCursor { seq, offset: end }, end)
+            .await
+            .expect("mark_exported");
+        wait_for("the flushed segment's object to be dropped", || {
+            bucket.get(&key).is_none()
+        })
+        .await;
+
+        drop(std::fs::remove_dir_all(queue_dir));
     }
 
     #[tokio::test]

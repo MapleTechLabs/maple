@@ -155,6 +155,9 @@ pub struct WalSegmentStore {
     owner: String,
     orphan_after: Duration,
     ship_grace: Duration,
+    /// Set when the shutdown flush starts uploading segments the shipper does not
+    /// track, so from then on every export deletes its object.
+    flushing: AtomicBool,
     /// Set first thing in `retire`; a heartbeat checks it under `heartbeat_lock`
     /// before its PUT, so none starts once retire has begun.
     retired: AtomicBool,
@@ -192,6 +195,7 @@ impl WalSegmentStore {
             owner: uuid::Uuid::new_v4().to_string(),
             orphan_after: cfg.orphan_after,
             ship_grace: cfg.ship_grace,
+            flushing: AtomicBool::new(false),
             retired: AtomicBool::new(false),
             heartbeat_lock: tokio::sync::Mutex::new(()),
         }
@@ -203,6 +207,15 @@ impl WalSegmentStore {
 
     pub const fn ship_grace(&self) -> Duration {
         self.ship_grace
+    }
+
+    pub fn begin_shutdown_flush(&self) {
+        self.flushing.store(true, Ordering::Release);
+    }
+
+    /// Whether a segment the shipper never uploaded may be in the bucket anyway.
+    pub fn shutdown_flush_started(&self) -> bool {
+        self.flushing.load(Ordering::Acquire)
     }
 
     fn segment_key(&self, owner: &str, lane_key: &str, seq: u64) -> String {
