@@ -34,3 +34,11 @@ export const PRODUCT_EVENTS_FORWARD_QUERY: string = RETENTION_ROLLOUT_PENDING
  */
 export const ALTER_AFTER_RETENTION_ROLLOUT: { readonly deploymentMethod?: "alter" } =
 	RETENTION_ROLLOUT_PENDING ? {} : { deploymentMethod: "alter" }
+
+/**
+ * `traces` and `session_events` gain `EventsRetentionDays` (last in their schema) while they are
+ * copied: existing rows take the events default, as rows without the gateway's stamp do.
+ */
+export const EVENTS_RETENTION_COLUMN_FORWARD: { readonly forwardQuery?: string } = RETENTION_ROLLOUT_PENDING
+	? { forwardQuery: `SELECT *, toUInt16(${DEFAULT_RETENTION_DAYS.events}) AS EventsRetentionDays` }
+	: {}

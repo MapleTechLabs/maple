@@ -21,6 +21,15 @@ describe("RetentionDays rollout config", () => {
 		expect(Arr.isArrayNonEmpty(stamping)).toBe(RETENTION_ROLLOUT_PENDING)
 	})
 
+	it("fills the events period on copied spans and session events only while the rollout is pending", () => {
+		const filling = Arr.filter(["traces", "session_events"], (name) =>
+			Option.exists(contentOf(manifest.datasources, name), (text) =>
+				Str.includes("AS EventsRetentionDays")(forwardQueryOf(text)),
+			),
+		)
+		expect(filling).toEqual(RETENTION_ROLLOUT_PENDING ? ["traces", "session_events"] : [])
+	})
+
 	it("holds `alter` off the trace views only while the rollout is pending", () => {
 		const views = ["service_overview_spans_mv", "ai_trace_index_mv", "scanner_requests_mv"]
 		const withAlter = Arr.filter(views, (name) =>

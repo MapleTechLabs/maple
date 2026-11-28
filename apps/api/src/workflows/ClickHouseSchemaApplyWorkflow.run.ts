@@ -637,7 +637,12 @@ export const runPlannedStep = <A, E, R, E2, R2>(
 			: Effect.exit(cleanup("restore-default", restore.sql)).pipe(
 					Effect.andThen(cleanup("verify-default", restore.verifySql)),
 					Effect.map((response) => defaultRestored(restore, response)),
-					Effect.catchCause(() => Effect.succeed(false)),
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[schema-apply] could not confirm the restored DEFAULT").pipe(
+							Effect.annotateLogs({ cause: causeMessage(cause) }),
+							Effect.as(false),
+						),
+					),
 				)
 	return run.pipe(
 		Effect.catchCauseIf(
