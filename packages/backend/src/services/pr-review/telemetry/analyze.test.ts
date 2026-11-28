@@ -370,6 +370,83 @@ describe("analyzeTelemetry", () => {
 		)
 	})
 
+	it("does not cost a log line the pull request moves from another file", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"src/routes/old.ts",
+					`@@ -1,3 +1,1 @@\n app.post("/checkout", handler)\n-	console.log("connected", host)\n-	console.log("ready")`,
+				),
+				file(
+					"src/routes/checkout.ts",
+					`@@ -1,1 +1,4 @@\n app.post("/checkout", handler)\n+console.log("connected", host)\n+console.log("ready")\n+console.log("ready")`,
+				),
+			],
+			catalog: { ...catalog, bytesPerLogRecord: 1_000 },
+			sources: [],
+			issues: [],
+		})
+		// The second "ready" was not there before, so it is still new.
+		assert.deepStrictEqual(
+			Arr.map(telemetry.costNotes, (note) => [note.path, note.line]),
+			[["src/routes/checkout.ts", 4]],
+		)
+	})
+
+	const costedLines = (files: ReadonlyArray<PullRequestFile>) =>
+		Arr.map(
+			analyzeTelemetry({
+				files,
+				catalog: { ...catalog, bytesPerLogRecord: 1_000 },
+				sources: [],
+				issues: [],
+			}).costNotes,
+			(note) => [note.path, note.line],
+		)
+
+	it("does not cost a log line moved out of a file the pull request deletes", () => {
+		assert.deepStrictEqual(
+			costedLines([
+				file(
+					"src/routes/old.ts",
+					`@@ -1,2 +0,0 @@\n-console.log("connected", host)\n-console.log("ready")`,
+				),
+				file(
+					"src/routes/checkout.ts",
+					`@@ -1,1 +1,3 @@\n app.post("/checkout", handler)\n+console.log("connected", host)\n+console.log("ready")`,
+				),
+			]),
+			[],
+		)
+	})
+
+	it("costs an extra copy of a moved log line even after a quiet file took the move", () => {
+		assert.deepStrictEqual(
+			costedLines([
+				file("src/routes/old.ts", `@@ -1,1 +0,0 @@\n-console.log("ready")`),
+				file("src/quiet.ts", `@@ -1,0 +1,1 @@\n+console.log("ready")`),
+				file(
+					"src/routes/checkout.ts",
+					`@@ -1,1 +1,2 @@\n app.post("/checkout", handler)\n+console.log("ready")`,
+				),
+			]),
+			[["src/routes/checkout.ts", 2]],
+		)
+	})
+
+	it("does not pair two different multi-line log calls by their opening line", () => {
+		assert.deepStrictEqual(
+			costedLines([
+				file("src/routes/old.ts", `@@ -1,3 +0,0 @@\n-console.warn(\n-	"retrying",\n-)`),
+				file(
+					"src/routes/checkout.ts",
+					`@@ -1,1 +1,4 @@\n app.post("/checkout", handler)\n+console.warn(\n+	"charging every order",\n+)`,
+				),
+			]),
+			[["src/routes/checkout.ts", 2]],
+		)
+	})
+
 	it("flags a span name built from a value", () => {
 		const telemetry = analyzeTelemetry({
 			files: [file("src/a.ts", "@@ -1,0 +1,1 @@\n+Effect.withSpan(`charge ${userId}`)")],

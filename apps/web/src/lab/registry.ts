@@ -62,6 +62,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/uptime-allowance",
+		title: "Uptime monitor allowance",
+		description:
+			"The new-monitor form saying what one more monitor costs: a paid plan past its 10, the last included one, a trial at its cap, and under it (`?state=billed|last|trial|free`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/list-keys",
 		title: "List keys",
 		description:

@@ -2,7 +2,7 @@
  * How many uptime monitors an org's plan allows, and the Autumn meter that counts them. The
  * `uptime_monitors` feature is continuous use: +1 on create, -1 on delete.
  */
-import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
+import { UPTIME_MONITOR_OVERAGE_LABEL, UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
 import {
 	BillingCustomer,
 	type BillingCustomerId,
@@ -32,7 +32,7 @@ export const limitReached = (limit: number) =>
 		message:
 			limit === 0
 				? "This organization's plan doesn't include uptime monitors."
-				: `This organization already has ${limit} uptime monitors, the most its plan allows. Delete one or upgrade to add more.`,
+				: `This organization already has ${limit} uptime monitors, all its plan includes. Add a card in Settings → Billing to pay ${UPTIME_MONITOR_OVERAGE_LABEL} a month for each one past ${limit}, or delete one.`,
 		limit,
 	})
 

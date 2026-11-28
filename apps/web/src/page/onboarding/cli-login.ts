@@ -1,4 +1,4 @@
-import { Effect, Schema, String as Str } from "effect"
+import { Effect, Redacted, Schema, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
@@ -69,7 +69,9 @@ export const InspectCliDevice = Command.define("InspectCliDevice", {
 	execute: ({ userCode }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
-			const response = yield* client.authSession.cliDeviceInspect({ params: { userCode } })
+			const response = yield* client.authSession.cliDeviceInspect({
+				params: { userCode: Redacted.make(userCode) },
+			})
 			const expiresAtLabel = yield* localeTimeOf(response.expiresAt)
 			return Message.SucceededInspectCliDevice({
 				userCode,
@@ -96,8 +98,8 @@ export const DecideCliDevice = Command.define("DecideCliDevice", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
 			yield* action === "approve"
-				? client.authSession.cliDeviceApprove({ params: { userCode } })
-				: client.authSession.cliDeviceDeny({ params: { userCode } })
+				? client.authSession.cliDeviceApprove({ params: { userCode: Redacted.make(userCode) } })
+				: client.authSession.cliDeviceDeny({ params: { userCode: Redacted.make(userCode) } })
 			return Message.SucceededDecideCliDevice({ action })
 		}).pipe(
 			Effect.catch((error) =>

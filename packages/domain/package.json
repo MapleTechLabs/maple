@@ -133,7 +133,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/effect-orm": "0.10.0",
+		"@maple-dev/effect-orm": "1.3.0",
 		"@maple/primitives": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/security-audit": "workspace:*",

@@ -929,9 +929,8 @@ export const reconcileArchiveGeneration = async (
 	dataDir: string,
 	archiveDir: string,
 	scratchRoot: string,
-	faults: ArchiveGenerationFaults = {},
+	_faults: ArchiveGenerationFaults = {},
 ): Promise<void> => {
-	void faults
 	// Calibration was removed; retire whatever an interrupted run left. Never throws.
 	await Effect.runPromise(retireLegacyCalibration(dataDir, archiveDir, scratchRoot))
 	// The SINGLE decision-driven executor. inspect → decide → switch on the
