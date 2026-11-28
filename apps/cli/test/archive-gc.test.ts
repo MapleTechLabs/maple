@@ -1,18 +1,9 @@
 import { describe, it } from "@effect/vitest"
 import { ok, rejects, strictEqual } from "node:assert"
 import { createHash, randomUUID } from "node:crypto"
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	realpathSync,
-	rmSync,
-	symlinkSync,
-	writeFileSync,
-} from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 import {
 	activePointerPath,
 	buildingGenerationRoot,
@@ -137,7 +128,7 @@ const rebuildSignalCatalog = async (archiveDir: string, signal: string): Promise
 
 describe("archive gc planning", () => {
 	it("keep=0 targets all superseded generations and retains only the active", async () => {
-		await withArchive(async (archiveDir, dataDir, scratchRoot) => {
+		await withArchive(async (archiveDir) => {
 			const old = await seedPublishedGeneration(archiveDir, { createdAt: "2026-06-02T00:00:00.000Z" })
 			const mid = await seedPublishedGeneration(archiveDir, { createdAt: "2026-06-03T00:00:00.000Z" })
 			const active = await seedPublishedGeneration(archiveDir, {
@@ -166,8 +157,6 @@ describe("archive gc planning", () => {
 				),
 				true,
 			)
-			void dataDir
-			void scratchRoot
 		})
 	})
 
@@ -212,7 +201,7 @@ describe("archive gc planning", () => {
 
 	it("excludes a range whose active pointer is ambiguous/malformed", async () => {
 		await withArchive(async (archiveDir) => {
-			const old = await seedPublishedGeneration(archiveDir, { createdAt: "2026-06-02T00:00:00.000Z" })
+			await seedPublishedGeneration(archiveDir, { createdAt: "2026-06-02T00:00:00.000Z" })
 			await seedPublishedGeneration(archiveDir, {
 				createdAt: "2026-06-03T00:00:00.000Z",
 				selectActive: true,
@@ -233,7 +222,6 @@ describe("archive gc planning", () => {
 			// The range is excluded (ambiguous pointer); neither gen is targeted.
 			strictEqual(plan.deleteSet.length, 0)
 			ok(plan.excludedRanges.length >= 1, "range excluded for ambiguous pointer")
-			void old
 		})
 	})
 
@@ -504,8 +492,3 @@ describe("archive gc terminal invariant verification (Gate 3b repair)", () => {
 		})
 	})
 })
-
-void dirname
-void symlinkSync
-void readdirSync
-void rmSync

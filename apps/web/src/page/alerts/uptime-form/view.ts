@@ -26,6 +26,7 @@ import { uptimePanelBody } from "../../kit/uptime/view"
 import { formIssues } from "../../kit/uptime/form-derive"
 import { ASSERTION_OPS, type AssertionDraft, type MonitorKind } from "../../kit/uptime/form"
 import { Message } from "./message"
+import { monitorCostCallout, monitorCostNotice } from "../../kit/billing/uptime-allowance"
 import { canManage, type Model } from "./model"
 import { assertionsSection, type H, requestSection, scheduleSection } from "./view-fields"
 import {
@@ -215,7 +216,10 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 	return formActionBar(h, {
 		issues,
 		widthClass,
-		notice: model.saveFailure === null ? null : saveFailureNotice(h, model.saveFailure, widthClass),
+		notice:
+			model.saveFailure !== null
+				? saveFailureNotice(h, model.saveFailure, widthClass)
+				: costNotice(h, model, widthClass),
 		actions: [
 			linkButton(
 				h,
@@ -229,7 +233,12 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 				h,
 				{
 					// Until the session says this is an admin, a click would be dropped by `save`.
-					isDisabled: issues.length > 0 || !canManage(model),
+					// A trial at its cap would only get the 402: the notice's Add card is the way on.
+					isDisabled:
+						issues.length > 0 ||
+						!canManage(model) ||
+						(model.editingId === null &&
+							(monitorCostNotice(model.allowance)?.needsCard ?? false)),
 					isLoading: model.isSaving,
 					attributes: [h.OnClick(Message.ClickedSave())],
 				},
@@ -268,6 +277,12 @@ const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
 		case "heartbeat":
 			return heartbeatSection(h, model)
 	}
+}
+
+/** Creating only: what one more monitor costs once the plan's included ones are used. */
+const costNotice = (h: H, model: Model, widthClass: string): Html | null => {
+	const notice = model.editingId === null ? monitorCostNotice(model.allowance) : null
+	return notice === null ? null : monitorCostCallout(h, notice, { className: cn("mb-3", widthClass) })
 }
 
 /** The last save's failure, in the server's words: the plan's limit, or why it was refused. */

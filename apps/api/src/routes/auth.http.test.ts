@@ -134,6 +134,7 @@ describe("login approval endpoints", () => {
 
 	it("records an approved CLI login with the device it was for", async () => {
 		const audit = makeMemoryAuditLog()
+		const approvedCodes: Array<string> = []
 		const harness = makeHarness({
 			audit,
 			auth: { getUserEmail: () => Effect.succeed("root@maple.test") },
@@ -147,13 +148,18 @@ describe("login approval endpoints", () => {
 							status: "pending",
 						}),
 					),
-				approve: () => Effect.succeed(new CliDeviceActionResponse({ status: "approved" })),
+				approve: (userCode) => {
+					approvedCodes.push(userCode)
+					return Effect.succeed(new CliDeviceActionResponse({ status: "approved" }))
+				},
 			},
 		})
 		try {
 			const token = await harness.sessionToken()
 			const response = await harness.call("POST", "cli/device/ABCD-EFGH/approve", token)
 			expect(response.status).toBe(200)
+			// The path param is `Redacted` on the wire schema; the service still gets the code itself.
+			expect(approvedCodes).toEqual(["ABCD-EFGH"])
 			const entries = await Effect.runPromise(
 				audit.list(DEFAULT_ORG, { action: "cli_session.approved", limit: 10, offset: 0 }),
 			)

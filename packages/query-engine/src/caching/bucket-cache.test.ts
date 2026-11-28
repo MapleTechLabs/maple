@@ -475,13 +475,11 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 		]
 
 		let computeAttempt = 0
-		const compute = ({ startMs, endMs }: { startMs: number; endMs: number }) => {
+		const compute = (_range: { startMs: number; endMs: number }) => {
 			computeAttempt++
 			if (computeAttempt === 1) {
 				return Effect.fail(new Error("tinybird down") as never)
 			}
-			void startMs
-			void endMs
 			return Effect.succeed(okPoints)
 		}
 

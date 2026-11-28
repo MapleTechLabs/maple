@@ -32,7 +32,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/effect-orm": "0.10.0",
+		"@maple-dev/effect-orm": "1.3.0",
 		"@maple/cache": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/primitives": "workspace:*",

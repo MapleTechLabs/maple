@@ -1,0 +1,311 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "questions", text: "Start from questions" },
+    { depth: 2, slug: "starter-events", text: "Ten events to start with" },
+    { depth: 2, slug: "naming", text: "Naming rules" },
+    { depth: 2, slug: "properties", text: "Properties" },
+    { depth: 2, slug: "identity", text: "Visitor, user, account" },
+    { depth: 2, slug: "client-or-server", text: "Client or server" },
+    { depth: 2, slug: "send", text: "Send the events" },
+    { depth: 2, slug: "verify", text: "Check what arrives" },
+    { depth: 2, slug: "mistakes", text: "Common mistakes" },
+    { depth: 2, slug: "posthog", text: "Coming from PostHog" },
+];
+
+const browserTrack = String.raw`import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.init({ ingestKey: "maple_pk_...", serviceName: "acme-web" })
+
+// Once the user is known. Before this, events carry the anonymous visitor id.
+MapleBrowser.identify({ id: user.id, groupId: org.id, groupName: org.name })
+
+MapleBrowser.track("checkout_started", { plan: "pro", interval: "year" })`;
+
+const spanTrack = String.raw`// Inside the handler that creates the subscription.
+span.setAttributes({
+  "maple.product_event.name": "plan_started",
+  "maple.product_event.user_id": user.id,
+  "maple.product_event.group_id": org.id,
+  "maple.product_event.include": "plan,seats,interval",
+  plan: "pro",
+  seats: 12,
+  interval: "year",
+})`;
+
+const httpTrack = String.raw`curl -X POST https://ingest.maple.dev/v1/events \
+  -H "Authorization: Bearer YOUR_INGEST_KEY" \
+  -H "Content-Type: application/x-ndjson" \
+  --data-binary $'{"name":"plan_started","user_id":"user_123","group_id":"org_456","attributes":{"plan":"pro","seats":12}}\n'`;
+
+const faqs = [
+    {
+        question: "What is an event tracking plan?",
+        answer:
+            "A tracking plan is the list of events a product sends, with the name of each one, when it fires, where it is sent from and which properties it carries. It is written before the code, so that every event answers a question someone will ask.",
+    },
+    {
+        question: "How many events should a product track?",
+        answer:
+            "Start with about ten: the steps of signup, the first action that delivers value, the actions that predict retention, and the billing changes. Add an event when a question cannot be answered without it. Hundreds of events nobody reads make the useful ones harder to find.",
+    },
+    {
+        question: "What is a good event naming convention?",
+        answer:
+            "Lowercase snake_case, an object followed by a past-tense verb: signup_completed, invite_sent, plan_started. Pick one form and keep it. The name is the key every funnel and chart uses, so renaming an event later splits its history in two.",
+    },
+    {
+        question: "Should events be tracked on the client or the server?",
+        answer:
+            "Track an event where the thing actually happens. A click or a page view happens in the browser. An account being created or a subscription starting happens on the server, and the server is the only place that knows it succeeded. Server events also survive ad blockers and closed tabs.",
+    },
+    {
+        question: "What is the difference between an event property and a user property?",
+        answer:
+            "An event property describes one occurrence: the plan chosen at this checkout. A user property describes the person: the plan they are on today. Use event properties for facts that were true at that moment, and user properties for the current state you want to filter everyone by.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="Event Tracking Plan: What to Track and How to Name Events | Maple"
+    description="How to write an event tracking plan for a SaaS product: ten events to start with, naming conventions, properties, identity, client vs server events, and how to check the data."
+    title="Event tracking: what to track and how to name it"
+    lede="A tracking plan for a SaaS product: which events to send first, how to name them so they still make sense in a year, and how to tie them to a person and an account."
+    category="Product analytics"
+    readMinutes={8}
+    published="2026-11-28"
+    modified="2026-11-28"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            Every chart in product analytics is built from <strong>events</strong>: a named thing a person did, with a timestamp and a few properties. A <a href="/guides/funnel-analysis">funnel</a> is a sequence of events. A <a href="/guides/user-path-analysis">path</a> is the order they happened in.
+        </p>
+        <p>
+            Two early habits cause a lot of tracking problems: tracking everything, and naming things as they come up. This guide is the plan to write before the first <code>track()</code> call.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>Write the questions first. An event that answers no question is noise.</li>
+                <li>About ten events are enough to answer the first questions about signup, activation and revenue.</li>
+                <li>Name events <code>object_verb</code> in lowercase, past tense. Renaming one later splits its history.</li>
+                <li>Send an event from where the thing happens. Signups and payments happen on the server.</li>
+                <li>Identify the user and the account on every event, so one person is counted once.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="questions" class="scroll-mt-24">
+        <h2>Start from questions</h2>
+        <p>
+            A tracking plan is a list of events, and for each one its name, when it fires, where it is sent from and which properties it carries. The way to keep that list short is to write down the questions it has to answer and work backwards.
+        </p>
+        <p>For a typical SaaS product the first questions are these:</p>
+        <ul class="guide-list">
+            <li><strong>Acquisition.</strong> Of the people who start signing up, how many finish? Which channel sends the ones who do?</li>
+            <li><strong>Activation.</strong> How many new accounts reach the first moment the product is useful, and how long does it take?</li>
+            <li><strong>Retention.</strong> Which actions do the accounts that stay perform in their first week?</li>
+            <li><strong>Revenue.</strong> How many activated accounts start a paid plan, and which plan?</li>
+        </ul>
+        <p>
+            Each question names the events it needs. "How many finish signing up" needs a start and a finish. "Reach the first useful moment" needs you to decide what that moment is, which is a product decision more than a tracking one.
+        </p>
+    </section>
+
+    <section id="starter-events" class="scroll-mt-24">
+        <h2>Ten events to start with</h2>
+        <p>
+            This is a starting plan for a B2B SaaS product. The names come from an analytics product, the one the screenshots in this series show. Swap the middle rows for the actions that matter in yours. The first two and the last three apply almost everywhere.
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>Event</th><th>Fires when</th><th>Sent from</th><th>Properties</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>signup_started</code></td><td>The signup form is opened</td><td>Browser</td><td><code>method</code></td></tr>
+                    <tr><td><code>signup_completed</code></td><td>The account exists in your database</td><td>Server</td><td><code>method</code></td></tr>
+                    <tr><td><code>workspace_created</code></td><td>The first workspace or project is created</td><td>Server</td><td><code>template</code></td></tr>
+                    <tr><td><code>onboarding_connected</code></td><td>The product receives its first real data</td><td>Server</td><td><code>kind</code></td></tr>
+                    <tr><td><code>dashboard_created</code></td><td>The user makes the thing your product is for</td><td>Server</td><td><code>type</code></td></tr>
+                    <tr><td><code>dashboard_shared</code></td><td>They show it to someone else</td><td>Browser</td><td><code>channel</code></td></tr>
+                    <tr><td><code>invite_sent</code></td><td>A teammate is invited</td><td>Server</td><td><code>role</code></td></tr>
+                    <tr><td><code>checkout_started</code></td><td>The upgrade dialog opens</td><td>Browser</td><td><code>plan</code>, <code>interval</code></td></tr>
+                    <tr><td><code>plan_started</code></td><td>The billing provider confirms the subscription</td><td>Server</td><td><code>plan</code>, <code>seats</code>, <code>interval</code></td></tr>
+                    <tr><td><code>plan_cancelled</code></td><td>The subscription ends</td><td>Server</td><td><code>plan</code>, <code>reason</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Page views are not in the table because a browser SDK records them for you. Do not add events for every button. A click that matters shows up as the event it causes: nobody needs <code>upgrade_button_clicked</code> when <code>checkout_started</code> exists.
+        </p>
+        <p>
+            The plan covers signup, activation and revenue. For retention, make sure the one or two actions a healthy account repeats every week are events too. In this plan that is <code>dashboard_created</code>. The later parts of the series also use a few events added after this first plan, such as <code>onboarding_viewed</code>, <code>docs_opened</code> and <code>query_run</code>.
+        </p>
+    </section>
+
+    <section id="naming" class="scroll-mt-24">
+        <h2>Naming rules</h2>
+        <p>
+            The event name is the key every funnel step, chart and filter uses. Three rules keep names usable:
+        </p>
+        <ul class="guide-list">
+            <li><strong>One form.</strong> Lowercase snake_case, an object then a past-tense verb: <code>invite_sent</code>, <code>plan_started</code>. Mixed forms (<code>Signup Complete</code>, <code>signupDone</code>, <code>completed_signup</code>) become three events that mean the same thing.</li>
+            <li><strong>Name the fact, not the interface.</strong> <code>plan_started</code> survives a redesign. <code>pricing_modal_green_button_clicked</code> does not.</li>
+            <li><strong>Never put a value in the name.</strong> <code>plan_started_pro</code> and <code>plan_started_team</code> should be one event with a <code>plan</code> property. Values in names multiply events and make "all plans" impossible to count.</li>
+        </ul>
+        <div class="guide-callout">
+            <p class="guide-kicker">Renaming is expensive</p>
+            <p>Stored events keep the name they were sent with. After a rename, charts show the old name ending and a new one starting, and every funnel that used the old name stops matching new data. Treat names like a public API: review them before they ship.</p>
+        </div>
+    </section>
+
+    <section id="properties" class="scroll-mt-24">
+        <h2>Properties</h2>
+        <p>
+            A property is a detail of one occurrence: the plan chosen, the signup method, the number of seats. Properties are what you filter and break down by later, so add the ones your questions name and stop there.
+        </p>
+        <ul class="guide-list">
+            <li>Use the same property name for the same thing on every event. <code>plan</code> everywhere, never <code>plan</code> on one event and <code>tier</code> on another.</li>
+            <li>Keep values to a small fixed set where you can: <code>google</code>, <code>github</code>, <code>email</code>. Free text cannot be grouped.</li>
+            <li>Leave out personal data you do not need. An event rarely needs an email address when it already has a user id.</li>
+        </ul>
+        <p>
+            Properties of the <strong>person</strong> or the <strong>account</strong> are different from properties of the event. The plan chosen at one checkout belongs on the event. The plan an account is on today belongs on the account. The <a href="/guides/b2b-product-analytics">B2B guide</a> covers when to use which.
+        </p>
+    </section>
+
+    <section id="identity" class="scroll-mt-24">
+        <h2>Visitor, user, account</h2>
+        <p>
+            An event is only useful for funnels if the tool can tell that two events came from the same person. Three ids do that work:
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>Id</th><th>What it is</th><th>Set by</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Visitor id</td><td>An anonymous id for a browser or a mobile install</td><td>The browser SDK, or your app for an install id</td></tr>
+                    <tr><td>User id</td><td>Your own id for a signed-in user</td><td>Your code, at sign-in</td></tr>
+                    <tr><td>Group id</td><td>The account, workspace or organization</td><td>Your code, with the user</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            The signup funnel crosses the sign-in boundary: <code>signup_started</code> comes from an anonymous visitor and <code>plan_started</code> from a known user. Call <code>identify()</code> as soon as the user is known, and send the same user id from your backend. Maple links a visitor to the user it becomes, so the anonymous visit and the signed-in activity count as one person.
+        </p>
+        <p>
+            Use the id from your database, not an email address. Emails change, and two people can share one.
+        </p>
+    </section>
+
+    <section id="client-or-server" class="scroll-mt-24">
+        <h2>Client or server</h2>
+        <p>
+            Send an event from the place where the thing happens. A page view or the opening of a dialog happens in the browser. An account being created or a payment succeeding happens on the server, and only the server knows it succeeded.
+        </p>
+        <p>
+            Browser events are lost to ad blockers, closed tabs and failed requests. That is acceptable for <code>checkout_started</code> and not for <code>plan_started</code>. If a number will be compared with revenue, send it from the backend.
+        </p>
+    </section>
+
+    <section id="send" class="scroll-mt-24">
+        <h2>Send the events</h2>
+        <p>
+            Maple accepts product events from three places. All three carry the same user, group and visitor ids, so one funnel can mix them.
+        </p>
+        <h3>From the browser</h3>
+        <p>
+            The <a href="/docs/session-replay/browser-sdk">browser SDK</a> records page views on its own. Custom events are one call:
+        </p>
+        <Code code={browserTrack} lang="typescript" title="app.ts" />
+        <h3>From a span you already emit</h3>
+        <p>
+            If the backend is traced with OpenTelemetry, the handler that starts a plan already produces a span. One attribute turns that span into a product event, linked to the trace that did the work:
+        </p>
+        <Code code={spanTrack} lang="typescript" title="billing.ts" />
+        <p>
+            Without <code>maple.product_event.include</code>, every attribute on the span becomes an event property. See <a href="/docs/product-events/from-traces">product events from traces</a>.
+        </p>
+        <h3>Over HTTP</h3>
+        <p>
+            Anything that can make an HTTP request can post events: a webhook handler, a batch job, a mobile app. The body is one JSON object per line.
+        </p>
+        <Code code={httpTrack} lang="shell" />
+        <p>
+            The <a href="/docs/product-events/api">events API reference</a> lists every field and limit.
+        </p>
+    </section>
+
+    <section id="verify" class="scroll-mt-24">
+        <h2>Check what arrives</h2>
+        <p>
+            Trigger each event once in a test account, then read the list. In Maple, <strong>Product analytics</strong> opens on the <strong>Events</strong> tab: every event name in the time range, its kind, and how many events, sessions and people it has.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/event-tracking-01-events.webp" data-zoomable alt="The Events tab of Product analytics in Maple over the last week: 49.9K events under 9 names, and a table listing $pageview, signup_started, signup_completed, query_run and others with their kind, event count, sessions and people, each with Funnel and Paths links." width="1820" height="1480" loading="lazy" />
+            <figcaption>The Events tab, on example data. Each row starts a funnel or a path from that event.</figcaption>
+        </figure>
+        <p>Three things to look for:</p>
+        <ul class="guide-list">
+            <li><strong>Names you did not plan.</strong> A typo or a second naming form shows up as its own row.</li>
+            <li><strong>People lower than expected.</strong> If <code>plan_started</code> has events and no people, the server is not sending a user id.</li>
+            <li><strong>Events far above people.</strong> An event that fires in a render loop or on every keystroke has thousands of events per person.</li>
+        </ul>
+    </section>
+
+    <section id="mistakes" class="scroll-mt-24">
+        <h2>Common mistakes</h2>
+        <ul class="guide-list">
+            <li><strong>Tracking the click instead of the outcome.</strong> A click on "Create account" is an attempt. Send <code>signup_completed</code> when the account exists.</li>
+            <li><strong>Different ids in the browser and the backend.</strong> If the browser identifies by email and the server sends a database id, every person is counted twice and no funnel crosses the two.</li>
+            <li><strong>Events before identify.</strong> Call <code>identify()</code> when the session is restored on page load, not only at sign-in.</li>
+            <li><strong>Changing what an event means.</strong> If <code>dashboard_created</code> starts firing for drafts too, the chart jumps and nobody remembers why. Add a new event instead.</li>
+            <li><strong>Test traffic in the numbers.</strong> Keep development and staging out of production data, and decide how to exclude your own team before reading a conversion rate.</li>
+            <li><strong>No owner.</strong> Keep the plan in the repository next to the code that sends the events, and change it in the same pull request.</li>
+        </ul>
+    </section>
+
+    <section id="posthog" class="scroll-mt-24">
+        <h2>Coming from PostHog</h2>
+        <p>
+            The model is the same: named events, properties, an anonymous id that merges into a user at <code>identify</code>. The calls map like this:
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>PostHog</th><th>Maple</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>posthog.capture(name, props)</code></td><td><code>MapleBrowser.track(name, props)</code></td></tr>
+                    <tr><td><code>posthog.identify(id, props)</code></td><td><code>MapleBrowser.identify()</code> with <code>id</code> and <code>traits</code></td></tr>
+                    <tr><td><code>posthog.group(type, key)</code></td><td><code>groupId</code> in <code>identify()</code>, <code>group_id</code> on server events</td></tr>
+                    <tr><td><code>$set</code> and <code>$set_once</code></td><td><code>set</code> and <code>set_once</code> on the events API</td></tr>
+                    <tr><td><code>$pageview</code></td><td>Recorded by the browser SDK</td></tr>
+                    <tr><td>Autocapture</td><td>No equivalent. Clicks appear in session replay, and events are explicit calls.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            A few differences to plan for. Maple has one group id per event where PostHog allows several group types. And Maple does not turn clicks into events on its own, so an event plan like the one above is required from day one. PostHog also bundles feature flags, experiments and surveys, which Maple does not have. Mobile apps send events to Maple through the HTTP API.
+        </p>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>Product events next to your traces</h3>
+            <p>Maple stores product events for 365 days beside the traces, logs and session replays of the same users. A funnel step that comes from a traced request links back to the request behind it.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/product-events/overview" class="guide-button guide-button--primary">Product events docs</a>
+                <a href="/docs/session-replay/browser-sdk" class="guide-button">Browser SDK</a>
+            </div>
+        </div>
+    </section>
+</GuidePage>

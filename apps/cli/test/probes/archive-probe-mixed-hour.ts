@@ -8,7 +8,7 @@
 
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
-import { ArchiveProbe, firstRow, readRows } from "../archive-probe-helpers"
+import { ArchiveProbe, readRows } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -78,7 +78,6 @@ try {
 		Arr.findFirst(written, (s) => Str.startsWith("12-")(s.name)),
 		() => h.fail("no hour-12 shard produced"),
 	)
-	void firstRow
 	h.ok(
 		`mixed-hour non-contiguous offsets archived exactly; hour-12 in ${hour12.name}, ${written.length} shards`,
 	)

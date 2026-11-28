@@ -1,5 +1,5 @@
 diff --git a/dist/internal/internal.js b/dist/internal/internal.js
-index 6c1b1c18bef7e0954d6b338cdbc46408f9415c1f..5c4c861276eba88a5f2d28946d47b66ac5ebf3bd 100644
+index 6c1b1c1..5c4c861 100644
 --- a/dist/internal/internal.js
 +++ b/dist/internal/internal.js
 @@ -14,7 +14,8 @@ import * as Scope from "effect/Scope";
@@ -44,7 +44,7 @@ index 6c1b1c18bef7e0954d6b338cdbc46408f9415c1f..5c4c861276eba88a5f2d28946d47b66a
  const makeProp = it => (name, arbitraries, self, timeout) => registerProp(it, name, arbitraries, (values, ctx) => {
    const result = self(values, ctx);
 diff --git a/src/internal/internal.ts b/src/internal/internal.ts
-index e6ab75a733377e72a5fc95292602e3c7474585d6..808977923a730b112af6c4c80db285715b7500e1 100644
+index e6ab75a..8089779 100644
 --- a/src/internal/internal.ts
 +++ b/src/internal/internal.ts
 @@ -18,7 +18,8 @@ import * as TestConsole from "effect/testing/TestConsole"

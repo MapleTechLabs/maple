@@ -215,7 +215,8 @@ const withoutTransition = <A>(element: HTMLElement, apply: () => A): A => {
 	const previous = element.style.transition
 	element.style.transition = "none"
 	const result = apply()
-	void element.offsetHeight
+	// Reading layout forces the styles to commit while transitions are still off.
+	void element.getBoundingClientRect()
 	element.style.transition = previous
 	return result
 }

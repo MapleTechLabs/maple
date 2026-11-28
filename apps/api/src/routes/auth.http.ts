@@ -7,7 +7,7 @@ import {
 	MapleApi,
 	UnauthorizedError,
 } from "@maple/domain/http"
-import { Effect, Option, String as Str } from "effect"
+import { Effect, Option, Redacted, String as Str } from "effect"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -118,13 +118,13 @@ export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession",
 		const auth = yield* AuthService
 		const mcpOAuth = yield* McpOAuthService
 		return handlers
-			.handle("cliDeviceInspect", ({ params }) => cliAuth.inspect(params.userCode))
+			.handle("cliDeviceInspect", ({ params }) => cliAuth.inspect(Redacted.value(params.userCode)))
 			.handle("cliDeviceApprove", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const userEmail = yield* auth.getUserEmail(tenant.userId)
-					const pending = yield* cliAuth.inspect(params.userCode)
-					const approved = yield* cliAuth.approve(params.userCode, {
+					const pending = yield* cliAuth.inspect(Redacted.value(params.userCode))
+					const approved = yield* cliAuth.approve(Redacted.value(params.userCode), {
 						orgId: tenant.orgId,
 						userId: tenant.userId,
 						roles: tenant.roles,
@@ -137,7 +137,7 @@ export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession",
 					return approved
 				}),
 			)
-			.handle("cliDeviceDeny", ({ params }) => cliAuth.deny(params.userCode))
+			.handle("cliDeviceDeny", ({ params }) => cliAuth.deny(Redacted.value(params.userCode)))
 			.handle("mcpOAuthAuthorizationInspect", ({ params }) => mcpOAuth.inspect(params.requestId))
 			.handle("mcpOAuthAuthorizationApprove", ({ params }) =>
 				Effect.gen(function* () {

@@ -169,7 +169,7 @@ Checks for organizations in the US region run from Ashburn, Virginia (US East). 
 - **Public targets only.** Maple refuses private, loopback and cloud metadata addresses, on the first request and on every redirect. Use [Collector HTTP checks](/docs/alerting/uptime-monitoring#check-private-endpoints-from-your-collector) for private endpoints.
 - **Redirects.** A check follows up to 5 redirects. A redirect to another origin drops your configured headers and body.
 - **No browser or multi-step checks**, and no hosted certificate expiry check. For certificate expiry, use the Collector's [`httpcheck.tls.cert_remaining`](/docs/alerting/uptime-monitoring#alert-before-a-certificate-expires) metric.
-- **Plan allowance.** Each plan includes a number of monitors. Past that number, creating one fails with `402` and "This organization already has N uptime monitors, the most its plan allows." Monitor rules do not count toward the [alert rule limit](/docs/reference/limits).
+- **Plan allowance.** Every plan includes 10 monitors. On a paid plan, each monitor past 10 costs $0.50 a month, and the form says so before you create one. The free trial stops at 10: creating an 11th fails with `402` until you add a card in **Settings → Billing**. Monitor rules do not count toward the [alert rule limit](/docs/reference/limits).
 
 ## Troubleshooting
 

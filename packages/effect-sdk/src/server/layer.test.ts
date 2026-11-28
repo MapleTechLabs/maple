@@ -176,6 +176,20 @@ describe("Maple.layer span options", () => {
 		expect(exportedBeforeShutdown).toContain("/v1/logs")
 	})
 
+	it("drops spans past maxQueueSize and reports them to onDrop", async () => {
+		const drops: Array<{ readonly signal: string; readonly count: number }> = []
+		await run(
+			{ ...config, maxQueueSize: 3, onDrop: (drop) => drops.push(drop) },
+			Effect.forEach(Arr.range(1, 10), (i) => Effect.void.pipe(Effect.withSpan(`job.${i}`)), {
+				discard: true,
+			}),
+		)
+
+		expect(Arr.map(exportedSpans(), (span) => span.name)).toEqual(["job.1", "job.2", "job.3"])
+		expect(Arr.reduce(drops, 0, (total, drop) => total + drop.count)).toBe(7)
+		expect(Arr.every(drops, (drop) => drop.signal === "traces")).toBe(true)
+	})
+
 	it("drops a subtree but keeps sibling work and its logs", async () => {
 		await run(
 			{ ...config, dropSpanSubtrees: ["queue.poll"] },

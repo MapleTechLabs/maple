@@ -103,6 +103,50 @@ export const guideCategories: GuideCategory[] = [
 		],
 	},
 	{
+		// A series: guide-series.ts holds the reading order.
+		id: "product-analytics",
+		icon: "ChartBarTrendUpIcon",
+		title: "Product analytics",
+		description: "Tracking what people do in a product, in five parts.",
+		guides: [
+			{
+				href: "/guides/event-tracking-plan",
+				icon: "TagIcon",
+				title: "Event tracking: what to track and how to name it",
+				description:
+					"A tracking plan for a SaaS product: the ten events to start with, naming rules, properties and identity.",
+			},
+			{
+				href: "/guides/funnel-analysis",
+				icon: "FilterIcon",
+				title: "Funnel analysis: find where signups drop off",
+				description:
+					"Build a signup-to-paid funnel, pick the conversion window, and read drop-off, time to convert and what leavers did next.",
+			},
+			{
+				href: "/guides/conversion-by-channel",
+				icon: "GlobePointerIcon",
+				title: "Conversion rate by channel with UTM tracking",
+				description:
+					"Tag links with UTM parameters, break a funnel down by source, and compare channels on customers instead of clicks.",
+			},
+			{
+				href: "/guides/user-path-analysis",
+				icon: "BranchForkIcon",
+				title: "User path analysis: what people do after signup",
+				description:
+					"Read a path chart from an anchor event, find the routes that lead to activation, and turn one into a funnel.",
+			},
+			{
+				href: "/guides/b2b-product-analytics",
+				icon: "UsersIcon",
+				title: "B2B product analytics: accounts, plans and seats",
+				description:
+					"Count accounts instead of users, set user and account properties, and split a funnel by plan.",
+			},
+		],
+	},
+	{
 		id: "monitoring",
 		icon: "BellIcon",
 		title: "Monitoring & alerting",

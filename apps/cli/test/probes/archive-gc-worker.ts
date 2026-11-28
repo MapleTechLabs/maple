@@ -12,7 +12,7 @@
 //     --boundary <name> --marker-dir <dir> --data-dir <d> --archive-dir <a> \
 //     --scratch-root <s> --keep <n> [--block-ms <n>]
 
-import { writeFileSync, existsSync, mkdirSync } from "node:fs"
+import { writeFileSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { runArchiveGc } from "@maple/local-server/archives/gc"
 
@@ -113,4 +113,3 @@ void main().catch((error: unknown) => {
 	console.error(`gc-worker fatal: ${error instanceof Error ? error.message : String(error)}`)
 	process.exit(6)
 })
-void existsSync

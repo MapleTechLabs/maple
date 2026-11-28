@@ -3033,7 +3033,6 @@ describe("ErrorsService.runTick", () => {
 		let rows: ReadonlyArray<Record<string, unknown>> = [scanRow({ fingerprintHash: ONGOING, count: 3 })]
 		return Effect.gen(function* () {
 			const errors = yield* ErrorsService
-			const database = yield* Database
 			yield* TestClock.setTime(TICK_MS)
 			// Makes the org discoverable; unrelated to the fingerprints under test.
 			yield* seedIssue(asIssueId(randomUUID()), {
@@ -3132,7 +3131,6 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(freshIncidents[0]?.reason, "first_seen")
 
 			assert.strictEqual(result.incidentsOpened, 2)
-			void database
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
