@@ -231,11 +231,19 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     <dd class="text-fg">{c.included}</dd>
                                     <dt class="text-fg-muted">{m.pricing_row_ingestion()}</dt>
                                     <dd class="font-mono tabular-nums text-fg">
-                                        {c.ingestion} <span class="text-fg-muted">{m.pricing_unit_per_gb()}</span>
+                                        {c.ingestion !== undefined && (
+                                            <>
+                                                {c.ingestion} <span class="text-fg-muted">{m.pricing_unit_per_gb()}</span>
+                                            </>
+                                        )}
                                     </dd>
                                     <dt class="text-fg-muted">{m.pricing_row_retention()}</dt>
                                     <dd class="whitespace-nowrap font-mono tabular-nums text-fg">
-                                        {c.retention} <span class="text-fg-muted">{m.pricing_unit_per_gb_month()}</span>
+                                        {c.retention !== undefined && (
+                                            <>
+                                                {c.retention} <span class="text-fg-muted">{m.pricing_unit_per_gb_month()}</span>
+                                            </>
+                                        )}
                                     </dd>
                                 </dl>
                             </div>
