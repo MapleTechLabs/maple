@@ -104,7 +104,7 @@ const layerFor = (testDb: TestDb, world: World) =>
 					listPlans: die,
 					applyReward: die,
 					updateCustomerBillingControls: die,
-					updateCustomerName: die,
+					updateCustomerIdentity: die,
 				}),
 				Layer.mock(OrgMembershipService)({
 					directory: "clerk",
