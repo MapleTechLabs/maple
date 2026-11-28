@@ -121,9 +121,10 @@ The grace exists because a segment seals while its last frames are still on thei
 warehouse. Export trails the seal by under a second (worst `ingest.export_batch` in a six-hour prd
 sample: 850ms), so a shipper that decides at seal uploads nearly everything: before the grace, prd
 uploaded and then deleted about 106k segments a day, 1 TB, against 800 skipped. What the grace costs
-is bounded and only paid in a double failure: a host lost without its shutdown flush, while exports
-lag by more than the grace, keeps up to one grace more of sealed frames per lane local-only, on top
-of the unsealed segment it always held.
+is paid only when a host is lost without its shutdown flush: every sealed segment still waiting out
+its grace then has no copy in the bucket, on top of the unsealed segment it always lost. With
+healthy exports that is the segments sealed in the second before the loss; while exports lag, it is
+up to one grace of sealed frames per lane.
 
 A failed upload is retried twice, a second apart, and stops as soon as the segment exports. After
 the third failure the segment stays local-only until it exports or the shutdown flush ships it.
