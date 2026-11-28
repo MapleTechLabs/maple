@@ -69,7 +69,7 @@ const autumnStub = (world: World) =>
 		applyReward: die,
 		cancelPlans: die,
 		updateCustomerBillingControls: die,
-		updateCustomerName: die,
+		updateCustomerIdentity: die,
 	})
 
 const fetchStub = (world: World): typeof fetch =>

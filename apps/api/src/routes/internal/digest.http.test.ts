@@ -60,7 +60,6 @@ const authStub = (verifiedEmail: string | null) =>
 		refreshSelfHostedSession: () => unused,
 		getUserEmail: () => Effect.succeed("unverified@example.com"),
 		getVerifiedPrimaryEmail: () => Effect.succeed(verifiedEmail),
-		getCustomerData: () => unused,
 	})
 
 const authorizationStub = Layer.succeed(
