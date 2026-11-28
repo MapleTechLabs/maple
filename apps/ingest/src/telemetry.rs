@@ -3361,10 +3361,35 @@ async fn run_owner_heartbeat(store: Arc<WalSegmentStore>, interval: Duration) {
     }
 }
 
+/// Uploads tried for one sealed segment before it is left local-only.
+const SEGMENT_SHIP_ATTEMPTS: u32 = 3;
+
+/// Wait between two upload attempts of one segment.
+const SEGMENT_SHIP_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+/// A sealed segment the shipper still owes an upload: waiting out the ship
+/// grace, or waiting to retry a failed attempt.
+struct PendingShip {
+    lane: usize,
+    seq: u64,
+    due: tokio::time::Instant,
+    /// Uploads already tried. Past zero the object may exist in the bucket.
+    attempts: u32,
+}
+
+async fn sleep_until_due(due: Option<tokio::time::Instant>) {
+    match due {
+        Some(due) => tokio::time::sleep_until(due).await,
+        None => std::future::pending().await,
+    }
+}
+
 /// Ship and retire segments for one shipper's share of the lanes.
 ///
-/// Events arrive in the order their lane produced them, so an `Exported` for a
-/// segment always follows the `Sealed` that uploaded it.
+/// A sealed segment waits `ship_grace` before its upload, and one that exports
+/// meanwhile is never uploaded: the bucket holds what the exporter is behind
+/// on, not the traffic. Events arrive in the order their lane produced them,
+/// so an `Exported` for a segment always follows the `Sealed` that queued it.
 fn run_segment_shipper(
     lanes: Vec<Arc<WalLane>>,
     store: Arc<WalSegmentStore>,
@@ -3376,23 +3401,86 @@ fn run_segment_shipper(
         .iter()
         .map(|lane| lane.active_seq.load(Ordering::Acquire))
         .collect();
+    let grace = store.ship_grace();
     async move {
-        while let Some(event) = receiver.recv().await {
-            let (SegmentEvent::Sealed { lane, seq } | SegmentEvent::Exported { lane, seq }) = event;
-            let (Some(lane_ref), Some(next)) = (lanes.get(lane), next_sealed.get_mut(lane)) else {
-                continue;
-            };
-            match event {
-                SegmentEvent::Sealed { .. } => {
-                    let from = (*next).min(seq);
-                    *next = (*next).max(seq.saturating_add(1));
-                    for sealed in from..=seq {
-                        ship_sealed_segment(lane_ref, &store, sealed).await;
+        let mut pending: Vec<PendingShip> = Vec::new();
+        loop {
+            let next_due = pending.iter().map(|ship| ship.due).min();
+            // Unbiased, so slow deletes cannot starve due uploads, nor uploads the events.
+            tokio::select! {
+                event = receiver.recv() => {
+                    let Some(event) = event else {
+                        return;
+                    };
+                    let (SegmentEvent::Sealed { lane, seq } | SegmentEvent::Exported { lane, seq }) =
+                        event;
+                    let (Some(lane_ref), Some(next)) = (lanes.get(lane), next_sealed.get_mut(lane))
+                    else {
+                        continue;
+                    };
+                    match event {
+                        SegmentEvent::Sealed { .. } => {
+                            let from = (*next).min(seq);
+                            *next = (*next).max(seq.saturating_add(1));
+                            let due = tokio::time::Instant::now() + grace;
+                            for sealed in from..=seq {
+                                // The store is not keeping up; this one stays local-only.
+                                if pending.len() >= SEGMENT_SHIPPER_QUEUE {
+                                    metrics::wal_ship_dropped(
+                                        lane_ref.shard,
+                                        lane_ref.destination.as_str(),
+                                    );
+                                    continue;
+                                }
+                                pending.push(PendingShip { lane, seq: sealed, due, attempts: 0 });
+                            }
+                        }
+                        SegmentEvent::Exported { .. } => {
+                            let waiting = pending
+                                .iter()
+                                .position(|ship| ship.lane == lane && ship.seq == seq)
+                                .map(|index| pending.swap_remove(index));
+                            // Never uploaded, so the bucket holds nothing to delete.
+                            if waiting.is_some_and(|ship| ship.attempts == 0) {
+                                metrics::wal_ship_skipped(
+                                    lane_ref.shard,
+                                    lane_ref.destination.as_str(),
+                                );
+                            } else if let Err(error) =
+                                store.delete_segment(&lane_ref.lane_key, seq).await
+                            {
+                                report_ship_failure(lane_ref, seq, &error);
+                            }
+                        }
                     }
                 }
-                SegmentEvent::Exported { .. } => {
-                    if let Err(error) = store.delete_segment(&lane_ref.lane_key, seq).await {
-                        report_ship_failure(lane_ref, seq, &error);
+                () = sleep_until_due(next_due) => {
+                    let Some(index) = pending.iter().position(|ship| Some(ship.due) == next_due)
+                    else {
+                        continue;
+                    };
+                    let ship = pending.swap_remove(index);
+                    let Some(lane_ref) = lanes.get(ship.lane) else {
+                        continue;
+                    };
+                    if ship_sealed_segment(lane_ref, &store, ship.seq).await {
+                        continue;
+                    }
+                    let attempts = ship.attempts + 1;
+                    if attempts < SEGMENT_SHIP_ATTEMPTS {
+                        pending.push(PendingShip {
+                            due: tokio::time::Instant::now() + SEGMENT_SHIP_RETRY_DELAY,
+                            attempts,
+                            ..ship
+                        });
+                    } else {
+                        warn!(
+                            shard = lane_ref.shard,
+                            destination = lane_ref.destination.as_str(),
+                            segment = ship.seq,
+                            attempts,
+                            "Leaving a WAL segment local-only after its uploads failed"
+                        );
                     }
                 }
             }
@@ -3400,20 +3488,27 @@ fn run_segment_shipper(
     }
 }
 
-async fn ship_sealed_segment(lane: &WalLane, store: &WalSegmentStore, seq: u64) {
-    // A healthy pipeline exports a segment well before its upload comes up, and
-    // a segment already in the warehouse needs no backup, which keeps this tier cheap.
+/// Upload one sealed segment, unless it exported first. False when the upload
+/// failed and is worth another attempt.
+async fn ship_sealed_segment(lane: &WalLane, store: &WalSegmentStore, seq: u64) -> bool {
+    // Only reached when the segment's `Exported` event was dropped or is still queued.
     if lane.is_exported(seq) {
         metrics::wal_ship_skipped(lane.shard, lane.destination.as_str());
-        return;
+        return true;
     }
     let Some(bytes) = lane.read_segment(seq) else {
-        return;
+        return true;
     };
     let len = bytes.len() as u64;
     match store.put_segment(&lane.lane_key, seq, bytes).await {
-        Ok(()) => metrics::wal_segment_shipped(lane.shard, lane.destination.as_str(), len),
-        Err(error) => report_ship_failure(lane, seq, &error),
+        Ok(()) => {
+            metrics::wal_segment_shipped(lane.shard, lane.destination.as_str(), len);
+            true
+        }
+        Err(error) => {
+            report_ship_failure(lane, seq, &error);
+            false
+        }
     }
 }
 
@@ -10485,7 +10580,12 @@ mod tests {
         }
     }
 
+    /// A store that ships a segment as soon as it seals.
     fn test_wal_store(endpoint: &str) -> Arc<WalSegmentStore> {
+        test_wal_store_with_grace(endpoint, Duration::ZERO)
+    }
+
+    fn test_wal_store_with_grace(endpoint: &str, ship_grace: Duration) -> Arc<WalSegmentStore> {
         Arc::new(WalSegmentStore::new(
             Client::new(),
             &crate::wal_store::WalStoreConfig {
@@ -10496,6 +10596,7 @@ mod tests {
                 timeout: Duration::from_secs(5),
                 orphan_after: Duration::from_secs(600),
                 heartbeat_interval: Duration::from_secs(60),
+                ship_grace,
             },
             Arc::new(crate::aws::CredentialsProvider::from_static(
                 "test-key".to_owned(),
@@ -10559,6 +10660,194 @@ mod tests {
         .expect("mark_exported");
         wait_for("the exported segment's object to be dropped", || {
             bucket.get(&shipped_key).is_none()
+        })
+        .await;
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_segment_exported_inside_the_ship_grace_never_reaches_the_bucket() {
+        // The healthy pipeline: export finishes moments after the seal, so the
+        // segment costs the object store neither an upload nor a delete.
+        let queue_dir = unique_test_dir("wal-ship-grace-exported");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 240);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let grace = Duration::from_millis(300);
+
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let (events, receiver) = mpsc::channel(8);
+        tokio::spawn(run_segment_shipper(
+            wal.lanes.clone(),
+            test_wal_store_with_grace(&endpoint, grace),
+            receiver,
+        ));
+        // A sealed segment the lane still holds, so an upload would have bytes to send.
+        let frame = wal_test_frame(200);
+        let (sealed, _, _) = wal.append(0, &frame).await.expect("append a");
+        wal.append(0, &frame).await.expect("append b");
+
+        // Queued together, so the grace cannot run out between them on a slow disk.
+        for event in [
+            SegmentEvent::Sealed {
+                lane: 0,
+                seq: sealed,
+            },
+            SegmentEvent::Exported {
+                lane: 0,
+                seq: sealed,
+            },
+        ] {
+            events.send(event).await.unwrap();
+        }
+
+        sleep(grace * 3).await;
+        assert_eq!(
+            bucket.requests(),
+            Vec::<String>::new(),
+            "a segment that exported inside the grace is not uploaded or deleted"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_segment_still_owed_after_the_ship_grace_is_uploaded() {
+        // The release valve: exports are behind, so the sealed segment ships once
+        // the grace is spent, and its object goes away when the frames export.
+        let queue_dir = unique_test_dir("wal-ship-grace-owed");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 240);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let grace = Duration::from_millis(300);
+
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store_with_grace(&endpoint, grace);
+        let owner = store.owner().to_owned();
+        wal.attach_object_store(&store);
+        let frame = wal_test_frame(200);
+        let (seg_a, _, end_a) = wal.append(0, &frame).await.expect("append a");
+        wal.append(0, &frame).await.expect("append b");
+        let key = format!("wal/v1/segments/{owner}/shard-000-tinybird/{seg_a:012}.seg");
+        wait_for("the owed segment to ship", || bucket.get(&key).is_some()).await;
+
+        wal.mark_exported(
+            0,
+            SegmentCursor {
+                seq: seg_a,
+                offset: end_a,
+            },
+            end_a,
+        )
+        .await
+        .expect("mark_exported");
+        wait_for("the exported segment's object to be dropped", || {
+            bucket.get(&key).is_none()
+        })
+        .await;
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// Stream requests through a pipeline whose warehouse takes 20ms an import,
+    /// each request sealing a segment while the one before is still exporting,
+    /// then drain. Returns the segments sealed and the object-store requests
+    /// made for them.
+    async fn segment_requests_of_a_healthy_stream(ship_grace: Duration) -> (u64, Vec<String>) {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let tinybird = format!("http://{}", listener.local_addr().unwrap());
+        let warehouse = Router::new().route(
+            "/v0/events",
+            post(|| async {
+                sleep(Duration::from_millis(20)).await;
+                StatusCode::OK
+            }),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, warehouse).await.unwrap();
+        });
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let queue_dir = unique_test_dir("wal-ship-healthy");
+        let mut cfg = test_cfg();
+        cfg.endpoint = tinybird;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.wal_segment_max_bytes = 256;
+        let pipeline = TelemetryPipeline::new_with_object_store(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            None,
+            true,
+            Some(test_wal_store_with_grace(&endpoint, ship_grace)),
+        )
+        .await
+        .unwrap();
+        let lane = &pipeline.inner.wal.lanes[lane_index(0, ExportDestination::Tinybird)];
+        let first = lane.active_seq.load(Ordering::Acquire);
+
+        for _ in 0..40 {
+            pipeline
+                .accept_logs("org_ship", &populated_log_request())
+                .await
+                .unwrap();
+        }
+        assert_eq!(pipeline.drain_wal(Duration::from_secs(5)).await, 0);
+        let sealed = lane.active_seq.load(Ordering::Acquire) - first;
+        // Long enough for any segment still waiting out the grace to come due.
+        sleep(ship_grace + Duration::from_millis(300)).await;
+        let requests = bucket
+            .requests()
+            .into_iter()
+            .filter(|request| request.contains("/segments/"))
+            .collect();
+        drop(std::fs::remove_dir_all(queue_dir));
+        (sealed, requests)
+    }
+
+    #[tokio::test]
+    async fn a_healthy_pipeline_exports_its_segments_without_touching_the_bucket() {
+        // The object store is a release valve. With the warehouse keeping up,
+        // every segment exports inside the grace and none is uploaded or deleted.
+        // A grace far above the 20ms export, so a slow CI disk does not spend it.
+        let (sealed, requests) =
+            segment_requests_of_a_healthy_stream(Duration::from_millis(1500)).await;
+        assert!(sealed >= 20, "the stream sealed segments: {sealed}");
+        assert_eq!(requests, Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn a_failed_segment_upload_is_tried_again() {
+        // One transport blip used to leave the segment local-only for good, and
+        // the segments that reach an upload now are the ones that need the copy.
+        let queue_dir = unique_test_dir("wal-ship-retry");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 240);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        bucket.fail_puts_under("wal/v1/segments/");
+
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        let owner = store.owner().to_owned();
+        wal.attach_object_store(&store);
+        let frame = wal_test_frame(200);
+        let (seg_a, _, _) = wal.append(0, &frame).await.expect("append a");
+        wal.append(0, &frame).await.expect("append b");
+        let key = format!("wal/v1/segments/{owner}/shard-000-tinybird/{seg_a:012}.seg");
+
+        wait_for("the first upload to fail", || {
+            bucket.requests().contains(&format!("PUT {key}"))
+        })
+        .await;
+        bucket.fail_puts_under("nothing/");
+        wait_for("the retry to ship the segment", || {
+            bucket.get(&key).is_some()
         })
         .await;
 
