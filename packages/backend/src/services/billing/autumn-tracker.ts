@@ -165,6 +165,8 @@ const sendUsage = (
 				(response.status >= 200 && response.status < 300) || response.status === 409
 					? Effect.void
 					: response.text.pipe(
+							// The body read gets the same ceiling: a stalled error body must not hold the caller.
+							Effect.timeout(TRACK_TIMEOUT),
 							Effect.orElseSucceed(() => ""),
 							Effect.flatMap((body) =>
 								Effect.logWarning("autumn track failed").pipe(
