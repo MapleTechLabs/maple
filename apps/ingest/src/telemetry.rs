@@ -2822,6 +2822,13 @@ impl ShardedWal {
                     Ok(()) => {
                         shipped += len;
                         metrics::wal_segment_shipped(lane.shard, lane.destination.as_str(), len);
+                        // Exported while the PUT was in flight: the shipper's delete may
+                        // have run before the object landed, so drop it here too.
+                        if lane.is_exported(seq) {
+                            if let Err(error) = store.delete_segment(&lane.lane_key, seq).await {
+                                report_ship_failure(lane, seq, &error);
+                            }
+                        }
                     }
                     Err(error) => {
                         warn!(
@@ -10425,6 +10432,8 @@ mod tests {
             failing_puts: Arc<StdMutex<Option<String>>>,
             /// PUTs to keys under this prefix never answer.
             stalled_puts: Arc<StdMutex<Option<String>>>,
+            /// PUTs to keys under this prefix answer after the delay.
+            slow_puts: Arc<StdMutex<Option<(String, Duration)>>>,
             writes: Arc<AtomicU64>,
         }
 
@@ -10439,6 +10448,10 @@ mod tests {
 
             pub(super) fn stall_puts_under(&self, prefix: &str) {
                 *self.stalled_puts.lock().unwrap() = Some(prefix.to_owned());
+            }
+
+            pub(super) fn slow_puts_under(&self, prefix: &str, delay: Duration) {
+                *self.slow_puts.lock().unwrap() = Some((prefix.to_owned(), delay));
             }
 
             fn next_etag(&self) -> String {
@@ -10492,6 +10505,10 @@ mod tests {
                 let stalled = state.stalled_puts.lock().unwrap().clone();
                 if stalled.is_some_and(|prefix| key.starts_with(&prefix)) {
                     std::future::pending::<()>().await;
+                }
+                let slow = state.slow_puts.lock().unwrap().clone();
+                if let Some((_, delay)) = slow.filter(|(prefix, _)| key.starts_with(prefix)) {
+                    sleep(delay).await;
                 }
             }
             let mut objects = state.objects.lock().unwrap();
@@ -10858,6 +10875,43 @@ mod tests {
             bucket.get(&key).is_none()
         })
         .await;
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_segment_that_exports_during_its_shutdown_upload_is_deleted_after_it() {
+        // The export's delete can run while the flush PUT is in flight, and the
+        // object lands after it. The flush re-checks once its PUT completes.
+        let queue_dir = unique_test_dir("wal-flush-export-race");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        bucket.slow_puts_under("wal/v1/segments/", Duration::from_millis(300));
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        // No shipper, so only the flush can remove the object.
+        let store = test_wal_store(&endpoint);
+        let owner = store.owner().to_owned();
+
+        let frame = wal_test_frame(200);
+        let (seq, _, end) = wal.append(0, &frame).await.expect("append");
+        let key = format!("wal/v1/segments/{owner}/shard-000-tinybird/{seq:012}.seg");
+        let export_mid_put = async {
+            wait_for("the flush PUT to start", || {
+                bucket.requests().contains(&format!("PUT {key}"))
+            })
+            .await;
+            wal.mark_exported(0, SegmentCursor { seq, offset: end }, end)
+                .await
+                .expect("mark_exported");
+        };
+        let (shipped, ()) = tokio::join!(wal.flush_segments_to(&store), export_mid_put);
+        assert_eq!(shipped, end, "the tail was uploaded");
+        assert_eq!(
+            bucket.get(&key),
+            None,
+            "and deleted once it was seen exported"
+        );
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
