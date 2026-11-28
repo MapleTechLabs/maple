@@ -19,7 +19,7 @@ flowchart TD
     Sync --> Export["Export committed frames in the background"]
     Export --> Warehouse["Tinybird or ClickHouse"]
     Sync --> Seal["Seal the segment on rotation or shutdown"]
-    Seal -->|"If the exporter hasn't passed it"| Ship["Ship the sealed segment to S3"]
+    Seal -->|"If the exporter hasn't passed it within the ship grace"| Ship["Ship the sealed segment to S3"]
     Ship -->|"A new task claims the backlog"| Recover["Re-commit and re-ship before deleting the source object"]
 ```
 
@@ -111,10 +111,23 @@ An **owner** is one boot, identified by a fresh UUID (never a task ARN), so a se
 never be reused across boots and a claim can never race a live writer for the same key.
 
 **Shipping.** A sealed segment is announced to a shipper task (`SEGMENT_SHIPPER_WORKERS`, one lane
-always handled by the same worker so its events stay ordered). The shipper skips any segment the
-exporter has already passed, which in a healthy pipeline is nearly all of them. That is why the
-tier costs single-digit dollars a month at ~2B traces: the bucket holds the current backlog, not the
-traffic. When a segment exports, its object is deleted.
+always handled by the same worker so its events stay ordered). The shipper holds it for
+`INGEST_WAL_S3_SHIP_GRACE_MS` (5s) and uploads it only if the exporter has still not passed it. The
+object store is a release valve for when exports fall behind, not a second copy of the traffic: the
+bucket holds the current backlog. When an uploaded segment exports, its object is deleted; a segment
+that exported inside the grace costs no request at all.
+
+The grace exists because a segment seals while its last frames are still on their way to the
+warehouse. Export trails the seal by under a second (worst `ingest.export_batch` in a six-hour prd
+sample: 850ms), so a shipper that decides at seal uploads nearly everything: before the grace, prd
+uploaded and then deleted about 106k segments a day, 1 TB, against 800 skipped. What the grace costs
+is paid only when a host is lost without its shutdown flush: every sealed segment still waiting out
+its grace then has no copy in the bucket, on top of the unsealed segment it always lost. With
+healthy exports that is the segments sealed in the second before the loss; while exports lag, it is
+up to one grace of sealed frames per lane.
+
+A failed upload is retried twice, a second apart, and stops as soon as the segment exports. After
+the third failure the segment stays local-only until it exports or the shutdown flush ships it.
 
 **Claiming.** On boot, a task lists `owners/`, takes every owner whose heartbeat is older than
 `INGEST_WAL_S3_ORPHAN_AFTER_SECS` (10 min), and claims it with a conditional `PUT … If-None-Match: *`.
@@ -141,7 +154,8 @@ deletes; a holder would have to stall for 30 minutes between its renewal and its
 
 **Shipping gaps.** A full shipper channel drops a segment event rather than block an append. A lane
 seals in sequence, so when a `Sealed` arrives past the one the shipper expected, it ships the skipped
-segments too.
+segments too. A shipper already holding 1024 segments (the store has stopped answering) takes no
+more: those count as `queue_full` and stay local-only.
 
 **Shutdown.** After `INGEST_SHUTDOWN_DRAIN_SECS`, whatever did not export is sealed and shipped, and
 the owner is retired, so the next task claims it immediately instead of waiting out the staleness
@@ -168,6 +182,7 @@ has an S3 gateway endpoint and no NAT, so this traffic is free.
 | `INGEST_WAL_S3_ORPHAN_AFTER_SECS` | 600                                 | How stale a heartbeat must be to be claimable           |
 | `INGEST_WAL_S3_HEARTBEAT_SECS`    | 60                                  | Owner heartbeat interval                                |
 | `INGEST_WAL_S3_TIMEOUT_MS`        | 10000                               | Per-request timeout                                     |
+| `INGEST_WAL_S3_SHIP_GRACE_MS`     | 5000                                | Wait before uploading a sealed segment; 0 ships at seal |
 | `INGEST_SHUTDOWN_DRAIN_SECS`      | 90                                  | Must stay inside the task's 120s `stopTimeout`          |
 | `INGEST_QUEUE_MAX_AGE_SECS`       | 300                                 | Age past which a queued frame is shed; 0 disables       |
 | `INGEST_REQUEST_TIMEOUT_SECS`     | 30                                  | Gateway request deadline; 0 disables                    |
@@ -346,23 +361,28 @@ Frames waiting in a lane's channel are not in this budget: they are bounded per 
 
 ## Metrics
 
-| Metric                                  | Read it for                                                        |
-| --------------------------------------- | ------------------------------------------------------------------ |
-| `ingest_wal_shard_bytes`                | Bytes a lane holds on disk, exported prefix included               |
-| `ingest_wal_shard_full_total`           | Appends rejected because a lane hit its cap: customer-visible 429s |
-| `ingest_wal_segments_sealed_total`      | Segment rotation rate                                              |
-| `ingest_wal_reclaimed_bytes_total`      | Bytes freed by deleting exported segments                          |
-| `ingest_wal_shipped_bytes_total`        | Bytes that reached the bucket                                      |
-| `ingest_wal_ship_outcomes_total`        | `outcome=exported_first` (healthy), `queue_full`, `failed`         |
-| `ingest_wal_frames_recovered_total`     | Frames claimed from a dead task; non-zero means a task died dirty  |
-| `ingest_wal_commit_bytes`               | Per-append size; the `ingest.wal_commit` span carries the latency  |
-| `ingest_wal_sync_batch_frames`          | Frames per group-commit sync; its count is the fsync count         |
-| `ingest_wal_sync_wait_duration_seconds` | Write to covering sync, per append                                 |
-| `ingest_partial_write_total`            | Requests that failed after part of their rows were durable         |
+| Metric                                  | Read it for                                                           |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| `ingest_wal_shard_bytes`                | Bytes a lane holds on disk, exported prefix included                  |
+| `ingest_wal_shard_full_total`           | Appends rejected because a lane hit its cap: customer-visible 429s    |
+| `ingest_wal_segments_sealed_total`      | Segment rotation rate                                                 |
+| `ingest_wal_reclaimed_bytes_total`      | Bytes freed by deleting exported segments                             |
+| `ingest_wal_shipped_bytes_total`        | Bytes that reached the bucket                                         |
+| `ingest_wal_ship_outcomes_total`        | `outcome=exported_first` (healthy), `shipped`, `queue_full`, `failed` |
+| `ingest_wal_frames_recovered_total`     | Frames claimed from a dead task; non-zero means a task died dirty     |
+| `ingest_wal_commit_bytes`               | Per-append size; the `ingest.wal_commit` span carries the latency     |
+| `ingest_wal_sync_batch_frames`          | Frames per group-commit sync; its count is the fsync count            |
+| `ingest_wal_sync_wait_duration_seconds` | Write to covering sync, per append                                    |
+| `ingest_partial_write_total`            | Requests that failed after part of their rows were durable            |
 
 `queue_full` means the object store cannot keep up with segment rotation, and those segments stay
 local-only. Sustained non-zero is the signal that the durability tier is not actually covering the
 backlog.
+
+`shipped` against `exported_first` is how far exports are behind: a healthy pipeline is almost all
+`exported_first`, and a rising `shipped` share means segments are outliving the ship grace, so the
+warehouse is slow before any queue has filled. `failed` counts attempts, so one segment can add
+three.
 
 ## What is deliberately not here
 

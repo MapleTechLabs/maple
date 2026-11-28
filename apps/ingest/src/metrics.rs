@@ -267,8 +267,8 @@ static WAL_SHIP_OUTCOMES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_wal_ship_outcomes_total")
         .with_description(
-            "WAL segments that were not uploaded, by outcome: exported before the upload ran, \
-             dropped because the shipper queue was full, or failed",
+            "Sealed WAL segments by ship outcome: shipped, exported inside the ship grace, \
+             dropped because the shipper queue was full, or a failed upload attempt",
         )
         .build()
 });
@@ -962,7 +962,8 @@ pub fn wal_segment_sealed(shard: usize, destination: &str) {
     );
 }
 
-/// A sealed WAL segment reached the durability object store.
+/// A sealed WAL segment reached the durability object store. Counted as an
+/// outcome too, so the uploaded share of sealed segments reads off one metric.
 pub fn wal_segment_shipped(shard: usize, destination: &str, bytes: u64) {
     WAL_SHIPPED_BYTES_TOTAL.add(
         bytes,
@@ -971,6 +972,7 @@ pub fn wal_segment_shipped(shard: usize, destination: &str, bytes: u64) {
             KeyValue::new("destination", destination.to_owned()),
         ],
     );
+    wal_ship_outcome(shard, destination, "shipped", String::new());
 }
 
 fn wal_ship_outcome(shard: usize, destination: &str, outcome: &'static str, detail: String) {
@@ -985,8 +987,8 @@ fn wal_ship_outcome(shard: usize, destination: &str, outcome: &'static str, deta
     );
 }
 
-/// The segment exported before its upload ran, so there was nothing to protect.
-/// The expected outcome for most segments in a healthy pipeline.
+/// The segment exported inside the ship grace, so there was nothing to protect.
+/// The expected outcome for nearly every segment in a healthy pipeline.
 pub fn wal_ship_skipped(shard: usize, destination: &str) {
     wal_ship_outcome(shard, destination, "exported_first", String::new());
 }

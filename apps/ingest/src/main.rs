@@ -806,6 +806,12 @@ impl AppConfig {
                             maple_ingest::wal_store::DEFAULT_ORPHAN_AFTER.as_secs(),
                         )?),
                         heartbeat_interval: Duration::from_secs(heartbeat_secs),
+                        ship_grace: Duration::from_millis(parse_u64(
+                            "INGEST_WAL_S3_SHIP_GRACE_MS",
+                            std::env::var("INGEST_WAL_S3_SHIP_GRACE_MS").ok(),
+                            u64::try_from(maple_ingest::wal_store::DEFAULT_SHIP_GRACE.as_millis())
+                                .unwrap_or(u64::MAX),
+                        )?),
                     },
                     access_key_id: std::env::var("INGEST_WAL_S3_ACCESS_KEY_ID").ok(),
                     secret_access_key: std::env::var("INGEST_WAL_S3_SECRET_ACCESS_KEY").ok(),

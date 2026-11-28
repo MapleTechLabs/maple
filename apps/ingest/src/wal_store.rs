@@ -7,10 +7,10 @@
 //! crash, a spot reclaim, an AZ event) by keeping every sealed, unexported
 //! segment in an object store too.
 //!
-//! Cost is small because segments are transient: a segment is deleted from the
-//! bucket as soon as its frames export, so the bucket holds roughly the current
-//! backlog rather than the traffic. At ~8 MiB per object and a healthy pipeline,
-//! most segments are exported before their upload is even attempted.
+//! Cost is small because the bucket is a release valve, not a second copy of
+//! the traffic: a sealed segment is uploaded only if it is still unexported
+//! after `ship_grace`, and its object is deleted once its frames export. A
+//! healthy pipeline exports a segment well inside the grace and uploads nothing.
 //!
 //! Ownership is per boot, not per task ARN: an owner id is a fresh UUID, so a
 //! sequence number is never reused across boots and a claim can never race a
@@ -46,6 +46,11 @@ pub const DEFAULT_ORPHAN_AFTER: Duration = Duration::from_secs(10 * 60);
 /// How often a live task refreshes its heartbeat object.
 pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
 
+/// How long a sealed segment waits for its export before it is uploaded. Export
+/// trails a seal by under a second, so uploading at seal shipped nearly every
+/// segment; a host lost while exports lag keeps this much more local-only.
+pub const DEFAULT_SHIP_GRACE: Duration = Duration::from_secs(5);
+
 /// How long a claim marker holds an owner before another task may take it over.
 ///
 /// A claimer that dies mid-recovery would otherwise strand those segments
@@ -72,6 +77,8 @@ pub struct WalStoreConfig {
     pub timeout: Duration,
     pub orphan_after: Duration,
     pub heartbeat_interval: Duration,
+    /// See `DEFAULT_SHIP_GRACE`. Zero uploads a segment as soon as it seals.
+    pub ship_grace: Duration,
 }
 
 /// This task's hold on one dead owner, fenced by the ETag of its last write to
@@ -147,6 +154,10 @@ pub struct WalSegmentStore {
     /// under it and its segments are unambiguously ours to delete.
     owner: String,
     orphan_after: Duration,
+    ship_grace: Duration,
+    /// Set when the shutdown flush starts uploading segments the shipper does not
+    /// track, so from then on every export deletes its object.
+    flushing: AtomicBool,
     /// Set first thing in `retire`; a heartbeat checks it under `heartbeat_lock`
     /// before its PUT, so none starts once retire has begun.
     retired: AtomicBool,
@@ -183,6 +194,8 @@ impl WalSegmentStore {
             prefix: cfg.prefix.trim_end_matches('/').to_owned(),
             owner: uuid::Uuid::new_v4().to_string(),
             orphan_after: cfg.orphan_after,
+            ship_grace: cfg.ship_grace,
+            flushing: AtomicBool::new(false),
             retired: AtomicBool::new(false),
             heartbeat_lock: tokio::sync::Mutex::new(()),
         }
@@ -190,6 +203,19 @@ impl WalSegmentStore {
 
     pub fn owner(&self) -> &str {
         &self.owner
+    }
+
+    pub const fn ship_grace(&self) -> Duration {
+        self.ship_grace
+    }
+
+    pub fn begin_shutdown_flush(&self) {
+        self.flushing.store(true, Ordering::Release);
+    }
+
+    /// Whether a segment the shipper never uploaded may be in the bucket anyway.
+    pub fn shutdown_flush_started(&self) -> bool {
+        self.flushing.load(Ordering::Acquire)
     }
 
     fn segment_key(&self, owner: &str, lane_key: &str, seq: u64) -> String {

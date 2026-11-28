@@ -11,6 +11,7 @@ const EMPTY: PlainEnv = {}
 export const gatewayTuningEnv: Config.Config<PlainEnv> = Config.all([
 	optionalPlain("INGEST_WAL_SEGMENT_MAX_BYTES"),
 	optionalPlain("INGEST_WAL_S3_ORPHAN_AFTER_SECS"),
+	optionalPlain("INGEST_WAL_S3_SHIP_GRACE_MS"),
 	optionalPlain("INGEST_WRITE_MODE"),
 	optionalPlain("INGEST_BATCH_MAX_ROWS"),
 	optionalPlain("INGEST_BATCH_MAX_BYTES"),
