@@ -1,12 +1,13 @@
 import { lockBodyScroll, markOutside, trapFocus } from "@maple/views/ui/overlay/portal"
 import { focusGuard, SR_ONLY_STYLE } from "@maple/views/ui/overlay/transition"
-import { Array as Arr, Effect, Option, Queue, Schema, Stream, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Queue, Result, Schema, Stream, String as Str } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
 import { trackLanding } from "../../lib/telemetry"
-import { attachViewer, PART, type Viewer, type ViewerEvent, viewerOf } from "./viewer"
+import { PART } from "./parts"
+import type { Viewer, ViewerEvent } from "./viewer"
 
 /**
  * The site's screenshot viewer. The Model holds what is open, `viewer.ts` runs the gestures, and
@@ -16,7 +17,7 @@ import { attachViewer, PART, type Viewer, type ViewerEvent, viewerOf } from "./v
 
 // The static page's side: plates opt in, articles group, and Commands leave the two marks on
 // the open gallery's plates so slides and the stylesheet can find them.
-const ZOOMABLE = "img[data-zoomable]"
+const ZOOMABLE = ":is(img, video)[data-zoomable]"
 const PROSE_IMAGES = ".docs-content img"
 const GROUP = ".docs-content, [data-lightbox-group]"
 const TRIGGER = "data-lightbox-trigger"
@@ -24,15 +25,29 @@ const ORIGIN = "data-lightbox-origin"
 
 /** Slides this far from the open one keep their image mounted, so a swipe lands on pixels. */
 const PRELOAD = 1
+/** A gallery this long gets a strip of thumbnails to jump through it. */
+const THUMBNAILS_FROM = 5
 const KEY_PAN_PX = 50
-/** A full-size bitmap gets this long to decode before the viewer opens without the morph. */
-const DECODE_WAIT = "200 millis"
 /** Outlasts the closing transition, which still needs the plate's mark. */
 const RELEASE_AFTER = "600 millis"
 
 // MODEL
 
-const Item = Schema.Struct({ src: Schema.String, alt: Schema.String, caption: Schema.String })
+/**
+ * `src` is the full-size file; `preview`, what the plate already shows (its `srcset` pick or a
+ * video's poster). A slide opens on the preview, so the morph never waits on the network, and
+ * swaps in the full file once it has decoded.
+ */
+const Item = Schema.Struct({
+	kind: Schema.Literals(["image", "video"]),
+	src: Schema.String,
+	preview: Schema.String,
+	/** Pixel widths of the two files, 0 when unknown: the preview is drawn at the full file's size. */
+	width: Schema.Number,
+	previewWidth: Schema.Number,
+	alt: Schema.String,
+	caption: Schema.String,
+})
 type Item = typeof Item.Type
 
 const Model = Schema.Struct({
@@ -41,6 +56,8 @@ const Model = Schema.Struct({
 	index: Schema.Number,
 	isZoomed: Schema.Boolean,
 	canZoomIn: Schema.Boolean,
+	/** Full-size files that have decoded, so their slides show them instead of the preview. */
+	decoded: Schema.Array(Schema.String),
 	/** Counts closes, so a close's delayed clean-up can tell it is still the latest. */
 	closes: Schema.Number,
 })
@@ -77,6 +94,8 @@ const Message = defineMessageUnion({
 	ChangedSlide: { index: Schema.Number },
 	ChangedZoom: { isZoomed: Schema.Boolean, canZoomIn: Schema.Boolean },
 	PressedKey: { key: ViewerKey },
+	DecodedFull: { src: Schema.String },
+	ClickedThumbnail: { index: Schema.Number },
 	ClickedPrevious: {},
 	ClickedNext: {},
 	ClickedZoomIn: {},
@@ -90,7 +109,9 @@ type Message = typeof Message.Type
 
 // PLATES
 
-const plates = () => Arr.fromIterable(document.querySelectorAll<HTMLImageElement>(ZOOMABLE))
+type Plate = HTMLImageElement | HTMLVideoElement
+
+const plates = () => Arr.fromIterable(document.querySelectorAll<Plate>(ZOOMABLE))
 
 const unmark = () =>
 	Arr.forEach(Arr.fromIterable(document.querySelectorAll(`[${TRIGGER}], [${ORIGIN}]`)), (plate) => {
@@ -106,27 +127,62 @@ const enlist = () => {
 	Arr.forEach(Arr.fromIterable(document.querySelectorAll<HTMLImageElement>(PROSE_IMAGES)), (image) => {
 		if (image.closest("a") === null && image.alt !== "") image.dataset["zoomable"] = ""
 	})
-	Arr.forEach(plates(), (image) => {
-		image.tabIndex = 0
-		image.setAttribute("role", "button")
-		image.setAttribute("aria-haspopup", "dialog")
-		image.setAttribute(
-			"aria-label",
-			image.alt === "" ? "Enlarge screenshot" : `Enlarge screenshot: ${image.alt}`,
-		)
+	Arr.forEach(plates(), (plate) => {
+		// A video's description is its `aria-label`, which becomes the button's label below.
+		if (plate instanceof HTMLVideoElement && plate.dataset["alt"] === undefined) {
+			plate.dataset["alt"] = plate.getAttribute("aria-label") ?? ""
+		}
+		const alt = altOf(plate)
+		plate.tabIndex = 0
+		plate.setAttribute("role", "button")
+		plate.setAttribute("aria-haspopup", "dialog")
+		plate.setAttribute("aria-label", alt === "" ? "Enlarge screenshot" : `Enlarge screenshot: ${alt}`)
 	})
 }
 
-const ownSource = (image: HTMLImageElement): string =>
-	image.currentSrc !== "" ? image.currentSrc : image.src
+const altOf = (plate: Plate): string =>
+	plate instanceof HTMLImageElement ? plate.alt : (plate.dataset["alt"] ?? "")
 
-const sourceOf = (image: HTMLImageElement): string => {
-	const full = image.dataset["zoomSrc"] ?? ""
-	return full !== "" ? full : ownSource(image)
+/** A `srcset`'s files and their widths, resolved like `currentSrc` so the two compare. */
+const candidatesOf = (image: HTMLImageElement): ReadonlyArray<Readonly<{ url: string; width: number }>> =>
+	Arr.filterMap(image.srcset.split(","), (entry) => {
+		const [url, descriptor] = Str.trim(entry).split(/\s+/)
+		const width = Number.parseInt(descriptor ?? "", 10)
+		return url === undefined || url === "" || !descriptor?.endsWith("w") || Number.isNaN(width)
+			? Result.failVoid
+			: Result.succeed({ url: new URL(url, document.baseURI).href, width })
+	})
+
+const widthOf = (image: HTMLImageElement, url: string): number =>
+	Arr.findFirst(candidatesOf(image), (candidate) => candidate.url === url).pipe(
+		Option.map((candidate) => candidate.width),
+		Option.getOrElse(() => 0),
+	)
+
+/**
+ * What the plate paints now: an image's `srcset` pick, a video's poster. A lazy plate not yet
+ * scrolled to has picked nothing, so its smallest copy stands in.
+ */
+const previewOf = (plate: Plate): string => {
+	if (plate instanceof HTMLVideoElement) return plate.poster
+	if (plate.currentSrc !== "") return plate.currentSrc
+	const smallest = Arr.reduce(candidatesOf(plate), Option.none<string>(), (best, candidate) =>
+		Option.isSome(best) && widthOf(plate, best.value) <= candidate.width
+			? best
+			: Option.some(candidate.url),
+	)
+	return Option.getOrElse(smallest, () => plate.src)
+}
+
+/** The full-size file: a `data-zoom-src`, else the plate's own `src` (never its narrower `srcset` pick). */
+const sourceOf = (plate: Plate): string => {
+	const full = plate.dataset["zoomSrc"] ?? ""
+	if (full !== "") return full
+	return plate.src !== "" ? plate.src : plate.currentSrc
 }
 
 /** A figure's caption sits under its shot; a frame's heading, above it, is not one. */
-const captionOf = (image: HTMLImageElement): string => {
+const captionOf = (image: Plate): string => {
 	const caption = image.closest("figure")?.querySelector("figcaption") ?? null
 	const isBelow =
 		caption !== null && (image.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
@@ -134,24 +190,54 @@ const captionOf = (image: HTMLImageElement): string => {
 }
 
 /** The shots of the article a plate sits in, in reading order; a plate on its own is a gallery of one. */
-const galleryOf = (image: HTMLImageElement): ReadonlyArray<HTMLImageElement> => {
+const galleryOf = (image: Plate): ReadonlyArray<Plate> => {
 	const group = image.closest(GROUP)
 	return group === null
 		? [image]
 		: Arr.filter(
-				Arr.fromIterable(group.querySelectorAll<HTMLImageElement>(ZOOMABLE)),
+				Arr.fromIterable(group.querySelectorAll<Plate>(ZOOMABLE)),
 				(plate) => plate.closest(GROUP) === group,
 			)
 }
 
+// GESTURES
+
+class LightboxGesturesLoadError extends Schema.TaggedError<LightboxGesturesLoadError>()(
+	"@maple/landing/LightboxGesturesLoadError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+/**
+ * The gesture engine (`viewer.ts`) loads on demand: when a plate is first hovered or focused, and
+ * at the latest when one is pressed. A page nobody enlarges never downloads it. A failed load (a
+ * deploy since, offline) is forgotten, so the next press tries again.
+ */
+let gestures: Promise<typeof import("./viewer")> | undefined
+const loadGestures = () => {
+	gestures ??= import("./viewer").catch((cause: unknown) => {
+		gestures = undefined
+		return Promise.reject(cause)
+	})
+	return gestures
+}
+
+const gesturesModule = Effect.tryPromise({
+	try: loadGestures,
+	catch: (cause) =>
+		new LightboxGesturesLoadError({ message: "Couldn't load the lightbox gestures", cause }),
+})
+
 // COMMANDS
 
 const steer = (f: (viewer: Viewer) => void) =>
-	Effect.sync(() => {
-		const viewer = viewerOf(document.querySelector(`[${PART.content}]`))
-		if (viewer !== undefined) f(viewer)
-		return Message.CompletedSideEffect()
-	})
+	gesturesModule.pipe(
+		Effect.map(({ viewerOf }) => {
+			const viewer = viewerOf(document.querySelector(`[${PART.content}]`))
+			if (viewer !== undefined) f(viewer)
+		}),
+		Effect.ignore,
+		Effect.as(Message.CompletedSideEffect()),
+	)
 
 /** The track answers with `ChangedSlide` once it has moved, or not at all mid-swipe. */
 const GoToSlide = Command.define("GoToLightboxSlide", {
@@ -224,6 +310,37 @@ const AwaitClosed = Command.define("AwaitLightboxClosed", {
 	execute: ({ closes }) => Effect.as(Effect.sleep(RELEASE_AFTER), Message.SettledClose({ closes })),
 })
 
+/** Fetches and decodes a full-size file off screen; the slide swaps it in once it can paint. */
+const DecodeFull = Command.define("DecodeLightboxFull", {
+	args: { src: Schema.String },
+	messages: [Message.DecodedFull],
+	execute: ({ src }) =>
+		Effect.promise(() => {
+			const full = new Image()
+			full.src = src
+			// A failed decode still swaps: the slide's own request then shows whatever there is.
+			return typeof full.decode === "function"
+				? full.decode().catch(() => undefined)
+				: Promise.resolve()
+		}).pipe(Effect.as(Message.DecodedFull({ src }))),
+})
+
+/** Keeps the open slide's thumbnail in view as the gallery moves. */
+const RevealThumbnail = Command.define("RevealLightboxThumbnail", {
+	args: { index: Schema.Number, isInstant: Schema.Boolean },
+	messages: [Message.CompletedSideEffect],
+	execute: ({ index, isInstant }) =>
+		Effect.sync(() => {
+			const thumbnail = document.querySelector(`[data-lightbox-thumbnail="${index}"]`)
+			thumbnail?.scrollIntoView({
+				block: "nearest",
+				inline: "center",
+				behavior: isInstant ? "instant" : "smooth",
+			})
+			return Message.CompletedSideEffect()
+		}),
+})
+
 const ReleaseTriggers = Command.define("ReleaseLightboxTriggers", {
 	messages: [Message.CompletedSideEffect],
 	execute: Effect.sync(() => {
@@ -244,41 +361,50 @@ const ReportOpened = Command.define("ReportLightboxOpened", {
 
 // TRIGGERS
 
-/** True once the bitmap can paint: at once for the plate's own file, else when its decode lands. */
-const decoded = (image: HTMLImageElement, src: string): Effect.Effect<boolean> => {
-	if (image.complete && src === ownSource(image)) return Effect.succeed(true)
-	return Effect.promise(() => {
-		const full = new Image()
-		full.src = src
-		return typeof full.decode === "function"
-			? full.decode().then(
-					() => true,
-					() => false,
-				)
-			: Promise.resolve(false)
-	}).pipe(Effect.timeoutOption(DECODE_WAIT), Effect.map(Option.getOrElse(() => false)))
+/**
+ * True when the plate has a frame to morph from: a transition snapshots the first frame as is.
+ * A broken image counts as ready; it paints the same empty box either way.
+ */
+const isReady = (plate: Plate): boolean =>
+	plate instanceof HTMLImageElement
+		? plate.complete
+		: plate.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+
+const itemOf = (plate: Plate): Item => {
+	const src = sourceOf(plate)
+	const preview = previewOf(plate)
+	return {
+		kind: plate instanceof HTMLVideoElement ? "video" : "image",
+		src,
+		preview,
+		width: plate instanceof HTMLImageElement ? widthOf(plate, new URL(src, document.baseURI).href) : 0,
+		previewWidth: plate instanceof HTMLImageElement ? widthOf(plate, preview) : 0,
+		alt: altOf(plate),
+		caption: captionOf(plate),
+	}
 }
 
-/** Reads the press off the page. Nothing is marked here: `update` may still turn the press down. */
-const present = (image: HTMLImageElement): Effect.Effect<typeof Message.PressedTrigger.Type> => {
-	const gallery = galleryOf(image)
-	const index = gallery.indexOf(image)
-	return Effect.map(decoded(image, sourceOf(image)), (isReady) =>
+/**
+ * Reads the press off the page. Nothing is marked here: `update` may still turn the press down.
+ * Without its gestures the viewer cannot run, so a press whose load failed is dropped.
+ */
+const present = (plate: Plate): Effect.Effect<Option.Option<typeof Message.PressedTrigger.Type>> => {
+	const gallery = galleryOf(plate)
+	return Effect.as(
+		gesturesModule,
 		Message.PressedTrigger({
-			items: Arr.map(gallery, (plate) => ({
-				src: sourceOf(plate),
-				alt: plate.alt,
-				caption: captionOf(plate),
-			})),
-			index,
-			plate: plates().indexOf(image),
-			isReady,
+			items: Arr.map(gallery, itemOf),
+			index: gallery.indexOf(plate),
+			plate: plates().indexOf(plate),
+			isReady: isReady(plate),
 		}),
-	)
+	).pipe(Effect.option)
 }
 
-const plateOf = (target: EventTarget | null): HTMLImageElement | null =>
-	target instanceof HTMLImageElement && target.matches(ZOOMABLE) ? target : null
+const plateOf = (target: EventTarget | null): Plate | null =>
+	(target instanceof HTMLImageElement || target instanceof HTMLVideoElement) && target.matches(ZOOMABLE)
+		? target
+		: null
 
 const TriggerMessage = Schema.Union([Message.StartedTriggers, Message.PressedTrigger])
 type TriggerMessage = typeof TriggerMessage.Type
@@ -289,13 +415,17 @@ const ListenForTriggers = Mount.defineStream("ListenForLightboxTriggers", {
 	execute: () =>
 		Stream.concat(
 			Stream.make<[TriggerMessage]>(Message.StartedTriggers()),
-			Stream.callback<HTMLImageElement>((queue) =>
+			Stream.callback<Plate>((queue) =>
 				Effect.acquireRelease(
 					Effect.sync(() => {
 						enlist()
 						const onClick = (event: MouseEvent) => {
 							const plate = plateOf(event.target)
 							if (plate !== null) Queue.offerUnsafe(queue, plate)
+						}
+						// Hover or focus on a plate is a good sign a press follows: fetch the gestures now.
+						const onIntent = (event: Event) => {
+							if (plateOf(event.target) !== null) void loadGestures().catch(() => undefined)
 						}
 						const onKeyDown = (event: KeyboardEvent) => {
 							const plate = plateOf(event.target)
@@ -306,15 +436,22 @@ const ListenForTriggers = Mount.defineStream("ListenForLightboxTriggers", {
 						}
 						document.addEventListener("click", onClick)
 						document.addEventListener("keydown", onKeyDown)
-						return { onClick, onKeyDown }
+						document.addEventListener("pointerover", onIntent, { passive: true })
+						document.addEventListener("focusin", onIntent)
+						return { onClick, onKeyDown, onIntent }
 					}),
-					({ onClick, onKeyDown }) =>
+					({ onClick, onKeyDown, onIntent }) =>
 						Effect.sync(() => {
 							document.removeEventListener("click", onClick)
 							document.removeEventListener("keydown", onKeyDown)
+							document.removeEventListener("pointerover", onIntent)
+							document.removeEventListener("focusin", onIntent)
 						}),
 				).pipe(Effect.andThen(Effect.never)),
-			).pipe(Stream.mapEffect(present)),
+			).pipe(
+				Stream.mapEffect(present),
+				Stream.filterMap((pressed) => Result.fromOption(pressed, () => undefined)),
+			),
 		),
 })
 
@@ -414,10 +551,16 @@ const MountViewer = Mount.defineStream("MountLightboxViewer", {
 				}
 				const content = element.querySelector(`[${PART.content}]`)
 				if (element instanceof HTMLElement && content instanceof HTMLElement) {
-					yield* Effect.acquireRelease(
-						Effect.sync(() => attachViewer(content, (event) => offer(fromViewer(event)))),
-						(viewer) => Effect.sync(viewer.dispose),
-					)
+					// Loaded by the press that opened the viewer: this resolves at once.
+					const loaded = yield* Effect.option(gesturesModule)
+					if (Option.isSome(loaded)) {
+						yield* Effect.acquireRelease(
+							Effect.sync(() =>
+								loaded.value.attachViewer(content, (event) => offer(fromViewer(event))),
+							),
+							(viewer) => Effect.sync(viewer.dispose),
+						)
+					}
 					yield* holdFocus(element, content)
 					yield* trapFocus(element, content)
 					yield* viewerKeys(offer)
@@ -439,6 +582,19 @@ const close = (model: Model): UpdateReturn => {
 	const closes = model.closes + 1
 	return { model: { ...model, isOpen: false, closes }, commands: [AwaitClosed({ closes })] }
 }
+
+/** The full-size files of the open slide and its mounted neighbours that are not in yet. */
+const decodeAround = (items: ReadonlyArray<Item>, index: number, decoded: ReadonlyArray<string>) =>
+	Arr.filterMap(items, (item, at) =>
+		Math.abs(at - index) <= PRELOAD &&
+		item.kind === "image" &&
+		item.src !== item.preview &&
+		!decoded.includes(item.src)
+			? Result.succeed(DecodeFull({ src: item.src }))
+			: Result.failVoid,
+	)
+
+const hasThumbnails = (model: Model): boolean => model.items.length >= THUMBNAILS_FROM
 
 const goTo = (model: Model, index: number): UpdateReturn => {
 	const target = Math.min(model.items.length - 1, Math.max(0, index))
@@ -490,14 +646,31 @@ const update = (model: Model, message: Message): UpdateReturn =>
 						commands: [
 							MarkTriggers({ plate, isReady }),
 							ReportOpened({ label: items[index]?.alt ?? "" }),
+							...decodeAround(items, index, model.decoded),
 						],
 					},
-		MountedViewer: () => ({ model }),
+		// The strip opens on the pressed shot, wherever it sits in a long gallery.
+		MountedViewer: () =>
+			hasThumbnails(model)
+				? { model, commands: [RevealThumbnail({ index: model.index, isInstant: true })] }
+				: { model },
 		// The track can still report a slide in the frames between a close and its render.
 		ChangedSlide: ({ index }) =>
 			!model.isOpen || index === model.index
 				? { model }
-				: { model: { ...model, index }, commands: [MoveOrigin({ index })] },
+				: {
+						model: { ...model, index },
+						commands: [
+							MoveOrigin({ index }),
+							...decodeAround(model.items, index, model.decoded),
+							...(hasThumbnails(model) ? [RevealThumbnail({ index, isInstant: false })] : []),
+						],
+					},
+		DecodedFull: ({ src }) =>
+			model.decoded.includes(src)
+				? { model }
+				: { model: { ...model, decoded: [...model.decoded, src] } },
+		ClickedThumbnail: ({ index }) => goTo(model, index),
 		ChangedZoom: ({ isZoomed, canZoomIn }) => ({ model: { ...model, isZoomed, canZoomIn } }),
 		PressedKey: ({ key }) => (model.isOpen ? pressedKey(model, key) : { model }),
 		ClickedPrevious: () => goTo(model, model.index - 1),
@@ -561,6 +734,46 @@ const control = (h: HtmlBuilder<Message>, options: Control): Html =>
 		[glyph(h, options.d)],
 	)
 
+const media = (h: HtmlBuilder<Message>, model: Model, item: Item, isActive: boolean): Html => {
+	const shared = [
+		h.DataAttribute("lightbox-media", ""),
+		h.Class("lightbox__media"),
+		h.Draggable(false),
+		...(isActive ? [h.DataAttribute("active", "")] : []),
+	]
+	if (item.kind === "video") {
+		// The plate's loop, larger: muted and inline like the page's, playing only while on show.
+		return h.video(
+			[
+				...shared,
+				h.Src(item.src),
+				...(item.preview === "" ? [] : [h.Poster(item.preview)]),
+				h.AriaLabel(item.alt),
+				h.Muted(true),
+				h.Loop(true),
+				h.Playsinline(true),
+				h.Autoplay(isActive),
+			],
+			[],
+		)
+	}
+	const isFull = item.preview === "" || model.decoded.includes(item.src)
+	// A narrower copy declared at the full file's width lays out at the full file's size, so the
+	// swap changes only the sharpness, never the box the morph landed in.
+	const atFullSize =
+		!isFull && item.width > 0 && item.previewWidth > 0
+			? [h.Srcset(`${item.preview} ${item.previewWidth}w`), h.Sizes(`${item.width}px`)]
+			: []
+	return h.img([
+		...shared,
+		h.Src(isFull ? item.src : item.preview),
+		...atFullSize,
+		h.Alt(item.alt),
+		// The opening frame is a snapshot: the bitmap has to be in it.
+		h.Decoding("sync"),
+	])
+}
+
 const slide = (h: HtmlBuilder<Message>, model: Model, item: Item, index: number): Html => {
 	const isActive = index === model.index
 	return h.div(
@@ -577,22 +790,36 @@ const slide = (h: HtmlBuilder<Message>, model: Model, item: Item, index: number)
 			: [
 					h.div(
 						[h.DataAttribute("lightbox-zoom", ""), h.Class("lightbox__zoom")],
-						[
-							h.img([
-								h.DataAttribute("lightbox-media", ""),
-								h.Class("lightbox__media"),
-								h.Src(item.src),
-								h.Alt(item.alt),
-								h.Draggable(false),
-								// The opening frame is a snapshot: the bitmap has to be in it.
-								h.Decoding("sync"),
-								...(isActive ? [h.DataAttribute("active", "")] : []),
-							]),
-						],
+						[media(h, model, item, isActive)],
 					),
 				],
 	)
 }
+
+/**
+ * A long gallery's strip of thumbnails, drawn from what the plates already loaded. The counter and
+ * arrow keys already say where you are; this is a pointer's shortcut, out of the Tab order like the steps.
+ */
+const thumbnails = (h: HtmlBuilder<Message>, model: Model): Html =>
+	h.div(
+		[h.DataAttribute("lightbox-thumbnails", ""), h.Class("lightbox__thumbnails lightbox__chrome")],
+		Arr.map(model.items, (item, index) =>
+			h.button(
+				[
+					h.Type("button"),
+					h.Class("lightbox__thumbnail"),
+					h.DataAttribute("lightbox-thumbnail", String(index)),
+					h.AriaLabel(`Show screenshot ${index + 1}: ${item.alt}`),
+					h.Tabindex(-1),
+					...(index === model.index ? [h.AriaCurrent("true"), h.DataAttribute("active", "")] : []),
+					h.OnClick(Message.ClickedThumbnail({ index })),
+				],
+				item.preview === ""
+					? []
+					: [h.img([h.Src(item.preview), h.Alt(""), h.Draggable(false), h.Loading("lazy")])],
+			),
+		),
+	)
 
 /** What a screen reader hears on each slide: the shot's description, not just its number. */
 const announcement = (model: Model, item: Item | undefined): string => {
@@ -627,6 +854,7 @@ const viewer = (h: HtmlBuilder<Message>, model: Model): Html => {
 					...(Arr.some(model.items, (each) => each.caption !== "")
 						? [h.DataAttribute("captioned", "")]
 						: []),
+					...(hasThumbnails(model) ? [h.DataAttribute("thumbnails", "")] : []),
 				],
 				[
 					h.div(
@@ -707,6 +935,7 @@ const viewer = (h: HtmlBuilder<Message>, model: Model): Html => {
 						],
 						caption === "" ? [] : [caption],
 					),
+					...(hasThumbnails(model) ? [thumbnails(h, model)] : []),
 				],
 			),
 			focusGuard(h, "outside"),
@@ -722,7 +951,15 @@ export const Lightbox = makeIsland({
 	Props: Schema.Struct({}),
 	Model,
 	init: () => ({
-		model: { items: [], isOpen: false, index: 0, isZoomed: false, canZoomIn: true, closes: 0 },
+		model: {
+			items: [],
+			isOpen: false,
+			index: 0,
+			isZoomed: false,
+			canZoomIn: true,
+			decoded: [],
+			closes: 0,
+		},
 	}),
 	update,
 	view,

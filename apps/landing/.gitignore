@@ -2,6 +2,8 @@
 dist/
 # generated from scripts/install.sh by the `sync:install` script (served at /cli/install)
 public/cli/
+# narrower copies of the captures, written by `sync:shots`
+public/screenshots/w/
 # generated types
 .astro/
 # evidence written by `bun run check:lightbox`

@@ -1,18 +1,11 @@
 import * as M from "./math"
+import { PART } from "./parts"
 
 /**
  * The viewer's gestures on its mounted DOM: the scroll-snap track, zoom and pan, pull to dismiss.
  * Frames are written straight to the elements; the island only hears what changes its Model.
  * Ported from ramka's React lightbox (MIT, Copyright (c) 2026 Artur Bień): see ./LICENSE-ramka.
  */
-
-export const PART = {
-	content: "data-lightbox-content",
-	slides: "data-lightbox-slides",
-	slide: "data-lightbox-slide",
-	zoom: "data-lightbox-zoom",
-	media: "data-lightbox-media",
-} as const
 
 const STATE = {
 	pulling: "data-pulling",
@@ -98,7 +91,7 @@ export const attachViewer = (content: HTMLElement, emit: (event: ViewerEvent) =>
 		const slide = track.children.item(index)
 		if (!(slide instanceof HTMLElement)) return null
 		const zoom = slide.querySelector<HTMLElement>(`[${PART.zoom}]`)
-		const media = slide.querySelector<HTMLImageElement>(`img[${PART.media}]`)
+		const media = slide.querySelector<HTMLImageElement | HTMLVideoElement>(`[${PART.media}]`)
 		return zoom === null || media === null ? null : { slide, zoom, media }
 	}
 
@@ -144,8 +137,12 @@ export const attachViewer = (content: HTMLElement, emit: (event: ViewerEvent) =>
 		if (leaving !== null) {
 			leaving.zoom.style.transform = ""
 			leaving.zoom.style.touchAction = ""
+			if (leaving.media instanceof HTMLVideoElement) leaving.media.pause()
 		}
 		active = index
+		// Only the slide on show plays; a muted loop is allowed to start without a gesture.
+		const arriving = partsOf(index)
+		if (arriving?.media instanceof HTMLVideoElement) void arriving.media.play().catch(() => undefined)
 		pose = M.REST
 		frame = null
 		emit({ _tag: "Slide", index })
@@ -221,7 +218,12 @@ export const attachViewer = (content: HTMLElement, emit: (event: ViewerEvent) =>
 				y: box.top - view.top + zoom.offsetTop + zoom.offsetHeight / 2,
 			},
 			viewport: { width: view.width, height: view.height },
-			maxScale: M.maxScaleOf({ width: media.naturalWidth, height: media.naturalHeight }, shown),
+			maxScale: M.maxScaleOf(
+				media instanceof HTMLVideoElement
+					? { width: media.videoWidth, height: media.videoHeight }
+					: { width: media.naturalWidth, height: media.naturalHeight },
+				shown,
+			),
 		}
 		return frame
 	}
@@ -659,8 +661,9 @@ export const attachViewer = (content: HTMLElement, emit: (event: ViewerEvent) =>
 		observer.observe(track)
 		cleanups.push(() => observer.disconnect())
 	}
-	// `load` does not bubble: the capture phase hears every slide's image.
+	// `load` does not bubble: the capture phase hears every slide's image (and a video's first frame).
 	listen(track, "load", remeasure, { capture: true })
+	listen(track, "loadedmetadata", remeasure, { capture: true })
 
 	// Before the first paint, or the viewer would open on its first slide and then jump.
 	const first = offsets()[active]

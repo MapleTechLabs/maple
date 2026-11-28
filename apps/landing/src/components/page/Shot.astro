@@ -4,6 +4,7 @@
  * edges that cut through content, and tightens from its top-left corner on a phone.
  */
 import type { Crop } from "../../lib/page-registry";
+import { shotSources } from "../../lib/shot-sources";
 
 interface Props {
 	src: string;
@@ -31,6 +32,7 @@ const fadeBottom = crop ? crop.y + shownY < 0.995 : false;
 // A 1440 px screen drawn 2.4 frames wide puts its 13 px text near 8 px on a 390 px phone.
 const PHONE_ZOOM = 2.4;
 const phoneZoom = crop ? Math.max(crop.zoom, PHONE_ZOOM) : 1;
+const sources = shotSources(src, phoneZoom);
 ---
 
 <figure class={`live-frame min-w-0 ${className}`}>
@@ -48,11 +50,23 @@ const phoneZoom = crop ? Math.max(crop.zoom, PHONE_ZOOM) : 1;
 				class="shot-crop"
 				style={`aspect-ratio: ${aspect}; --shot-x: ${crop.x}; --shot-y: ${crop.y}; --shot-wide: ${crop.zoom}; --shot-phone: ${phoneZoom}; --shot-end-r: ${fadeRight ? "transparent" : "black"}; --shot-end-b: ${fadeBottom ? "transparent" : "black"};`}
 			>
-				<img src={src} alt={alt} width={width} height={height} loading={loading} decoding="async" data-zoomable="" />
+				<img
+					src={src}
+					srcset={sources.srcset}
+					sizes={sources.sizes}
+					alt={alt}
+					width={width}
+					height={height}
+					loading={loading}
+					decoding="async"
+					data-zoomable=""
+				/>
 			</div>
 		) : (
 			<img
 				src={src}
+				srcset={sources.srcset}
+				sizes={sources.sizes}
 				alt={alt}
 				width={width}
 				height={height}

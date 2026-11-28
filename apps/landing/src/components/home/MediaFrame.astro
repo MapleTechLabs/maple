@@ -11,6 +11,8 @@
  * Export at 2× and let the browser downscale — the frame always emits
  * width/height, so there is no layout shift on load.
  */
+import { shotSources } from "../../lib/shot-sources";
+
 interface Props {
 	/** Shot id — the frame label while empty, the alt text once filled. */
 	label: string;
@@ -27,10 +29,9 @@ interface Props {
 	loading?: "eager" | "lazy";
 	class?: string;
 	/**
-	 * Opens the shot full-size in the shared lightbox on click. On by default
-	 * for images: a product screenshot scaled into a page column is usually too
-	 * small to read, and the replay data says people click it expecting exactly
-	 * this. Videos opt out — they carry their own controls.
+	 * Opens the shot full-size in the shared lightbox on click: a product
+	 * screenshot or recording scaled into a page column is usually too small to
+	 * read, and the replay data says people click it expecting exactly this.
 	 */
 	zoomable?: boolean;
 	/**
@@ -63,6 +64,8 @@ const isVideo = kind === "video";
 // A poster with no source still shows a real frame — lets a still land before
 // the recording does.
 const hasAsset = Boolean(src ?? (isVideo ? poster : undefined));
+const still = src ?? poster;
+const sources = still === undefined ? {} : shotSources(still, crop?.zoom);
 ---
 
 {
@@ -79,6 +82,7 @@ const hasAsset = Boolean(src ?? (isVideo ? poster : undefined));
 					playsinline
 					preload="metadata"
 					aria-label={label}
+					data-zoomable={zoomable ? "" : undefined}
 					class="block w-full h-auto"
 					data-autoplay-video
 				/>
@@ -88,7 +92,9 @@ const hasAsset = Boolean(src ?? (isVideo ? poster : undefined));
 					style={`aspect-ratio: ${ratio}; --crop-x: ${crop.x}; --crop-y: ${crop.y}; --crop-zoom: ${crop.zoom};`}
 				>
 					<img
-						src={src ?? poster}
+						src={still}
+						srcset={sources.srcset}
+						sizes={sources.sizes}
 						alt={label}
 						width={width}
 						height={height}
@@ -99,7 +105,9 @@ const hasAsset = Boolean(src ?? (isVideo ? poster : undefined));
 				</div>
 			) : (
 				<img
-					src={src ?? poster}
+					src={still}
+					srcset={sources.srcset}
+					sizes={sources.sizes}
 					alt={label}
 					width={width}
 					height={height}
