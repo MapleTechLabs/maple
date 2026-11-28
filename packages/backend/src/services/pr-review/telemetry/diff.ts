@@ -30,7 +30,8 @@ export const parsePatch = (patch: string | null): ReadonlyArray<DiffLine> => {
 			hunkIndex += 1
 			continue
 		}
-		if (newLine === 0 || Str.startsWith("\\")(raw)) continue
+		// A deleted file's hunk starts at `+0,0`: test for the first hunk, not for line 0.
+		if (hunkIndex < 0 || Str.startsWith("\\")(raw)) continue
 		if (Str.startsWith("+")(raw)) {
 			lines.push({ kind: "add", text: Str.slice(1)(raw), newLine, hunk: hunkIndex })
 			newLine += 1

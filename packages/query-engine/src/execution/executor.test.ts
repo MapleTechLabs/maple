@@ -79,7 +79,6 @@ const compiled = compileUnsafe(listRuleChecksQuery({ limit: 1, since: compiledSi
 	since: compiledSince,
 })
 const _ingestRouteIsPartOfTheCompiledType: "ingest" = compiled.route
-void _ingestRouteIsPartOfTheCompiledType
 
 // The old `sqlQuery(tenant, sql)` entry point took a raw string; scope now
 // travels on the compiled query, so these execution/span/retry tests wrap their

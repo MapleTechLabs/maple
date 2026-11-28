@@ -11,7 +11,7 @@ sdk: "effect"
 
 ## Install
 
-For Effect 4 (`effect` 4.0.0 or later):
+For Effect 4 (`effect` 4.1.6 or later):
 
 ```bash
 npm install @maple-dev/effect-sdk effect
@@ -84,6 +84,8 @@ Options for `Maple.layer()` on the server and browser entry points, and for `mak
 | `replay`                      | `ClientReplayConfig`              | browser            | Session replay settings. See [Session Replay & Sessions](/docs/sdks/effect-client#session-replay-and-sessions)                                                                                                    |
 | `emitSessionMeta`             | `boolean`                         | browser            | Post session metadata rows for sessions without a recording. Default `true`                                                                                                                                       |
 | `maxBatchSize`                | `number`                          | server, browser    | Max telemetry items per export batch                                                                                                                                                                              |
+| `maxQueueSize`                | `number`                          | server, browser    | Spans and log records held for export, per signal, before new ones are dropped. Default `2048`, or `maxBatchSize` if larger                                                                                       |
+| `onDrop`                      | `(drop: ExportDrop) => void`      | server, browser    | Called with `{ signal, count, total }` when a full queue drops telemetry. Without it the SDK warns on `console` at 1, 10, 100, ... dropped                                                                        |
 | `loggerExportInterval`        | `Duration.Input`                  | server, browser    | Export interval for logs                                                                                                                                                                                          |
 | `metricsExportInterval`       | `Duration.Input`                  | server, browser    | Export interval for metrics                                                                                                                                                                                       |
 | `tracerExportInterval`        | `Duration.Input`                  | server, browser    | Export interval for traces                                                                                                                                                                                        |

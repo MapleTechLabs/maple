@@ -71,9 +71,8 @@ const decisionsAnswer = () =>
 
 const makeHarness = () => {
 	const decisionCalls: Array<string> = []
-	const fetch: typeof globalThis.fetch = async (input, init) => {
+	const fetch: typeof globalThis.fetch = async (input) => {
 		decisionCalls.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
-		void init
 		return decisionsAnswer()
 	}
 	const decisions = layerDecisionModel(llmSettings).pipe(

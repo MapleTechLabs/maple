@@ -218,6 +218,24 @@
 	border-bottom: 0;
 }
 
+.guide-prose .guide-figure {
+	margin: 1.75rem 0 2rem;
+}
+.guide-prose .guide-figure img {
+	display: block;
+	width: 100%;
+	height: auto;
+	border: 1px solid var(--border);
+	border-radius: 0.6rem;
+	background: var(--bg-deep);
+}
+.guide-prose .guide-figure figcaption {
+	margin-top: 0.65rem;
+	font-size: 13px;
+	line-height: 1.6;
+	color: var(--muted-foreground);
+}
+
 .guide-prose .guide-callout {
 	margin: 2rem 0 1.5rem;
 	border: 1px solid var(--border);

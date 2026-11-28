@@ -11,7 +11,6 @@
 // unsafe state is decided uniformly: fail-closed, zero mutation.
 
 import {
-	PHASE_ORDER,
 	phaseAtLeast,
 	type ArchiveOperationIntent,
 	type CreateOperationIntent,
@@ -241,5 +240,3 @@ export const digestOfIntent = (intent: ArchiveOperationIntent): string => {
 	const c = require("node:crypto") as typeof import("node:crypto")
 	return c.createHash("sha256").update(encodeJson(intent)).digest("hex")
 }
-
-void PHASE_ORDER

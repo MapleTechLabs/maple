@@ -228,6 +228,60 @@ describe("uptime monitor form", () => {
 		)
 	})
 
+	const withAllowance = (model: Model, used: number, isBilledPastIncluded: boolean): Model =>
+		pageUpdate(
+			model,
+			Message.CompletedFetchAllowance({
+				orgId: ORG,
+				allowance: { included: 10, used, isBilledPastIncluded },
+			}),
+		).model
+
+	test("creating reads the org's monitor balance; editing does not", () => {
+		expect(names(init({ _tag: "AlertsUptimeNew", search: {} }, context).commands)).toContain(
+			"FetchUptimeFormAllowance",
+		)
+		expect(
+			names(
+				init({ _tag: "AlertsUptimeNew", search: { monitorId: publicId(httpMonitor().id) } }, context)
+					.commands,
+			),
+		).not.toContain("FetchUptimeFormAllowance")
+	})
+
+	test("past the included monitors on a paid plan, the form says what one more costs", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withAllowance(withUrl("https://api.acme.dev/health"), 12, true)),
+			expectView(text("This monitor adds $0.50 a month to your bill")).toExist(),
+			expectView(role("button", { name: "Create monitor" })).not.toBeDisabled(),
+		)
+	})
+
+	test("the tenth monitor is announced as the last free one, and the first few say nothing", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withAllowance(fresh(), 9, true)),
+			expectView(text("This is your last included monitor")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withAllowance(fresh(), 3, true)),
+			expectView(text("This is your last included monitor")).not.toExist(),
+			expectView(text("This monitor adds $0.50 a month to your bill")).not.toExist(),
+		)
+	})
+
+	test("a trial at its included monitors is sent to Billing to add a card instead of creating", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withAllowance(withUrl("https://api.acme.dev/health"), 10, false)),
+			expectView(text("You've used all 10 included monitors")).toExist(),
+			expectView(role("link", { name: "Add card" })).toExist(),
+			expectView(role("button", { name: "Create monitor" })).toBeDisabled(),
+		)
+	})
+
 	test("a failed save says why inline, with no toast over the action bar", () => {
 		const saving = pageUpdate(withUrl("https://api.acme.dev/health"), Message.ClickedSave())
 		const message = "URL host 'internal.acme.dev' resolves to a loopback, private, or metadata address"

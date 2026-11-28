@@ -199,6 +199,25 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		}
 	}
 
+	// A log line removed somewhere in the pull request and added back word for word is moved code
+	// (a file split, an extract), not a new log: it already ran at whatever rate it runs. Only a
+	// call that closes on its line pairs up; a multi-line call's opening line names no message.
+	const movedLogLines = new Map<string, number>()
+	for (const file of files) {
+		for (const line of file.lines) {
+			if (line.kind !== "del" || !isCompleteLogCall(line.text)) continue
+			const key = Str.trim(line.text)
+			movedLogLines.set(key, (movedLogLines.get(key) ?? 0) + 1)
+		}
+	}
+	const takeMovedLog = (text: string): boolean => {
+		const key = Str.trim(text)
+		const left = movedLogLines.get(key) ?? 0
+		if (left === 0) return false
+		movedLogLines.set(key, left - 1)
+		return true
+	}
+
 	const removed: Array<PrReviewTelemetryChange> = []
 	const breaks: Array<PrReviewContractBreak> = []
 	const seenRemoved = new Set<string>()
@@ -304,7 +323,9 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 					}),
 				)
 			}
-			if (filePerDay > 0 && isLogCall(line.text)) {
+			// Consumed in every file, busy or not, so an extra copy elsewhere is still costed.
+			const moved = isCompleteLogCall(line.text) && takeMovedLog(line.text)
+			if (filePerDay > 0 && isLogCall(line.text) && !moved) {
 				const gbPerMonth = (filePerDay * 30 * catalog.bytesPerLogRecord) / 1e9
 				if (gbPerMonth >= COST_NOTE_MIN_GB) {
 					costNotes.push(
@@ -399,6 +420,8 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		removed: removed.slice(0, MAX_CHANGES),
 	})
 }
+
+const isCompleteLogCall = (text: string) => isLogCall(text) && /\)[;,]?\s*$/.test(text)
 
 const nearbyText = (lines: ReadonlyArray<DiffLine>, index: number) =>
 	Arr.join(

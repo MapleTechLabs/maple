@@ -32,17 +32,12 @@ import { DashboardData, DashboardWidget } from "../src/DashboardData"
 import { MapleErrorTags, MaplePublicErrorBodySchema, type MaplePublicErrorBody } from "../src/errors"
 
 const _clientErrorBodySatisfiesDomain = (body: MaplePublicErrorBody): AnyPublicHttpErrorBody => body
-void _clientErrorBodySatisfiesDomain
 
 const _apiKeyNotFoundTag: ApiKeyNotFoundError["_tag"] = MapleErrorTags.apiKeyNotFound
 const _dashboardNotFoundTag: DashboardNotFoundError["_tag"] = MapleErrorTags.dashboardNotFound
 const _alertRuleNotFoundTag: AlertRuleNotFoundError["_tag"] = MapleErrorTags.alertRuleNotFound
 const _alertDestinationNotFoundTag: AlertDestinationNotFoundError["_tag"] =
 	MapleErrorTags.alertDestinationNotFound
-void _apiKeyNotFoundTag
-void _dashboardNotFoundTag
-void _alertRuleNotFoundTag
-void _alertDestinationNotFoundTag
 
 const decodes = <S extends Schema.Codec<unknown, unknown>>(schema: S, wire: unknown) =>
 	Effect.runSync(Schema.decodeUnknownEffect(schema)(wire).pipe(Effect.asVoid))

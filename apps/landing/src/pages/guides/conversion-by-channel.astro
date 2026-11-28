@@ -1,0 +1,243 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "clicks", text: "Why clicks mislead" },
+    { depth: 2, slug: "utm", text: "UTM parameters" },
+    { depth: 3, slug: "conventions", text: "Tagging conventions" },
+    { depth: 2, slug: "breakdown", text: "Break the funnel down" },
+    { depth: 2, slug: "read", text: "Read the table" },
+    { depth: 2, slug: "first-touch", text: "First touch and Not set" },
+    { depth: 2, slug: "campaign-funnel", text: "Start at a campaign" },
+    { depth: 2, slug: "other-dimensions", text: "Other things to split by" },
+    { depth: 2, slug: "limits", text: "What this cannot tell you" },
+    { depth: 2, slug: "posthog", text: "Coming from PostHog" },
+];
+
+const taggedUrl = String.raw`https://acme.dev/?utm_source=newsletter&utm_medium=email&utm_campaign=launch-week`;
+
+const untagged = String.raw`<!-- Wrong: a link inside your own site. In many tools the visitor's real source is overwritten. -->
+<a href="/pricing?utm_source=homepage">See pricing</a>
+
+<!-- Right: internal links carry no UTM tags. -->
+<a href="/pricing">See pricing</a>`;
+
+const faqs = [
+    {
+        question: "What are UTM parameters?",
+        answer:
+            "UTM parameters are tags added to the end of a link, such as utm_source=newsletter, that tell analytics tools where a visit came from. The three that matter most are utm_source (who sent the visit), utm_medium (what kind of channel) and utm_campaign (which campaign).",
+    },
+    {
+        question: "How do I measure conversion rate by channel?",
+        answer:
+            "Tag every link you control with UTM parameters, build a funnel from the first step of signup to the outcome you care about, and break that funnel down by UTM source. Each source then shows how many people entered, how many converted, and its conversion rate next to the overall rate.",
+    },
+    {
+        question: "What is the difference between utm_source and utm_medium?",
+        answer:
+            "utm_source names who sent the visit: google, newsletter, producthunt. utm_medium names the kind of channel: cpc, email, social. One medium has many sources. Paid search on Google and on Bing are two sources with the same medium, cpc.",
+    },
+    {
+        question: "Why is so much of my traffic Direct or Not set?",
+        answer:
+            "A visit has no source when the link was not tagged and the browser sent no referrer: a typed address, a bookmark, a link in a desktop app, or a browser that strips referrers. People who return later by typing the address also arrive without a tag. Some share is normal. A sudden rise usually means a campaign went out with untagged links.",
+    },
+    {
+        question: "Should I use UTM parameters on internal links?",
+        answer:
+            "No. In many analytics tools a UTM tag on a link inside your own site starts a new attribution for that visitor and replaces the channel that actually brought them. Use events or page paths to measure clicks inside the product.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="Conversion Rate by Channel: UTM Tracking and Funnel Breakdowns | Maple"
+    description="How to measure conversion rate by marketing channel: tag links with UTM parameters, break a signup funnel down by source, read the table, and know the limits of first-touch attribution."
+    title="Conversion rate by channel with UTM tracking"
+    lede="Tag your links, break the signup funnel down by source, and compare channels on the customers they produce instead of the visits they send."
+    category="Product analytics"
+    readMinutes={7}
+    published="2026-11-28"
+    modified="2026-11-28"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            Channel reports usually start with visits, which say the least about what a channel is worth. A channel that sends a thousand visitors and two customers is worse than one that sends a hundred visitors and ten. To see that, the source of a visit has to follow the person all the way through the <a href="/guides/funnel-analysis">funnel</a>.
+        </p>
+        <p>
+            This guide covers the two halves: tagging links so the source is recorded, and breaking a funnel down by it.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>Compare channels on conversion to a real outcome, such as a paid plan. Visits and signups can favour the wrong channels.</li>
+                <li>Tag every link you control with <code>utm_source</code>, <code>utm_medium</code> and <code>utm_campaign</code>, in lowercase, from a written list of values.</li>
+                <li>Never put UTM tags on links inside your own site.</li>
+                <li>A funnel breakdown shows each source's conversion next to everyone's. Read the count before the rate.</li>
+                <li>This is first-touch attribution inside a time range. It does not divide credit between channels.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="clicks" class="scroll-mt-24">
+        <h2>Why clicks mislead</h2>
+        <p>
+            Ad platforms report clicks and the conversions they claim for themselves. Web analytics reports sessions. Without extra conversion tracking, neither knows what happened three days later, when the person came back, connected their data and paid.
+        </p>
+        <p>
+            Product analytics does, because it joins the first visit to the later events of the same person. The question changes from "which channel sends traffic" to "which channel sends people who become customers", and the answers are often different channels.
+        </p>
+    </section>
+
+    <section id="utm" class="scroll-mt-24">
+        <h2>UTM parameters</h2>
+        <p>
+            A UTM parameter is a tag on the end of a link. The landing page ignores it, and the analytics script reads it.
+        </p>
+        <Code code={taggedUrl} />
+        <div class="guide-table">
+            <table>
+                <thead>
+                    <tr><th>Parameter</th><th>Answers</th><th>Examples</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>utm_source</code></td><td>Who sent the visit</td><td><code>google</code>, <code>newsletter</code>, <code>producthunt</code></td></tr>
+                    <tr><td><code>utm_medium</code></td><td>What kind of channel</td><td><code>cpc</code>, <code>email</code>, <code>social</code></td></tr>
+                    <tr><td><code>utm_campaign</code></td><td>Which campaign</td><td><code>launch-week</code>, <code>q4-webinar</code></td></tr>
+                    <tr><td><code>utm_term</code></td><td>Which paid keyword</td><td><code>log+monitoring</code></td></tr>
+                    <tr><td><code>utm_content</code></td><td>Which ad or link variant</td><td><code>hero-button</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            The first three are the ones worth being strict about. Maple's browser SDK reads the tags from the landing URL of each session, along with the referrer, with no setup beyond the SDK itself. Source, medium and campaign are the ones you can filter and break down by.
+        </p>
+
+        <h3 id="conventions" class="scroll-mt-24">Tagging conventions</h3>
+        <ul class="guide-list">
+            <li><strong>Lowercase, always.</strong> <code>Newsletter</code> and <code>newsletter</code> are two sources in every report.</li>
+            <li><strong>A written list of values.</strong> Decide once whether it is <code>twitter</code> or <code>x</code>, and <code>email</code> or <code>newsletter</code>. Keep the list where the people who write campaign links can find it.</li>
+            <li><strong>Tag everything you control.</strong> Emails, ads, social posts, partner links, the link in your GitHub README. An untagged link in an email often arrives with no referrer at all.</li>
+            <li><strong>No tags on internal links.</strong> In many analytics tools, a tag on a link within your own site replaces the source that really brought the visitor. In every tool it adds values that are not channels.</li>
+        </ul>
+        <Code code={untagged} />
+    </section>
+
+    <section id="breakdown" class="scroll-mt-24">
+        <h2>Break the funnel down</h2>
+        <p>
+            Build the funnel first: <code>signup_started</code>, <code>signup_completed</code>, <code>onboarding_connected</code>, <code>plan_started</code>, counted by person within seven days. The <a href="/guides/funnel-analysis">funnel guide</a> covers those choices.
+        </p>
+        <p>
+            Then pick a dimension under <strong>Break down by</strong>. The list has four groups: where the session came from, the properties your events carry, and the properties of the user and of the account.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/conversion-by-channel-02-break-down-by.webp" data-zoomable alt="A funnel in Maple with the Break down by menu open. Under Session it lists Referrer, UTM source, UTM medium, UTM campaign, Country and Site. Under Event property: plan, method and source. Under User property: plan and role. Under Account property: tier and industry. UTM source is selected." width="1820" height="1828" loading="lazy" />
+            <figcaption>The breakdown menu, on example data. Event, user and account properties are listed from what your events actually carry.</figcaption>
+        </figure>
+        <p>
+            Choose <strong>UTM source</strong>. The funnel above stays as it was, and a table appears below it with one row per source.
+        </p>
+        <figure class="guide-figure">
+            <img src="/screenshots/guides/conversion-by-channel-01-utm-source.webp" data-zoomable alt="A funnel broken down by UTM source: google 412 entered, 14 converted, 3.4%; Not set 388, 19, 4.9%; newsletter 164, 21, 13%; twitter 142, 3, 2.1%; producthunt 64, 3, 4.7%; linkedin 36, 1, 2.8%. A last column compares each source with the overall rate." width="1820" height="526" loading="lazy" />
+            <figcaption>Signup to paid, by UTM source. The last column compares each source with the 5.1% overall rate.</figcaption>
+        </figure>
+    </section>
+
+    <section id="read" class="scroll-mt-24">
+        <h2>Read the table</h2>
+        <p>
+            Each row is a group of people who entered the funnel: how many entered, how many reached the last step, the conversion rate, and the difference from everyone's rate in points.
+        </p>
+        <p>In the example, the overall conversion is 5.1%, and the sources differ:</p>
+        <ul class="guide-list">
+            <li><strong>google</strong>, which here means the tagged paid search links, sends the most people, 412, and converts at 3.4%. It is the largest tagged source and a below-average one.</li>
+            <li><strong>newsletter</strong> sends 164 and converts at 13%. That is 14% of the people entering and 21 of the 61 customers, about a third.</li>
+            <li><strong>twitter</strong> sends 142, nearly as many as the newsletter, and produces 3 customers.</li>
+            <li><strong>linkedin</strong> converts 1 of 36. That is one person. It says nothing yet.</li>
+        </ul>
+        <p>
+            Among the tagged sources, the ranking by signups started is google, newsletter, twitter. By customers it is the newsletter with 21, google with 14, and twitter and producthunt with 3 each. The untagged group accounts for another 19. The table holds no costs, so it cannot set a budget, but it changes which channel deserves a closer look.
+        </p>
+        <div class="guide-callout">
+            <p class="guide-kicker">Read the count before the rate</p>
+            <p>A rate on a small group moves a lot with one person. Before comparing two sources, check that each has enough people entering for the difference to mean something. Widen the time range if not. The table lists up to 20 groups: the ones the most people entered.</p>
+        </div>
+    </section>
+
+    <section id="first-touch" class="scroll-mt-24">
+        <h2>First touch and Not set</h2>
+        <p>
+            A person can arrive more than once: from a search ad on Monday, from the newsletter on Wednesday. In a breakdown, each person is counted under the <strong>first value seen for them in the selected range</strong>. That is first-touch attribution, limited to the range you are looking at.
+        </p>
+        <p>
+            People with no value are grouped as <strong>Not set</strong>, or as <strong>Direct</strong> when the breakdown is by referrer. In the example that is 388 people, the second-largest group. This group is everyone with no tagged visit in the range: organic search, links from other sites, typed addresses, bookmarks, untagged emails. It is several channels mixed together and should not be read as one. Break the funnel down by <strong>Referrer</strong> to split it up.
+        </p>
+        <p>
+            Some of that group is always there, because nobody tags a search result. A Not set group that grows after a campaign is a sign of missing tags, so check the links that went out in the period.
+        </p>
+    </section>
+
+    <section id="campaign-funnel" class="scroll-mt-24">
+        <h2>Start at a campaign</h2>
+        <p>
+            A breakdown compares every source at once. To study one campaign, make it the first step. A funnel's first step can be a <strong>Session</strong> step: where a session came from, by referrer, UTM source, medium or campaign, country or site.
+        </p>
+        <p>
+            "Arrived from the <code>launch-week</code> campaign, then <code>signup_completed</code>, then <code>plan_started</code>" is a three-step funnel that answers what the launch produced, with its own time to convert and its own drop-off.
+        </p>
+        <p>
+            The filters on the left do a third thing: they narrow the whole funnel to people with a matching session. Use a filter to look at one country or one site, and a breakdown inside it.
+        </p>
+    </section>
+
+    <section id="other-dimensions" class="scroll-mt-24">
+        <h2>Other things to split by</h2>
+        <p>The same table works for any dimension. A few that often explain a conversion rate:</p>
+        <ul class="guide-list">
+            <li><strong>Referrer.</strong> Catches traffic you did not tag: a blog post that linked to you, a forum thread.</li>
+            <li><strong>UTM campaign.</strong> Compares campaigns within one source.</li>
+            <li><strong>An event property.</strong> <code>method</code> on <code>signup_completed</code> shows whether Google sign-in converts better than email and password. A person counts under the first value their step events carry.</li>
+            <li><strong>Country and site.</strong> Shows whether a market or a subdomain behaves differently.</li>
+            <li><strong>A user or account property.</strong> Plan, role, industry. See the <a href="/guides/b2b-product-analytics">B2B guide</a>.</li>
+        </ul>
+    </section>
+
+    <section id="limits" class="scroll-mt-24">
+        <h2>What this cannot tell you</h2>
+        <ul class="guide-list">
+            <li><strong>Shared credit.</strong> A person who found you through search and converted after a newsletter counts once, under the first. This is not a multi-touch model.</li>
+            <li><strong>Cost.</strong> The table has customers per channel, not spend. Divide by what each channel cost yourself.</li>
+            <li><strong>Touches outside the range.</strong> A first visit before the range started is not seen. Use a range longer than your sales cycle.</li>
+            <li><strong>Accounts.</strong> The example counts people. In a B2B product, invited teammates sign up and never pay themselves, which lowers every channel's rate. <a href="/guides/b2b-product-analytics">Part 5</a> covers counting by account.</li>
+            <li><strong>Other devices.</strong> A phone visit and a laptop signup are two visitors until the person signs in on both.</li>
+            <li><strong>Visitors without an id.</strong> People who decline consent, or whose browser sends Global Privacy Control, carry no persistent visitor id, so their visits cannot be joined across sessions.</li>
+        </ul>
+    </section>
+
+    <section id="posthog" class="scroll-mt-24">
+        <h2>Coming from PostHog</h2>
+        <p>
+            PostHog stores UTM values as properties on each event and keeps the first ones a person arrived with as initial person properties, such as <code>$initial_utm_source</code>. A funnel there can be broken down by either, and the breakdown attribution can be switched between first touch, last touch and a specific step.
+        </p>
+        <p>
+            Maple keeps the source on the session and offers it as a breakdown directly: <strong>UTM source</strong>, <strong>UTM medium</strong>, <strong>UTM campaign</strong> and <strong>Referrer</strong>. A person counts under the first value in the selected range. That is close to an initial-source breakdown when the range covers their first visit, and there is no other attribution mode. Breakdowns cover source, medium and campaign. <code>utm_term</code> and <code>utm_content</code> are stored with the session and are not breakdown dimensions. There is no multi-touch attribution.
+        </p>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>Sources come with the browser SDK</h3>
+            <p>Referrers and UTM tags are recorded with every session. Web analytics shows them by visit, and Product analytics breaks any funnel down by them.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/product-events/funnels#break-it-down" class="guide-button guide-button--primary">Funnel breakdowns</a>
+                <a href="/docs/product-events/web-analytics" class="guide-button">Web analytics</a>
+            </div>
+        </div>
+    </section>
+</GuidePage>

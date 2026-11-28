@@ -653,7 +653,7 @@ describe("dry-run/apply parity — dangling symlinks and impossible suffix (r9)"
 		await withRoots(async (archiveDir, dataDir, scratchRoot) => {
 			const gid1 = randomUUID(),
 				activeGid = randomUUID()
-			const ev1 = seedGeneration2(archiveDir, "traces", "2026-06-01", gid1, "PAR1-old")
+			seedGeneration2(archiveDir, "traces", "2026-06-01", gid1, "PAR1-old")
 			seedGeneration2(archiveDir, "traces", "2026-06-01", activeGid, "PAR1-active")
 			const rangeDir = join(archiveDir, "traces", "2026-06-01")
 			mkdirSync(rangeDir, { recursive: true })
@@ -703,7 +703,6 @@ describe("dry-run/apply parity — dangling symlinks and impossible suffix (r9)"
 				before,
 				"zero mutation on dangling source symlink",
 			)
-			void ev1
 		})
 	})
 
@@ -724,13 +723,7 @@ describe("dry-run/apply parity — dangling symlinks and impossible suffix (r9)"
 					rangeStart: "2026-06-01",
 				}),
 			)
-			const { opId, manifestSha1, shardSha1 } = seedGcOp2(
-				archiveDir,
-				dataDir,
-				scratchRoot,
-				gid1,
-				activeGid,
-			)
+			const { opId } = seedGcOp2(archiveDir, dataDir, scratchRoot, gid1, activeGid)
 			// Remove source, create a DANGLING tombstone symlink.
 			rmSync(join(archiveDir, "traces", "2026-06-01", "generations", gid1), {
 				recursive: true,
@@ -756,8 +749,6 @@ describe("dry-run/apply parity — dangling symlinks and impossible suffix (r9)"
 				before,
 				"zero mutation on dangling tombstone symlink",
 			)
-			void manifestSha1
-			void shardSha1
 		})
 	})
 

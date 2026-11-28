@@ -25,6 +25,17 @@ export const guideSeries: readonly GuideSeries[] = [
 			"/guides/metric-cardinality",
 		],
 	},
+	{
+		id: "product-analytics",
+		title: "Product analytics from scratch",
+		hrefs: [
+			"/guides/event-tracking-plan",
+			"/guides/funnel-analysis",
+			"/guides/conversion-by-channel",
+			"/guides/user-path-analysis",
+			"/guides/b2b-product-analytics",
+		],
+	},
 ]
 
 export type SeriesPosition = {

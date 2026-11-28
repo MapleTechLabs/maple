@@ -156,6 +156,15 @@ export type AiCreditSource = typeof AiCreditSource.Type
 /** Uptime monitors an org has, metered as continuous use: +1 on create, -1 on delete. */
 export const UPTIME_MONITORS_FEATURE_ID = "uptime_monitors"
 
+/** Uptime monitors a plan includes; the trial stops here, Startup bills each one past it. */
+export const UPTIME_MONITORS_INCLUDED = 10
+
+/** Dollars a month for each uptime monitor past the included ones, on a plan with a card. */
+export const UPTIME_MONITOR_OVERAGE_USD = 0.5
+
+/** That price as copy reads it: "$0.50". */
+export const UPTIME_MONITOR_OVERAGE_LABEL = `$${UPTIME_MONITOR_OVERAGE_USD.toFixed(2)}`
+
 /** Percent Autumn adds to a model's token price on `ai_credits`; audits apply it to their own cost. */
 export const AI_CREDITS_MARKUP_PERCENT = 20
 

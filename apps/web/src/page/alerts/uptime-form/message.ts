@@ -16,6 +16,7 @@ import {
 } from "../../kit/uptime/form"
 import { LoadOutcome } from "../../kit/load-schemas"
 import { SessionGrants } from "../../kit/session-grants"
+import { MonitorAllowance } from "../../kit/billing/uptime-allowance"
 
 /** The part of an "Up when" row that changed. */
 export const AssertionPart = Schema.Literals(["op", "target", "value"])
@@ -26,6 +27,8 @@ export const Message = defineMessageUnion({
 	CompletedFetchServices: { services: Schema.Array(Schema.String) },
 	CompletedReadTimeZones: { zones: Schema.Array(Schema.String) },
 	CompletedFetchSession: SessionGrants,
+	/** The monitor balance; null when billing could not be read, which shows no notice. */
+	CompletedFetchAllowance: { orgId: Schema.String, allowance: Schema.NullOr(MonitorAllowance) },
 	PickedKind: { kind: MonitorKind },
 	ChangedText: { field: TextField, value: Schema.String },
 	ChangedMethod: { method: HttpMethod },

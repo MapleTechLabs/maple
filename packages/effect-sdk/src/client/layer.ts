@@ -2,7 +2,7 @@ import type { Duration } from "effect"
 import { type MapleRegion, resolveIngestEndpoint, warnIfKeylessMapleIngest } from "@maple/browser-session"
 import { isCommitSha } from "@maple/browser-session/commit-sha"
 import { Effect, Layer } from "effect"
-import { makeOtlpLayer } from "../shared/otlp-layer.js"
+import { type ExportDrop, makeOtlpLayer } from "../shared/otlp-layer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
 import { browserResourceAttributes } from "./browser-globals.js"
 import { consentHttpClientLayer } from "./consent-http-client.js"
@@ -62,6 +62,17 @@ export interface MapleClientConfig extends MapleSpanOptions {
 	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
 	readonly excludeLogSpans?: boolean | undefined
 	readonly maxBatchSize?: number | undefined
+	/**
+	 * Spans and log records waiting to export, per signal, before new ones are dropped.
+	 * Default `2048`, or `maxBatchSize` if larger. The queue fills only while exports
+	 * fail or fall behind, for example when the ingest endpoint is unreachable.
+	 */
+	readonly maxQueueSize?: number | undefined
+	/**
+	 * Called when the export queue drops telemetry. Without it the SDK warns on `console`
+	 * when a signal's dropped total reaches 1, 10, 100, ...
+	 */
+	readonly onDrop?: ((drop: ExportDrop) => void) | undefined
 	readonly loggerExportInterval?: Duration.Input | undefined
 	readonly metricsExportInterval?: Duration.Input | undefined
 	readonly tracerExportInterval?: Duration.Input | undefined
@@ -140,6 +151,9 @@ export const layer = (config: MapleClientConfig) => {
 			...(config.ingestKey ? { Authorization: `Bearer ${config.ingestKey}` } : undefined),
 		},
 		maxBatchSize: config.maxBatchSize,
+		maxQueueSize: config.maxQueueSize,
+		onDrop: config.onDrop,
+		logPrefix: "[MapleClientSDK]",
 		loggerExportInterval: config.loggerExportInterval,
 		metricsExportInterval: config.metricsExportInterval,
 		tracerExportInterval: config.tracerExportInterval,

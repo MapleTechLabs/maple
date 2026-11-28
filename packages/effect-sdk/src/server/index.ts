@@ -4,6 +4,7 @@ export type { ProfilingOptions } from "./profiling.js"
 export * as MapleFlush from "./flushable.js"
 export type { FlushableTelemetry, MapleFlushableConfig } from "./flushable.js"
 export type { FinishedSpan, MapleSpanOptions } from "../shared/span-options.js"
+export type { ExportDrop } from "../shared/otlp-layer.js"
 export { derivePlatformAttributes, getAutoPlatformAttributes, type PlatformInputs } from "./platform.js"
 export * as MapleEvents from "./events.js"
 export type {

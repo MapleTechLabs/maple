@@ -8,6 +8,8 @@ import { recentServiceNames } from "../shared/services"
 import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
 import { fetchSessionGrants } from "../../kit/session-grants"
+import { BillingCustomerCache } from "../../../data/billing-customer"
+import { monitorAllowanceOf } from "../../kit/billing/uptime-allowance"
 
 export const FetchExistingMonitor = Command.define("FetchUptimeFormMonitor", {
 	args: { key: Schema.String, monitorId: UptimeMonitorId },
@@ -28,6 +30,20 @@ export const FetchFormServices = Command.define("FetchUptimeFormServices", {
 export const ReadFormTimeZones = Command.define("ReadUptimeFormTimeZones", {
 	messages: [Message.CompletedReadTimeZones],
 	execute: Effect.map(readSupportedTimeZones, (zones) => Message.CompletedReadTimeZones({ zones })),
+})
+
+/** A fresh read: the monitor count moves with every create and delete. */
+export const FetchFormAllowance = Command.define("FetchUptimeFormAllowance", {
+	args: { orgId: Schema.String },
+	messages: [Message.CompletedFetchAllowance],
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			return yield* (yield* BillingCustomerCache).get({ orgId, refresh: true })
+		}).pipe(
+			Effect.map(monitorAllowanceOf),
+			Effect.orElseSucceed(() => null),
+			Effect.map((allowance) => Message.CompletedFetchAllowance({ orgId, allowance })),
+		),
 })
 
 export const FetchFormSession = fetchSessionGrants("FetchUptimeFormSession", Message.CompletedFetchSession)
