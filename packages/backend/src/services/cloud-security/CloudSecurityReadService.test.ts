@@ -19,7 +19,7 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testin
 import { AwsConnectionService } from "../integrations/AwsConnectionService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws } from "../integrations/aws/fake-aws"
 import { affectedServicesOf, CloudSecurityReadService } from "./CloudSecurityReadService"
-import { type CloudFindingWrite, CloudSecurityStore } from "./CloudSecurityStore"
+import { type AwsFindingWrite, CloudSecurityStore } from "./CloudSecurityStore"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -123,12 +123,13 @@ const connect = (modules: ReadonlyArray<"security" | "metrics">) =>
 
 const finding = (
 	connection: {
-		readonly id: CloudFindingWrite["connectionId"]
-		readonly accountId: CloudFindingWrite["accountId"]
+		readonly id: AwsFindingWrite["connectionId"]
+		readonly accountId: AwsFindingWrite["accountId"]
 	},
-	overrides: Partial<CloudFindingWrite> = {},
-): CloudFindingWrite => ({
+	overrides: Partial<AwsFindingWrite> = {},
+): AwsFindingWrite => ({
 	orgId,
+	provider: "aws" as const,
 	connectionId: connection.id,
 	accountId: connection.accountId,
 	region,
@@ -328,6 +329,7 @@ describe("CloudSecurityReadService", () => {
 				const connection = yield* connect(["security"])
 				yield* store.recordServiceState({
 					orgId,
+					provider: "aws" as const,
 					connectionId: connection.id,
 					region,
 					source: "inspector",

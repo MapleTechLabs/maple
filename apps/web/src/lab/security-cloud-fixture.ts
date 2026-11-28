@@ -20,11 +20,17 @@ const decodeOverview = Schema.decodeUnknownSync(OverviewSchema)
 const decodeList = Schema.decodeUnknownSync(ListSchema)
 
 const connections = (module: "not_requested" | "requested" | "granted") => [
-	{ connectionId: CONNECTION_ID, accountId: ACCOUNT_ID, module },
+	{ provider: "aws", connectionId: CONNECTION_ID, accountId: ACCOUNT_ID, module },
 ]
 
 const ZERO_SEVERITY = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
-const ZERO_SOURCE = { guardduty: 0, securityhub: 0, inspector: 0, access_analyzer: 0 }
+const ZERO_SOURCE = {
+	guardduty: 0,
+	securityhub: 0,
+	inspector: 0,
+	access_analyzer: 0,
+	security_command_center: 0,
+}
 
 const service = (
 	nowMs: number,
@@ -33,6 +39,7 @@ const service = (
 	state: string,
 	lastError: string | null = null,
 ) => ({
+	provider: "aws",
 	connectionId: CONNECTION_ID,
 	accountId: ACCOUNT_ID,
 	region,
@@ -69,7 +76,7 @@ export const populatedOverview = (nowMs: number): CloudSecurityOverviewResponse 
 		summary: {
 			total: 5,
 			bySeverity: { critical: 1, high: 2, medium: 1, low: 1, info: 0 },
-			bySource: { guardduty: 2, securityhub: 2, inspector: 1, access_analyzer: 0 },
+			bySource: { ...ZERO_SOURCE, guardduty: 2, securityhub: 2, inspector: 1 },
 		},
 		services: [
 			// GuardDuty and Security Hub deliver events; the others are only polled.
@@ -214,6 +221,7 @@ const findingOf = (nowMs: number, wire: Wire) => {
 	const region = wire.region ?? "us-east-1"
 	const lastSeenAt = nowMs - wire.minutesAgo * MINUTE
 	return {
+		provider: "aws",
 		connectionId: CONNECTION_ID,
 		accountId: ACCOUNT_ID,
 		region,
@@ -231,7 +239,12 @@ const findingOf = (nowMs: number, wire: Wire) => {
 		firstSeenAt: lastSeenAt - 3 * 24 * 60 * MINUTE,
 		lastSeenAt,
 		syncedAt: nowMs - 4 * MINUTE,
-		consoleUrl: cloudFindingConsoleUrl({ source: wire.source, region, findingId: wire.id }),
+		consoleUrl: cloudFindingConsoleUrl({
+			source: wire.source,
+			accountId: ACCOUNT_ID,
+			region,
+			findingId: wire.id,
+		}),
 		affectedServices: Arr.map(wire.services ?? [], ([name, requests]) => ({ service: name, requests })),
 	}
 }

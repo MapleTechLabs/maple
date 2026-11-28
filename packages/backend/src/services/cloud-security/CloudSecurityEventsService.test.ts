@@ -90,6 +90,7 @@ const verify = (world: World, connectionId: AwsConnectionId, regions: ReadonlyAr
 		yield* Effect.forEach(regions, (polled) =>
 			store.recordServiceState({
 				orgId,
+				provider: "aws" as const,
 				connectionId,
 				region: polled,
 				source: "guardduty",
@@ -244,6 +245,7 @@ describe("CloudSecurityEventsService", () => {
 			yield* Effect.forEach(["guardduty", "securityhub"] as const, (source) =>
 				store.recordServiceState({
 					orgId,
+					provider: "aws" as const,
 					connectionId: connection.id,
 					region,
 					source,
@@ -359,6 +361,7 @@ describe("CloudSecurityEventsService", () => {
 				[
 					{
 						orgId,
+						provider: "aws" as const,
 						connectionId: connection.id,
 						accountId: connection.accountId,
 						region,

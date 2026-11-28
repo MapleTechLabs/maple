@@ -1,15 +1,12 @@
 import type { CloudFindingSeverity, CloudFindingStatus } from "@maple/domain/cloud-security"
 import { DateTime, Option, Schema, String as Str } from "effect"
-import type { CloudFindingWrite } from "./CloudSecurityStore"
+import type { CloudFindingBody } from "./CloudSecurityStore"
 
 // A finding as one of the four services reported it, in the stored shape. Shared by the poller's
 // readers and the EventBridge receiver, so it imports no AWS SDK.
 
 /** A finding as a reader saw it, before the connection's columns are stamped on. */
-export type FindingRead = Omit<
-	CloudFindingWrite,
-	"orgId" | "connectionId" | "accountId" | "region" | "source"
->
+export type FindingRead = CloudFindingBody
 
 /** A finding's service record above this many bytes keeps only its columns. */
 const DETAIL_LIMIT_BYTES = 16 * 1024

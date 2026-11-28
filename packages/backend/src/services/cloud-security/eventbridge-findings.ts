@@ -1,5 +1,5 @@
 import {
-	type CloudFindingSource,
+	type AwsFindingSource,
 	cloudFindingSeverityOfLabel,
 	cloudFindingSeverityOfScore,
 } from "@maple/domain/cloud-security"
@@ -234,7 +234,7 @@ export const MAX_FINDINGS_PER_EVENT = 100
 
 /** What one event says, for one service in one region of one account. */
 export interface FindingEvent {
-	readonly source: CloudFindingSource
+	readonly source: AwsFindingSource
 	readonly region: AwsRegion
 	readonly findings: ReadonlyArray<FindingRead>
 	/** Findings left out: another account's, or with no id or time. */
@@ -267,7 +267,7 @@ export const findingEvent = (
 	const eventAccount = textAt(event, "account")
 	const ours = (account: string | undefined) => (account ?? eventAccount) === accountId
 	const of = (
-		findingSource: CloudFindingSource,
+		findingSource: AwsFindingSource,
 		candidates: ReadonlyArray<Json>,
 		accountOf: (candidate: Json) => string | undefined,
 		read: (candidate: Json) => Option.Option<FindingRead>,

@@ -65,6 +65,8 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 		PG.index("gcp_connectors_source_idx", ["sourceId"]),
 		PG.uniqueIndex("gcp_connectors_org_scope_idx", ["orgId", "scopeType", "scopeId"]),
 		PG.uniqueIndex("gcp_connectors_secret_hash_unique", ["secretHash"]),
+		// The target of org-pinned foreign keys: a row naming a connector must be of its org.
+		PG.uniqueIndex("gcp_connectors_org_id_idx", ["orgId", "id"]),
 	],
 	foreignKeys: [
 		PG.foreignKey({

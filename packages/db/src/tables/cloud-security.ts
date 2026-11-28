@@ -1,27 +1,61 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
+	CloudAccountId,
+	CloudConnectionId,
+	CloudLocation,
 	CloudFindingSeverity,
 	CloudFindingSource,
 	CloudFindingStatus,
+	CloudProvider,
 	CloudSecurityFeed,
 	CloudServiceState,
 } from "@maple/domain/cloud-security"
-import { AwsAccountId, AwsConnectionId, AwsRegion, OrgId } from "@maple/primitives"
+import { AwsConnectionId, GcpConnectorId, OrgId } from "@maple/primitives"
 import { Schema } from "effect"
 import { AwsConnections } from "./aws-connections"
+import { GcpConnectors } from "./gcp-connectors"
 
-// What the AWS `security` module pulls: each finding at its latest version, and how each service
-// answered in each region. Both go with their connection.
+// What the AWS `security` module and the GCP connector's Security Command Center pull: each finding
+// at its latest version, and how each service answered in each location. Both go with their
+// connection: exactly one of `aws_connection_id` / `gcp_connector_id` is set, to `connection_id`,
+// so deleting either kind of connection cascades. The store's write types keep them in step.
+
+const ownerColumns = {
+	// The default covers writers from before providers; the store always names one.
+	provider: PG.column(PG.brand(PG.text, CloudProvider), { default: "aws" }),
+	connectionId: PG.column(PG.brand(PG.text, CloudConnectionId), { name: "connection_id" }),
+	awsConnectionId: PG.column(PG.nullable(PG.brand(PG.text, AwsConnectionId)), {
+		name: "aws_connection_id",
+	}),
+	gcpConnectorId: PG.column(PG.nullable(PG.brand(PG.text, GcpConnectorId)), { name: "gcp_connector_id" }),
+}
+
+// On the org as well as the id: a row can only name a connection of its own org.
+const ownerForeignKeys = [
+	PG.foreignKey({
+		columns: ["orgId", "awsConnectionId"],
+		references: AwsConnections,
+		foreignColumns: ["orgId", "id"],
+		onDelete: "cascade",
+	}),
+	PG.foreignKey({
+		columns: ["orgId", "gcpConnectorId"],
+		references: GcpConnectors,
+		foreignColumns: ["orgId", "id"],
+		onDelete: "cascade",
+	}),
+] as const
 
 /** One finding from one service, as the service last reported it. */
 export const CloudSecurityFindings = PG.table("cloud_security_findings", {
 	columns: {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		connectionId: PG.column(PG.brand(PG.text, AwsConnectionId), { name: "connection_id" }),
-		accountId: PG.column(PG.brand(PG.text, AwsAccountId), { name: "account_id" }),
-		region: PG.brand(PG.text, AwsRegion),
+		...ownerColumns,
+		accountId: PG.column(PG.brand(PG.text, CloudAccountId), { name: "account_id" }),
+		/** The AWS region, or the SCC location (`global` for most). */
+		region: PG.brand(PG.text, CloudLocation),
 		source: PG.brand(PG.text, CloudFindingSource),
-		/** The service's id for it: GuardDuty's finding id, the Security Hub ARN, Inspector's ARN. */
+		/** The service's id for it: GuardDuty's finding id, the Security Hub ARN, Inspector's ARN, SCC's finding name. */
 		findingId: PG.column(PG.text, { name: "finding_id" }),
 		/** The service's type, like `UnauthorizedAccess:EC2/SSHBruteForce` or a control id. */
 		type: PG.text,
@@ -51,15 +85,7 @@ export const CloudSecurityFindings = PG.table("cloud_security_findings", {
 		PG.index("cloud_security_findings_org_status_idx", ["orgId", "status", "lastSeenAt"]),
 		PG.index("cloud_security_findings_org_resource_idx", ["orgId", "resourceId"]),
 	],
-	foreignKeys: [
-		// On the org as well as the id: a row can only name a connection of its own org.
-		PG.foreignKey({
-			columns: ["orgId", "connectionId"],
-			references: AwsConnections,
-			foreignColumns: ["orgId", "id"],
-			onDelete: "cascade",
-		}),
-	],
+	foreignKeys: [...ownerForeignKeys],
 	tenantColumn: "orgId",
 })
 
@@ -69,8 +95,8 @@ export type CloudSecurityFindingRow = PG.SelectRowOf<typeof CloudSecurityFinding
 export const CloudSecurityServiceStates = PG.table("cloud_security_service_states", {
 	columns: {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		connectionId: PG.column(PG.brand(PG.text, AwsConnectionId), { name: "connection_id" }),
-		region: PG.brand(PG.text, AwsRegion),
+		...ownerColumns,
+		region: PG.brand(PG.text, CloudLocation),
 		source: PG.brand(PG.text, CloudSecurityFeed),
 		state: PG.brand(PG.text, CloudServiceState),
 		/** The newest `provider_updated_at` stored; the next poll reads from here. Null: never read. */
@@ -84,15 +110,7 @@ export const CloudSecurityServiceStates = PG.table("cloud_security_service_state
 	},
 	primaryKey: ["orgId", "connectionId", "region", "source"],
 	indexes: [PG.index("cloud_security_service_states_org_idx", ["orgId"])],
-	foreignKeys: [
-		// On the org as well as the id: a row can only name a connection of its own org.
-		PG.foreignKey({
-			columns: ["orgId", "connectionId"],
-			references: AwsConnections,
-			foreignColumns: ["orgId", "id"],
-			onDelete: "cascade",
-		}),
-	],
+	foreignKeys: [...ownerForeignKeys],
 	tenantColumn: "orgId",
 })
 

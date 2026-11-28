@@ -164,7 +164,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					awsCloudTrailProblems: db.run(
 						PG.from(CloudSecurityServiceStates)
 							.innerJoin(AwsConnections, "c", (state, connection) =>
-								connection.id.eq(state.connectionId),
+								connection.id.eq(state.awsConnectionId),
 							)
 							.select(($) => ({
 								accountId: $.c.accountId,

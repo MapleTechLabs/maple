@@ -15,7 +15,7 @@ import * as Retry from "@distilled.cloud/aws/Retry"
 import * as SecurityHub from "@distilled.cloud/aws/securityhub"
 import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import {
-	type CloudFindingSource,
+	type AwsFindingSource,
 	type CloudServiceState,
 	cloudFindingSeverityOfLabel,
 	cloudFindingSeverityOfScore,
@@ -788,7 +788,7 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 
 /** One service in one region. An AWS failure is the state it leaves; only the sink's errors fail it. */
 export const readSource = <E>(
-	source: CloudFindingSource,
+	source: AwsFindingSource,
 	target: ReadTarget,
 	sink: Sink<FindingRead, E>,
 ): Effect.Effect<RegionRead, E> => {

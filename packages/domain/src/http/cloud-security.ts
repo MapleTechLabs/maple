@@ -1,10 +1,15 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { AwsAccountId, AwsConnectionId, AwsRegion } from "@maple/primitives"
+import { AwsAccountId, AwsConnectionId, GcpConnectorId } from "@maple/primitives"
 import {
+	CLOUD_FINDING_SOURCES,
+	CloudAccountId,
+	CloudConnectionId,
 	CloudFindingSeverity,
 	CloudFindingSource,
 	CloudFindingStatus,
+	CloudLocation,
+	CloudProvider,
 	CloudServiceState,
 } from "../cloud-security"
 import { AuditedRead } from "./audit-log"
@@ -13,7 +18,8 @@ import { HttpTaggedError } from "./error-policy"
 import { EndpointAccess, handlerChecks } from "./endpoint-access"
 
 // The Security hub's Cloud tab: findings the AWS connection's `security` module pulls from
-// GuardDuty, Security Hub, Inspector and Access Analyzer, matched to the services they affect.
+// GuardDuty, Security Hub, Inspector and Access Analyzer, and the GCP connector's from Security
+// Command Center, matched to the services they affect.
 
 export const CLOUD_FINDINGS_PAGE_MAX = 100
 
@@ -26,9 +32,10 @@ export const CloudFindingAffectedService = Schema.Struct({
 export type CloudFindingAffectedService = typeof CloudFindingAffectedService.Type
 
 const findingFields = {
-	connectionId: AwsConnectionId,
-	accountId: AwsAccountId,
-	region: AwsRegion,
+	provider: CloudProvider,
+	connectionId: CloudConnectionId,
+	accountId: CloudAccountId,
+	region: CloudLocation,
 	source: CloudFindingSource,
 	findingId: Schema.String,
 	type: Schema.String,
@@ -44,7 +51,7 @@ const findingFields = {
 	firstSeenAt: Schema.Finite,
 	lastSeenAt: Schema.Finite,
 	syncedAt: Schema.Finite,
-	/** The finding in the AWS console. */
+	/** The finding in its cloud's console. */
 	consoleUrl: Schema.String,
 	/** Busiest first; empty when no telemetry carried the resource, or it could not be read. */
 	affectedServices: Schema.Array(CloudFindingAffectedService),
@@ -66,9 +73,12 @@ export const CloudFindingsListRequest = Schema.Struct({
 	/** Absent: active. */
 	status: Schema.optionalKey(CloudFindingStatus),
 	severities: Schema.optionalKey(Schema.Array(CloudFindingSeverity).check(Schema.isMaxLength(5))),
-	sources: Schema.optionalKey(Schema.Array(CloudFindingSource).check(Schema.isMaxLength(4))),
-	accountId: Schema.optionalKey(AwsAccountId),
-	region: Schema.optionalKey(AwsRegion),
+	sources: Schema.optionalKey(
+		Schema.Array(CloudFindingSource).check(Schema.isMaxLength(CLOUD_FINDING_SOURCES.length)),
+	),
+	providers: Schema.optionalKey(Schema.Array(CloudProvider).check(Schema.isMaxLength(2))),
+	accountId: Schema.optionalKey(CloudAccountId),
+	region: Schema.optionalKey(CloudLocation),
 	/** Matched against the title, type and resource id. */
 	search: Schema.optionalKey(SearchText),
 	limit: Schema.optionalKey(
@@ -93,8 +103,8 @@ export const CloudFindingsListResponse = Schema.Struct({
 export type CloudFindingsListResponse = typeof CloudFindingsListResponse.Type
 
 export const CloudFindingDetailQuery = Schema.Struct({
-	connectionId: AwsConnectionId,
-	region: AwsRegion,
+	connectionId: CloudConnectionId,
+	region: CloudLocation,
 	source: CloudFindingSource,
 	findingId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2048)),
 })
@@ -106,32 +116,44 @@ export const CloudFindingDetailResponse = Schema.Struct({
 })
 export type CloudFindingDetailResponse = typeof CloudFindingDetailResponse.Type
 
-/** One service in one region of one connection, as the last poll found it. */
+/** One service in one location of one connection, as the last poll found it. */
 export const CloudSecurityServiceStatus = Schema.Struct({
-	connectionId: AwsConnectionId,
-	accountId: AwsAccountId,
-	region: AwsRegion,
+	provider: CloudProvider,
+	connectionId: CloudConnectionId,
+	/** The AWS account, or the GCP connector's scope (project id, or numeric folder / organization id). */
+	accountId: Schema.String,
+	region: CloudLocation,
 	source: CloudFindingSource,
 	state: CloudServiceState,
 	lastError: Schema.NullOr(Schema.String),
 	checkedAt: Schema.Finite,
-	/** The last finding event EventBridge delivered; null while the feed is only polled. */
+	/** The last finding event pushed (EventBridge, Pub/Sub); null while the feed is only polled. */
 	pushedAt: Schema.NullOr(Schema.Finite),
 })
 export type CloudSecurityServiceStatus = typeof CloudSecurityServiceStatus.Type
 
 /**
- * Where the org's AWS security module stands. `requested`: the connection asks for it but the
- * deployed stack does not grant it yet. `granted`: the role carries it.
+ * Where a connection's security collection stands. `requested`: the connection asks for it but the
+ * deployed stack (AWS) or setup run (GCP) does not grant it yet. `granted`: the access is in place.
  */
 export const CloudSecurityConnectionModule = Schema.Literals(["not_requested", "requested", "granted"])
 export type CloudSecurityConnectionModule = typeof CloudSecurityConnectionModule.Type
 
-export const CloudSecurityConnection = Schema.Struct({
-	connectionId: AwsConnectionId,
-	accountId: AwsAccountId,
-	module: CloudSecurityConnectionModule,
-})
+export const CloudSecurityConnection = Schema.Union([
+	Schema.Struct({
+		provider: Schema.Literal("aws"),
+		connectionId: AwsConnectionId,
+		accountId: AwsAccountId,
+		module: CloudSecurityConnectionModule,
+	}),
+	Schema.Struct({
+		provider: Schema.Literal("gcp"),
+		connectionId: GcpConnectorId,
+		/** The connector's scope: a project id, or a numeric folder or organization id. */
+		accountId: Schema.String,
+		module: CloudSecurityConnectionModule,
+	}),
+])
 export type CloudSecurityConnection = typeof CloudSecurityConnection.Type
 
 const countsBySeverity = Schema.Struct({
@@ -147,10 +169,11 @@ const countsBySource = Schema.Struct({
 	securityhub: Schema.Finite,
 	inspector: Schema.Finite,
 	access_analyzer: Schema.Finite,
+	security_command_center: Schema.Finite,
 })
 
 export const CloudSecurityOverviewResponse = Schema.Struct({
-	/** Every AWS connection of the org; empty when AWS is not connected. */
+	/** Every AWS connection and GCP connector of the org; empty when neither is connected. */
 	connections: Schema.Array(CloudSecurityConnection),
 	/** Active findings. */
 	summary: Schema.Struct({

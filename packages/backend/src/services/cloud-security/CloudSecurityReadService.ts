@@ -87,6 +87,7 @@ const toFinding = (
 	row: CloudSecurityFindingRow,
 	matches: ReadonlyArray<ResourceServiceMatch>,
 ): CloudFinding => ({
+	provider: row.provider,
 	connectionId: row.connectionId,
 	accountId: row.accountId,
 	region: row.region,
@@ -203,7 +204,9 @@ export class CloudSecurityReadService extends Context.Service<
 				],
 				{ concurrency: "unbounded" },
 			).pipe(Effect.mapError(toPersistenceError))
-			const accountOf = new Map(Arr.map(status.connections, (c) => [c.id, c.accountId] as const))
+			const accountOf = new Map<string, string>(
+				Arr.map(status.connections, (c) => [c.id, c.accountId] as const),
+			)
 			return {
 				connections: Arr.map(status.connections, (connection) => {
 					const module: CloudSecurityConnectionModule = !Arr.contains(
@@ -215,7 +218,12 @@ export class CloudSecurityReadService extends Context.Service<
 							  Arr.contains(connection.grantedModules, "security")
 							? "granted"
 							: "requested"
-					return { connectionId: connection.id, accountId: connection.accountId, module }
+					return {
+						provider: "aws" as const,
+						connectionId: connection.id,
+						accountId: connection.accountId,
+						module,
+					}
 				}),
 				summary,
 				// CloudTrail's state belongs to the audit log's sources, not to the findings page.
@@ -226,6 +234,7 @@ export class CloudSecurityReadService extends Context.Service<
 						? []
 						: [
 								{
+									provider: state.provider,
 									connectionId: state.connectionId,
 									accountId,
 									region: state.region,
@@ -254,6 +263,7 @@ export class CloudSecurityReadService extends Context.Service<
 						status: request.status ?? "active",
 						severities: request.severities,
 						sources: request.sources,
+						providers: request.providers,
 						accountId: request.accountId,
 						region: request.region,
 						search: request.search,
