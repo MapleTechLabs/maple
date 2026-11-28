@@ -267,8 +267,8 @@ static WAL_SHIP_OUTCOMES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_wal_ship_outcomes_total")
         .with_description(
-            "WAL segments that were not uploaded, by outcome: exported before the upload ran, \
-             dropped because the shipper queue was full, or failed",
+            "Sealed WAL segments by ship outcome: shipped, exported inside the ship grace, \
+             dropped because the shipper queue was full, or a failed upload attempt",
         )
         .build()
 });
