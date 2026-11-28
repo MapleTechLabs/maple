@@ -1,4 +1,8 @@
-import { UPTIME_MULTISTEP_DEFAULT_TIMEOUT_MS, type V2UptimeMonitorConfig } from "@maple/domain/http/v2"
+import {
+	UPTIME_DEFAULT_TIMEOUT_MS,
+	UPTIME_MULTISTEP_DEFAULT_TIMEOUT_MS,
+	type V2UptimeMonitorConfig,
+} from "@maple/domain/http/v2"
 import { parseHeartbeatCron } from "@maple/domain/uptime"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { UptimeMonitor } from "./derive"
@@ -371,7 +375,7 @@ export const formFromMonitor = (monitor: UptimeMonitor): Form => {
 				body: config.body ?? "",
 				assertions,
 				nextAssertionId: assertions.length + 1,
-				timeoutMs: String(config.timeout_ms ?? 10000),
+				timeoutMs: String(config.timeout_ms ?? UPTIME_DEFAULT_TIMEOUT_MS),
 			}
 		}
 		case "tcp":
@@ -379,7 +383,7 @@ export const formFromMonitor = (monitor: UptimeMonitor): Form => {
 				...base,
 				host: config.host,
 				port: String(config.port),
-				timeoutMs: String(config.timeout_ms ?? 10000),
+				timeoutMs: String(config.timeout_ms ?? UPTIME_DEFAULT_TIMEOUT_MS),
 			}
 		case "dns":
 			return {
@@ -387,7 +391,7 @@ export const formFromMonitor = (monitor: UptimeMonitor): Form => {
 				hostname: config.hostname,
 				recordType: config.record_type,
 				expected: config.expected ?? "",
-				timeoutMs: String(config.timeout_ms ?? 10000),
+				timeoutMs: String(config.timeout_ms ?? UPTIME_DEFAULT_TIMEOUT_MS),
 			}
 		case "multistep":
 			return {

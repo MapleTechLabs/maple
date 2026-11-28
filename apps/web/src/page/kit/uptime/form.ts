@@ -2,7 +2,7 @@ import { AlertDestinationId } from "@maple/domain/http"
 import { Schema } from "effect"
 import { UptimeMonitorKind } from "@maple/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
-import { V2UptimeMultiStepConfig } from "@maple/domain/http/v2"
+import { UPTIME_DEFAULT_TIMEOUT_MS, V2UptimeMultiStepConfig } from "@maple/domain/http/v2"
 
 // The uptime form's draft: every field as the inputs hold it, strings until the payload is built.
 
@@ -97,7 +97,7 @@ export const emptyForm = (fields: Partial<Form> = {}): Form => ({
 	nextAssertionId: 3,
 	intervalSeconds: 60,
 	failuresToDown: "2",
-	timeoutMs: "10000",
+	timeoutMs: String(UPTIME_DEFAULT_TIMEOUT_MS),
 	host: "",
 	port: "",
 	hostname: "",

@@ -46,13 +46,13 @@ export const UptimeMonitorPublicId = PublicId(PublicIdPrefixes.uptimeMonitor, Up
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())
 const Int = Schema.Number.check(Schema.isInt())
 
-export const UPTIME_DEFAULT_TIMEOUT_MS = 10_000
+/** Over 15 s, so a connection whose first SYNs are lost (Linux resends at 1, 3, 7 and 15 s) still answers. */
+export const UPTIME_DEFAULT_TIMEOUT_MS = 20_000
 
 const timeoutField = Schema.optionalKey(
 	Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1000, maximum: 30000 })).annotate({
-		description:
-			"How long one check may take before it counts as failed, in milliseconds (1000 to 30000). Defaults to 10000.",
-		examples: [10000],
+		description: `How long one attempt may take before it counts as failed, in milliseconds (1000 to 30000). A failed attempt is retried once, except for POST checks. Defaults to ${UPTIME_DEFAULT_TIMEOUT_MS}.`,
+		examples: [UPTIME_DEFAULT_TIMEOUT_MS],
 	}),
 )
 
