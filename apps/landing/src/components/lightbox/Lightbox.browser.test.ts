@@ -21,6 +21,16 @@ const PAGE = `
 		<figcaption>dashboard / overview</figcaption>
 		<img id="hero" data-zoomable data-zoom-src="/shots/hero@2x.webp" src="/shots/hero.webp" alt="Hero shot">
 	</figure>
+	<figure>
+		<video id="clip" data-zoomable src="/clips/replay.mp4" poster="/clips/replay.webp" aria-label="Replay recording" muted></video>
+	</figure>
+	<section data-lightbox-group>
+		<img id="wall-0" data-zoomable src="/shots/wall-0.webp" srcset="/shots/w/wall-0.webp 960w, /shots/wall-0.webp 2880w" sizes="100px" alt="Wall 0">
+		<img id="wall-1" data-zoomable src="/shots/wall-1.webp" alt="Wall 1">
+		<img id="wall-2" data-zoomable src="/shots/wall-2.webp" alt="Wall 2">
+		<img id="wall-3" data-zoomable src="/shots/wall-3.webp" alt="Wall 3">
+		<img id="wall-4" data-zoomable src="/shots/wall-4.webp" alt="Wall 4">
+	</section>
 `
 
 const mounted: Array<HTMLElement> = []
@@ -47,12 +57,13 @@ const dialog = () => dialogs().item(0)
 const counter = () => document.querySelector("[data-lightbox-counter]")?.textContent ?? ""
 const caption = () => document.querySelector("[data-lightbox-caption]")?.textContent ?? ""
 const announced = () => document.querySelector('[role="dialog"] [aria-live]')?.textContent ?? ""
+const pathOf = (url: string | null) => new URL(url ?? "", window.location.href).pathname
 /** The slides that have their bitmap mounted, by path: a plate's `src` reads back resolved. */
 const shown = () =>
-	Arr.map(
-		[...document.querySelectorAll("img[data-lightbox-media]")],
-		(image) => new URL(image.getAttribute("src") ?? "", window.location.href).pathname,
+	Arr.map([...document.querySelectorAll("img[data-lightbox-media]")], (image) =>
+		pathOf(image.getAttribute("src")),
 	)
+const thumbnails = () => [...document.querySelectorAll<HTMLElement>("[data-lightbox-thumbnail]")]
 const marked = (attribute: string) =>
 	Arr.map([...document.querySelectorAll(`[${attribute}]`)], (element) => element.id)
 const press = (key: string, init: KeyboardEventInit = {}) =>
@@ -63,9 +74,17 @@ const button = (label: string): HTMLElement => {
 	return element
 }
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-/** A full-size bitmap that never finishes decoding: the viewer has to open without it. */
-const stallDecodes = () =>
-	vi.spyOn(HTMLImageElement.prototype, "decode").mockReturnValue(new Promise<void>(() => {}))
+/** Full-size bitmaps that finish decoding only when the test says so. */
+const holdDecodes = () => {
+	const pending: Array<() => void> = []
+	vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(
+		() => new Promise<void>((resolve) => pending.push(resolve)),
+	)
+	return () => Arr.forEach(pending.splice(0), (resolve) => resolve())
+}
+const stallDecodes = () => {
+	holdDecodes()
+}
 
 afterEach(() => {
 	Arr.forEach(mounted.splice(0), (element) => element.dispatchEvent(new Event("astro:unmount")))
@@ -181,9 +200,10 @@ describe("Lightbox island", () => {
 
 	it("opens a plate outside an article alone, from its full-size source", async () => {
 		await mount()
+		vi.spyOn(HTMLImageElement.prototype, "decode").mockResolvedValue(undefined)
 		plate("hero").click()
 		await vi.waitFor(() => expect(dialog()?.getAttribute("aria-label")).toBe("Enlarged screenshot"))
-		expect(shown()).toEqual(["/shots/hero@2x.webp"])
+		await vi.waitFor(() => expect(shown()).toEqual(["/shots/hero@2x.webp"]))
 		expect(counter()).toBe("")
 		expect(announced()).toBe("Hero shot")
 		expect(document.querySelector('button[aria-label="Next screenshot"]')).toBeNull()
@@ -191,9 +211,48 @@ describe("Lightbox island", () => {
 		expect(caption()).toBe("")
 	})
 
-	it("opens without the morph when the bitmap is not ready, and still returns focus", async () => {
+	it("opens on what the plate shows while the full-size file decodes, then swaps it in", async () => {
 		await mount()
-		stallDecodes()
+		const release = holdDecodes()
+		plate("hero").click()
+		await vi.waitFor(() => expect(dialogs()).toHaveLength(1))
+		// The plate's own bitmap is ready, so the morph starts from it without waiting on the network.
+		await vi.waitFor(() => expect(marked("data-lightbox-origin")).toEqual(["hero"]))
+		expect(shown()).toEqual(["/shots/hero.webp"])
+		release()
+		await vi.waitFor(() => expect(shown()).toEqual(["/shots/hero@2x.webp"]))
+	})
+
+	it("opens the full capture behind a plate's narrower srcset pick, at the full file's size", async () => {
+		await mount()
+		const release = holdDecodes()
+		plate("wall-0").click()
+		await vi.waitFor(() => expect(counter()).toBe("1 / 5"))
+		// The 960w copy the plate shows is declared 2880 px wide, so the swap never resizes the shot.
+		const slide = document.querySelector("img[data-lightbox-media][data-active]")
+		assert(slide instanceof HTMLImageElement)
+		expect(shown()[0]).toBe("/shots/w/wall-0.webp")
+		expect(slide.getAttribute("sizes")).toBe("2880px")
+		expect(slide.getAttribute("srcset")).toMatch(/\/shots\/w\/wall-0\.webp 960w$/)
+		release()
+		await vi.waitFor(() => expect(shown()[0]).toBe("/shots/wall-0.webp"))
+		expect(slide.hasAttribute("srcset")).toBe(false)
+	})
+
+	it("keeps the preview when the full-size file fails to decode", async () => {
+		await mount()
+		vi.spyOn(HTMLImageElement.prototype, "decode").mockRejectedValue(
+			new DOMException("broken", "EncodingError"),
+		)
+		plate("hero").click()
+		await vi.waitFor(() => expect(dialogs()).toHaveLength(1))
+		await pause(200)
+		expect(shown()).toEqual(["/shots/hero.webp"])
+	})
+
+	it("opens without the morph when the plate has not loaded, and still returns focus", async () => {
+		await mount()
+		Object.defineProperty(plate("hero"), "complete", { value: false })
 		plate("hero").focus()
 		plate("hero").click()
 		await vi.waitFor(() => expect(dialogs()).toHaveLength(1))
@@ -231,6 +290,38 @@ describe("Lightbox island", () => {
 		press("Escape")
 		await vi.waitFor(() => expect(dialogs()).toHaveLength(0))
 		await vi.waitFor(() => expect(marked("data-lightbox-trigger")).toEqual([]), { timeout: 2000 })
+	})
+
+	it("plays a recording in the viewer, from its poster", async () => {
+		await mount()
+		expect(plate("clip").getAttribute("aria-label")).toBe("Enlarge screenshot: Replay recording")
+		plate("clip").click()
+		await vi.waitFor(() => expect(dialogs()).toHaveLength(1))
+		const video = document.querySelector("video[data-lightbox-media]")
+		assert(video instanceof HTMLVideoElement)
+		expect(pathOf(video.getAttribute("src"))).toBe("/clips/replay.mp4")
+		expect(pathOf(video.getAttribute("poster"))).toBe("/clips/replay.webp")
+		expect(video.muted).toBe(true)
+		expect(announced()).toBe("Replay recording")
+	})
+
+	it("gives a long gallery thumbnails that jump to their slide", async () => {
+		await mount()
+		plate("wall-1").click()
+		await vi.waitFor(() => expect(counter()).toBe("2 / 5"))
+		expect(thumbnails()).toHaveLength(5)
+		expect(thumbnails()[1]?.getAttribute("aria-current")).toBe("true")
+		thumbnails()[3]?.click()
+		await vi.waitFor(() => expect(counter()).toBe("4 / 5"))
+		expect(thumbnails()[3]?.getAttribute("aria-current")).toBe("true")
+		expect(thumbnails()[1]?.hasAttribute("aria-current")).toBe(false)
+	})
+
+	it("keeps thumbnails off a short gallery", async () => {
+		await mount()
+		plate("first").click()
+		await vi.waitFor(() => expect(counter()).toBe("1 / 3"))
+		expect(thumbnails()).toHaveLength(0)
 	})
 
 	it("opens from the keyboard on a focused plate", async () => {

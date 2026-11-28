@@ -10,11 +10,11 @@ import { Lightbox } from "./lightbox/Lightbox";
 <Lightbox client:idle />
 
 <style is:global>
-	img[data-zoomable] {
+	[data-zoomable] {
 		cursor: zoom-in;
 	}
 
-	img[data-zoomable]:focus-visible {
+	[data-zoomable]:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
@@ -95,6 +95,15 @@ import { Lightbox } from "./lightbox/Lightbox";
 		--lightbox-inset-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
 	}
 
+	/* A long gallery's thumbnails sit under the shot, and its caption above them. */
+	.lightbox:has([data-thumbnails]) {
+		--lightbox-inset-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+	}
+
+	.lightbox:has([data-thumbnails][data-captioned]) {
+		--lightbox-inset-bottom: calc(8.25rem + env(safe-area-inset-bottom, 0px));
+	}
+
 	@media (min-width: 768px) {
 		.lightbox {
 			--lightbox-inset-bottom: calc(2.5rem + env(safe-area-inset-bottom, 0px));
@@ -103,6 +112,14 @@ import { Lightbox } from "./lightbox/Lightbox";
 
 		.lightbox:has([data-captioned]) {
 			--lightbox-inset-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.lightbox:has([data-thumbnails]) {
+			--lightbox-inset-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.lightbox:has([data-thumbnails][data-captioned]) {
+			--lightbox-inset-bottom: calc(8.75rem + env(safe-area-inset-bottom, 0px));
 		}
 
 		/* A gallery keeps its side margins clear for the step buttons. */
@@ -244,7 +261,7 @@ import { Lightbox } from "./lightbox/Lightbox";
 	}
 
 	.lightbox:is([data-pulling], [data-pull-dismissing]) .lightbox__chrome,
-	.lightbox__content[data-zoomed] :is(.lightbox__caption, .lightbox__step) {
+	.lightbox__content[data-zoomed] :is(.lightbox__caption, .lightbox__step, .lightbox__thumbnails) {
 		visibility: hidden;
 		opacity: 0;
 		transition:
@@ -358,5 +375,84 @@ import { Lightbox } from "./lightbox/Lightbox";
 
 	.lightbox__caption:empty {
 		display: none;
+	}
+
+	.lightbox__content[data-thumbnails] .lightbox__caption {
+		bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+	}
+
+	/* One row, centred while it fits and scrolled once it does not; the open slide's
+	   thumbnail is kept in view (`RevealThumbnail`). */
+	.lightbox__thumbnails {
+		position: absolute;
+		inset-inline: 0;
+		bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+		display: flex;
+		justify-content: safe center;
+		gap: 0.5rem;
+		padding: 0.25rem 1rem;
+		overflow-x: auto;
+		scrollbar-width: none;
+		overscroll-behavior-x: contain;
+	}
+
+	.lightbox__thumbnails::-webkit-scrollbar {
+		display: none;
+	}
+
+	.lightbox__thumbnail {
+		flex: 0 0 auto;
+		width: 4.5rem;
+		height: 2.75rem;
+		padding: 0;
+		overflow: hidden;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: var(--bg-elevated, var(--background));
+		opacity: 0.55;
+		cursor: pointer;
+		touch-action: manipulation;
+		transition:
+			opacity 150ms ease,
+			border-color 150ms ease;
+	}
+
+	.lightbox__thumbnail:hover {
+		opacity: 0.85;
+	}
+
+	.lightbox__thumbnail[data-active] {
+		border-color: var(--foreground);
+		opacity: 1;
+	}
+
+	.lightbox__thumbnail:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+
+	/* A capture's top-left corner is where its page starts: the sidebar and the title. */
+	.lightbox__thumbnail img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		object-position: left top;
+		-webkit-user-drag: none;
+	}
+
+	@media (min-width: 768px) {
+		.lightbox__thumbnails {
+			bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.lightbox__content[data-thumbnails] .lightbox__caption {
+			bottom: calc(6.25rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.lightbox__thumbnail {
+			width: 5.5rem;
+			height: 3.25rem;
+		}
 	}
 </style>

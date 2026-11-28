@@ -245,6 +245,7 @@
         "@inlang/paraglide-js": "^3.2.2",
         "@vitest/browser-playwright": "catalog:",
         "playwright": "catalog:",
+        "sharp": "0.35.5",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
         "woff2-encoder": "^2.0.0",

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import { defineMiddleware } from "astro:middleware"
+import { withShotSources } from "./lib/shot-sources"
 import { baseLocale, isLocale, locales, overwriteServerAsyncLocalStorage } from "./paraglide/runtime.js"
 
 type Locale = (typeof locales)[number]
@@ -17,7 +18,10 @@ overwriteServerAsyncLocalStorage({
 	run: <T>(store: { locale: Locale }, callback: () => T): T => localeStorage.run(store, callback),
 })
 
-export const onRequest = defineMiddleware((context, next) => {
+export const onRequest = defineMiddleware(async (context, next) => {
 	const locale = isLocale(context.currentLocale) ? context.currentLocale : baseLocale
-	return localeStorage.run({ locale }, () => next())
+	const response = await localeStorage.run({ locale }, () => next())
+	if (!(response.headers.get("content-type") ?? "").startsWith("text/html")) return response
+	// Every page is prerendered: this runs once per page at build, never per visit.
+	return new Response(withShotSources(await response.text()), response)
 })
